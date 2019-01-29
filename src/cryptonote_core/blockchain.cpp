@@ -91,8 +91,10 @@ static const struct {
   time_t time;
 } mainnet_hard_forks[] = {
   // version 7 from the start of the blockchain
-  { 7, 1, 0, 1548750273 },
+  { 1, 1, 0, 1548750273 },
+  { 7, 1, 0, 1548750283 },
 };
+static const uint64_t mainnet_hard_fork_version_1_till = 1009826;
 
 static const struct {
   uint8_t version;
@@ -101,8 +103,10 @@ static const struct {
   time_t time;
 } testnet_hard_forks[] = {
   // version 7 from the start of the blockchain
-  { 7, 1, 0, 1548750273 },
+  { 1, 1, 0, 1548750273 },
+  { 7, 1, 0, 1548750283 },
 };
+static const uint64_t testnet_hard_fork_version_1_till = 624633;
 
 static const struct {
   uint8_t version;
@@ -111,7 +115,8 @@ static const struct {
   time_t time;
 } stagenet_hard_forks[] = {
   // version 7 from the start of the blockchain
-  { 7, 1, 0, 1548750273 },
+  { 1, 1, 0, 1548750273 },
+  { 7, 1, 0, 1548750283 },
 };
 
 //------------------------------------------------------------------
@@ -318,11 +323,11 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
   if (m_hardfork == nullptr)
   {
     if (m_nettype ==  FAKECHAIN || m_nettype == STAGENET)
-      m_hardfork = new HardFork(*db, 7);
+      m_hardfork = new HardFork(*db, 1, 0);
     else if (m_nettype == TESTNET)
-      m_hardfork = new HardFork(*db, 7);
+      m_hardfork = new HardFork(*db, 1, testnet_hard_fork_version_1_till);
     else
-      m_hardfork = new HardFork(*db, 7);
+      m_hardfork = new HardFork(*db, 1, mainnet_hard_fork_version_1_till);
   }
   if (m_nettype == FAKECHAIN)
   {
