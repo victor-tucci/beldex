@@ -159,9 +159,9 @@ namespace config
   uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 0xd1;
   uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 19;
   uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 42;
-  uint16_t const P2P_DEFAULT_PORT = 29090;
-  uint16_t const RPC_DEFAULT_PORT = 19091;
-  uint16_t const ZMQ_RPC_DEFAULT_PORT = 19092;
+  uint16_t const P2P_DEFAULT_PORT = 17070;
+  uint16_t const RPC_DEFAULT_PORT = 17071;
+  uint16_t const ZMQ_RPC_DEFAULT_PORT = 17072;
   boost::uuids::uuid const NETWORK_ID = { {
       0x12 ,0x30, 0xF1, 0x71 , 0x61, 0x04 , 0x41, 0x61, 0x17, 0x31, 0x00, 0x82, 0x17, 0xA1, 0xB5, 0x90
     } }; // Bender's nightmare
@@ -173,9 +173,9 @@ namespace config
     uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 53;
     uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 54;
     uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 63;
-    uint16_t const P2P_DEFAULT_PORT = 29090;
-    uint16_t const RPC_DEFAULT_PORT = 29091;
-    uint16_t const ZMQ_RPC_DEFAULT_PORT = 29092;
+    uint16_t const P2P_DEFAULT_PORT = 27070;
+    uint16_t const RPC_DEFAULT_PORT = 27071;
+    uint16_t const ZMQ_RPC_DEFAULT_PORT = 27072;
     boost::uuids::uuid const NETWORK_ID = { {
         0x12 ,0x30, 0xF1, 0x71 , 0x61, 0x04 , 0x41, 0x61, 0x17, 0x31, 0x00, 0x82, 0x17, 0xA1, 0xB6, 0x91
       } }; // Bender's daydream
@@ -188,9 +188,9 @@ namespace config
     uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 24;
     uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 25;
     uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 36;
-    uint16_t const P2P_DEFAULT_PORT = 39090;
-    uint16_t const RPC_DEFAULT_PORT = 39091;
-    uint16_t const ZMQ_RPC_DEFAULT_PORT = 39092;
+    uint16_t const P2P_DEFAULT_PORT = 37070;
+    uint16_t const RPC_DEFAULT_PORT = 37071;
+    uint16_t const ZMQ_RPC_DEFAULT_PORT = 37072;
     boost::uuids::uuid const NETWORK_ID = { {
         0x12 ,0x30, 0xF1, 0x71 , 0x61, 0x04 , 0x41, 0x61, 0x17, 0x31, 0x00, 0x82, 0x17, 0xA1, 0xB7, 0x92
       } }; // Bender's daydream
