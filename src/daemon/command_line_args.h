@@ -102,11 +102,6 @@ namespace daemon_args
       , "127.0.0.1"
   };
 
-  const command_line::arg_descriptor<unsigned> arg_print_genesis_tx_hex = {
-    "print-genesis-tx-hex"
-      , "print genesis hex"
-  };
-
   const command_line::arg_descriptor<std::string, false, true, 2> arg_zmq_rpc_bind_port = {
     "zmq-rpc-bind-port"
   , "Port for ZMQ RPC server to listen on"
