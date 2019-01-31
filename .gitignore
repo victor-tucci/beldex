@@ -55,6 +55,7 @@ version/
 *.out
 *.app
 
+.vscode
 
 ### CMake ###
 CMakeCache.txt
