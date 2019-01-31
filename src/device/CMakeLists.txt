@@ -64,10 +64,10 @@ else()
   set(Blocks "")
 endif()
 
-monero_private_headers(device
+beldex_private_headers(device
   ${device_private_headers})
 
-monero_add_library(device
+beldex_add_library(device
   ${device_sources}
   ${device_headers}
   ${device_private_headers})
