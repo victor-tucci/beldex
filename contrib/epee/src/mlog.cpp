@@ -154,7 +154,7 @@ void mlog_configure(const std::string &filename_base, bool console, const std::s
   el::Configurations c;
   c.setGlobally(el::ConfigurationType::Filename, filename_base);
   c.setGlobally(el::ConfigurationType::ToFile, "true");
-  const char *log_format = getenv("MONERO_LOG_FORMAT");
+  const char *log_format = getenv("BELDEX_LOG_FORMAT");
   if (!log_format)
     log_format = MLOG_BASE_FORMAT;
   c.setGlobally(el::ConfigurationType::Format, log_format);
@@ -228,12 +228,12 @@ void mlog_configure(const std::string &filename_base, bool console, const std::s
     }
   });
   mlog_set_common_prefix();
-  const char *monero_log = getenv("MONERO_LOGS");
-  if (!monero_log)
+  const char *beldex_log = getenv("BELDEX_LOGS");
+  if (!beldex_log)
   {
-    monero_log = get_default_categories(0);
+    beldex_log = get_default_categories(0);
   }
-  mlog_set_log(monero_log);
+  mlog_set_log(beldex_log);
 #ifdef WIN32
   EnableVTMode();
 #endif

@@ -52,7 +52,7 @@ set(blockchain_import_private_headers
   bootstrap_serialization.h
   )
 
-monero_private_headers(blockchain_import
+beldex_private_headers(blockchain_import
 	  ${blockchain_import_private_headers})
 
 set(blockchain_export_sources
@@ -67,7 +67,7 @@ set(blockchain_export_private_headers
   bootstrap_serialization.h
   )
 
-monero_private_headers(blockchain_export
+beldex_private_headers(blockchain_export
 	  ${blockchain_export_private_headers})
 
 
@@ -81,7 +81,7 @@ set(blockchain_blackball_private_headers
   bootstrap_serialization.h
   )
 
-monero_private_headers(blockchain_blackball
+beldex_private_headers(blockchain_blackball
 	  ${blockchain_blackball_private_headers})
 
 set(blockchain_usage_sources
@@ -90,7 +90,7 @@ set(blockchain_usage_sources
 
 set(blockchain_usage_private_headers)
 
-monero_private_headers(blockchain_usage
+beldex_private_headers(blockchain_usage
 	  ${blockchain_usage_private_headers})
 
 
@@ -101,7 +101,7 @@ set(blockchain_ancestry_sources
 
 set(blockchain_ancestry_private_headers)
 
-monero_private_headers(blockchain_ancestry
+beldex_private_headers(blockchain_ancestry
 	  ${blockchain_ancestry_private_headers})
 
 
@@ -112,12 +112,12 @@ set(blockchain_depth_sources
 
 set(blockchain_depth_private_headers)
 
-monero_private_headers(blockchain_depth
+beldex_private_headers(blockchain_depth
 	  ${blockchain_depth_private_headers})
 
 
 
-monero_add_executable(blockchain_import
+beldex_add_executable(blockchain_import
   ${blockchain_import_sources}
   ${blockchain_import_private_headers}
   ${blocksdat})
@@ -144,7 +144,7 @@ set_property(TARGET blockchain_import
 	OUTPUT_NAME "beldex-blockchain-import")
 install(TARGETS blockchain_import DESTINATION bin)
 
-monero_add_executable(blockchain_export
+beldex_add_executable(blockchain_export
   ${blockchain_export_sources}
   ${blockchain_export_private_headers})
 
@@ -165,7 +165,7 @@ set_property(TARGET blockchain_export
 	OUTPUT_NAME "beldex-blockchain-export")
 install(TARGETS blockchain_export DESTINATION bin)
 
-monero_add_executable(blockchain_blackball
+beldex_add_executable(blockchain_blackball
   ${blockchain_blackball_sources}
   ${blockchain_blackball_private_headers})
 
@@ -188,7 +188,7 @@ set_property(TARGET blockchain_blackball
 install(TARGETS blockchain_blackball DESTINATION bin)
 
 
-monero_add_executable(blockchain_usage
+beldex_add_executable(blockchain_usage
   ${blockchain_usage_sources}
   ${blockchain_usage_private_headers})
 
@@ -209,7 +209,7 @@ set_property(TARGET blockchain_usage
 	OUTPUT_NAME "beldex-blockchain-usage")
 install(TARGETS blockchain_usage DESTINATION bin)
 
-monero_add_executable(blockchain_ancestry
+beldex_add_executable(blockchain_ancestry
   ${blockchain_ancestry_sources}
   ${blockchain_ancestry_private_headers})
 
@@ -230,7 +230,7 @@ set_property(TARGET blockchain_ancestry
 	OUTPUT_NAME "beldex-blockchain-ancestry")
 install(TARGETS blockchain_ancestry DESTINATION bin)
 
-monero_add_executable(blockchain_depth
+beldex_add_executable(blockchain_depth
   ${blockchain_depth_sources}
   ${blockchain_depth_private_headers})
 
