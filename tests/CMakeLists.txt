@@ -73,8 +73,8 @@ file(COPY
   data/wallet_9svHk1.keys
   data/wallet_9svHk1
   data/outputs
-  data/unsigned_monero_tx
-  data/signed_monero_tx
+  data/unsigned_beldex_tx
+  data/signed_beldex_tx
   DESTINATION data)
 
 add_subdirectory(core_tests)
