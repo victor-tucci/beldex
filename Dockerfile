@@ -140,8 +140,8 @@ VOLUME /root/.beldex
 # beldex-wallet-cli
 VOLUME /wallet
 
-EXPOSE 17070
-EXPOSE 17071
+EXPOSE 19090
+EXPOSE 19091
 
-ENTRYPOINT ["beldexd", "--p2p-bind-ip=0.0.0.0", "--p2p-bind-port=17070", "--rpc-bind-ip=0.0.0.0", "--rpc-bind-port=17071", "--non-interactive", "--confirm-external-bind"]
+ENTRYPOINT ["beldexd", "--p2p-bind-ip=0.0.0.0", "--p2p-bind-port 19090", "--rpc-bind-ip=0.0.0.0", "--rpc-bind-port=19091", "--non-interactive", "--confirm-external-bind"]
 
