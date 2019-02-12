@@ -105,6 +105,7 @@ static const struct {
   // version 7 from the start of the blockchain
   { 1, 1, 0, 1548750273 },
   { 7, 10, 0, 1548750283 },
+  { 8, 2180, 0, 1549966391 },
 };
 static const uint64_t testnet_hard_fork_version_1_till = 9;
 
