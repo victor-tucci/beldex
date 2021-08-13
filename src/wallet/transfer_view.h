@@ -1,22 +1,22 @@
 // Copyright (c) 2018-2020, The Beldex Project
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -97,8 +97,8 @@ struct transfer_view
   uint64_t confirmations;                                    // Number of block mined since the block containing this transaction (or block height at which the transaction should be added to a block if not yet confirmed).
   uint64_t suggested_confirmations_threshold;                // Estimation of the confirmations needed for the transaction to be included in a block.
   uint64_t checkpointed;                                     // If transfer is backed by atleast 2 Master Node Checkpoints, 0 if it is not, see immutable_height in the daemon rpc call get_info
-  bool blink_mempool;                                        // True if this is an approved blink tx in the mempool
-  bool was_blink;                                            // True if we saw this as an approved blink (either in the mempool or a recent, uncheckpointed block).  Note that if we didn't see it while an active blink this won't be set.
+  bool flash_mempool;                                        // True if this is an approved flash tx in the mempool
+  bool was_flash;                                            // True if we saw this as an approved flash (either in the mempool or a recent, uncheckpointed block).  Note that if we didn't see it while an active flash this won't be set.
 
   // Not serialized, for internal wallet2 use
   wallet::pay_type pay_type;                                 // @NoBeldexRPCDocGen Internal use only, not serialized

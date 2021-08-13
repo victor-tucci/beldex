@@ -1,22 +1,22 @@
 // Copyright (c) 2014-2018, The Monero Project
 // Copyright (c)      2018, The Beldex Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -26,12 +26,12 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 /*!
  * \file simplewallet.h
- * 
+ *
  * \brief Header file that declares simple_wallet class.
  */
 #pragma once
@@ -169,7 +169,7 @@ namespace cryptonote
 
     // lock_time_in_blocks: Only required if making a locked transfer, only for displaying to the user, it should be the lock time specified by the sender
     // unlock_block:        Only required if lock_time_in_blocks is specified, only for displaying to the user, the height at which the transfer will unlock
-    bool confirm_and_send_tx(std::vector<cryptonote::address_parse_info> const &dests, std::vector<tools::wallet2::pending_tx> &ptx_vector, bool blink, uint64_t lock_time_in_blocks = 0, uint64_t unlock_block = 0, bool called_by_mms = false);
+    bool confirm_and_send_tx(std::vector<cryptonote::address_parse_info> const &dests, std::vector<tools::wallet2::pending_tx> &ptx_vector, bool flash, uint64_t lock_time_in_blocks = 0, uint64_t unlock_block = 0, bool called_by_mms = false);
     bool transfer_main(Transfer transfer_type, const std::vector<std::string> &args, bool called_by_mms);
 
     bool transfer(const std::vector<std::string> &args);
@@ -190,7 +190,7 @@ namespace cryptonote
     bool bns_lookup(std::vector<std::string> args);
 
     enum class sweep_type_t { stake, register_stake, all_or_below, single };
-    bool sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool blink);
+    bool sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool flash);
     bool sweep_main(uint32_t account, uint64_t below, Transfer transfer_type, const std::vector<std::string> &args);
     bool sweep_all(const std::vector<std::string> &args);
     bool sweep_account(const std::vector<std::string> &args);
@@ -321,9 +321,9 @@ namespace cryptonote
 
     /*!
      * \brief Gets the word seed language from the user.
-     * 
+     *
      * User is asked to choose from a list of supported languages.
-     * 
+     *
      * \return The chosen language.
      */
     std::string get_mnemonic_language();
@@ -332,9 +332,9 @@ namespace cryptonote
      * \brief Submits or saves the transaction
      * \param ptx_vector Pending tx(es) created by transfer/sweep_all
      * \param do_not_relay if true, save the raw tx hex blob to a file instead of calling m_wallet->commit_tx(ptx).
-     * \param blink true if this should be submitted as a blink tx
+     * \param flash true if this should be submitted as a flash tx
      */
-    void commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_vector, bool do_not_relay, bool blink);
+    void commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_vector, bool do_not_relay, bool flash);
 
     // idle thread workers
     bool check_inactivity();
@@ -343,7 +343,7 @@ namespace cryptonote
 
     //----------------- i_wallet2_callback ---------------------
     virtual void on_new_block(uint64_t height, const cryptonote::block& block);
-    virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index, uint64_t unlock_time, bool blink);
+    virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index, uint64_t unlock_time, bool flash);
     virtual void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index);
     virtual void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index);
     virtual void on_skip_transaction(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx);
@@ -472,7 +472,7 @@ namespace cryptonote
     void check_for_messages();
     bool user_confirms(const std::string &question);
     bool get_message_from_arg(const std::string &arg, mms::message &m);
-    bool get_number_from_arg(const std::string &arg, uint32_t &number, const uint32_t lower_bound, const uint32_t upper_bound); 
+    bool get_number_from_arg(const std::string &arg, uint32_t &number, const uint32_t lower_bound, const uint32_t upper_bound);
 
     void mms_init(const std::vector<std::string> &args);
     void mms_info(const std::vector<std::string> &args);

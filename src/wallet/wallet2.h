@@ -1,22 +1,22 @@
 // Copyright (c) 2014-2018, The Monero Project
 // Copyright (c)      2018, The Beldex Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -26,7 +26,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -142,7 +142,7 @@ private:
   public:
     // Full wallet callbacks
     virtual void on_new_block(uint64_t height, const cryptonote::block& block) {}
-    virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index, uint64_t unlock_time, bool blink) {}
+    virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index, uint64_t unlock_time, bool flash) {}
     virtual void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index) {}
     virtual void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index) {}
     virtual void on_skip_transaction(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx) {}
@@ -225,7 +225,7 @@ private:
     tx_priority_normal      = 2,
     tx_priority_elevated    = 3,
     tx_priority_priority    = 4,
-    tx_priority_blink       = 5,
+    tx_priority_flash       = 5,
     tx_priority_last
   };
 
@@ -325,8 +325,8 @@ private:
       uint64_t m_timestamp;
       wallet::pay_type m_type;
       cryptonote::subaddress_index m_subaddr_index;
-      bool m_unmined_blink;
-      bool m_was_blink;
+      bool m_unmined_flash;
+      bool m_was_flash;
 
       bool is_coinbase() const { return ((m_type == wallet::pay_type::miner) || (m_type == wallet::pay_type::master_node) || (m_type == wallet::pay_type::governance)); }
     };
@@ -424,13 +424,13 @@ private:
         FIELD(cache_data)
       END_SERIALIZE()
     };
-    
+
     // GUI Address book
     struct address_book_row
     {
       cryptonote::account_public_address m_address;
       crypto::hash8 m_payment_id;
-      std::string m_description;   
+      std::string m_description;
       bool m_is_subaddress;
       bool m_has_payment_id;
     };
@@ -736,8 +736,8 @@ private:
       std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
       uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra, cryptonote::transaction& tx, pending_tx &ptx, const rct::RCTConfig &rct_config, const cryptonote::beldex_construct_tx_params &beldex_tx_params);
 
-    void commit_tx(pending_tx& ptx_vector, bool blink = false);
-    void commit_tx(std::vector<pending_tx>& ptx_vector, bool blink = false);
+    void commit_tx(pending_tx& ptx_vector, bool flash = false);
+    void commit_tx(std::vector<pending_tx>& ptx_vector, bool flash = false);
     bool save_tx(const std::vector<pending_tx>& ptx_vector, const fs::path& filename) const;
     std::string dump_tx_to_str(const std::vector<pending_tx> &ptx_vector) const;
     std::string save_multisig_tx(multisig_tx_set txs);
@@ -751,7 +751,7 @@ private:
     bool sign_tx(unsigned_tx_set& exported_txs, const fs::path& signed_filename, std::vector<pending_tx> &ptx, bool export_raw = false);
     bool sign_tx(unsigned_tx_set &exported_txs, std::vector<pending_tx> &ptx, signed_tx_set &signed_txs);
     std::string sign_tx_dump_to_str(unsigned_tx_set &exported_txs, std::vector<pending_tx> &ptx, signed_tx_set &signed_txes);
-    // load unsigned_tx_set from file. 
+    // load unsigned_tx_set from file.
     bool load_unsigned_tx(const fs::path& unsigned_filename, unsigned_tx_set& exported_txs) const;
     bool parse_unsigned_tx_from_str(std::string_view unsigned_tx_st, unsigned_tx_set &exported_txs) const;
     bool load_tx(const fs::path& signed_filename, std::vector<pending_tx>& ptx, std::function<bool(const signed_tx_set&)> accept_func = NULL);
@@ -839,7 +839,7 @@ private:
     void rescan_spent();
     void rescan_blockchain(bool hard, bool refresh = true, bool keep_key_images = false);
     bool is_transfer_unlocked(const transfer_details &td) const;
-    bool is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, bool unmined_blink, crypto::key_image const *key_image = nullptr) const;
+    bool is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, bool unmined_flash, crypto::key_image const *key_image = nullptr) const;
 
     uint64_t get_last_block_reward() const { return m_last_block_reward; }
     uint64_t get_device_last_key_image_sync() const { return m_device_last_key_image_sync; }
@@ -1062,7 +1062,7 @@ private:
     bool add_address_book_row(const cryptonote::account_public_address &address, const crypto::hash8 *payment_id, const std::string &description, bool is_subaddress);
     bool set_address_book_row(size_t row_id, const cryptonote::account_public_address &address, const crypto::hash8 *payment_id, const std::string &description, bool is_subaddress);
     bool delete_address_book_row(std::size_t row_id);
-        
+
     uint64_t get_num_rct_outputs();
     size_t get_num_transfer_details() const { return m_transfers.size(); }
     const transfer_details &get_transfer_details(size_t idx) const;
@@ -1099,7 +1099,7 @@ private:
     std::string get_description() const;
 
     /*!
-     * \brief  Get the list of registered account tags. 
+     * \brief  Get the list of registered account tags.
      * \return first.Key=(tag's name), first.Value=(tag's label), second[i]=(i-th account's tag)
      */
     const std::pair<std::map<std::string, std::string>, std::vector<std::string>>& get_account_tags();
@@ -1198,7 +1198,7 @@ private:
         cryptonote::transaction tx;
         crypto::hash tx_hash;
         bool double_spend_seen;
-        bool blink;
+        bool flash;
     };
     std::vector<get_pool_state_tx> get_pool_state(bool refreshed = false);
     void process_pool_state(const std::vector<get_pool_state_tx> &txs);
@@ -1225,7 +1225,7 @@ private:
     uint64_t get_fee_quantization_mask() const;
 
     // params constructor, accumulates the burn amounts if the priority is
-    // a blink and, or a bns tx. If it is a blink TX, bns_burn_type is ignored.
+    // a flash and, or a bns tx. If it is a flash TX, bns_burn_type is ignored.
     static cryptonote::beldex_construct_tx_params construct_params(uint8_t hf_version, cryptonote::txtype tx_type, uint32_t priority, uint64_t extra_burn = 0, bns::mapping_type bns_burn_type = static_cast<bns::mapping_type>(0));
 
     bool is_unattended() const { return m_unattended; }
@@ -1337,7 +1337,7 @@ private:
       master_node_contributors_maxed,
       master_node_insufficient_contribution,
       too_many_transactions_constructed,
-      no_blink,
+      no_flash,
     };
 
     struct stake_result
@@ -1374,7 +1374,7 @@ private:
       wallet_not_synced,
       too_many_transactions_constructed,
       exception_thrown,
-      no_blink,
+      no_flash,
     };
 
     struct register_master_node_result
@@ -1483,7 +1483,7 @@ private:
      */
     bool load_keys_buf(const std::string& keys_buf, const epee::wipeable_string& password);
     bool load_keys_buf(const std::string& keys_buf, const epee::wipeable_string& password, std::optional<crypto::chacha_key>& keys_to_encrypt);
-    void process_new_transaction(const crypto::hash &txid, const cryptonote::transaction& tx, const std::vector<uint64_t> &o_indices, uint64_t height, uint8_t block_version, uint64_t ts, bool miner_tx, bool pool, bool blink, bool double_spend_seen, const tx_cache_data &tx_cache_data, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache = NULL);
+    void process_new_transaction(const crypto::hash &txid, const cryptonote::transaction& tx, const std::vector<uint64_t> &o_indices, uint64_t height, uint8_t block_version, uint64_t ts, bool miner_tx, bool pool, bool flash, bool double_spend_seen, const tx_cache_data &tx_cache_data, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache = NULL);
     bool should_skip_block(const cryptonote::block &b, uint64_t height) const;
     void process_new_blockchain_entry(const cryptonote::block& b, const cryptonote::block_complete_entry& bche, const parsed_block &parsed_block, const crypto::hash& bl_id, uint64_t height, const std::vector<tx_cache_data> &tx_cache_data, size_t tx_cache_data_offset, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache = NULL);
     void detach_blockchain(uint64_t height, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache = NULL);
@@ -1523,7 +1523,7 @@ private:
     bool tx_add_fake_output(std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs, uint64_t global_index, const crypto::public_key& tx_public_key, const rct::key& mask, uint64_t real_index, bool unlocked) const;
     bool should_pick_a_second_output(size_t n_transfers, const std::vector<size_t> &unused_transfers_indices, const std::vector<size_t> &unused_dust_indices) const;
     std::vector<size_t> get_only_rct(const std::vector<size_t> &unused_dust_indices, const std::vector<size_t> &unused_transfers_indices) const;
-    void scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool blink);
+    void scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool flash);
     void trim_hashchain();
     crypto::key_image get_multisig_composite_key_image(size_t n) const;
     rct::multisig_kLRki get_multisig_composite_kLRki(size_t n,  const std::unordered_set<crypto::public_key> &ignore_set, std::unordered_set<rct::key> &used_L, std::unordered_set<rct::key> &new_used_L) const;
@@ -1679,7 +1679,7 @@ private:
 
     uint64_t m_last_block_reward;
     std::unique_ptr<tools::file_locker> m_keys_file_locker;
-    
+
     mms::message_store m_message_store;
     bool m_original_keys_available;
     cryptonote::account_public_address m_original_address;
@@ -1710,7 +1710,7 @@ private:
 
   // TODO(beldex): The better question is if anyone is ever going to try use
   // register master node funded by multiple subaddresses. This is unlikely.
-  constexpr std::array<const char* const, 6> allowed_priority_strings = {{"default", "unimportant", "normal", "elevated", "priority", "blink"}};
+  constexpr std::array<const char* const, 6> allowed_priority_strings = {{"default", "unimportant", "normal", "elevated", "priority", "flash"}};
   bool parse_subaddress_indices(std::string_view arg, std::set<uint32_t>& subaddr_indices, std::string *err_msg = nullptr);
   bool parse_priority          (const std::string& arg, uint32_t& priority);
 
@@ -1867,9 +1867,9 @@ namespace boost::serialization
       if (ver < 4)
         x.m_type = wallet::pay_type::in;
       if (ver < 5)
-        x.m_unmined_blink = false;
+        x.m_unmined_flash = false;
       if (ver < 6)
-        x.m_was_blink = false;
+        x.m_was_flash = false;
 
 
       if (ver < 1) return;
@@ -1881,9 +1881,9 @@ namespace boost::serialization
       if (ver < 4) return;
       a & x.m_type;
       if (ver < 5) return;
-      a & x.m_unmined_blink;
+      a & x.m_unmined_flash;
       if (ver < 6) return;
-      a & x.m_was_blink;
+      a & x.m_was_flash;
     }
 
     template <class Archive>

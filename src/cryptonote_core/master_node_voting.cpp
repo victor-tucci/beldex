@@ -602,13 +602,13 @@ namespace master_nodes
 
     std::vector<quorum_vote_t> result;
 
-    if (quorum_relay && hf_version < cryptonote::network_version_15_blink)
+    if (quorum_relay && hf_version < cryptonote::network_version_15_flash)
       return result; // no quorum relaying before HF14
 
-    if (hf_version < cryptonote::network_version_15_blink || quorum_relay)
+    if (hf_version < cryptonote::network_version_15_flash || quorum_relay)
       append_relayable_votes(result, m_obligations_pool, max_last_sent, min_height);
 
-    if (hf_version < cryptonote::network_version_15_blink || !quorum_relay)
+    if (hf_version < cryptonote::network_version_15_flash || !quorum_relay)
       append_relayable_votes(result, m_checkpoint_pool,  max_last_sent, min_height);
 
     return result;

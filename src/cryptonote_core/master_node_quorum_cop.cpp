@@ -509,7 +509,7 @@ namespace master_nodes
         break;
 
         case quorum_type::pulse:
-        case quorum_type::blink:
+        case quorum_type::flash:
         break;
       }
     }

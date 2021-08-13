@@ -44,7 +44,7 @@
 #include "blockchain_db/blockchain_db.h"
 #include "crypto/hash.h"
 #include "rpc/core_rpc_server_commands_defs.h"
-#include "tx_blink.h"
+#include "tx_flash.h"
 #include "beldex_economy.h"
 
 namespace cryptonote
@@ -76,7 +76,7 @@ namespace cryptonote
     bool kept_by_block = false; ///< has this transaction been in a block?
     bool relayed = false; ///< was this transaction from the network or a local client?
     bool do_not_relay = false; ///< to avoid relaying the transaction to the network
-    bool approved_blink = false; ///< signals that this is a blink tx and so should be accepted even if it conflicts with mempool or recent txes in non-immutable block; typically specified indirectly (via core.handle_incoming_txs())
+    bool approved_flash = false; ///< signals that this is a flash tx and so should be accepted even if it conflicts with mempool or recent txes in non-immutable block; typically specified indirectly (via core.handle_incoming_txs())
     uint64_t fee_percent = 100; ///< the required miner tx fee in percent relative to the base required miner tx fee; must be >= 100.
     uint64_t burn_fixed = 0; ///< a required minimum amount that must be burned (in atomic currency)
     uint64_t burn_percent = 0; ///< a required amount as a percentage of the base required miner tx fee that must be burned (additive with burn_fixed, if both > 0)
@@ -84,13 +84,13 @@ namespace cryptonote
     static tx_pool_options from_block() { tx_pool_options o; o.kept_by_block = true; o.relayed = true; return o; }
     static tx_pool_options from_peer() { tx_pool_options o; o.relayed = true; return o; }
     static tx_pool_options new_tx(bool do_not_relay = false) { tx_pool_options o; o.do_not_relay = do_not_relay; return o; }
-    static tx_pool_options new_blink(bool approved, uint8_t hf_version) {
+    static tx_pool_options new_flash(bool approved, uint8_t hf_version) {
       tx_pool_options o;
       o.do_not_relay = !approved;
-      o.approved_blink = approved;
-      o.fee_percent = BLINK_MINER_TX_FEE_PERCENT;
-      o.burn_percent = hf_version <= network_version_15_blink ? BLINK_BURN_TX_FEE_PERCENT_OLD : BLINK_BURN_TX_FEE_PERCENT;
-      o.burn_fixed = BLINK_BURN_FIXED;
+      o.approved_flash = approved;
+      o.fee_percent = FLASH_MINER_TX_FEE_PERCENT;
+      o.burn_percent = hf_version <= network_version_15_flash ? FLASH_BURN_TX_FEE_PERCENT_OLD : FLASH_BURN_TX_FEE_PERCENT;
+      o.burn_fixed = FLASH_BURN_FIXED;
       return o;
     }
   };
@@ -128,11 +128,11 @@ namespace cryptonote
      *
      * @param id the transaction's hash
      * @param tx_weight the transaction's weight
-     * @param blink_rollback_height if tx is a blink that conflicts with a recent (non-immutable)
+     * @param flash_rollback_height if tx is a flash that conflicts with a recent (non-immutable)
      * block tx then set this pointer to the required new height: that is, all blocks with height
      * `block_rollback_height` and above must be removed.
      */
-    bool add_tx(transaction &tx, const crypto::hash &id, const cryptonote::blobdata &blob, size_t tx_weight, tx_verification_context& tvc, const tx_pool_options &opts, uint8_t hf_version, uint64_t *blink_rollback_height = nullptr);
+    bool add_tx(transaction &tx, const crypto::hash &id, const cryptonote::blobdata &blob, size_t tx_weight, tx_verification_context& tvc, const tx_pool_options &opts, uint8_t hf_version, uint64_t *flash_rollback_height = nullptr);
 
     /**
      * @brief add a transaction to the transaction pool
@@ -152,107 +152,107 @@ namespace cryptonote
     bool add_tx(transaction &tx, tx_verification_context& tvc, const tx_pool_options &opts, uint8_t hf_version);
 
     /**
-     * @brief attempts to add a blink transaction to the transaction pool.
+     * @brief attempts to add a flash transaction to the transaction pool.
      *
-     * This method must be called without a held blink lock.
+     * This method must be called without a held flash lock.
      *
      * This is only for use for new transactions that should not exist yet on the chain or mempool
-     * (and will fail if already does).  See `add_existing_blink` instead to add blink data about a
-     * transaction that already exists.  This is only meant to be called during the MN blink signing
+     * (and will fail if already does).  See `add_existing_flash` instead to add flash data about a
+     * transaction that already exists.  This is only meant to be called during the MN flash signing
      * phase (and requires that the `tx` transaction be properly set to a full transaction);
-     * ordinary nodes receiving a blink tx from the network should be going through
-     * core.handle_incoming_blinks instead.
+     * ordinary nodes receiving a flash tx from the network should be going through
+     * core.handle_incoming_flashes instead.
      *
-     * Whether or not the transaction is added to the known blinks or marked for relaying depends on
+     * Whether or not the transaction is added to the known flashes or marked for relaying depends on
      * whether the passed-in transaction has an `.approved()` status: if it does, the transaction is
-     * set for relaying and added to the active blinks immediately; otherwise it is not added to the
-     * known blinks and will not be relayed.
+     * set for relaying and added to the active flashes immediately; otherwise it is not added to the
+     * known flashes and will not be relayed.
      *
-     * The transaction is *not* added to the known blinks or marked for relaying unless it is passed
+     * The transaction is *not* added to the known flashes or marked for relaying unless it is passed
      * in with an `.approved()` status.
      *
-     * @param blink - a shared_ptr to the blink details
+     * @param flash - a shared_ptr to the flash details
      * @param tvc - the verification results
-     * @param blink_exists - will be set to true if the addition fails because the blink tx already
+     * @param flash_exists - will be set to true if the addition fails because the flash tx already
      * exists
      *
      * @return true if the tx passes validations and has been added to the tx pool.
      */
-    bool add_new_blink(const std::shared_ptr<blink_tx> &blink, tx_verification_context& tvc, bool &blink_exists);
+    bool add_new_flash(const std::shared_ptr<flash_tx> &flash, tx_verification_context& tvc, bool &flash_exists);
 
     /**
-     * @brief attempts to add blink transaction information about an existing blink transaction
+     * @brief attempts to add flash transaction information about an existing flash transaction
      *
-     * You *must* already hold a blink_unique_lock().
+     * You *must* already hold a flash_unique_lock().
      *
-     * This method takes an approved blink_tx and records it in the known blinks data.  No check is
+     * This method takes an approved flash_tx and records it in the known flashes data.  No check is
      * done that the transaction actually exists on the blockchain or mempool.  It is assumed that
-     * the given shared_ptr is a new blink that is not yet shared between threads (and thus doesn't
-     * need locking): sharing is expected only after it is added to the blinks via this method.
+     * the given shared_ptr is a new flash that is not yet shared between threads (and thus doesn't
+     * need locking): sharing is expected only after it is added to the flashes via this method.
      *
-     * NB: this function assumes that the given blink tx is valid and approved (signed) but does
+     * NB: this function assumes that the given flash tx is valid and approved (signed) but does
      * *not* check it (except as an assert when compiling in debug mode).
      *
-     * @param blink the blink_tx shared_ptr
+     * @param flash the flash_tx shared_ptr
      *
-     * @return true if the blink data was recorded, false if the given blink was already known.
+     * @return true if the flash data was recorded, false if the given flash was already known.
      */
-    bool add_existing_blink(std::shared_ptr<blink_tx> blink);
+    bool add_existing_flash(std::shared_ptr<flash_tx> flash);
 
     /**
-     * @brief accesses blink tx details if the given tx hash is a known, approved blink tx, nullptr
+     * @brief accesses flash tx details if the given tx hash is a known, approved flash tx, nullptr
      * otherwise.
      *
-     * You *must* already hold a blink_shared_lock() or blink_unique_lock().
+     * You *must* already hold a flash_shared_lock() or flash_unique_lock().
      *
      * @param tx_hash the hash of the tx to access
      */
-    std::shared_ptr<blink_tx> get_blink(const crypto::hash &tx_hash) const;
+    std::shared_ptr<flash_tx> get_flash(const crypto::hash &tx_hash) const;
 
     /**
-     * Equivalent to `(bool) get_blink(...)`, but slightly more efficient when the blink information
+     * Equivalent to `(bool) get_flash(...)`, but slightly more efficient when the flash information
      * isn't actually needed beyond an existance test (as it avoids copying the shared_ptr).
      *
-     * You *must* already hold a blink_shared_lock() or blink_unique_lock().
+     * You *must* already hold a flash_shared_lock() or flash_unique_lock().
      */
-    bool has_blink(const crypto::hash &tx_hash) const;
+    bool has_flash(const crypto::hash &tx_hash) const;
 
     /**
-     * @brief modifies a vector of tx hashes to remove any that have known valid blink signatures
+     * @brief modifies a vector of tx hashes to remove any that have known valid flash signatures
      *
-     * Must not currently hold a blink lock.
+     * Must not currently hold a flash lock.
      *
      * @param txs the tx hashes to check
      */
-    void keep_missing_blinks(std::vector<crypto::hash> &tx_hashes) const;
+    void keep_missing_flashes(std::vector<crypto::hash> &tx_hashes) const;
 
     /**
-     * @brief returns checksums of blink txes included in recently mined blocks and in the mempool
+     * @brief returns checksums of flash txes included in recently mined blocks and in the mempool
      *
-     * Must not currently hold a blink lock.
+     * Must not currently hold a flash lock.
      *
      * The returned map consists of height => hashsum pairs where the height is the height in which
-     * the blink transactions were mined and the hashsum is a checksum of all the blink txes mined
-     * at that height.  Unmined mempool blink txes are included at a height of 0.  Only heights
+     * the flash transactions were mined and the hashsum is a checksum of all the flash txes mined
+     * at that height.  Unmined mempool flash txes are included at a height of 0.  Only heights
      * since the immutable checkpoint block are included.  Any block height (including the special
-     * "0" height) that has no blink tx in it is not included.
+     * "0" height) that has no flash tx in it is not included.
      */
-    std::map<uint64_t, crypto::hash> get_blink_checksums() const;
+    std::map<uint64_t, crypto::hash> get_flash_checksums() const;
 
     /**
-     * @brief returns the hashes of any non-immutable blink transactions mined in the given heights.
-     * A height of 0 is allowed: it indicates blinks in the mempool.
+     * @brief returns the hashes of any non-immutable flash transactions mined in the given heights.
+     * A height of 0 is allowed: it indicates flashes in the mempool.
      *
-     * Must not currently hold a blink lock.
+     * Must not currently hold a flash lock.
      *
-     * Note that this returned hashes by MINED HEIGHTS, not BLINK HEIGHTS where are a different
+     * Note that this returned hashes by MINED HEIGHTS, not FLASH HEIGHTS where are a different
      * concept.
      *
      * @param set of heights
      *
      * @return vector of hashes
      */
-    std::vector<crypto::hash> get_mined_blinks(const std::set<uint64_t> &heights) const;
+    std::vector<crypto::hash> get_mined_flashes(const std::set<uint64_t> &heights) const;
 
     /**
      * @brief takes a transaction with the given hash from the pool
@@ -342,16 +342,16 @@ namespace cryptonote
     bool try_lock() const { return m_transactions_lock.try_lock(); }
 
     /**
-     * @brief obtains a unique lock on the approved blink tx pool
+     * @brief obtains a unique lock on the approved flash tx pool
      */
     template <typename... Args>
-    auto blink_unique_lock(Args &&...args) const { return std::unique_lock{m_blinks_mutex, std::forward<Args>(args)...}; }
+    auto flash_unique_lock(Args &&...args) const { return std::unique_lock{m_flashes_mutex, std::forward<Args>(args)...}; }
 
     /**
-     * @brief obtains a shared lock on the approved blink tx pool
+     * @brief obtains a shared lock on the approved flash tx pool
      */
     template <typename... Args>
-    auto blink_shared_lock(Args &&...args) const { return std::shared_lock{m_blinks_mutex, std::forward<Args>(args)...}; }
+    auto flash_shared_lock(Args &&...args) const { return std::shared_lock{m_flashes_mutex, std::forward<Args>(args)...}; }
 
 
     // load/store operations
@@ -407,7 +407,7 @@ namespace cryptonote
      * @param include_unrelayed_txes include unrelayed txes in the result
      *
      */
-    void get_transaction_hashes(std::vector<crypto::hash>& txs, bool include_unrelayed_txes = true, bool include_only_blinked = false) const;
+    void get_transaction_hashes(std::vector<crypto::hash>& txs, bool include_unrelayed_txes = true, bool include_only_flashed = false) const;
 
     /**
      * @brief get (weight, fee, receive time) for all transaction in the pool
@@ -632,7 +632,7 @@ namespace cryptonote
      * @brief remove a transaction from the mempool
      *
      * This is called when pruning the mempool to reduce its size, and when deleting transactions
-     * from the mempool because of a conflicting blink transaction arriving.  Transactions lock and
+     * from the mempool because of a conflicting flash transaction arriving.  Transactions lock and
      * blockchain lock must be held by the caller.
      *
      * @param txid the transaction id to remove
@@ -653,33 +653,33 @@ namespace cryptonote
     void prune(const crypto::hash &skip);
 
     /**
-     * @brief Attempt to add a blink tx "by force", removing conflicting non-blink txs
+     * @brief Attempt to add a flash tx "by force", removing conflicting non-flash txs
      *
-     * The given transactions are removed from the mempool, if possible, to make way for this blink
-     * transactions.  In order for any removal to happen, all the conflicting txes must be non-blink
+     * The given transactions are removed from the mempool, if possible, to make way for this flash
+     * transactions.  In order for any removal to happen, all the conflicting txes must be non-flash
      * transactions, and must either:
      * - be a mempool transaction
-     * - be a mined, non-blink transaction in the recent (mutable) section of the chain
+     * - be a mined, non-flash transaction in the recent (mutable) section of the chain
      *
      * If all conflicting txs satisfy the above then conflicting mempool txs are removed and the
-     * blink_rollback_height pointer is updated to the required rollback height to eject any mined
+     * flash_rollback_height pointer is updated to the required rollback height to eject any mined
      * txs (if not already at that height or lower).  True is returned.
      *
      * If any txs are found that do not satisfy the above then nothing is removed and false is
      * returned.
      *
-     * @param the id of the incoming blink tx
-     * @param conflict_txs vector of conflicting transaction hashes that are preventing the blink tx
-     * @param blink_rollback_height a pointer to update to the new required height if a chain
-     * rollback is needed for the blink tx.  (That is, all blocks with height >=
-     * blink_rollback_height need to be popped).
+     * @param the id of the incoming flash tx
+     * @param conflict_txs vector of conflicting transaction hashes that are preventing the flash tx
+     * @param flash_rollback_height a pointer to update to the new required height if a chain
+     * rollback is needed for the flash tx.  (That is, all blocks with height >=
+     * flash_rollback_height need to be popped).
      *
-     * This method is *not* called with a blink lock held.
+     * This method is *not* called with a flash lock held.
      *
      * @return true if the conflicting transactions have been removed (and/or the rollback height
      * set), false if tx removal and/or rollback are insufficient to eliminate conflicting txes.
      */
-    bool remove_blink_conflicts(const crypto::hash &id, const std::vector<crypto::hash> &conflict_txs, uint64_t *blink_rollback_height);
+    bool remove_flash_conflicts(const crypto::hash &id, const std::vector<crypto::hash> &conflict_txs, uint64_t *flash_rollback_height);
 
     //TODO: confirm the below comments and investigate whether or not this
     //      is the desired behavior
@@ -695,7 +695,7 @@ namespace cryptonote
     mutable std::recursive_mutex m_transactions_lock;  //!< mutex for the pool
 
     //! container for spent key images from the transactions in the pool
-    key_images_container m_spent_key_images;  
+    key_images_container m_spent_key_images;
 
     //TODO: this time should be a named constant somewhere, not hard-coded
     //! interval on which to check for stale/"stuck" transactions
@@ -720,7 +720,7 @@ namespace cryptonote
     sorted_tx_container::iterator find_tx_in_sorted_container(const crypto::hash& id) const;
 
     //! cache/call Blockchain::check_tx_inputs results
-    bool check_tx_inputs(const std::function<cryptonote::transaction&()> &get_tx, const crypto::hash &txid, uint64_t &max_used_block_height, crypto::hash &max_used_block_id, tx_verification_context &tvc, bool kept_by_block = false, uint64_t* blink_rollback_height = nullptr) const;
+    bool check_tx_inputs(const std::function<cryptonote::transaction&()> &get_tx, const crypto::hash &txid, uint64_t &max_used_block_height, crypto::hash &max_used_block_id, tx_verification_context &tvc, bool kept_by_block = false, uint64_t* flash_rollback_height = nullptr) const;
 
     //! transactions which are unlikely to be included in blocks
     /*! These transactions are kept in RAM in case they *are* included
@@ -737,14 +737,14 @@ namespace cryptonote
 
     std::unordered_map<crypto::hash, transaction> m_parsed_tx_cache;
 
-    mutable std::shared_mutex m_blinks_mutex;
+    mutable std::shared_mutex m_flashes_mutex;
 
-    // Contains blink metadata for approved blink transactions. { txhash => blink_tx, ... }.
-    mutable std::unordered_map<crypto::hash, std::shared_ptr<cryptonote::blink_tx>> m_blinks;
+    // Contains flash metadata for approved flash transactions. { txhash => flash_tx, ... }.
+    mutable std::unordered_map<crypto::hash, std::shared_ptr<cryptonote::flash_tx>> m_flashes;
 
-    // Helper method: retrieves hashes and mined heights of blink txes since the immutable block;
-    // mempool blinks are included with a height of 0.  Also takes care of cleaning up any blinks
-    // that have become immutable.  Blink lock must not be already held.
-    std::pair<std::vector<crypto::hash>, std::vector<uint64_t>> get_blink_hashes_and_mined_heights() const;
+    // Helper method: retrieves hashes and mined heights of flash txes since the immutable block;
+    // mempool flashes are included with a height of 0.  Also takes care of cleaning up any flashes
+    // that have become immutable.  Flash lock must not be already held.
+    std::pair<std::vector<crypto::hash>, std::vector<uint64_t>> get_flash_hashes_and_mined_heights() const;
   };
 }

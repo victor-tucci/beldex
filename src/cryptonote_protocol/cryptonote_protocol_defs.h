@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -79,10 +79,10 @@ namespace cryptonote
 
 	uint64_t avg_download;
 	uint64_t current_download;
-	
+
 	uint64_t avg_upload;
 	uint64_t current_upload;
-  
+
 	uint32_t support_flags;
 
 	std::string connection_id;
@@ -100,7 +100,7 @@ namespace cryptonote
   /*                                                                      */
   /************************************************************************/
   BELDEX_RPC_DOC_INTROSPECT
-  struct serializable_blink_metadata {
+  struct serializable_flash_metadata {
     crypto::hash tx_hash;
     uint64_t height;
     std::vector<uint8_t> quorum;
@@ -118,7 +118,7 @@ namespace cryptonote
     blobdata block;
     std::vector<blobdata> txs;
     blobdata checkpoint;
-    std::vector<serializable_blink_metadata> blinks;
+    std::vector<serializable_flash_metadata> flashes;
     KV_MAP_SERIALIZABLE
   };
 
@@ -132,7 +132,7 @@ namespace cryptonote
     struct request
     {
       std::vector<blobdata> txs;
-      std::vector<serializable_blink_metadata> blinks;
+      std::vector<serializable_flash_metadata> flashes;
       bool requested = false;
       std::string _; // padding
 
@@ -176,8 +176,8 @@ namespace cryptonote
     crypto::hash  top_id;
     uint8_t top_version;
     uint32_t pruning_seed;
-    std::vector<uint64_t> blink_blocks;
-    std::vector<crypto::hash> blink_hash;
+    std::vector<uint64_t> flash_blocks;
+    std::vector<crypto::hash> flash_hash;
 
     KV_MAP_SERIALIZABLE
   };
@@ -208,7 +208,7 @@ namespace cryptonote
       KV_MAP_SERIALIZABLE
     };
   };
-  
+
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/
@@ -223,7 +223,7 @@ namespace cryptonote
 
       KV_MAP_SERIALIZABLE
     };
-  };  
+  };
 
   /************************************************************************/
   /*                                                                      */
@@ -235,12 +235,12 @@ namespace cryptonote
     struct request
     {
       crypto::hash block_hash;
-      uint64_t current_blockchain_height;      
+      uint64_t current_blockchain_height;
       std::vector<uint64_t> missing_tx_indices;
-      
+
       KV_MAP_SERIALIZABLE
     };
-  }; 
+  };
 
   /************************************************************************/
   /*                                                                      */
@@ -262,7 +262,7 @@ namespace cryptonote
       uint16_t storage_https_port;
       uint16_t storage_omq_port;
       uint16_t qnet_port;
-      
+
       KV_MAP_SERIALIZABLE
     };
   };
@@ -289,7 +289,7 @@ namespace cryptonote
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/
-  struct NOTIFY_REQUEST_BLOCK_BLINKS
+  struct NOTIFY_REQUEST_BLOCK_FLASHES
   {
     constexpr static int ID = BC_COMMANDS_POOL_BASE + 13;
     struct request
@@ -299,7 +299,7 @@ namespace cryptonote
     };
   };
 
-  struct NOTIFY_RESPONSE_BLOCK_BLINKS
+  struct NOTIFY_RESPONSE_BLOCK_FLASHES
   {
     constexpr static int ID = BC_COMMANDS_POOL_BASE + 14;
     struct request

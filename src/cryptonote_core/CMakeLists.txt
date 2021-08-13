@@ -35,7 +35,7 @@ add_library(cryptonote_core
   master_node_voting.cpp
   master_node_quorum_cop.cpp
   master_node_swarm.cpp
-  tx_blink.cpp
+  tx_flash.cpp
   beldex_name_system.cpp
   tx_pool.cpp
   tx_sanity_check.cpp

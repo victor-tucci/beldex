@@ -92,9 +92,9 @@ namespace cryptonote
   using quorumnet_delete_proc = void (void *&self);
   // Relays votes via quorumnet.
   using quorumnet_relay_obligation_votes_proc = void (void *self, const std::vector<master_nodes::quorum_vote_t> &votes);
-  // Sends a blink tx to the current blink quorum, returns a future that can be used to wait for the
+  // Sends a flash tx to the current flash quorum, returns a future that can be used to wait for the
   // result.
-  using quorumnet_send_blink_proc = std::future<std::pair<blink_result, std::string>> (core& core, const std::string& tx_blob);
+  using quorumnet_send_flash_proc = std::future<std::pair<flash_result, std::string>> (core& core, const std::string& tx_blob);
 
   // Relay a Pulse message to members specified in the quorum excluding the originating message owner.
   using quorumnet_pulse_relay_message_to_quorum_proc = void (void *, pulse::message const &msg, master_nodes::quorum const &quorum, bool block_producer);
@@ -107,7 +107,7 @@ namespace cryptonote
   extern quorumnet_init_proc *quorumnet_init;
   extern quorumnet_delete_proc *quorumnet_delete;
   extern quorumnet_relay_obligation_votes_proc *quorumnet_relay_obligation_votes;
-  extern quorumnet_send_blink_proc *quorumnet_send_blink;
+  extern quorumnet_send_flash_proc *quorumnet_send_flash;
 
   extern quorumnet_pulse_relay_message_to_quorum_proc *quorumnet_pulse_relay_message_to_quorum;
 
@@ -186,14 +186,14 @@ namespace cryptonote
      /**
       * Returned type of parse_incoming_txs() that provides details about which transactions failed
       * and why.  This is passed on to handle_parsed_txs() (potentially after modification such as
-      * setting `approved_blink`) to handle_parsed_txs() to actually insert the transactions.
+      * setting `approved_flash`) to handle_parsed_txs() to actually insert the transactions.
       */
      struct tx_verification_batch_info {
        tx_verification_context tvc{}; // Verification information
        bool parsed = false; // Will be true if we were able to at least parse the transaction
        bool result = false; // Indicates that the transaction was parsed and passed some basic checks
        bool already_have = false; // Indicates that the tx was found to already exist (in mempool or blockchain)
-       bool approved_blink = false; // Can be set between the parse and handle calls to make this a blink tx (that replaces conflicting non-blink txes)
+       bool approved_flash = false; // Can be set between the parse and handle calls to make this a flash tx (that replaces conflicting non-flash txes)
        const blobdata *blob = nullptr; // Will be set to a pointer to the incoming blobdata (i.e. string). caller must keep it alive!
        crypto::hash tx_hash; // The transaction hash (only set if `parsed`)
        transaction tx; // The parsed transaction (only set if `parsed`)
@@ -238,15 +238,15 @@ namespace cryptonote
       *
       * @param opts tx pool options for accepting these transactions
       *
-      * @param blink_rollback_height pointer to a uint64_t value to set to a rollback height *if*
-      * one of the incoming transactions is tagged as a blink tx and that tx conflicts with a
-      * recently mined, but not yet immutable block.  *Required* for blink handling (of tx_info
-      * values with `.approved_blink` set) to be done.
+      * @param flash_rollback_height pointer to a uint64_t value to set to a rollback height *if*
+      * one of the incoming transactions is tagged as a flash tx and that tx conflicts with a
+      * recently mined, but not yet immutable block.  *Required* for flash handling (of tx_info
+      * values with `.approved_flash` set) to be done.
       *
       * @return false if any transactions failed verification, true otherwise.  (To determine which
       * ones failed check the `tvc` values).
       */
-     bool handle_parsed_txs(std::vector<tx_verification_batch_info> &parsed_txs, const tx_pool_options &opts, uint64_t *blink_rollback_height = nullptr);
+     bool handle_parsed_txs(std::vector<tx_verification_batch_info> &parsed_txs, const tx_pool_options &opts, uint64_t *flash_rollback_height = nullptr);
 
      /**
       * Wrapper that does a parse + handle when nothing is needed between the parsing the handling.
@@ -262,52 +262,52 @@ namespace cryptonote
      std::vector<tx_verification_batch_info> handle_incoming_txs(const std::vector<blobdata>& tx_blobs, const tx_pool_options &opts);
 
      /**
-      * @brief parses and filters received blink transaction signatures
+      * @brief parses and filters received flash transaction signatures
       *
-      * This takes a vector of blink transaction metadata (typically from a p2p peer) and returns a
-      * vector of blink_txs with signatures applied for any transactions that do not already have
-      * stored blink signatures and can have applicable blink signatures (i.e. not in an immutable
+      * This takes a vector of flash transaction metadata (typically from a p2p peer) and returns a
+      * vector of flash_txs with signatures applied for any transactions that do not already have
+      * stored flash signatures and can have applicable flash signatures (i.e. not in an immutable
       * mined block).
       *
       * Note that this does not require that enough valid signatures are present: the caller should
-      * check `->approved()` on the return blinks to validate blink with valid signature sets.
+      * check `->approved()` on the return flashes to validate flash with valid signature sets.
       *
-      * @param blinks vector of serializable_blink_metadata
+      * @param flashes vector of serializable_flash_metadata
       *
-      * @return pair: `.first` is a vector of blink_tx shared pointers of any blink info that isn't
+      * @return pair: `.first` is a vector of flash_tx shared pointers of any flash info that isn't
       * already stored and isn't for a known, immutable transaction.  `.second` is an unordered_set
       * of unknown (i.e.  neither on the chain or in the pool) transaction hashes.  Returns empty
-      * containers if blinks are not yet enabled on the blockchain.
+      * containers if flashes are not yet enabled on the blockchain.
       */
-     std::pair<std::vector<std::shared_ptr<blink_tx>>, std::unordered_set<crypto::hash>>
-     parse_incoming_blinks(const std::vector<serializable_blink_metadata> &blinks);
+     std::pair<std::vector<std::shared_ptr<flash_tx>>, std::unordered_set<crypto::hash>>
+     parse_incoming_flashes(const std::vector<serializable_flash_metadata> &flashes);
 
      /**
-      * @brief adds incoming blinks into the blink pool.
+      * @brief adds incoming flashes into the flash pool.
       *
       * This is for use with mempool txes or txes in recently mined blocks, though this is not
-      * checked.  In the given input, only blinks with `approved()` status will be added; any
-      * without full approval will be skipped.  Any blinks that are already stored will also be
-      * skipped.  Typically this is used after `parse_incoming_blinks`.
+      * checked.  In the given input, only flashes with `approved()` status will be added; any
+      * without full approval will be skipped.  Any flashes that are already stored will also be
+      * skipped.  Typically this is used after `parse_incoming_flashes`.
       *
-      * @param blinks vector of blinks, typically from parse_incoming_blinks.
+      * @param flashes vector of flashes, typically from parse_incoming_flashes.
       *
-      * @return the number of blinks that were added.  Note that 0 is *not* an error value: it is
-      * possible for no blinks to be added if all already exist.
+      * @return the number of flashes that were added.  Note that 0 is *not* an error value: it is
+      * possible for no flashes to be added if all already exist.
       */
-     int add_blinks(const std::vector<std::shared_ptr<blink_tx>> &blinks);
+     int add_flashes(const std::vector<std::shared_ptr<flash_tx>> &flashes);
 
      /**
-      * @brief handles an incoming blink transaction by dispatching it to the master node network
+      * @brief handles an incoming flash transaction by dispatching it to the master node network
       * via quorumnet.  If this node is not a master node this will start up quorumnet in
       * remote-only mode the first time it is called.
       *
       * @param tx_blob the transaction data
       *
-      * @returns a pair of a blink result value: rejected, accepted, or timeout; and a rejection
-      * reason as returned by one of the blink quorum nodes.
+      * @returns a pair of a flash result value: rejected, accepted, or timeout; and a rejection
+      * reason as returned by one of the flash quorum nodes.
       */
-     std::future<std::pair<blink_result, std::string>> handle_blink_tx(const std::string &tx_blob);
+     std::future<std::pair<flash_result, std::string>> handle_flash_tx(const std::string &tx_blob);
 
      /**
       * @brief handles an incoming block
@@ -339,7 +339,7 @@ namespace cryptonote
       * @note see Blockchain::cleanup_handle_incoming_blocks
       */
      bool cleanup_handle_incoming_blocks(bool force_sync = false);
-     	     	
+
      /**
       * @brief check the size of a block against the current maximum
       *

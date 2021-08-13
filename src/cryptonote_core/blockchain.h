@@ -93,11 +93,11 @@ namespace cryptonote
     db_nosync //!< Leave syncing up to the backing db (safest, but slowest because of disk I/O)
   };
 
-  /** 
+  /**
    * @brief Callback routine that returns checkpoints data for specific network type
-   * 
+   *
    * @param network network type
-   * 
+   *
    * @return checkpoints data, empty span if there ain't any checkpoints for specific network type
    */
   using GetCheckpointsCallback = std::function<std::string_view(cryptonote::network_type network)>;
@@ -999,10 +999,10 @@ namespace cryptonote
     void pop_blocks(uint64_t nblocks);
 
     /**
-     * Rolls back the blockchain to the given height when necessary for admitting blink
+     * Rolls back the blockchain to the given height when necessary for admitting flash
      * transactions.
      */
-    bool blink_rollback(uint64_t rollback_height);
+    bool flash_rollback(uint64_t rollback_height);
 
     bns::name_system_db &name_system_db() { return m_bns_db; }
 
@@ -1479,7 +1479,7 @@ namespace cryptonote
      * A (possibly empty) set of block hashes can be compiled into the
      * monero daemon binary.  This function loads those hashes into
      * a useful state.
-     * 
+     *
      * @param get_checkpoints if set, will be called to get checkpoints data
      */
     void load_compiled_in_block_hashes(const GetCheckpointsCallback& get_checkpoints);

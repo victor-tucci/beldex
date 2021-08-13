@@ -69,7 +69,7 @@ namespace master_nodes
 
     bool pass() const {
       return voted;
-    }; 
+    };
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(height);
@@ -87,7 +87,7 @@ namespace master_nodes
     bool participated      = true;
     bool pass() const {
       return participated;
-    }; 
+    };
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(participated);
@@ -99,7 +99,7 @@ namespace master_nodes
     bool in_sync       = true;
     bool pass() const {
       return in_sync;
-    }; 
+    };
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(in_sync);
@@ -472,7 +472,7 @@ namespace master_nodes
     /// For checkpointing, quorums are only generated when height % CHECKPOINT_INTERVAL == 0 (and
     /// the actual internal quorum used is for `height - REORG_SAFETY_BUFFER_BLOCKS_POST_HF12`, i.e.
     /// do no subtract off the buffer in advance).
-    /// Similarly for blink (but on BLINK_QUORUM_INTERVAL, but without any buffer offset applied here).
+    /// Similarly for flash (but on FLASH_QUORUM_INTERVAL, but without any buffer offset applied here).
     /// return: nullptr if the quorum is not cached in memory (pruned from memory).
     std::shared_ptr<const quorum> get_quorum(quorum_type type, uint64_t height, bool include_old = false, std::vector<std::shared_ptr<const quorum>> *alt_states = nullptr) const;
     bool                          get_quorum_pubkey(quorum_type type, quorum_group group, uint64_t height, size_t quorum_index, crypto::public_key &key) const;
@@ -556,7 +556,7 @@ namespace master_nodes
                                                                    uint16_t storage_https_port,
                                                                    uint16_t storage_omq_port,
                                                                    uint16_t quorumnet_port) const;
-    
+
     uptime_proof::Proof generate_uptime_proof(uint32_t public_ip, uint16_t storage_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> beldexnet_version) const;
 
     //TODO: remove after HF18

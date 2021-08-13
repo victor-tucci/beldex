@@ -45,7 +45,7 @@ namespace master_nodes {
 
   static_assert(PULSE_QUORUM_NUM_VALIDATORS >= PULSE_BLOCK_REQUIRED_SIGNATURES);
   static_assert(PULSE_QUORUM_ENTROPY_LAG >= PULSE_QUORUM_SIZE, "We need to pull atleast PULSE_QUORUM_SIZE number of blocks from the Blockchain, we can't if the amount of blocks to go back from the tip of the Blockchain is less than the blocks we need.");
-  
+
   constexpr size_t pulse_min_master_nodes(cryptonote::network_type nettype)
   {
     return (nettype == cryptonote::MAINNET) ? 50 : PULSE_QUORUM_SIZE;
@@ -141,11 +141,11 @@ namespace master_nodes {
                 "The maximum number of votes a master node can miss cannot be greater than the amount of checkpoint "
                 "quorums they must participate in before we check if they should be deregistered or not.");
 
-  constexpr int BLINK_QUORUM_INTERVAL = 5; // We generate a new sub-quorum every N blocks (two consecutive quorums are needed for a blink signature)
-  constexpr int BLINK_QUORUM_LAG      = 7 * BLINK_QUORUM_INTERVAL; // The lag (which must be a multiple of BLINK_QUORUM_INTERVAL) in determining the base blink quorum height
-  constexpr int BLINK_EXPIRY_BUFFER   = BLINK_QUORUM_LAG + 10; // We don't select any MNs that have a scheduled unlock within this many blocks (measured from the lagged height)
-  static_assert(BLINK_QUORUM_LAG % BLINK_QUORUM_INTERVAL == 0, "BLINK_QUORUM_LAG must be an integral multiple of BLINK_QUORUM_INTERVAL");
-  static_assert(BLINK_EXPIRY_BUFFER > BLINK_QUORUM_LAG + BLINK_QUORUM_INTERVAL, "BLINK_EXPIRY_BUFFER is too short to cover a blink quorum height range");
+  constexpr int FLASH_QUORUM_INTERVAL = 5; // We generate a new sub-quorum every N blocks (two consecutive quorums are needed for a flash signature)
+  constexpr int FLASH_QUORUM_LAG      = 7 * FLASH_QUORUM_INTERVAL; // The lag (which must be a multiple of FLASH_QUORUM_INTERVAL) in determining the base flash quorum height
+  constexpr int FLASH_EXPIRY_BUFFER   = FLASH_QUORUM_LAG + 10; // We don't select any MNs that have a scheduled unlock within this many blocks (measured from the lagged height)
+  static_assert(FLASH_QUORUM_LAG % FLASH_QUORUM_INTERVAL == 0, "FLASH_QUORUM_LAG must be an integral multiple of FLASH_QUORUM_INTERVAL");
+  static_assert(FLASH_EXPIRY_BUFFER > FLASH_QUORUM_LAG + FLASH_QUORUM_INTERVAL, "FLASH_EXPIRY_BUFFER is too short to cover a flash quorum height range");
 
   // State change quorums are in charge of policing the network by changing the state of a master
   // node on the network: temporary decommissioning, recommissioning, and permanent deregistration.
@@ -159,22 +159,22 @@ namespace master_nodes {
   constexpr int    MIN_TIME_IN_S_BEFORE_VOTING            = 0;
   constexpr size_t CHECKPOINT_QUORUM_SIZE                 = 5;
   constexpr size_t CHECKPOINT_MIN_VOTES                   = 1;
-  constexpr int    BLINK_SUBQUORUM_SIZE                   = 5;
-  constexpr int    BLINK_MIN_VOTES                        = 1;
+  constexpr int    FLASH_SUBQUORUM_SIZE                   = 5;
+  constexpr int    FLASH_MIN_VOTES                        = 1;
 #else
   constexpr size_t STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE = 7;
   constexpr size_t STATE_CHANGE_QUORUM_SIZE               = 10;
   constexpr size_t CHECKPOINT_QUORUM_SIZE                 = 20;
   constexpr size_t CHECKPOINT_MIN_VOTES                   = 13;
-  constexpr int    BLINK_SUBQUORUM_SIZE                   = 10;
-  constexpr int    BLINK_MIN_VOTES                        = 7;
+  constexpr int    FLASH_SUBQUORUM_SIZE                   = 10;
+  constexpr int    FLASH_MIN_VOTES                        = 7;
 #endif
 
   static_assert(STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE <= STATE_CHANGE_QUORUM_SIZE, "The number of votes required to kick can't exceed the actual quorum size, otherwise we never kick.");
   static_assert(CHECKPOINT_MIN_VOTES <= CHECKPOINT_QUORUM_SIZE, "The number of votes required to add a checkpoint can't exceed the actual quorum size, otherwise we never add checkpoints.");
-  static_assert(BLINK_MIN_VOTES <= BLINK_SUBQUORUM_SIZE, "The number of votes required can't exceed the actual blink subquorum size, otherwise we never approve.");
+  static_assert(FLASH_MIN_VOTES <= FLASH_SUBQUORUM_SIZE, "The number of votes required can't exceed the actual flash subquorum size, otherwise we never approve.");
 #ifndef BELDEX_ENABLE_INTEGRATION_TEST_HOOKS
-  static_assert(BLINK_MIN_VOTES > BLINK_SUBQUORUM_SIZE / 2, "Blink approvals must require a majority of quorum members to prevent conflicting, signed blinks.");
+  static_assert(FLASH_MIN_VOTES > FLASH_SUBQUORUM_SIZE / 2, "Flash approvals must require a majority of quorum members to prevent conflicting, signed flashes.");
 #endif
 
   // NOTE: We can reorg up to last 2 checkpoints + the number of extra blocks before the next checkpoint is set
@@ -227,7 +227,7 @@ namespace master_nodes {
   constexpr proof_version MIN_UPTIME_PROOF_VERSIONS[] = {
     proof_version{{cryptonote::network_version_17_pulse, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_16_bns, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
-    proof_version{{cryptonote::network_version_15_blink, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
+    proof_version{{cryptonote::network_version_15_flash, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_14_enforce_checkpoints, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_13_checkpointing, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
   };
@@ -239,7 +239,7 @@ namespace master_nodes {
     return
       q == quorum_type::obligations     ? STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE :
       q == quorum_type::checkpointing   ? CHECKPOINT_MIN_VOTES :
-      q == quorum_type::blink           ? BLINK_MIN_VOTES :
+      q == quorum_type::flash           ? FLASH_MIN_VOTES :
       std::numeric_limits<size_t>::max();
   };
 
@@ -247,8 +247,8 @@ namespace master_nodes {
   {
     return
         hf_version <= cryptonote::network_version_13_checkpointing ? quorum_type::obligations :
-        hf_version <  cryptonote::network_version_15_blink         ? quorum_type::checkpointing :
-        hf_version <  cryptonote::network_version_17_pulse         ? quorum_type::blink :
+        hf_version <  cryptonote::network_version_15_flash         ? quorum_type::checkpointing :
+        hf_version <  cryptonote::network_version_17_pulse         ? quorum_type::flash :
         quorum_type::pulse;
   }
 

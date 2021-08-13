@@ -80,7 +80,7 @@ std::vector<std::string> PendingTransactionImpl::txid() const
 }
 
 EXPORT
-bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, bool blink)
+bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, bool flash)
 {
 
     LOG_PRINT_L3("m_pending_tx size: " << m_pending_tx.size());
@@ -129,7 +129,7 @@ bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, 
 
         while (!m_pending_tx.empty()) {
             auto & ptx = m_pending_tx.back();
-            m_wallet.m_wallet->commit_tx(ptx, blink);
+            m_wallet.m_wallet->commit_tx(ptx, flash);
             // if no exception, remove element from vector
             m_pending_tx.pop_back();
         } // TODO: extract method;

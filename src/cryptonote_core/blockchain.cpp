@@ -1018,7 +1018,7 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
   return true;
 }
 //------------------------------------------------------------------
-bool Blockchain::blink_rollback(uint64_t rollback_height)
+bool Blockchain::flash_rollback(uint64_t rollback_height)
 {
   auto lock = tools::unique_locks(m_tx_pool, *this);
   bool stop_batch = m_db->batch_start();
@@ -2238,8 +2238,8 @@ bool Blockchain::handle_get_blocks(NOTIFY_REQUEST_GET_BLOCKS::request& arg, NOTI
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock blockchain_lock{m_blockchain_lock, std::defer_lock};
-  auto blink_lock = m_tx_pool.blink_shared_lock(std::defer_lock);
-  std::lock(blockchain_lock, blink_lock);
+  auto flash_lock = m_tx_pool.flash_shared_lock(std::defer_lock);
+  std::lock(blockchain_lock, flash_lock);
 
   db_rtxn_guard rtxn_guard (m_db);
   rsp.current_blockchain_height = get_current_blockchain_height();
@@ -2287,11 +2287,11 @@ bool Blockchain::handle_get_blocks(NOTIFY_REQUEST_GET_BLOCKS::request& arg, NOTI
 
     for (auto &h : block.tx_hashes)
     {
-      if (auto blink = m_tx_pool.get_blink(h))
+      if (auto flash = m_tx_pool.get_flash(h))
       {
-        auto l = blink->shared_lock();
-        block_entry.blinks.emplace_back();
-        blink->fill_serialization_data(block_entry.blinks.back());
+        auto l = flash->shared_lock();
+        block_entry.flashes.emplace_back();
+        flash->fill_serialization_data(block_entry.flashes.back());
       }
     }
 
@@ -2321,8 +2321,8 @@ bool Blockchain::handle_get_txs(NOTIFY_REQUEST_GET_TXS::request& arg, NOTIFY_NEW
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   std::unique_lock blockchain_lock{m_blockchain_lock, std::defer_lock};
-  auto blink_lock = m_tx_pool.blink_shared_lock(std::defer_lock);
-  std::lock(blockchain_lock, blink_lock);
+  auto flash_lock = m_tx_pool.flash_shared_lock(std::defer_lock);
+  std::lock(blockchain_lock, flash_lock);
 
   db_rtxn_guard rtxn_guard (m_db);
   std::vector<crypto::hash> missed;
@@ -2335,11 +2335,11 @@ bool Blockchain::handle_get_txs(NOTIFY_REQUEST_GET_TXS::request& arg, NOTIFY_NEW
 
   for (auto &h : arg.txs)
   {
-    if (auto blink = m_tx_pool.get_blink(h))
+    if (auto flash = m_tx_pool.get_flash(h))
     {
-      rsp.blinks.emplace_back();
-      auto l = blink->shared_lock();
-      blink->fill_serialization_data(rsp.blinks.back());
+      rsp.flashes.emplace_back();
+      auto l = flash->shared_lock();
+      flash->fill_serialization_data(rsp.flashes.back());
     }
   }
 
@@ -3023,7 +3023,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, uint64_t& max_used_block_heigh
   if (!res)
     return false;
 
-  CHECK_AND_ASSERT_MES(max_used_block_height < m_db->height(), false, 
+  CHECK_AND_ASSERT_MES(max_used_block_height < m_db->height(), false,
       "internal error: max used block index=" << max_used_block_height << " is not less then blockchain size = " << m_db->height());
   max_used_block_id = m_db->get_block_hash_from_height(max_used_block_height);
   return true;
@@ -3123,7 +3123,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     tvc.m_invalid_output = true;
     return false;
   }
-  
+
   return true;
 }
 //------------------------------------------------------------------
@@ -3351,7 +3351,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
     }
-	
+
     if (hf_version >= HF_VERSION_ENFORCE_MIN_AGE)
     {
       CHECK_AND_ASSERT_MES(*pmax_used_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE <= m_db->height(),

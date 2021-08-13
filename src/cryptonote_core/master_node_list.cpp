@@ -77,7 +77,7 @@ namespace master_nodes
   {
     size_t constexpr DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * STATE_CHANGE_TX_LIFETIME_IN_BLOCKS;
     static_assert(DEFAULT_SHORT_TERM_STATE_HISTORY >= BLOCKS_EXPECTED_IN_HOURS(12), // Arbitrary, but raises a compilation failure if it gets shortened.
-        "not enough short term state storage for blink quorum retrieval!");
+        "not enough short term state storage for flash quorum retrieval!");
     uint64_t result =
         (block_height < DEFAULT_SHORT_TERM_STATE_HISTORY) ? 0 : block_height - DEFAULT_SHORT_TERM_STATE_HISTORY;
     return result;
@@ -1919,16 +1919,16 @@ namespace master_nodes
         }
         break;
 
-        case quorum_type::blink:
+        case quorum_type::flash:
         {
-          if (state.height % BLINK_QUORUM_INTERVAL != 0)
+          if (state.height % FLASH_QUORUM_INTERVAL != 0)
             continue;
 
-          // Further filter the active MN list for the blink quorum to only include MNs that are not
+          // Further filter the active MN list for the flash quorum to only include MNs that are not
           // scheduled to finish unlocking between the quorum height and a few blocks after the
-          // associated blink height.
+          // associated flash height.
           pub_keys_indexes.reserve(active_mnode_list.size());
-          uint64_t const active_until = state.height + BLINK_EXPIRY_BUFFER;
+          uint64_t const active_until = state.height + FLASH_EXPIRY_BUFFER;
           for (size_t index = 0; index < active_mnode_list.size(); index++)
           {
             pubkey_and_mninfo const &entry = active_mnode_list[index];
@@ -1937,15 +1937,15 @@ namespace master_nodes
               pub_keys_indexes.push_back(index);
           }
 
-          if (pub_keys_indexes.size() >= BLINK_MIN_VOTES)
+          if (pub_keys_indexes.size() >= FLASH_MIN_VOTES)
           {
             std::mt19937_64 rng = quorum_rng(hf_version, state.block_hash, type);
             tools::shuffle_portable(pub_keys_indexes.begin(), pub_keys_indexes.end(), rng);
-            num_validators = std::min<size_t>(pub_keys_indexes.size(), BLINK_SUBQUORUM_SIZE);
+            num_validators = std::min<size_t>(pub_keys_indexes.size(), FLASH_SUBQUORUM_SIZE);
           }
           // Otherwise leave empty to signal that there aren't enough MNs to form a usable quorum (to
           // distinguish it from an invalid height, which gets left as a nullptr)
-          state.quorums.blink = quorum;
+          state.quorums.flash = quorum;
 
         }
         break;

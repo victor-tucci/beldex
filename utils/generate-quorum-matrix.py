@@ -20,7 +20,7 @@ TRACE = False
 TRACE = True
 
 # N sizes to calculate for.  The default calculates for all possible quorums that are capable of
-# achieving supermajority for blink and obligations quorums (10, 7 required) and checkpoint quorums
+# achieving supermajority for flash and obligations quorums (10, 7 required) and checkpoint quorums
 # (20, 13 required)
 N = range(7, 21)
 

@@ -935,7 +935,7 @@ namespace cryptonote { namespace rpc {
       res.missed_tx.push_back(tools::type_to_hex(miss_tx));
 
     uint64_t immutable_height = m_core.get_blockchain_storage().get_immutable_height();
-    auto blink_lock = pool.blink_shared_lock(std::defer_lock); // Defer until/unless we actually need it
+    auto flash_lock = pool.flash_shared_lock(std::defer_lock); // Defer until/unless we actually need it
 
     cryptonote::blobdata tx_data;
     for(const auto& [tx_hash, unprunable_data, prunable_hash, prunable_data]: txs)
@@ -1006,7 +1006,7 @@ namespace cryptonote { namespace rpc {
       }
       auto ptx_it = per_tx_pool_tx_info.find(tx_hash);
       e.in_pool = ptx_it != per_tx_pool_tx_info.end();
-      bool might_be_blink = true;
+      bool might_be_flash = true;
       if (e.in_pool)
       {
         e.block_height = e.block_timestamp = std::numeric_limits<uint64_t>::max();
@@ -1022,7 +1022,7 @@ namespace cryptonote { namespace rpc {
         e.double_spend_seen = false;
         e.relayed = false;
         if (e.block_height <= immutable_height)
-            might_be_blink = false;
+            might_be_flash = false;
       }
 
       if (req.stake_info) {
@@ -1033,10 +1033,10 @@ namespace cryptonote { namespace rpc {
           e.stake_amount = sc.transferred;
       }
 
-      if (might_be_blink)
+      if (might_be_flash)
       {
-        if (!blink_lock) blink_lock.lock();
-        e.blink = pool.has_blink(tx_hash);
+        if (!flash_lock) flash_lock.lock();
+        e.flash = pool.has_flash(tx_hash);
       }
 
       // output indices too if not in pool
@@ -1153,28 +1153,28 @@ namespace cryptonote { namespace rpc {
     }
     res.sanity_check_failed = false;
 
-    if (req.blink)
+    if (req.flash)
     {
-      auto future = m_core.handle_blink_tx(tx_blob);
+      auto future = m_core.handle_flash_tx(tx_blob);
       auto status = future.wait_for(10s);
       if (status != std::future_status::ready) {
         res.status = "Failed";
-        res.reason = "Blink quorum timeout";
-        res.blink_status = blink_result::timeout;
+        res.reason = "Flash quorum timeout";
+        res.flash_status = flash_result::timeout;
         return res;
       }
 
       try {
         auto result = future.get();
-        res.blink_status = result.first;
-        if (result.first == blink_result::accepted) {
+        res.flash_status = result.first;
+        if (result.first == flash_result::accepted) {
           res.status = STATUS_OK;
         } else {
           res.status = "Failed";
-          res.reason = !result.second.empty() ? result.second : result.first == blink_result::timeout ? "Blink quorum timeout" : "Transaction rejected by blink quorum";
+          res.reason = !result.second.empty() ? result.second : result.first == flash_result::timeout ? "Flash quorum timeout" : "Transaction rejected by flash quorum";
         }
       } catch (const std::exception &e) {
-        res.blink_status = blink_result::rejected;
+        res.flash_status = flash_result::rejected;
         res.status = "Failed";
         res.reason = std::string{"Transaction failed: "} + e.what();
       }
@@ -1496,7 +1496,7 @@ namespace cryptonote { namespace rpc {
       return res;
 
     std::vector<crypto::hash> tx_pool_hashes;
-    m_core.get_pool().get_transaction_hashes(tx_pool_hashes, context.admin, req.blinked_txs_only);
+    m_core.get_pool().get_transaction_hashes(tx_pool_hashes, context.admin, req.flashed_txs_only);
 
     res.tx_hashes = std::move(tx_pool_hashes);
     res.status    = STATUS_OK;
@@ -2388,10 +2388,10 @@ namespace cryptonote { namespace rpc {
     auto fees = m_core.get_blockchain_storage().get_dynamic_base_fee_estimate(req.grace_blocks);
     res.fee_per_byte = fees.first;
     res.fee_per_output = fees.second;
-    res.blink_fee_fixed = BLINK_BURN_FIXED;
-    constexpr auto blink_percent = BLINK_MINER_TX_FEE_PERCENT + BLINK_BURN_TX_FEE_PERCENT_OLD;
-    res.blink_fee_per_byte = res.fee_per_byte * blink_percent / 100;
-    res.blink_fee_per_output = res.fee_per_output * blink_percent / 100;
+    res.flash_fee_fixed = FLASH_BURN_FIXED;
+    constexpr auto flash_percent = FLASH_MINER_TX_FEE_PERCENT + FLASH_BURN_TX_FEE_PERCENT_OLD;
+    res.flash_fee_per_byte = res.fee_per_byte * flash_percent / 100;
+    res.flash_fee_per_output = res.fee_per_output * flash_percent / 100;
     res.quantization_mask = Blockchain::get_fee_quantization_mask();
     res.status = STATUS_OK;
     return res;
@@ -2808,15 +2808,15 @@ namespace cryptonote { namespace rpc {
       // Our start block for the latest quorum of each type depends on the type being requested:
       // obligations: top block
       // checkpoint: last block with height divisible by CHECKPOINT_INTERVAL (=4)
-      // blink: last block with height divisible by BLINK_QUORUM_INTERVAL (=5)
+      // flash: last block with height divisible by FLASH_QUORUM_INTERVAL (=5)
       // pulse: current height (i.e. top block height + 1)
       uint64_t top_height = curr_height - 1;
       latest_ob = top_height;
       latest_cp = std::min(start, top_height - top_height % master_nodes::CHECKPOINT_INTERVAL);
-      latest_bl = std::min(start, top_height - top_height % master_nodes::BLINK_QUORUM_INTERVAL);
+      latest_bl = std::min(start, top_height - top_height % master_nodes::FLASH_QUORUM_INTERVAL);
       if (requested_type(master_nodes::quorum_type::checkpointing))
         start = std::min(start, latest_cp);
-      if (requested_type(master_nodes::quorum_type::blink))
+      if (requested_type(master_nodes::quorum_type::flash))
         start = std::min(start, latest_bl);
       end = curr_height;
     }
@@ -2871,7 +2871,7 @@ namespace cryptonote { namespace rpc {
           { // Latest quorum requested, so skip if this is isn't the latest height for *this* quorum type
             if (type == master_nodes::quorum_type::obligations && height != latest_ob) continue;
             if (type == master_nodes::quorum_type::checkpointing && height != latest_cp) continue;
-            if (type == master_nodes::quorum_type::blink && height != latest_bl) continue;
+            if (type == master_nodes::quorum_type::flash && height != latest_bl) continue;
             if (type == master_nodes::quorum_type::pulse) continue;
           }
           if (std::shared_ptr<const master_nodes::quorum> quorum = m_core.get_quorum(type, height, true /*include_old*/))

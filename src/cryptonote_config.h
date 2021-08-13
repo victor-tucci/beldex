@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -176,14 +176,14 @@ constexpr uint64_t BLOCKS_EXPECTED_IN_YEARS(int years) { return BLOCKS_EXPECTED_
 #define HF_VERSION_INCREASE_FEE                 cryptonote::network_version_13_checkpointing
 #define HF_VERSION_PER_OUTPUT_FEE               cryptonote::network_version_14_enforce_checkpoints
 #define HF_VERSION_ED25519_KEY                  cryptonote::network_version_14_enforce_checkpoints
-#define HF_VERSION_FEE_BURNING                  cryptonote::network_version_15_blink
-#define HF_VERSION_BLINK                        cryptonote::network_version_15_blink
+#define HF_VERSION_FEE_BURNING                  cryptonote::network_version_15_flash
+#define HF_VERSION_FLASH                        cryptonote::network_version_15_flash
 #define HF_VERSION_MIN_2_OUTPUTS                cryptonote::network_version_17_pulse
 #define HF_VERSION_REJECT_SIGS_IN_COINBASE      cryptonote::network_version_17_pulse
 #define HF_VERSION_ENFORCE_MIN_AGE              cryptonote::network_version_17_pulse
 #define HF_VERSION_EFFECTIVE_SHORT_TERM_MEDIAN_IN_PENALTY cryptonote::network_version_17_pulse
 #define HF_VERSION_PULSE                        cryptonote::network_version_17_pulse
-#define HF_VERSION_CLSAG                        cryptonote::network_version_15_blink
+#define HF_VERSION_CLSAG                        cryptonote::network_version_15_flash
 #define HF_VERSION_PROOF_BTENC                  cryptonote::network_version_18
 
 #define PER_KB_FEE_QUANTIZATION_DECIMALS        8
@@ -335,7 +335,7 @@ namespace cryptonote
     network_version_12_security_signature,
     network_version_13_checkpointing, // Checkpointing, Relaxed Deregistration, RandomXL, Beldex Storage Server
     network_version_14_enforce_checkpoints,
-    network_version_15_blink,
+    network_version_15_flash,
     network_version_16_bns,
     network_version_17_pulse,
     network_version_18,

@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification, are
@@ -165,9 +165,9 @@ namespace cryptonote
 
   };
 
-  // Blink quorum statuses.  Note that the underlying numeric values is used in the RPC.  `none` is
-  // only used in places like the RPC where we return a value even if not a blink at all.
-  enum class blink_result { none = 0, rejected, accepted, timeout };
+  // Flahs quorum statuses.  Note that the underlying numeric values is used in the RPC.  `none` is
+  // only used in places like the RPC where we return a value even if not a flash at all.
+  enum class flash_result { none = 0, rejected, accepted, timeout };
 
   class transaction_prefix
   {
@@ -530,7 +530,7 @@ namespace cryptonote
   {
     txtype result = txtype::standard;
     if      (hf_version >= network_version_16_bns)              result = txtype::beldex_name_system;
-    else if (hf_version >= network_version_15_blink)            result = txtype::stake;
+    else if (hf_version >= network_version_15_flash)            result = txtype::stake;
     else if (hf_version >= network_version_11_infinite_staking) result = txtype::key_image_unlock;
     else if (hf_version >= network_version_9_master_nodes)     result = txtype::state_change;
 

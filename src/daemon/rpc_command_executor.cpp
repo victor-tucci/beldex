@@ -953,7 +953,7 @@ static void print_pool(const std::vector<cryptonote::rpc::tx_info> &transactions
       << "relayed: " << (tx_info.relayed ? std::to_string(tx_info.last_relayed_time) + " (" + get_human_time_ago(tx_info.last_relayed_time, now) + ")" : "no") << "\n"
       << std::boolalpha
       << "do_not_relay: " << tx_info.do_not_relay << "\n"
-      << "blink: " << tx_info.blink << "\n"
+      << "flash: " << tx_info.flash << "\n"
       << "kept_by_block: " << tx_info.kept_by_block << "\n"
       << "double_spend_seen: " << tx_info.double_spend_seen << "\n"
       << std::noboolalpha
@@ -1206,7 +1206,7 @@ bool rpc_command_executor::print_bans()
             tools::msg_writer() << i->host << " banned for " << i->seconds << " seconds";
         }
     }
-    else 
+    else
         tools::msg_writer() << "No IPs are banned";
 
     return true;

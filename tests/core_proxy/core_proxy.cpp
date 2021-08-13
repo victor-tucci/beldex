@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 // node.cpp : Defines the entry point for the console application.
@@ -64,7 +64,7 @@ int main(int argc, char* argv[])
 
 #ifdef WIN32
   _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
-#endif 
+#endif
 
   TRY_ENTRY();
 
@@ -119,14 +119,14 @@ int main(int argc, char* argv[])
   //initialize core here
   MGINFO("Initializing proxy core...");
   res = pr_core.init(vm);
-  CHECK_AND_ASSERT_MES(res, 1, "Failed to initialize core");  
+  CHECK_AND_ASSERT_MES(res, 1, "Failed to initialize core");
   MGINFO("Core initialized OK");
 
   MGINFO("Starting p2p net loop...");
   p2psrv.run();
   MGINFO("p2p net loop stopped");
 
-  //deinitialize components  
+  //deinitialize components
   MGINFO("Deinitializing core...");
   pr_core.deinit();
   MGINFO("Deinitializing cryptonote_protocol...");
@@ -185,9 +185,9 @@ std::vector<cryptonote::core::tx_verification_batch_info> tests::proxy_core::par
     return tx_info;
 }
 
-bool tests::proxy_core::handle_parsed_txs(std::vector<cryptonote::core::tx_verification_batch_info> &parsed_txs, const tx_pool_options &opts, uint64_t *blink_rollback_height) {
+bool tests::proxy_core::handle_parsed_txs(std::vector<cryptonote::core::tx_verification_batch_info> &parsed_txs, const tx_pool_options &opts, uint64_t *flash_rollback_height) {
 
-    if (blink_rollback_height) *blink_rollback_height = 0;
+    if (flash_rollback_height) *flash_rollback_height = 0;
 
     bool ok = true;
     for (auto &i : parsed_txs)
@@ -212,8 +212,8 @@ bool tests::proxy_core::handle_incoming_tx(const blobdata& tx_blob, tx_verificat
     return parsed[0].result;
 }
 
-std::pair<std::vector<std::shared_ptr<blink_tx>>, std::unordered_set<crypto::hash>>
-tests::proxy_core::parse_incoming_blinks(const std::vector<serializable_blink_metadata> &blinks) {
+std::pair<std::vector<std::shared_ptr<flash_tx>>, std::unordered_set<crypto::hash>>
+tests::proxy_core::parse_incoming_flashes(const std::vector<serializable_flash_metadata> &flashes) {
     return {};
 }
 

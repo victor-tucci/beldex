@@ -58,7 +58,7 @@ namespace master_nodes
   {
     obligations = 0,
     checkpointing,
-    blink,
+    flash,
     pulse,
     _count
   };
@@ -68,7 +68,7 @@ namespace master_nodes
     {
       case quorum_type::obligations:   return os << "obligation";
       case quorum_type::checkpointing: return os << "checkpointing";
-      case quorum_type::blink:         return os << "blink";
+      case quorum_type::flash:         return os << "flash";
       case quorum_type::pulse:         return os << "pulse";
       default: assert(false);          return os << "xx_unhandled_type";
     }

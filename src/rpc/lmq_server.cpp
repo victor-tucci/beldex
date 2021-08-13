@@ -236,8 +236,8 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
   // anyone on a private RPC node with public access level.
   omq.add_category("sub", AuthLevel::basic);
 
-  // TX mempool subscriptions: [sub.mempool, blink] or [sub.mempool, all] to subscribe to new
-  // approved mempool blink txes, or to all new mempool txes.  You get back a reply of "OK" or
+  // TX mempool subscriptions: [sub.mempool, flash] or [sub.mempool, all] to subscribe to new
+  // approved mempool flash txes, or to all new mempool txes.  You get back a reply of "OK" or
   // "ALREADY" -- the former indicates that you are newly subscribed for tx updates (either because
   // you weren't subscribed before, or your subscription type changed); the latter indicates that
   // you were already subscribed for the request tx types.  Any other value should be considered an
@@ -261,8 +261,8 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
     }
 
     mempool_sub_type sub_type;
-    if (m.data[0] == "blink"sv)
-      sub_type = mempool_sub_type::blink;
+    if (m.data[0] == "flash"sv)
+      sub_type = mempool_sub_type::flash;
     else if (m.data[0] == "all"sv)
       sub_type = mempool_sub_type::all;
     else {
@@ -283,7 +283,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
         }
         result.first->second.type = sub_type;
       }
-      MDEBUG("New " << (sub_type == mempool_sub_type::blink ? "blink" : "all") << " mempool subscription request from conn " << m.conn << " @ " << m.remote);
+      MDEBUG("New " << (sub_type == mempool_sub_type::flash ? "flash" : "all") << " mempool subscription request from conn " << m.conn << " @ " << m.remote);
       m.send_reply("OK");
     }
   });
@@ -370,7 +370,7 @@ void omq_rpc::send_mempool_notifications(const crypto::hash& id, const transacti
 {
   auto& omq = core_.get_omq();
   send_notifies(subs_mutex_, mempool_subs_, "mempool", [&](auto& conn, auto& sub) {
-    if (sub.type == mempool_sub_type::all || opts.approved_blink)
+    if (sub.type == mempool_sub_type::all || opts.approved_flash)
       omq.send(conn, "notify.mempool", std::string_view{id.data, sizeof(id.data)}, blob);
   });
 }
