@@ -22,7 +22,7 @@ namespace master_nodes
 struct master_node_keys;
 };
 
-namespace pulse
+namespace POS
 {
 using clock      = std::chrono::system_clock;
 using time_point = std::chrono::time_point<clock>;
@@ -77,7 +77,7 @@ struct message
 
   struct
   {
-    cryptonote::pulse_random_value value;
+    cryptonote::POS_random_value value;
   } random_value;
 
   struct
@@ -87,23 +87,23 @@ struct message
 };
 
 void main(void *quorumnet_state, cryptonote::core &core);
-void handle_message(void *quorumnet_state, pulse::message const &msg);
+void handle_message(void *quorumnet_state, POS::message const &msg);
 
 struct timings
 {
-  pulse::time_point genesis_timestamp;
-  pulse::time_point prev_timestamp;
+  POS::time_point genesis_timestamp;
+  POS::time_point prev_timestamp;
 
-  pulse::time_point ideal_timestamp;
-  pulse::time_point r0_timestamp;
-  pulse::time_point miner_fallback_timestamp;
+  POS::time_point ideal_timestamp;
+  POS::time_point r0_timestamp;
+  POS::time_point miner_fallback_timestamp;
 };
 
-// Calculate the current Pulse round active depending on the 'time' elapsed since round 0 started for a block.
-// r0_timestamp: The timestamp that round 0 starts at for the desired block (this timestamp can be calculated via 'pulse::get_round_timings').
+// Calculate the current POS round active depending on the 'time' elapsed since round 0 started for a block.
+// r0_timestamp: The timestamp that round 0 starts at for the desired block (this timestamp can be calculated via 'POS::get_round_timings').
 // round: (Optional) Set to the round that is currently active when the function returns true.
-// return: False when enough 'time' has elapsed such that Pulse round has overflowed 255 and Pulse blocks are no longer possible to generate.
-bool convert_time_to_round(pulse::time_point const &time, pulse::time_point const &r0_timestamp, uint8_t *round);
-bool get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t height, uint64_t prev_timestamp, pulse::timings &times);
+// return: False when enough 'time' has elapsed such that POS round has overflowed 255 and POS blocks are no longer possible to generate.
+bool convert_time_to_round(POS::time_point const &time, POS::time_point const &r0_timestamp, uint8_t *round);
+bool get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t height, uint64_t prev_timestamp, POS::timings &times);
 
-} // namespace pulse
+} // namespace POS

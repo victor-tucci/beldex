@@ -213,9 +213,9 @@ namespace {
     return false;
   }
 
-  std::string get_text_reason(const rpc::SEND_RAW_TX::response &res, cryptonote::transaction const *tx, bool blink)
+  std::string get_text_reason(const rpc::SEND_RAW_TX::response &res, cryptonote::transaction const *tx, bool flash)
   {
-    if (blink) {
+    if (flash) {
       return res.reason;
     }
     else {
@@ -898,15 +898,15 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
     rct_offsets(rct_offsets)
 {
   gamma = std::gamma_distribution<double>(shape, scale);
-  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), error::wallet_internal_error, "Bad offset calculation");
+  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), error::wallet_internal_error, "Bad offset calculation");
   const size_t blocks_in_a_year = BLOCKS_EXPECTED_IN_YEARS(1,hf_version);
   const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
   const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
   begin = rct_offsets.data();
-  end = rct_offsets.data() + rct_offsets.size() - (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
+  end = rct_offsets.data() + rct_offsets.size() - (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
   num_rct_outputs = *(end - 1);
   THROW_WALLET_EXCEPTION_IF(num_rct_outputs == 0, error::wallet_internal_error, "No rct outputs");
-  average_output_time = tools::to_seconds((hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)) * blocks_to_consider / outputs_to_consider; // this assumes constant target over the whole rct range
+  average_output_time = tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)) * blocks_to_consider / outputs_to_consider; // this assumes constant target over the whole rct range
 };
 
 gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, uint8_t hf_version): gamma_picker(rct_offsets, GAMMA_SHAPE, GAMMA_SCALE,hf_version) {}
@@ -1703,7 +1703,7 @@ static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &
   }
 }
 //----------------------------------------------------------------------------------------------------
-void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool blink)
+void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool flash)
 {
   THROW_WALLET_EXCEPTION_IF(vout_index >= tx.vout.size(), error::wallet_internal_error, "Invalid vout index");
 
@@ -1715,12 +1715,12 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
 
     if (!m_encrypt_keys_after_refresh)
     {
-      char const blink_reason[] = "(blink output received in pool) - use the refresh command";
+      char const flash_reason[] = "(flash output received in pool) - use the refresh command";
       char const pool_reason[]  = "(output received in pool) - use the refresh, then show_transfers command";
       char const block_reason[] = "(output received) - use the refresh command";
 
       char const *reason = block_reason;
-      if (pool) reason = (blink) ? blink_reason : pool_reason;
+      if (pool) reason = (flash) ? flash_reason : pool_reason;
 
       std::optional<epee::wipeable_string> pwd = m_callback->on_get_password(reason);
       THROW_WALLET_EXCEPTION_IF(!pwd, error::password_needed, tr("Password is needed to compute key image for incoming BELDEX"));
@@ -1816,7 +1816,7 @@ void wallet2::cache_tx_data(const cryptonote::transaction& tx, const crypto::has
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote::transaction& tx, const std::vector<uint64_t> &o_indices,
-    uint64_t height, uint8_t block_version, uint64_t ts, bool miner_tx, bool pool, bool blink, bool double_spend_seen,
+    uint64_t height, uint8_t block_version, uint64_t ts, bool miner_tx, bool pool, bool flash, bool double_spend_seen,
     const tx_cache_data &tx_cache_data, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache)
 {
   if (!tx.is_transfer() || tx.version <= txversion::v1)
@@ -1869,9 +1869,9 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
   std::vector<size_t> outs;
 
   // NOTE: The earliest index that we detected a TX, where we previously had
-  // it as a blink sitting in the mempool was confirmed in this block.
-  auto constexpr NO_BLINK_MINED_INDEX           = std::numeric_limits<int64_t>::max();
-  auto earliest_blink_got_mined_transfers_index = NO_BLINK_MINED_INDEX;
+  // it as a flash sitting in the mempool was confirmed in this block.
+  auto constexpr NO_FLASH_MINED_INDEX           = std::numeric_limits<int64_t>::max();
+  auto earliest_flash_got_mined_transfers_index = NO_FLASH_MINED_INDEX;
 
   while (!tx.vout.empty())
   {
@@ -1980,7 +1980,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
         if (tx_scan_info[i].received)
         {
           hwdev.conceal_derivation(tx_scan_info[i].received->derivation, tx_pub_key, additional_tx_pub_keys.data, derivation, additional_derivations);
-          scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], tx_money_got_in_outs, outs, pool, blink);
+          scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], tx_money_got_in_outs, outs, pool, flash);
         }
       }
     }
@@ -1996,7 +1996,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
           std::unique_lock hwdev_lock{hwdev};
           hwdev.set_mode(hw::device::NONE);
           hwdev.conceal_derivation(tx_scan_info[i].received->derivation, tx_pub_key, additional_tx_pub_keys.data, derivation, additional_derivations);
-          scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], tx_money_got_in_outs, outs, pool, blink);
+          scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], tx_money_got_in_outs, outs, pool, flash);
         }
       }
     }
@@ -2023,8 +2023,8 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
             + "got " + (kit == m_pub_keys.end() ? "<none>" : boost::lexical_cast<std::string>(kit->second))
             + ", m_transfers.size() is " + boost::lexical_cast<std::string>(m_transfers.size()));
 
-        bool process_transaction = !pool || blink;
-        bool unmined_blink       = pool && blink;
+        bool process_transaction = !pool || flash;
+        bool unmined_flash       = pool && flash;
         if (kit == m_pub_keys.end())
         {
           uint64_t amount = tx.vout[o].amount ? tx.vout[o].amount : tx_scan_info[o].amount;
@@ -2034,11 +2034,11 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
 
             m_transfers.emplace_back();
             transfer_details& td = m_transfers.back();
-            td.m_block_height = height; // NB: will be zero for a blink; we update when the blink tx gets mined
+            td.m_block_height = height; // NB: will be zero for a flash; we update when the flash tx gets mined
             td.m_internal_output_index = o;
-            td.m_global_output_index = unmined_blink ? 0 : o_indices[o]; // blink tx doesn't have this; will get updated when it gets into a block
-            td.m_unmined_blink = unmined_blink;
-            td.m_was_blink = blink;
+            td.m_global_output_index = unmined_flash ? 0 : o_indices[o]; // flash tx doesn't have this; will get updated when it gets into a block
+            td.m_unmined_flash = unmined_flash;
+            td.m_was_flash = flash;
             td.m_tx = (const cryptonote::transaction_prefix&)tx;
             td.m_txid = txid;
             td.m_key_image = tx_scan_info[o].ki;
@@ -2099,7 +2099,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
             }
             LOG_PRINT_L0("Received money: " << print_money(td.amount()) << ", with tx: " << txid);
             if (0 != m_callback)
-              m_callback->on_money_received(height, txid, tx, td.m_amount, td.m_subaddr_index, td.m_tx.unlock_time, blink);
+              m_callback->on_money_received(height, txid, tx, td.m_amount, td.m_subaddr_index, td.m_tx.unlock_time, flash);
           }
           total_received_1 += amount;
           notify = true;
@@ -2108,13 +2108,13 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
 
         // NOTE: Pre-existing transfer already exists for the output
         auto &transfer = m_transfers[kit->second];
-        THROW_WALLET_EXCEPTION_IF(blink && transfer.m_unmined_blink,
+        THROW_WALLET_EXCEPTION_IF(flash && transfer.m_unmined_flash,
                                   error::wallet_internal_error,
-                                  "Sanity check failed: A blink tx replacing an pre-existing wallet tx should not be possible; when a "
-                                  "transaction is mined blink metadata is dropped and the TX should just be a normal TX");
-        THROW_WALLET_EXCEPTION_IF(pool && transfer.m_unmined_blink,
+                                  "Sanity check failed: A flash tx replacing an pre-existing wallet tx should not be possible; when a "
+                                  "transaction is mined flash metadata is dropped and the TX should just be a normal TX");
+        THROW_WALLET_EXCEPTION_IF(pool && transfer.m_unmined_flash,
                                   error::wallet_internal_error,
-                                  "Sanity check failed: An output replacing a unmined blink output must not be from the pool.");
+                                  "Sanity check failed: An output replacing a unmined flash output must not be from the pool.");
 
         if (transfer.m_spent || transfer.amount() >= tx_scan_info[o].amount)
         {
@@ -2126,20 +2126,20 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
                 << print_money(transfer.amount()) << " in tx " << transfer.m_txid << ", received output ignored");
           }
 
-          if (transfer.m_unmined_blink)
+          if (transfer.m_unmined_flash)
           {
-            earliest_blink_got_mined_transfers_index = std::min(earliest_blink_got_mined_transfers_index, static_cast<int64_t>(kit->second) /*index in m_transfers*/);
-            THROW_WALLET_EXCEPTION_IF(transfer.amount() != tx_scan_info[o].amount, error::wallet_internal_error, "A blink should credit the amount exactly as we recorded it when it arrived in the mempool");
-            THROW_WALLET_EXCEPTION_IF(transfer.m_spent, error::wallet_internal_error, "Blink can not be spent before it is mined, this should never happen");
+            earliest_flash_got_mined_transfers_index = std::min(earliest_flash_got_mined_transfers_index, static_cast<int64_t>(kit->second) /*index in m_transfers*/);
+            THROW_WALLET_EXCEPTION_IF(transfer.amount() != tx_scan_info[o].amount, error::wallet_internal_error, "A flash should credit the amount exactly as we recorded it when it arrived in the mempool");
+            THROW_WALLET_EXCEPTION_IF(transfer.m_spent, error::wallet_internal_error, "Flash can not be spent before it is mined, this should never happen");
 
             MINFO("Public key " << tools::type_to_hex(kit->first)
-                << " of blink tx " << transfer.m_txid << " (for " << print_money(tx_scan_info[o].amount) << ")"
+                << " of flash tx " << transfer.m_txid << " (for " << print_money(tx_scan_info[o].amount) << ")"
                 << " status updated: now mined in block " << height);
 
-            // We previous had this as a blink, but now it's been mined so update the tx status with the height and output index
+            // We previous had this as a flash, but now it's been mined so update the tx status with the height and output index
             transfer.m_block_height = height;
             transfer.m_global_output_index = o_indices[o];
-            transfer.m_unmined_blink = false;
+            transfer.m_unmined_flash = false;
           }
 
           auto iter = std::find_if(
@@ -2239,8 +2239,8 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
           {
             transfer.m_block_height = height;
             transfer.m_internal_output_index = o;
-            transfer.m_global_output_index = unmined_blink ? 0 : o_indices[o]; // blink tx doesn't have this; will get updated when it gets into a block
-            transfer.m_unmined_blink = unmined_blink;
+            transfer.m_global_output_index = unmined_flash ? 0 : o_indices[o]; // flash tx doesn't have this; will get updated when it gets into a block
+            transfer.m_unmined_flash = unmined_flash;
             transfer.m_tx = (const cryptonote::transaction_prefix&)tx;
             transfer.m_txid = txid;
             transfer.m_amount = amount;
@@ -2277,7 +2277,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
 
             LOG_PRINT_L0("Received money: " << print_money(transfer.amount()) << ", with tx: " << txid);
             if (0 != m_callback)
-              m_callback->on_money_received(height, txid, tx, transfer.m_amount, transfer.m_subaddr_index, transfer.m_tx.unlock_time, blink);
+              m_callback->on_money_received(height, txid, tx, transfer.m_amount, transfer.m_subaddr_index, transfer.m_tx.unlock_time, flash);
           }
           total_received_1 += extra_amount;
           notify = true;
@@ -2395,7 +2395,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
 
   // create payment_details for each incoming transfer to a subaddress index
   crypto::hash payment_id = null_hash;
-  if (tx_money_got_in_outs.size() > 0 || earliest_blink_got_mined_transfers_index != NO_BLINK_MINED_INDEX)
+  if (tx_money_got_in_outs.size() > 0 || earliest_flash_got_mined_transfers_index != NO_FLASH_MINED_INDEX)
   {
     tx_extra_nonce extra_nonce;
     if (find_tx_extra_field_by_type(tx_extra_fields, extra_nonce))
@@ -2473,9 +2473,9 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
       payment.m_timestamp     = ts;
       payment.m_subaddr_index = i.index;
       payment.m_type          = i.type;
-      payment.m_unmined_blink = pool && blink;
-      payment.m_was_blink     = blink;
-      if (pool && !blink) {
+      payment.m_unmined_flash = pool && flash;
+      payment.m_was_flash     = flash;
+      if (pool && !flash) {
         if (emplace_or_replace(m_unconfirmed_payments, payment_id, pool_payment_details{payment, double_spend_seen}))
           all_same = false;
         if (0 != m_callback)
@@ -2483,7 +2483,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
       }
       else
         m_payments.emplace(payment_id, payment);
-      LOG_PRINT_L2("Payment found in " << (pool ? blink ? "blink pool" : "pool" : "block") << ": " << payment_id << " / " << payment.m_tx_hash << " / " << payment.m_amount);
+      LOG_PRINT_L2("Payment found in " << (pool ? flash ? "flash pool" : "pool" : "block") << ": " << payment_id << " / " << payment.m_tx_hash << " / " << payment.m_amount);
     }
 
     // if it's a pool tx and we already had it, don't notify again
@@ -2491,35 +2491,35 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
       notify = false;
   }
 
-  if (earliest_blink_got_mined_transfers_index != NO_BLINK_MINED_INDEX) {
-    // If a blink tx that we already knew about moved from the mempool into a block then we have to
+  if (earliest_flash_got_mined_transfers_index != NO_FLASH_MINED_INDEX) {
+    // If a flash tx that we already knew about moved from the mempool into a block then we have to
     // go back and fix up the heights in the payment_details because they'll have been set to 0 from
-    // the initial blink.
+    // the initial flash.
     auto range = m_payments.equal_range(payment_id);
     for (auto it = range.first; it != range.second; ++it)
     {
       auto &pd = it->second;
-      if (pd.m_tx_hash == txid && pd.m_unmined_blink)
+      if (pd.m_tx_hash == txid && pd.m_unmined_flash)
       {
         pd.m_block_height = height;
-        pd.m_unmined_blink = false;
+        pd.m_unmined_flash = false;
       }
     }
 
-    // All transfers from the earliest confirmed blink iterator needs to be
-    // re-sorted since the blink was confirmed in the mempool and inserted
+    // All transfers from the earliest confirmed flash iterator needs to be
+    // re-sorted since the flash was confirmed in the mempool and inserted
     // into our transfers container, but, it now has a output index assigned to
     // it, so it should be sorted via its real index. (Code that
     // uses m_transfers expects this)
-    std::sort(m_transfers.begin() + earliest_blink_got_mined_transfers_index,
+    std::sort(m_transfers.begin() + earliest_flash_got_mined_transfers_index,
               m_transfers.end(),
               [](transfer_details const &a, transfer_details const &b) {
                 return a.m_global_output_index < b.m_global_output_index;
               });
 
     // Update the weak indices the wallet holds into the transfers container
-    size_t real_transfers_index = earliest_blink_got_mined_transfers_index;
-    for (auto it = m_transfers.begin() + earliest_blink_got_mined_transfers_index;
+    size_t real_transfers_index = earliest_flash_got_mined_transfers_index;
+    for (auto it = m_transfers.begin() + earliest_flash_got_mined_transfers_index;
          it != m_transfers.end();
          it++, real_transfers_index++)
     {
@@ -3080,10 +3080,10 @@ std::vector<wallet2::get_pool_state_tx> wallet2::get_pool_state(bool refreshed)
 {
   std::vector<wallet2::get_pool_state_tx> process_txs;
   MTRACE("get_pool_state: take hashes from cache");
-  std::vector<crypto::hash> blink_hashes, pool_hashes;
+  std::vector<crypto::hash> flash_hashes, pool_hashes;
   {
     // We make two requests here: one for all pool txes, and then (assuming there are any) a second
-    // one for blink txes.
+    // one for flash txes.
     cryptonote::rpc::GET_TRANSACTION_POOL_HASHES_BIN::request req{};
     cryptonote::rpc::GET_TRANSACTION_POOL_HASHES_BIN::response res{};
     bool r = invoke_http<rpc::GET_TRANSACTION_POOL_HASHES_BIN>(req, res);
@@ -3093,18 +3093,18 @@ std::vector<wallet2::get_pool_state_tx> wallet2::get_pool_state(bool refreshed)
     MTRACE("get_pool_state got full pool");
     pool_hashes = std::move(res.tx_hashes);
 
-    // NOTE: Only request blinked transactions, normal transactions will appear
+    // NOTE: Only request flashed transactions, normal transactions will appear
     // in the wallet when it arrives in a block. This is to prevent pulling down
-    // TX's that are awaiting blink approval being cached in the wallet as
-    // non-blink and external applications failing to respect this.
-    req.blinked_txs_only = true;
+    // TX's that are awaiting flash approval being cached in the wallet as
+    // non-flash and external applications failing to respect this.
+    req.flashed_txs_only = true;
     res = {};
     r = invoke_http<rpc::GET_TRANSACTION_POOL_HASHES_BIN>(req, res);
     THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "get_transaction_pool_hashes.bin");
     THROW_WALLET_EXCEPTION_IF(res.status == rpc::STATUS_BUSY, error::daemon_busy, "get_transaction_pool_hashes.bin");
     THROW_WALLET_EXCEPTION_IF(res.status != rpc::STATUS_OK, error::get_tx_pool_error);
-    MTRACE("get_pool_state got blinks");
-    blink_hashes = std::move(res.tx_hashes);
+    MTRACE("get_pool_state got flashes");
+    flash_hashes = std::move(res.tx_hashes);
   }
 
   BELDEX_DEFER {
@@ -3172,10 +3172,10 @@ std::vector<wallet2::get_pool_state_tx> wallet2::get_pool_state(bool refreshed)
 
   MTRACE("get_pool_state done second loop");
 
-  // gather txids of new blink txes to us. We just ignore non-blinks here (we pick them up when they
+  // gather txids of new flash txes to us. We just ignore non-flashes here (we pick them up when they
   // get mined into a block).
   std::vector<std::pair<crypto::hash, bool>> txids;
-  for (const auto &txid: blink_hashes)
+  for (const auto &txid: flash_hashes)
   {
     bool txid_found_in_up = false;
     for (const auto &up: m_unconfirmed_payments)
@@ -3260,7 +3260,7 @@ std::vector<wallet2::get_pool_state_tx> wallet2::get_pool_state(bool refreshed)
                 [tx_hash](const std::pair<crypto::hash, bool> &e) { return e.first == tx_hash; });
             if (i != txids.end())
             {
-              process_txs.push_back({std::move(tx), tx_hash, tx_entry.double_spend_seen, tx_entry.blink});
+              process_txs.push_back({std::move(tx), tx_hash, tx_entry.double_spend_seen, tx_entry.flash});
             }
             else
             {
@@ -3287,7 +3287,7 @@ void wallet2::process_pool_state(const std::vector<get_pool_state_tx> &txs)
   const time_t now = time(NULL);
   for (const auto &e: txs)
   {
-    process_new_transaction(e.tx_hash, e.tx, std::vector<uint64_t>(), 0, 0, now, false, true, e.blink, e.double_spend_seen, {});
+    process_new_transaction(e.tx_hash, e.tx, std::vector<uint64_t>(), 0, 0, now, false, true, e.flash, e.double_spend_seen, {});
     m_scanned_pool_txs[0].insert(e.tx_hash);
     if (m_scanned_pool_txs[0].size() > 5000)
     {
@@ -6071,8 +6071,8 @@ std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> wallet2::
       }
       else
       {
-        uint64_t unlock_height = td.m_unmined_blink && td.m_block_height == 0 ? blockchain_height : td.m_block_height;
-        unlock_height += std::max<uint64_t>((hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS);
+        uint64_t unlock_height = td.m_unmined_flash && td.m_block_height == 0 ? blockchain_height : td.m_block_height;
+        unlock_height += std::max<uint64_t>((hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS);
         if (td.m_tx.unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER && td.m_tx.unlock_time > unlock_height)
           unlock_height = td.m_tx.unlock_time;
         uint64_t unlock_time = td.m_tx.unlock_time >= CRYPTONOTE_MAX_BLOCK_NUMBER ? td.m_tx.unlock_time : 0;
@@ -6131,12 +6131,12 @@ void wallet2::get_transfers(wallet2::transfer_container& incoming_transfers) con
 //------------------------------------------------------------------------------------------------------------------------------
 static void set_confirmations(wallet::transfer_view &entry, uint64_t blockchain_height, uint64_t block_reward)
 {
-  if (entry.height >= blockchain_height || (entry.height == 0 && (entry.blink_mempool || entry.type == "pending" || entry.type == "pool")))
+  if (entry.height >= blockchain_height || (entry.height == 0 && (entry.flash_mempool || entry.type == "pending" || entry.type == "pool")))
     entry.confirmations = 0;
   else
     entry.confirmations = blockchain_height - entry.height;
 
-  if (block_reward == 0 || entry.blink_mempool || entry.was_blink)
+  if (block_reward == 0 || entry.flash_mempool || entry.was_flash)
     entry.suggested_confirmations_threshold = 0;
   else
     entry.suggested_confirmations_threshold = (entry.amount + block_reward - 1) / block_reward;
@@ -6161,14 +6161,14 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.subaddr_indices.push_back(pd.m_subaddr_index);
   result.address = get_subaddress_as_str(pd.m_subaddr_index);
   result.confirmed = true;
-  result.blink_mempool = pd.m_unmined_blink;
-  result.was_blink = pd.m_was_blink;
+  result.flash_mempool = pd.m_unmined_flash;
+  result.was_flash = pd.m_was_flash;
   // TODO(sacha): is this just for in or also coinbase?
-  const bool unlocked = is_transfer_unlocked(result.unlock_time, result.height, result.blink_mempool);
+  const bool unlocked = is_transfer_unlocked(result.unlock_time, result.height, result.flash_mempool);
   result.locked = !unlocked;
   result.lock_msg = unlocked ? "unlocked" : "locked";
   set_confirmations(result, get_blockchain_current_height(), get_last_block_reward());
-  result.checkpointed = (result.height == 0 && pd.m_unmined_blink ? false : result.height <= m_immutable_height);
+  result.checkpointed = (result.height == 0 && pd.m_unmined_flash ? false : result.height <= m_immutable_height);
   return result;
 }
 //------------------------------------------------------------------------------------------------------------------------------
@@ -6345,8 +6345,8 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   std::sort(transfers.begin(), transfers.end(), [](const auto& a, const auto& b) -> bool {
     if (a.confirmed != b.confirmed)
       return a.confirmed;
-    if (a.blink_mempool != b.blink_mempool)
-      return b.blink_mempool;
+    if (a.flash_mempool != b.flash_mempool)
+      return b.flash_mempool;
     if (a.height != b.height)
       return a.height < b.height;
     if (a.timestamp != b.timestamp)
@@ -6554,7 +6554,7 @@ std::optional<std::string> wallet2::resolve_address(std::string address, uint64_
 
   if (result)
     return get_account_address_as_str(m_nettype, info.is_subaddress, info.address);
-  else 
+  else
     return std::nullopt;
 }
 //----------------------------------------------------------------------------------------------------
@@ -6644,19 +6644,19 @@ void wallet2::rescan_blockchain(bool hard, bool refresh, bool keep_key_images)
 //----------------------------------------------------------------------------------------------------
 bool wallet2::is_transfer_unlocked(const transfer_details& td) const
 {
-  return is_transfer_unlocked(td.m_tx.get_unlock_time(td.m_internal_output_index), td.m_block_height, td.m_unmined_blink, &td.m_key_image);
+  return is_transfer_unlocked(td.m_tx.get_unlock_time(td.m_internal_output_index), td.m_block_height, td.m_unmined_flash, &td.m_key_image);
 }
 //----------------------------------------------------------------------------------------------------
-bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, bool unmined_blink, crypto::key_image const *key_image) const
+bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, bool unmined_flash, crypto::key_image const *key_image) const
 {
   auto blockchain_height = get_blockchain_current_height();
-  if (block_height == 0 && unmined_blink)
+  if (block_height == 0 && unmined_flash)
   {
-    // TODO(beldex): this restriction will go away when we add Reblink support, but for now received
-    // blinks still have to be mined and confirmed like regular transactions before they can be
-    // spent (blink without reblink just gives you a guarantee that they will be mined).
+    // TODO(beldex): this restriction will go away when we add Reflash support, but for now received
+    // flashes still have to be mined and confirmed like regular transactions before they can be
+    // spent (flash without reflash just gives you a guarantee that they will be mined).
     //
-    // Guess that the blink will go into the next block (if we're wrong then the displayed
+    // Guess that the flash will go into the next block (if we're wrong then the displayed
     // blocks-to-unlock count will be wrong, but that's not a huge deal).
     block_height = blockchain_height;
   }
@@ -6665,7 +6665,7 @@ bool wallet2::is_transfer_unlocked(uint64_t unlock_time, uint64_t block_height, 
     return false;
   std::optional<uint8_t> hf_version = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
-  if(block_height + (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) > blockchain_height)
+  if(block_height + (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) > blockchain_height)
     return false;
 
   if (m_offline)
@@ -6954,7 +6954,7 @@ crypto::hash wallet2::get_payment_id(const pending_tx &ptx) const
 }
 //----------------------------------------------------------------------------------------------------
 // take a pending tx and actually send it to the daemon
-void wallet2::commit_tx(pending_tx& ptx, bool blink)
+void wallet2::commit_tx(pending_tx& ptx, bool flash)
 {
   if(m_light_wallet)
   {
@@ -6963,7 +6963,7 @@ void wallet2::commit_tx(pending_tx& ptx, bool blink)
     oreq.address = get_account().get_public_address_str(m_nettype);
     oreq.view_key = tools::type_to_hex(get_account().get_keys().m_view_secret_key);
     oreq.tx = oxenmq::to_hex(tx_to_blob(ptx.tx));
-    oreq.blink = blink;
+    oreq.flash = flash;
     bool r = invoke_http<light_rpc::SUBMIT_RAW_TX>(oreq, ores);
     THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "submit_raw_tx");
     // MyMonero and OpenMonero use different status strings
@@ -6976,15 +6976,15 @@ void wallet2::commit_tx(pending_tx& ptx, bool blink)
     req.tx_as_hex = oxenmq::to_hex(tx_to_blob(ptx.tx));
     req.do_not_relay = false;
     req.do_sanity_checks = true;
-    req.blink = blink;
+    req.flash = flash;
     rpc::SEND_RAW_TX::response daemon_send_resp{};
     bool r = invoke_http<rpc::SEND_RAW_TX>(req, daemon_send_resp);
     THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "sendrawtransaction");
     THROW_WALLET_EXCEPTION_IF(daemon_send_resp.status == rpc::STATUS_BUSY, error::daemon_busy, "sendrawtransaction");
-    if (blink)
-      THROW_WALLET_EXCEPTION_IF(daemon_send_resp.status != rpc::STATUS_OK, error::tx_blink_rejected, ptx.tx, get_rpc_status(daemon_send_resp.status), get_text_reason(daemon_send_resp, &ptx.tx, blink));
+    if (flash)
+      THROW_WALLET_EXCEPTION_IF(daemon_send_resp.status != rpc::STATUS_OK, error::tx_flash_rejected, ptx.tx, get_rpc_status(daemon_send_resp.status), get_text_reason(daemon_send_resp, &ptx.tx, flash));
     else
-      THROW_WALLET_EXCEPTION_IF(daemon_send_resp.status != rpc::STATUS_OK, error::tx_rejected,       ptx.tx, get_rpc_status(daemon_send_resp.status), get_text_reason(daemon_send_resp, &ptx.tx, blink));
+      THROW_WALLET_EXCEPTION_IF(daemon_send_resp.status != rpc::STATUS_OK, error::tx_rejected,       ptx.tx, get_rpc_status(daemon_send_resp.status), get_text_reason(daemon_send_resp, &ptx.tx, flash));
     // sanity checks
     for (size_t idx: ptx.selected_transfers)
     {
@@ -7026,18 +7026,18 @@ void wallet2::commit_tx(pending_tx& ptx, bool blink)
   std::optional<uint8_t> hf_version = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
   //fee includes dust if dust policy specified it.
-  LOG_PRINT_L1("Transaction successfully " << (blink ? "blinked. " : "sent. ") << txid
+  LOG_PRINT_L1("Transaction successfully " << (flash ? "flashed. " : "sent. ") << txid
             << "\nCommission: " << print_money(ptx.fee) << " (dust sent to dust addr: " << print_money((ptx.dust_added_to_fee ? 0 : ptx.dust)) << ")"
             << "\nBalance: " << print_money(balance(ptx.construction_data.subaddr_account, false))
             << "\nUnlocked: " << print_money(unlocked_balance(ptx.construction_data.subaddr_account, false,NULL,NULL, *hf_version))
             << "\nPlease, wait for confirmation for your balance to be unlocked.");
 }
 
-void wallet2::commit_tx(std::vector<pending_tx>& ptx_vector, bool blink)
+void wallet2::commit_tx(std::vector<pending_tx>& ptx_vector, bool flash)
 {
   for (auto & ptx : ptx_vector)
   {
-    commit_tx(ptx, blink);
+    commit_tx(ptx, flash);
   }
 }
 //----------------------------------------------------------------------------------------------------
@@ -7770,31 +7770,31 @@ uint64_t wallet2::get_fee_percent(uint32_t priority, txtype type) const
 {
   static constexpr std::array<uint64_t, 4> percents{{100, 500, 2500, 12500}};
 
-  const bool blinkable = type == txtype::standard;
+  const bool flashable = type == txtype::standard;
   LOG_PRINT_L2("get_fee_percent:" << priority);
   if (priority == 0) // 0 means no explicit priority was given, so use the wallet default
   {
-    priority = m_default_priority > 0 ? m_default_priority : (uint32_t) tx_priority_blink;
-    if (priority == tx_priority_blink && !blinkable)
-      priority = tx_priority_unimportant; // The blink default is unusable for this tx, so fall back to unimportant
+    priority = m_default_priority > 0 ? m_default_priority : (uint32_t) tx_priority_flash;
+    if (priority == tx_priority_flash && !flashable)
+      priority = tx_priority_unimportant; // The flash default is unusable for this tx, so fall back to unimportant
   }
   LOG_PRINT_L2("get_fee_percent after:" << priority);
-  // If it's a blinkable tx then we blink it for everything priority other than unimportant.
-  if (blinkable && priority != tx_priority_unimportant)
-    priority = tx_priority_blink;
+  // If it's a flashable tx then we flash it for everything priority other than unimportant.
+  if (flashable && priority != tx_priority_unimportant)
+    priority = tx_priority_flash;
   LOG_PRINT_L2("get_fee_percent after2:" << priority);
-  if (priority == tx_priority_blink)
+  if (priority == tx_priority_flash)
   {
-    if (!blinkable)
+    if (!flashable)
       THROW_WALLET_EXCEPTION(error::invalid_priority);
 
     uint64_t burn_pct = 0;
 
-    if (use_fork_rules(network_version_15_blink, 0))
-      burn_pct = BLINK_BURN_TX_FEE_PERCENT_OLD;
+    if (use_fork_rules(network_version_15_flash, 0))
+      burn_pct = FLASH_BURN_TX_FEE_PERCENT_OLD;
     else
       THROW_WALLET_EXCEPTION(error::invalid_priority);
-    return BLINK_MINER_TX_FEE_PERCENT + burn_pct;
+    return FLASH_MINER_TX_FEE_PERCENT + burn_pct;
   }
 
   if (priority > percents.size())
@@ -7810,7 +7810,7 @@ byte_and_output_fees wallet2::get_dynamic_base_fee_estimate() const
   if (m_node_rpc_proxy.get_dynamic_base_fee_estimate(FEE_ESTIMATE_GRACE_BLOCKS, fees))
     return fees;
 
-  if (use_fork_rules(cryptonote::network_version_17_pulse))
+  if (use_fork_rules(cryptonote::network_version_17_POS))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V17}; 
   if (use_fork_rules(HF_VERSION_PER_OUTPUT_FEE))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT}; // v13 switches back from v12 per-byte fees, add per-output
@@ -7847,13 +7847,13 @@ beldex_construct_tx_params wallet2::construct_params(uint8_t hf_version, txtype 
 
   if (tx_type == txtype::beldex_name_system)
   {
-    assert(priority != tools::tx_priority_blink);
+    assert(priority != tools::tx_priority_flash);
     tx_params.burn_fixed = bns::burn_needed(hf_version, type);
   }
-  else if (priority == tools::tx_priority_blink)
+  else if (priority == tools::tx_priority_flash)
   {
-    tx_params.burn_fixed   = BLINK_BURN_FIXED;
-    tx_params.burn_percent = BLINK_BURN_TX_FEE_PERCENT_OLD;
+    tx_params.burn_fixed   = FLASH_BURN_FIXED;
+    tx_params.burn_percent = FLASH_BURN_TX_FEE_PERCENT_OLD;
   }
   if (extra_burn)
       tx_params.burn_fixed += extra_burn;
@@ -8279,10 +8279,10 @@ wallet2::stake_result wallet2::create_stake_tx(const crypto::public_key& master_
 
   try
   {
-    if (priority == tx_priority_blink)
+    if (priority == tx_priority_flash)
     {
-      result.status = stake_result_status::no_blink;
-      result.msg += tr("Master node stakes cannot use blink priority");
+      result.status = stake_result_status::no_flash;
+      result.msg += tr("Master node stakes cannot use flash priority");
       return result;
     }
 
@@ -8346,10 +8346,10 @@ wallet2::register_master_node_result wallet2::create_register_master_node_tx(con
     if (local_args.size() > 0 && parse_priority(local_args[0], priority))
       local_args.erase(local_args.begin());
 
-    if (priority == tx_priority_blink)
+    if (priority == tx_priority_flash)
     {
-      result.status = register_master_node_result_status::no_blink;
-      result.msg += tr("Master node registrations cannot use blink priority");
+      result.status = register_master_node_result_status::no_flash;
+      result.msg += tr("Master node registrations cannot use flash priority");
       return result;
     }
 
@@ -8636,7 +8636,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
         result.msg.append(std::to_string(node_info.requested_unlock_height));
         result.msg.append(" (about ");
         auto hf_version = cryptonote::get_network_version(nettype(), curr_height);
-        result.msg.append(tools::get_human_readable_timespan(std::chrono::seconds((node_info.requested_unlock_height - curr_height) * (hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME))));
+        result.msg.append(tools::get_human_readable_timespan(std::chrono::seconds((node_info.requested_unlock_height - curr_height) * (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME))));
         result.msg.append(")");
         return result;
       }
@@ -8662,7 +8662,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
       result.msg.append("You will continue receiving rewards until the master node expires at the estimated height: ");
       result.msg.append(std::to_string(unlock_height));
       result.msg.append(" (about ");
-      result.msg.append(tools::get_human_readable_timespan(std::chrono::seconds((unlock_height - curr_height) * (*hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME))));
+      result.msg.append(tools::get_human_readable_timespan(std::chrono::seconds((unlock_height - curr_height) * (*hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME))));
       result.msg.append(")");
 
       if(!tools::hex_to_type(contribution.key_image, unlock.key_image))
@@ -8749,9 +8749,9 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
                                                                   std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response)
 {
   bns_prepared_args result = {};
-  if (priority == tools::tx_priority_blink)
+  if (priority == tools::tx_priority_flash)
   {
-    if (reason) *reason = "Can not request a blink TX for Beldex Name Service transactions";
+    if (reason) *reason = "Can not request a flash TX for Beldex Name Service transactions";
     return {};
   }
 
@@ -9309,7 +9309,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       if (has_rct_distribution)
       {
         // check we're clear enough of rct start, to avoid corner cases below
-        THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE),
+        THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE),
             error::get_output_distribution, "Not enough rct outputs");
         THROW_WALLET_EXCEPTION_IF(rct_offsets.back() <= max_rct_index,
             error::get_output_distribution, "Daemon reports suspicious number of rct outputs");
@@ -9411,7 +9411,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       const uint64_t amount = td.is_rct() ? 0 : td.amount();
       std::unordered_set<uint64_t> seen_indices;
       // request more for rct in base recent (locked) coinbases are picked, since they're locked for longer
-      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW - (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) : 0);
+      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW - (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) : 0);
       size_t start = get_outputs.size();
       bool use_histogram = amount != 0 || !has_rct_distribution;
 
@@ -9480,7 +9480,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       else
       {
         // the base offset of the first rct output in the first unlocked block (or the one to be if there's none)
-        num_outs = rct_offsets[rct_offsets.size() - (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)];
+        num_outs = rct_offsets[rct_offsets.size() - (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)];
         LOG_PRINT_L1("" << num_outs << " unlocked rct outputs");
         THROW_WALLET_EXCEPTION_IF(num_outs == 0, error::wallet_internal_error,
             "histogram reports no unlocked rct outputs, not even ours");
@@ -9758,7 +9758,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     for(size_t idx: selected_transfers)
     {
       const transfer_details &td = m_transfers[idx];
-      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW - (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) : 0);
+      size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW - (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) : 0);
       outs.push_back(std::vector<get_outs_entry>());
       outs.back().reserve(fake_outputs_count + 1);
       const rct::key mask = td.is_rct() ? rct::commit(td.amount(), td.m_mask) : rct::zeroCommit(td.amount());
@@ -9778,7 +9778,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       }
       bool use_histogram = amount != 0 || !has_rct_distribution;
       if (!use_histogram)
-        num_outs = rct_offsets[rct_offsets.size() - (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)];
+        num_outs = rct_offsets[rct_offsets.size() - (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)];
 
       // make sure the real outputs we asked for are really included, along
       // with the correct key and mask: this guards against an active attack
@@ -10641,8 +10641,8 @@ void wallet2::light_wallet_get_address_txs()
     address_tx.m_incoming = incoming;
     address_tx.m_amount  =  incoming ? total_received - total_sent : total_sent - total_received;
     address_tx.m_fee = 0;                 // TODO
-    address_tx.m_unmined_blink = false;
-    address_tx.m_was_blink = false;
+    address_tx.m_unmined_flash = false;
+    address_tx.m_was_flash = false;
     address_tx.m_block_height = t.height;
     address_tx.m_unlock_time  = t.unlock_time;
     address_tx.m_timestamp = t.timestamp;
@@ -10657,8 +10657,8 @@ void wallet2::light_wallet_get_address_txs()
       payment.m_tx_hash = tx_hash;
       payment.m_amount       = total_received - total_sent;
       payment.m_fee          = 0;         // TODO
-      payment.m_unmined_blink = false;
-      payment.m_was_blink = false;
+      payment.m_unmined_flash = false;
+      payment.m_was_flash = false;
       payment.m_block_height = t.height;
       payment.m_unlock_time  = t.unlock_time;
       payment.m_timestamp = t.timestamp;
@@ -13032,7 +13032,7 @@ uint64_t wallet2::get_approximate_blockchain_height() const
   const time_t since_ts = time(nullptr) - netconf.HEIGHT_ESTIMATE_TIMESTAMP;
   std::optional<uint8_t> hf_version = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
-  uint64_t approx_blockchain_height = netconf.HEIGHT_ESTIMATE_HEIGHT + (since_ts > 0 ? (uint64_t)since_ts / tools::to_seconds((*hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)) : 0) - BLOCKS_EXPECTED_IN_DAYS(7,*hf_version); // subtract a week's worth of blocks to be conservative
+  uint64_t approx_blockchain_height = netconf.HEIGHT_ESTIMATE_HEIGHT + (since_ts > 0 ? (uint64_t)since_ts / tools::to_seconds((*hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)) : 0) - BLOCKS_EXPECTED_IN_DAYS(7,*hf_version); // subtract a week's worth of blocks to be conservative
   LOG_PRINT_L2("Calculated blockchain height: " << approx_blockchain_height);
   return approx_blockchain_height;
 }
@@ -13518,12 +13518,12 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
           error::wallet_internal_error, "Key image out of validity domain: input " + std::to_string(n + offset) + "/"
           + std::to_string(signed_key_images.size()) + ", key image " + key_image_str);
 
-      // TODO(beldex): This can fail in a worse-case scenario. We re-sort blinks
-      // when they arrive out of order (i.e. blink is confirmed in mempool and
+      // TODO(beldex): This can fail in a worse-case scenario. We re-sort flashes
+      // when they arrive out of order (i.e. flash is confirmed in mempool and
       // gets inserted into m_transfers in a different order from the order they
       // are committed to the blockchain).
 
-      // If a watch only wallet sees a blink and the main wallet doesn't, then
+      // If a watch only wallet sees a flash and the main wallet doesn't, then
       // for that block, export_key_images will fail temporarily until the
       // block is commited and the wallets sorts its transfers into a finalized
       // canonical ordering.

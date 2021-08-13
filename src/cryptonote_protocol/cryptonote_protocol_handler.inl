@@ -156,42 +156,42 @@ namespace cryptonote
     }
 
 
-    if (context.m_need_blink_sync)
+    if (context.m_need_flash_sync)
     {
-      NOTIFY_REQUEST_BLOCK_BLINKS::request r{};
+      NOTIFY_REQUEST_BLOCK_FLASHES::request r{};
       auto curr_height = m_core.get_current_blockchain_height();
-      auto my_blink_hashes = m_core.get_pool().get_blink_checksums();
+      auto my_flash_hashes = m_core.get_pool().get_flash_checksums();
       const uint64_t immutable_height = m_core.get_blockchain_storage().get_immutable_height();
       // Delete any irrelevant heights > 0 (the mempool) and <= the immutable height
-      context.m_blink_state.erase(context.m_blink_state.lower_bound(1), context.m_blink_state.lower_bound(immutable_height + 1));
+      context.m_flash_state.erase(context.m_flash_state.lower_bound(1), context.m_flash_state.lower_bound(immutable_height + 1));
 
-      // We can't validate blinks yet if we are syncing and haven't synced enough blocks to look
-      // up the blink quorum.  Set a cutoff at current height plus 10 because blink quorums are
-      // defined by 35 and 30 blocks ago, so even if we are 10 blocks behind the blink quorum will
+      // We can't validate flashes yet if we are syncing and haven't synced enough blocks to look
+      // up the flash quorum.  Set a cutoff at current height plus 10 because flash quorums are
+      // defined by 35 and 30 blocks ago, so even if we are 10 blocks behind the flash quorum will
       // still be 20-25 blocks old which means we can form it and it is likely to be checkpointed.
       const uint64_t future_height_limit = curr_height + 10;
 
-      // m_blink_state: HEIGHT => {CHECKSUM, NEEDED}
-      for (auto &i : context.m_blink_state)
+      // m_flash_state: HEIGHT => {CHECKSUM, NEEDED}
+      for (auto &i : context.m_flash_state)
       {
         if (!i.second.second) continue;
 
         if (i.first > future_height_limit) continue;
 
         // We thought we needed it when we last got some data; check whether we still do:
-        auto my_it = my_blink_hashes.find(i.first);
-        if (my_it == my_blink_hashes.end() || i.second.first != my_it->second)
+        auto my_it = my_flash_hashes.find(i.first);
+        if (my_it == my_flash_hashes.end() || i.second.first != my_it->second)
           r.heights.push_back(i.first);
         else
           i.second.second = false; // checksum is now equal, don't need it anymore
       }
 
-      context.m_need_blink_sync = false;
+      context.m_need_flash_sync = false;
       if (!r.heights.empty())
       {
-        MLOG_P2P_MESSAGE("-->>NOTIFY_REQUEST_BLOCK_BLINKS: requesting blink tx lists for " << r.heights.size() << " blocks");
-        post_notify<NOTIFY_REQUEST_BLOCK_BLINKS>(r, context);
-        MLOG_PEER_STATE("requesting block blinks");
+        MLOG_P2P_MESSAGE("-->>NOTIFY_REQUEST_BLOCK_FLASHES: requesting flash tx lists for " << r.heights.size() << " blocks");
+        post_notify<NOTIFY_REQUEST_BLOCK_FLASHES>(r, context);
+        MLOG_PEER_STATE("requesting block flashes");
       }
     }
 
@@ -211,7 +211,7 @@ namespace cryptonote
 
     ss << std::setw(30) << std::left << "Remote Host"
       << std::setw(20) << "Peer id"
-      << std::setw(20) << "Support Flags"      
+      << std::setw(20) << "Support Flags"
       << std::setw(30) << "Recv/Sent (inactive,sec)"
       << std::setw(25) << "State"
       << std::setw(20) << "Livetime(sec)"
@@ -289,7 +289,7 @@ namespace cryptonote
       cnx.rpc_port = cntxt.m_rpc_port;
 
       cnx.peer_id = nodetool::peerid_to_string(peer_id);
-      
+
       cnx.support_flags = support_flags;
 
       cnx.live_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - cntxt.m_started);
@@ -385,60 +385,60 @@ namespace cryptonote
 
     auto curr_height = m_core.get_current_blockchain_height();
 
-    context.m_need_blink_sync = false;
-    // Check for any blink txes being advertised that we don't know about
-    if (is_hard_fork_at_least(m_core.get_nettype(), HF_VERSION_BLINK, curr_height))
+    context.m_need_flash_sync = false;
+    // Check for any flash txes being advertised that we don't know about
+    if (is_hard_fork_at_least(m_core.get_nettype(), HF_VERSION_FLASH, curr_height))
     {
-      if (hshd.blink_blocks.size() != hshd.blink_hash.size())
+      if (hshd.flash_blocks.size() != hshd.flash_hash.size())
       {
-        MWARNING(context << " peer sent illegal mismatched blink heights/hashes; disconnecting");
+        MWARNING(context << " peer sent illegal mismatched flash heights/hashes; disconnecting");
         return false;
       }
-      else if (hshd.blink_blocks.size() > 1000)
+      else if (hshd.flash_blocks.size() > 1000)
       {
-        MWARNING(context << " peer sent too many post-checkpoint blink blocks; disconnecting");
+        MWARNING(context << " peer sent too many post-checkpoint flash blocks; disconnecting");
         return false;
       }
 
-      // Peer sends us HEIGHT -> HASH pairs, where the HASH is the xor'ed tx hashes of all blink
+      // Peer sends us HEIGHT -> HASH pairs, where the HASH is the xor'ed tx hashes of all flash
       // txes mined at the given HEIGHT.  If the HASH is different than our hash for the same height
-      // *and* different than the last height the peer sent then we will request the blink txes for
+      // *and* different than the last height the peer sent then we will request the flash txes for
       // that height.
 
       const uint64_t immutable_height = m_core.get_blockchain_storage().get_immutable_height();
       // Delete any irrelevant heights > 0 (the mempool) and <= the immutable height
-      context.m_blink_state.erase(context.m_blink_state.lower_bound(1), context.m_blink_state.lower_bound(immutable_height + 1));
-      auto our_blink_hashes = m_core.get_pool().get_blink_checksums();
+      context.m_flash_state.erase(context.m_flash_state.lower_bound(1), context.m_flash_state.lower_bound(immutable_height + 1));
+      auto our_flash_hashes = m_core.get_pool().get_flash_checksums();
       uint64_t last_height;
-      MDEBUG("Peer sent " << hshd.blink_blocks.size() << " blink hashes");
-      for (size_t i = 0; i < hshd.blink_blocks.size(); i++) {
-        auto &height = hshd.blink_blocks[i];
+      MDEBUG("Peer sent " << hshd.flash_blocks.size() << " flash hashes");
+      for (size_t i = 0; i < hshd.flash_blocks.size(); i++) {
+        auto &height = hshd.flash_blocks[i];
         if (i == 0 || height > last_height)
           last_height = height;
         else {
-          MWARNING(context << " peer sent blink tx heights out of order, which is not valid; disconnecting");
+          MWARNING(context << " peer sent flash tx heights out of order, which is not valid; disconnecting");
           return false;
         }
 
         if (height > 0 && (height < immutable_height || height >= curr_height))
         {
-          // We're either past the immutable height (in which case we don't care about the blink
-          // signatures), or we don't know about the advertised block yet (we'll get the blink info
+          // We're either past the immutable height (in which case we don't care about the flash
+          // signatures), or we don't know about the advertised block yet (we'll get the flash info
           // when we get the block).  Skip it but don't disconnect because this isn't invalid.
           continue;
         }
-        auto &hash = hshd.blink_hash[i];
+        auto &hash = hshd.flash_hash[i];
 
-        auto it = our_blink_hashes.find(height);
-        if (it != our_blink_hashes.end() && it->second == hash)
+        auto it = our_flash_hashes.find(height);
+        if (it != our_flash_hashes.end() && it->second == hash)
         { // Matches our hash already, great
-          context.m_blink_state.erase(height);
+          context.m_flash_state.erase(height);
           continue;
         }
 
-        auto ctx_it = context.m_blink_state.lower_bound(height);
-        if (ctx_it == context.m_blink_state.end() || ctx_it->first != height) // Height not found in peer context
-          context.m_blink_state.emplace_hint(ctx_it, height, std::make_pair(hash, true));
+        auto ctx_it = context.m_flash_state.lower_bound(height);
+        if (ctx_it == context.m_flash_state.end() || ctx_it->first != height) // Height not found in peer context
+          context.m_flash_state.emplace_hint(ctx_it, height, std::make_pair(hash, true));
         else if (ctx_it->second.first != hash) // Hash changed, update and request
         {
           ctx_it->second.first = hash;
@@ -447,11 +447,11 @@ namespace cryptonote
         else
           continue;
 
-        context.m_need_blink_sync = true;
+        context.m_need_flash_sync = true;
       }
 
-      if (context.m_need_blink_sync)
-        MINFO(context << "Need to synchronized blink signatures");
+      if (context.m_need_flash_sync)
+        MINFO(context << "Need to synchronized flash signatures");
     }
 
     uint64_t target = m_core.get_target_blockchain_height();
@@ -469,7 +469,7 @@ namespace cryptonote
         uint64_t abs_diff = std::abs(diff);
         uint64_t max_block_height = std::max(hshd.current_height, curr_height);
         auto nettype = m_core.get_nettype();
-        auto hf17 = hard_fork_begins(nettype, cryptonote::network_version_17_pulse);
+        auto hf17 = hard_fork_begins(nettype, cryptonote::network_version_17_POS);
         std::chrono::seconds behindtime =abs_diff * TARGET_BLOCK_TIME;
         if (hf17)
         {
@@ -528,7 +528,7 @@ namespace cryptonote
       context.m_state = cryptonote_connection_context::state_synchronizing;
     }
 
-    if (context.m_need_blink_sync || context.m_state == cryptonote_connection_context::state_synchronizing)
+    if (context.m_need_flash_sync || context.m_state == cryptonote_connection_context::state_synchronizing)
     {
       MINFO(context << "Remote blockchain height: " << hshd.current_height << ", id: " << hshd.top_id);
       //let the socket to send response to handshake, but request callback, to let send request data after response
@@ -548,13 +548,13 @@ namespace cryptonote
     hshd.cumulative_difficulty = m_core.get_block_cumulative_difficulty(hshd.current_height);
     hshd.current_height +=1;
     hshd.pruning_seed = m_core.get_blockchain_pruning_seed();
-    auto our_blink_hashes = m_core.get_pool().get_blink_checksums();
-    hshd.blink_blocks.reserve(our_blink_hashes.size());
-    hshd.blink_hash.reserve(our_blink_hashes.size());
-    for (auto &h : our_blink_hashes)
+    auto our_flash_hashes = m_core.get_pool().get_flash_checksums();
+    hshd.flash_blocks.reserve(our_flash_hashes.size());
+    hshd.flash_hash.reserve(our_flash_hashes.size());
+    for (auto &h : our_flash_hashes)
     {
-        hshd.blink_blocks.push_back(h.first);
-        hshd.blink_hash.push_back(h.second);
+        hshd.flash_blocks.push_back(h.first);
+        hshd.flash_hash.push_back(h.second);
     }
     return true;
   }
@@ -579,9 +579,9 @@ namespace cryptonote
       LOG_DEBUG_CC(context, "Received new block while syncing, ignored");
       return 1;
     }
-    
+
     m_core.pause_mine();
-      
+
     block new_block;
     transaction miner_tx;
     if(parse_and_validate_block_from_blob(arg.b.block, new_block))
@@ -594,29 +594,29 @@ namespace cryptonote
         {
           LOG_ERROR_CCONTEXT
           (
-            "NOTIFY_NEW_FLUFFY_BLOCK -> request/response mismatch, " 
+            "NOTIFY_NEW_FLUFFY_BLOCK -> request/response mismatch, "
             << "block = " << tools::type_to_hex(get_blob_hash(arg.b.block))
-            << ", requested = " << context.m_requested_objects.size() 
+            << ", requested = " << context.m_requested_objects.size()
             << ", received = " << new_block.tx_hashes.size()
             << ", dropping connection"
           );
-          
+
           drop_connection(context, false, false);
           m_core.resume_mine();
           return 1;
         }
-      }      
-      
+      }
+
       std::vector<blobdata> have_tx;
-      
-      // Instead of requesting missing transactions by hash like BTC, 
+
+      // Instead of requesting missing transactions by hash like BTC,
       // we do it by index (thanks to a suggestion from moneromooo) because
       // we're way cooler .. and also because they're smaller than hashes.
-      // 
+      //
       // Also, remember to pepper some whitespace changes around to bother
-      // moneromooo ... only because I <3 him. 
+      // moneromooo ... only because I <3 him.
       std::vector<uint64_t> need_tx_indices;
-        
+
       transaction tx;
       crypto::hash tx_hash;
 
@@ -633,7 +633,7 @@ namespace cryptonote
                   "NOTIFY_NEW_FLUFFY_BLOCK: get_transaction_hash failed"
                   << ", dropping connection"
               );
-              
+
               drop_connection(context, false, false);
               m_core.resume_mine();
               return 1;
@@ -647,20 +647,20 @@ namespace cryptonote
                 << ", exception thrown"
                 << ", dropping connection"
             );
-                        
+
             drop_connection(context, false, false);
             m_core.resume_mine();
             return 1;
           }
-          
+
           // hijacking m_requested objects in connection context to patch up
           // a possible DOS vector pointed out by @monero-moo where peers keep
           // sending (0...n-1) transactions.
-          // If requested objects is not empty, then we must have asked for 
+          // If requested objects is not empty, then we must have asked for
           // some missing transacionts, make sure that they're all there.
           //
           // Can I safely re-use this field? I think so, but someone check me!
-          if(!context.m_requested_objects.empty()) 
+          if(!context.m_requested_objects.empty())
           {
             auto req_tx_it = context.m_requested_objects.find(tx_hash);
             if(req_tx_it == context.m_requested_objects.end())
@@ -671,15 +671,15 @@ namespace cryptonote
                 << "transaction with id = " << tx_hash << " wasn't requested, "
                 << "dropping connection"
               );
-              
+
               drop_connection(context, false, false);
               m_core.resume_mine();
               return 1;
             }
-            
+
             context.m_requested_objects.erase(req_tx_it);
-          }          
-          
+          }
+
           // we might already have the tx that the peer
           // sent in our pool, so don't verify again..
           if(!m_core.get_pool().have_tx(tx_hash))
@@ -693,11 +693,11 @@ namespace cryptonote
               m_core.resume_mine();
               return 1;
             }
-            
+
             //
-            // future todo: 
+            // future todo:
             // tx should only not be added to pool if verification failed, but
-            // maybe in the future could not be added for other reasons 
+            // maybe in the future could not be added for other reasons
             // according to monero-moo so keep track of these separately ..
             //
           }
@@ -710,15 +710,15 @@ namespace cryptonote
             << oxenmq::to_hex(tx_blob)
             << ", dropping connection"
           );
-            
+
           drop_connection(context, false, false);
           m_core.resume_mine();
           return 1;
         }
       }
-      
+
       // The initial size equality check could have been fooled if the sender
-      // gave us the number of transactions we asked for, but not the right 
+      // gave us the number of transactions we asked for, but not the right
       // ones. This check make sure the transactions we asked for were the
       // ones we received.
       if(context.m_requested_objects.size())
@@ -727,15 +727,15 @@ namespace cryptonote
         (
           "NOTIFY_NEW_FLUFFY_BLOCK: peer sent the number of transaction requested"
           << ", but not the actual transactions requested"
-          << ", context.m_requested_objects.size() = " << context.m_requested_objects.size() 
+          << ", context.m_requested_objects.size() = " << context.m_requested_objects.size()
           << ", dropping connection"
         );
-        
+
         drop_connection(context, false, false);
         m_core.resume_mine();
         return 1;
-      }      
-      
+      }
+
       size_t tx_idx = 0;
       for(auto& tx_hash: new_block.tx_hashes)
       {
@@ -769,10 +769,10 @@ namespace cryptonote
             need_tx_indices.push_back(tx_idx);
           }
         }
-        
+
         ++tx_idx;
       }
-        
+
       if(!need_tx_indices.empty()) // drats, we don't have everything..
       {
         // request non-mempool txs
@@ -783,7 +783,7 @@ namespace cryptonote
         missing_tx_req.block_hash = get_block_hash(new_block);
         missing_tx_req.current_blockchain_height = arg.current_blockchain_height;
         missing_tx_req.missing_tx_indices = std::move(need_tx_indices);
-        
+
         m_core.resume_mine();
         MLOG_P2P_MESSAGE("-->>NOTIFY_REQUEST_FLUFFY_MISSING_TX: missing_tx_indices.size()=" << missing_tx_req.missing_tx_indices.size() );
         post_notify<NOTIFY_REQUEST_FLUFFY_MISSING_TX>(missing_tx_req, context);
@@ -841,9 +841,9 @@ namespace cryptonote
           MLOG_P2P_MESSAGE("-->>NOTIFY_REQUEST_CHAIN: m_block_ids.size()=" << r.block_ids.size() );
           post_notify<NOTIFY_REQUEST_CHAIN>(r, context);
           MLOG_PEER_STATE("requesting chain");
-        }            
+        }
       }
-    } 
+    }
     else
     {
       LOG_ERROR_CCONTEXT
@@ -852,16 +852,16 @@ namespace cryptonote
         << oxenmq::to_hex(arg.b.block)
         << ", dropping connection"
       );
-        
+
       m_core.resume_mine();
       drop_connection(context, false, false);
-        
-      return 1;     
+
+      return 1;
     }
-        
+
     return 1;
-  }  
-  //------------------------------------------------------------------------------------------------------------------------  
+  }
+  //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_uptime_proof(int command, NOTIFY_UPTIME_PROOF::request& arg, cryptonote_connection_context& context)
   {
@@ -893,7 +893,7 @@ namespace cryptonote
     }
     return 1;
   }
-  //------------------------------------------------------------------------------------------------------------------------  
+  //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_btencoded_uptime_proof(int command, NOTIFY_BTENCODED_UPTIME_PROOF::request& arg, cryptonote_connection_context& context)
   {
@@ -927,7 +927,7 @@ namespace cryptonote
     return 1;
   }
 
-  //------------------------------------------------------------------------------------------------------------------------  
+  //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_notify_new_master_node_vote(int command, NOTIFY_NEW_MASTER_NODE_VOTE::request& arg, cryptonote_connection_context& context)
   {
@@ -970,12 +970,12 @@ namespace cryptonote
     return 1;
   }
 
-  //------------------------------------------------------------------------------------------------------------------------  
+  //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_request_fluffy_missing_tx(int command, NOTIFY_REQUEST_FLUFFY_MISSING_TX::request& arg, cryptonote_connection_context& context)
   {
     MLOG_P2P_MESSAGE("Received NOTIFY_REQUEST_FLUFFY_MISSING_TX (" << arg.missing_tx_indices.size() << " txes), block hash " << arg.block_hash);
-    
+
     std::vector<std::pair<cryptonote::blobdata, block>> local_blocks;
     std::vector<cryptonote::blobdata> local_txs;
 
@@ -1033,7 +1033,7 @@ namespace cryptonote
           << ", block_height = " << arg.current_blockchain_height
           << ", dropping connection"
         );
-        
+
         drop_connection(context, false, false);
         return 1;
       }
@@ -1063,19 +1063,19 @@ namespace cryptonote
 
     MLOG_P2P_MESSAGE
     (
-        "-->>NOTIFY_RESPONSE_FLUFFY_MISSING_TX: " 
+        "-->>NOTIFY_RESPONSE_FLUFFY_MISSING_TX: "
         << ", txs.size()=" << fluffy_response.b.txs.size()
         << ", rsp.current_blockchain_height=" << fluffy_response.current_blockchain_height
     );
-           
-    post_notify<NOTIFY_NEW_FLUFFY_BLOCK>(fluffy_response, context);    
-    return 1;        
+
+    post_notify<NOTIFY_NEW_FLUFFY_BLOCK>(fluffy_response, context);
+    return 1;
   }
-  //------------------------------------------------------------------------------------------------------------------------  
+  //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_notify_new_transactions(int command, NOTIFY_NEW_TRANSACTIONS::request& arg, cryptonote_connection_context& context)
   {
-    MLOG_P2P_MESSAGE("Received NOTIFY_NEW_TRANSACTIONS (" << arg.txs.size() << " txes w/ " << arg.blinks.size() << " blinks)");
+    MLOG_P2P_MESSAGE("Received NOTIFY_NEW_TRANSACTIONS (" << arg.txs.size() << " txes w/ " << arg.flashes.size() << " flashes)");
     for (const auto &blob: arg.txs)
       MLOGIF_P2P_MESSAGE(cryptonote::transaction tx; crypto::hash hash; bool ret = cryptonote::parse_and_validate_tx_from_blob(blob, tx, hash);, ret, "Including transaction " << hash);
 
@@ -1092,15 +1092,15 @@ namespace cryptonote
       return 1;
     }
 
-    bool bad_blinks = false;
-    auto parsed_blinks = m_core.parse_incoming_blinks(arg.blinks);
-    auto &blinks = parsed_blinks.first;
-    std::unordered_set<crypto::hash> blink_approved;
-    for (auto &b : blinks)
+    bool bad_flashes = false;
+    auto parsed_flashes = m_core.parse_incoming_flashes(arg.flashes);
+    auto &flashes = parsed_flashes.first;
+    std::unordered_set<crypto::hash> flash_approved;
+    for (auto &b : flashes)
       if (b->approved())
-        blink_approved.insert(b->get_txhash());
+        flash_approved.insert(b->get_txhash());
       else
-        bad_blinks = true;
+        bad_flashes = true;
 
     bool all_okay;
     {
@@ -1109,17 +1109,17 @@ namespace cryptonote
       const auto txpool_opts = tx_pool_options::from_peer();
       auto parsed_txs = m_core.parse_incoming_txs(arg.txs, txpool_opts);
       for (auto &txi : parsed_txs)
-        if (blink_approved.count(txi.tx_hash))
-          txi.approved_blink = true;
+        if (flash_approved.count(txi.tx_hash))
+          txi.approved_flash = true;
 
-      uint64_t blink_rollback_height = 0;
-      all_okay = m_core.handle_parsed_txs(parsed_txs, txpool_opts, &blink_rollback_height);
+      uint64_t flash_rollback_height = 0;
+      all_okay = m_core.handle_parsed_txs(parsed_txs, txpool_opts, &flash_rollback_height);
 
       // Even if !all_okay (which means we want to drop the connection) we may still have added some
       // incoming txs and so still need to finish handling/relaying them
       std::vector<cryptonote::blobdata> newtxs;
       newtxs.reserve(arg.txs.size());
-      auto &unknown_txs = parsed_blinks.second;
+      auto &unknown_txs = parsed_flashes.second;
       for (size_t i = 0; i < arg.txs.size(); ++i)
       {
         if (parsed_txs[i].tvc.m_should_be_relayed)
@@ -1130,29 +1130,29 @@ namespace cryptonote
       }
       arg.txs = std::move(newtxs);
 
-      // Attempt to add any blinks signatures we received, but with unknown txs removed (where unknown
+      // Attempt to add any flashes signatures we received, but with unknown txs removed (where unknown
       // means previously unknown and didn't just get added to the mempool).  (Don't bother worrying
-      // about approved because add_blinks() already does that).
-      blinks.erase(std::remove_if(blinks.begin(), blinks.end(), [&](const auto &b) { return unknown_txs.count(b->get_txhash()) > 0; }), blinks.end());
-      m_core.add_blinks(blinks);
+      // about approved because add_flashes() already does that).
+      flashes.erase(std::remove_if(flashes.begin(), flashes.end(), [&](const auto &b) { return unknown_txs.count(b->get_txhash()) > 0; }), flashes.end());
+      m_core.add_flashes(flashes);
 
-      if (blink_rollback_height > 0)
+      if (flash_rollback_height > 0)
       {
-        MDEBUG("after handling parsed txes we need to rollback to height: " << blink_rollback_height);
-        // We need to clear back to and including block at height blink_rollback_height (so that the
-        // new blockchain "height", i.e. of current top_block_height+1, is blink_rollback_height).
+        MDEBUG("after handling parsed txes we need to rollback to height: " << flash_rollback_height);
+        // We need to clear back to and including block at height flash_rollback_height (so that the
+        // new blockchain "height", i.e. of current top_block_height+1, is flash_rollback_height).
         auto &blockchain = m_core.get_blockchain_storage();
         auto locks = tools::unique_locks(blockchain, m_core.get_pool());
 
         uint64_t height    = blockchain.get_current_blockchain_height(),
                  immutable = blockchain.get_immutable_height();
-        if (immutable >= blink_rollback_height)
+        if (immutable >= flash_rollback_height)
         {
-          MWARNING("blink rollback specified a block at or before the immutable height; we can only roll back to the immutable height.");
-          blink_rollback_height = immutable + 1;
+          MWARNING("flash rollback specified a block at or before the immutable height; we can only roll back to the immutable height.");
+          flash_rollback_height = immutable + 1;
         }
-        if (blink_rollback_height < height)
-          m_core.get_blockchain_storage().blink_rollback(blink_rollback_height);
+        if (flash_rollback_height < height)
+          m_core.get_blockchain_storage().flash_rollback(flash_rollback_height);
         else
           MDEBUG("Nothing to roll back");
       }
@@ -1167,11 +1167,11 @@ namespace cryptonote
     }
 
     // If we're still syncing (which implies this was a requested tx list) then it's quite possible
-    // we got sent some mempool or future block blinks that we can't handle yet, which is fine (and
+    // we got sent some mempool or future block flashes that we can't handle yet, which is fine (and
     // so don't drop the connection).
-    if (!syncing && (!all_okay || bad_blinks))
+    if (!syncing && (!all_okay || bad_flashes))
     {
-      LOG_PRINT_CCONTEXT_L1((!all_okay && bad_blinks ? "Tx and Blink" : !all_okay ? "Tx" : "Blink") << " verification(s) failed, dropping connection");
+      LOG_PRINT_CCONTEXT_L1((!all_okay && bad_flashes ? "Tx and Flash" : !all_okay ? "Tx" : "Flash") << " verification(s) failed, dropping connection");
       drop_connection(context, false, false);
     }
 
@@ -1224,8 +1224,8 @@ namespace cryptonote
       for (const auto &tx : element.txs)
         blocks_size += tx.size();
       others_size += element.checkpoint.size();
-      for (const auto &blink : element.blinks)
-        others_size += sizeof(blink.tx_hash) + sizeof(blink.height) + blink.quorum.size() + blink.position.size() + blink.signature.size() * sizeof(crypto::signature);
+      for (const auto &flash : element.flashes)
+        others_size += sizeof(flash.tx_hash) + sizeof(flash.height) + flash.quorum.size() + flash.position.size() + flash.signature.size() * sizeof(crypto::signature);
     }
 
     size_t size = blocks_size + others_size;
@@ -1720,7 +1720,7 @@ skip:
     });
   }
   //------------------------------------------------------------------------------------------------------------------------
-  // Tells the other end to send us the given txes (typically with attached blink data) as if they
+  // Tells the other end to send us the given txes (typically with attached flash data) as if they
   // are new transactions.
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_request_get_txs(int command, NOTIFY_REQUEST_GET_TXS::request& arg, cryptonote_connection_context& context)
@@ -1743,7 +1743,7 @@ skip:
       drop_connection(context, false, false);
       return 1;
     }
-    MLOG_P2P_MESSAGE("-->>NOTIFY_NEW_TRANSACTIONS: requested=true, txs[" << rsp.txs.size() << "], blinks[" << rsp.blinks.size() << "]");
+    MLOG_P2P_MESSAGE("-->>NOTIFY_NEW_TRANSACTIONS: requested=true, txs[" << rsp.txs.size() << "], flashes[" << rsp.flashes.size() << "]");
     post_notify<NOTIFY_NEW_TRANSACTIONS>(rsp, context);
     return 1;
   }
@@ -2488,27 +2488,27 @@ skip:
 
   //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
-  int t_cryptonote_protocol_handler<t_core>::handle_request_block_blinks(int command, NOTIFY_REQUEST_BLOCK_BLINKS::request& arg, cryptonote_connection_context& context)
+  int t_cryptonote_protocol_handler<t_core>::handle_request_block_flashes(int command, NOTIFY_REQUEST_BLOCK_FLASHES::request& arg, cryptonote_connection_context& context)
   {
-    MLOG_P2P_MESSAGE("Received NOTIFY_REQUEST_BLOCK_BLINKS: heights.size()=" << arg.heights.size());
-    NOTIFY_RESPONSE_BLOCK_BLINKS::request r;
+    MLOG_P2P_MESSAGE("Received NOTIFY_REQUEST_BLOCK_FLASHES: heights.size()=" << arg.heights.size());
+    NOTIFY_RESPONSE_BLOCK_FLASHES::request r;
 
-    r.txs = m_core.get_pool().get_mined_blinks({arg.heights.begin(), arg.heights.end()});
+    r.txs = m_core.get_pool().get_mined_flashes({arg.heights.begin(), arg.heights.end()});
 
-    MLOG_P2P_MESSAGE("-->>NOTIFY_RESPONSE_BLOCK_BLINKS: txs.size()=" << r.txs.size());
-    post_notify<NOTIFY_RESPONSE_BLOCK_BLINKS>(r, context);
+    MLOG_P2P_MESSAGE("-->>NOTIFY_RESPONSE_BLOCK_FLASHES: txs.size()=" << r.txs.size());
+    post_notify<NOTIFY_RESPONSE_BLOCK_FLASHES>(r, context);
     return 1;
   }
   //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
-  int t_cryptonote_protocol_handler<t_core>::handle_response_block_blinks(int command, NOTIFY_RESPONSE_BLOCK_BLINKS::request& arg, cryptonote_connection_context& context)
+  int t_cryptonote_protocol_handler<t_core>::handle_response_block_flashes(int command, NOTIFY_RESPONSE_BLOCK_FLASHES::request& arg, cryptonote_connection_context& context)
   {
-    MLOG_P2P_MESSAGE("Received NOTIFY_RESPONSE_BLOCK_BLINKS: txs.size()=" << arg.txs.size());
+    MLOG_P2P_MESSAGE("Received NOTIFY_RESPONSE_BLOCK_FLASHES: txs.size()=" << arg.txs.size());
 
-    m_core.get_pool().keep_missing_blinks(arg.txs);
+    m_core.get_pool().keep_missing_flashes(arg.txs);
     if (arg.txs.empty())
     {
-      MDEBUG("NOTIFY_RESPONSE_BLOCKS_BLINKS included only blink txes we already knew about");
+      MDEBUG("NOTIFY_RESPONSE_BLOCKS_FLASHES included only flash txes we already knew about");
       return 1;
     }
 
@@ -2523,10 +2523,10 @@ skip:
         arg.txs.resize(arg.txs.size() - CURRENCY_PROTOCOL_MAX_TXS_REQUEST_COUNT);
       }
 
-      MLOG_P2P_MESSAGE("-->>NOTIFY_REQUEST_GET_TXS: requesting for tx & blink data, txs.size()=" << req.txs.size());
+      MLOG_P2P_MESSAGE("-->>NOTIFY_REQUEST_GET_TXS: requesting for tx & flash data, txs.size()=" << req.txs.size());
       post_notify<NOTIFY_REQUEST_GET_TXS>(req, context);
     }
-    MLOG_PEER_STATE("requesting missing blink txs");
+    MLOG_PEER_STATE("requesting missing flash txs");
     return 1;
   }
   //------------------------------------------------------------------------------------------------------------------------
@@ -2600,7 +2600,7 @@ skip:
       m_core.on_transaction_relayed(tx_blob);
 
     // no check for success, so tell core they're relayed unconditionally and snag a copy of the
-    // hash so that we can look up any associated blink data we should include.
+    // hash so that we can look up any associated flash data we should include.
     std::vector<crypto::hash> relayed_txes;
     relayed_txes.reserve(arg.txs.size());
     for (auto &tx_blob : arg.txs)
@@ -2608,21 +2608,21 @@ skip:
           m_core.on_transaction_relayed(tx_blob)
       );
 
-    // Rebuild arg.blinks from blink data that we have because we don't necessarily have the same
-    // blink data that got sent to us (we may have additional blink info, or may have rejected some
-    // of the incoming blink data).
-    arg.blinks.clear();
-    if (is_hard_fork_at_least(m_core.get_nettype(), HF_VERSION_BLINK, m_core.get_current_blockchain_height()))
+    // Rebuild arg.flashes from flash data that we have because we don't necessarily have the same
+    // flash data that got sent to us (we may have additional flash info, or may have rejected some
+    // of the incoming flash data).
+    arg.flashes.clear();
+    if (is_hard_fork_at_least(m_core.get_nettype(), HF_VERSION_FLASH, m_core.get_current_blockchain_height()))
     {
       auto &pool = m_core.get_pool();
-      auto lock = pool.blink_shared_lock();
+      auto lock = pool.flash_shared_lock();
       for (auto &hash : relayed_txes)
       {
-        if (auto blink = pool.get_blink(hash))
+        if (auto flash = pool.get_flash(hash))
         {
-          arg.blinks.emplace_back();
-          auto l = blink->shared_lock();
-          blink->fill_serialization_data(arg.blinks.back());
+          arg.flashes.emplace_back();
+          auto l = flash->shared_lock();
+          flash->fill_serialization_data(arg.flashes.back());
         }
       }
     }
@@ -2719,8 +2719,8 @@ skip:
     m_block_queue.flush_spans(context.m_connection_id, flush_all_spans);
 
     // If this is the first drop_connection attempt then give the peer a second chance to sort
-    // itself out: it might have send an invalid block because of a blink conflict, and we want it
-    // to be able to get our blinks and do a rollback, but if we close instantly it might not get
+    // itself out: it might have send an invalid block because of a flash conflict, and we want it
+    // to be able to get our flashes and do a rollback, but if we close instantly it might not get
     // them before we close the connection and so might never learn of the problem.
     if (context.m_drop_count >= 1)
     {

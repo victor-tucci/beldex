@@ -267,8 +267,8 @@ namespace cryptonote
   quorumnet_init_proc *quorumnet_init = [](core&, void*) { need_core_init("quorumnet_init"sv); };
   quorumnet_delete_proc *quorumnet_delete = [](void*&) { need_core_init("quorumnet_delete"sv); };
   quorumnet_relay_obligation_votes_proc *quorumnet_relay_obligation_votes = [](void*, const std::vector<master_nodes::quorum_vote_t>&) { need_core_init("quorumnet_relay_obligation_votes"sv); };
-  quorumnet_send_blink_proc *quorumnet_send_blink = [](core&, const std::string&) -> std::future<std::pair<blink_result, std::string>> { need_core_init("quorumnet_send_blink"sv); };
-  quorumnet_pulse_relay_message_to_quorum_proc *quorumnet_pulse_relay_message_to_quorum = [](void *, pulse::message const &, master_nodes::quorum const &, bool) -> void { need_core_init("quorumnet_pulse_relay_message_to_quorum"sv); };
+  quorumnet_send_flash_proc *quorumnet_send_flash = [](core&, const std::string&) -> std::future<std::pair<flash_result, std::string>> { need_core_init("quorumnet_send_flash"sv); };
+  quorumnet_POS_relay_message_to_quorum_proc *quorumnet_POS_relay_message_to_quorum = [](void *, POS::message const &, master_nodes::quorum const &, bool) -> void { need_core_init("quorumnet_POS_relay_message_to_quorum"sv); };
 
   //-----------------------------------------------------------------------------------------------
   core::core()
@@ -793,7 +793,7 @@ namespace cryptonote
       MERROR("Failed to parse block rate notify spec");
     }
 
-    
+
     cryptonote::test_options regtest_test_options{};
     for (auto [it, end] = get_hard_forks(network_type::MAINNET);
         it != end;
@@ -1091,11 +1091,11 @@ namespace cryptonote
 
       if (m_master_node)
       {
-        m_pulse_thread_id = m_omq->add_tagged_thread("pulse");
-        m_omq->add_timer([this]() { pulse::main(m_quorumnet_state, *this); },
+        m_POS_thread_id = m_omq->add_tagged_thread("POS");
+        m_omq->add_timer([this]() { POS::main(m_quorumnet_state, *this); },
                          std::chrono::milliseconds(500),
                          false,
-                         m_pulse_thread_id);
+                         m_POS_thread_id);
         m_omq->add_timer([this]() {this->check_master_node_time();},
                          5s,
                          false);
@@ -1345,15 +1345,15 @@ namespace cryptonote
   }
 
   bool core::handle_parsed_txs(std::vector<tx_verification_batch_info> &parsed_txs, const tx_pool_options &opts,
-      uint64_t *blink_rollback_height)
+      uint64_t *flash_rollback_height)
   {
     // Caller needs to do this around both this *and* parse_incoming_txs
     //auto lock = incoming_tx_lock();
     uint8_t version      = m_blockchain_storage.get_network_version();
     bool ok              = true;
     bool tx_pool_changed = false;
-    if (blink_rollback_height)
-      *blink_rollback_height = 0;
+    if (flash_rollback_height)
+      *flash_rollback_height = 0;
     tx_pool_options tx_opts;
     for (size_t i = 0; i < parsed_txs.size(); i++) {
       auto &info = parsed_txs[i];
@@ -1369,14 +1369,14 @@ namespace cryptonote
 
       const size_t weight = get_transaction_weight(info.tx, info.blob->size());
       const tx_pool_options *local_opts = &opts;
-      if (blink_rollback_height && info.approved_blink)
+      if (flash_rollback_height && info.approved_flash)
       {
-        // If this is an approved blink then pass a copy of the options with the flag added
+        // If this is an approved flash then pass a copy of the options with the flag added
         tx_opts = opts;
-        tx_opts.approved_blink = true;
+        tx_opts.approved_flash = true;
         local_opts = &tx_opts;
       }
-      if (m_mempool.add_tx(info.tx, info.tx_hash, *info.blob, weight, info.tvc, *local_opts, version, blink_rollback_height))
+      if (m_mempool.add_tx(info.tx, info.tx_hash, *info.blob, weight, info.tvc, *local_opts, version, flash_rollback_height))
       {
         tx_pool_changed |= info.tvc.m_added_to_pool;
         MDEBUG("tx added: " << info.tx_hash);
@@ -1411,27 +1411,27 @@ namespace cryptonote
     return parsed[0].result && (parsed[0].already_have || tvc.m_added_to_pool);
   }
   //-----------------------------------------------------------------------------------------------
-  std::pair<std::vector<std::shared_ptr<blink_tx>>, std::unordered_set<crypto::hash>>
-  core::parse_incoming_blinks(const std::vector<serializable_blink_metadata> &blinks)
+  std::pair<std::vector<std::shared_ptr<flash_tx>>, std::unordered_set<crypto::hash>>
+  core::parse_incoming_flashes(const std::vector<serializable_flash_metadata> &flashes)
   {
-    std::pair<std::vector<std::shared_ptr<blink_tx>>, std::unordered_set<crypto::hash>> results;
-    auto &new_blinks = results.first;
+    std::pair<std::vector<std::shared_ptr<flash_tx>>, std::unordered_set<crypto::hash>> results;
+    auto &new_flashes = results.first;
     auto &missing_txs = results.second;
 
-    if (m_blockchain_storage.get_network_version() < HF_VERSION_BLINK)
+    if (m_blockchain_storage.get_network_version() < HF_VERSION_FLASH)
       return results;
 
-    std::vector<uint8_t> want(blinks.size(), false); // Really bools, but std::vector<bool> is broken.
+    std::vector<uint8_t> want(flashes.size(), false); // Really bools, but std::vector<bool> is broken.
     size_t want_count = 0;
     // Step 1: figure out which referenced transactions we want to keep:
-    // - unknown tx (typically an incoming blink)
-    // - in mempool without blink sigs (it's possible to get the tx before the blink signatures)
-    // - in a recent, still-mutable block with blink sigs (can happen when syncing blocks before
-    // retrieving blink signatures)
+    // - unknown tx (typically an incoming flash)
+    // - in mempool without flash sigs (it's possible to get the tx before the flash signatures)
+    // - in a recent, still-mutable block with flash sigs (can happen when syncing blocks before
+    // retrieving flash signatures)
     {
       std::vector<crypto::hash> hashes;
-      hashes.reserve(blinks.size());
-      for (auto &bm : blinks)
+      hashes.reserve(flashes.size());
+      for (auto &bm : flashes)
         hashes.emplace_back(bm.tx_hash);
 
       std::unique_lock<Blockchain> lock(m_blockchain_storage);
@@ -1439,7 +1439,7 @@ namespace cryptonote
       auto tx_block_heights = m_blockchain_storage.get_transactions_heights(hashes);
       auto immutable_height = m_blockchain_storage.get_immutable_height();
       auto &db = m_blockchain_storage.get_db();
-      for (size_t i = 0; i < blinks.size(); i++) {
+      for (size_t i = 0; i < flashes.size(); i++) {
         if (tx_block_heights[i] == 0 /*mempool or unknown*/ || tx_block_heights[i] > immutable_height /*mined but not yet immutable*/)
         {
           want[i] = true;
@@ -1448,64 +1448,64 @@ namespace cryptonote
       }
     }
 
-    MDEBUG("Want " << want_count << " of " << blinks.size() << " incoming blink signature sets after filtering out immutable txes");
+    MDEBUG("Want " << want_count << " of " << flashes.size() << " incoming flash signature sets after filtering out immutable txes");
     if (!want_count) return results;
 
-    // Step 2: filter out any transactions for which we already have a blink signature
+    // Step 2: filter out any transactions for which we already have a flash signature
     {
-      auto mempool_lock = m_mempool.blink_shared_lock();
-      for (size_t i = 0; i < blinks.size(); i++)
+      auto mempool_lock = m_mempool.flash_shared_lock();
+      for (size_t i = 0; i < flashes.size(); i++)
       {
-        if (want[i] && m_mempool.has_blink(blinks[i].tx_hash))
+        if (want[i] && m_mempool.has_flash(flashes[i].tx_hash))
         {
-          MDEBUG("Ignoring blink data for " << blinks[i].tx_hash << ": already have blink signatures");
+          MDEBUG("Ignoring flash data for " << flashes[i].tx_hash << ": already have flash signatures");
           want[i] = false; // Already have it, move along
           want_count--;
         }
       }
     }
 
-    MDEBUG("Want " << want_count << " of " << blinks.size() << " incoming blink signature sets after filtering out existing blink sigs");
+    MDEBUG("Want " << want_count << " of " << flashes.size() << " incoming flash signature sets after filtering out existing flash sigs");
     if (!want_count) return results;
 
-    // Step 3: create new blink_tx objects for txes and add the blink signatures.  We can do all of
+    // Step 3: create new flash_tx objects for txes and add the flash signatures.  We can do all of
     // this without a lock since these are (for now) just local instances.
-    new_blinks.reserve(want_count);
+    new_flashes.reserve(want_count);
 
     std::unordered_map<uint64_t, std::shared_ptr<const master_nodes::quorum>> quorum_cache;
-    for (size_t i = 0; i < blinks.size(); i++)
+    for (size_t i = 0; i < flashes.size(); i++)
     {
       if (!want[i])
         continue;
-      auto &bdata = blinks[i];
-      new_blinks.push_back(std::make_shared<blink_tx>(bdata.height, bdata.tx_hash));
-      auto &blink = *new_blinks.back();
+      auto &bdata = flashes[i];
+      new_flashes.push_back(std::make_shared<flash_tx>(bdata.height, bdata.tx_hash));
+      auto &flash = *new_flashes.back();
 
       // Data structure checks (we have more stringent checks for validity later, but if these fail
       // now then there's no point of even trying to do signature validation.
       if (bdata.signature.size() != bdata.position.size() ||  // Each signature must have an associated quorum position
           bdata.signature.size() != bdata.quorum.size()   ||  // and quorum index
-          bdata.signature.size() < master_nodes::BLINK_MIN_VOTES * tools::enum_count<blink_tx::subquorum> || // too few signatures for possible validity
-          bdata.signature.size() > master_nodes::BLINK_SUBQUORUM_SIZE * tools::enum_count<blink_tx::subquorum> || // too many signatures
-          blink_tx::quorum_height(bdata.height, blink_tx::subquorum::base) == 0 || // Height is too early (no blink quorum height)
-          std::any_of(bdata.position.begin(), bdata.position.end(), [](const auto &p) { return p >= master_nodes::BLINK_SUBQUORUM_SIZE; }) || // invalid position
-          std::any_of(bdata.quorum.begin(), bdata.quorum.end(), [](const auto &qi) { return qi >= tools::enum_count<blink_tx::subquorum>; }) // invalid quorum index
+          bdata.signature.size() < master_nodes::FLASH_MIN_VOTES * tools::enum_count<flash_tx::subquorum> || // too few signatures for possible validity
+          bdata.signature.size() > master_nodes::FLASH_SUBQUORUM_SIZE * tools::enum_count<flash_tx::subquorum> || // too many signatures
+          flash_tx::quorum_height(bdata.height, flash_tx::subquorum::base) == 0 || // Height is too early (no flash quorum height)
+          std::any_of(bdata.position.begin(), bdata.position.end(), [](const auto &p) { return p >= master_nodes::FLASH_SUBQUORUM_SIZE; }) || // invalid position
+          std::any_of(bdata.quorum.begin(), bdata.quorum.end(), [](const auto &qi) { return qi >= tools::enum_count<flash_tx::subquorum>; }) // invalid quorum index
       ) {
-        MINFO("Invalid blink tx " << bdata.tx_hash << ": invalid signature data");
+        MINFO("Invalid flash tx " << bdata.tx_hash << ": invalid signature data");
         continue;
       }
 
       bool no_quorum = false;
-      std::array<const std::vector<crypto::public_key> *, tools::enum_count<blink_tx::subquorum>> validators;
-      for (uint8_t qi = 0; qi < tools::enum_count<blink_tx::subquorum>; qi++)
+      std::array<const std::vector<crypto::public_key> *, tools::enum_count<flash_tx::subquorum>> validators;
+      for (uint8_t qi = 0; qi < tools::enum_count<flash_tx::subquorum>; qi++)
       {
-        auto q_height = blink.quorum_height(static_cast<blink_tx::subquorum>(qi));
+        auto q_height = flash.quorum_height(static_cast<flash_tx::subquorum>(qi));
         auto &q = quorum_cache[q_height];
         if (!q)
-          q = get_quorum(master_nodes::quorum_type::blink, q_height);
+          q = get_quorum(master_nodes::quorum_type::flash, q_height);
         if (!q)
         {
-          MINFO("Don't have a quorum for height " << q_height << " (yet?), ignoring this blink");
+          MINFO("Don't have a quorum for height " << q_height << " (yet?), ignoring this flash");
           no_quorum = true;
           break;
         }
@@ -1518,56 +1518,56 @@ namespace cryptonote
       for (size_t s = 0; s < bdata.signature.size(); s++)
       {
         try {
-          blink.add_signature(static_cast<blink_tx::subquorum>(bdata.quorum[s]), bdata.position[s], true /*approved*/, bdata.signature[s],
+          flash.add_signature(static_cast<flash_tx::subquorum>(bdata.quorum[s]), bdata.position[s], true /*approved*/, bdata.signature[s],
               validators[bdata.quorum[s]]->at(bdata.position[s]));
         } catch (const std::exception &e) {
           failures.emplace_back(s, e.what());
         }
       }
-      if (blink.approved())
+      if (flash.approved())
       {
-        MINFO("Blink tx " << bdata.tx_hash << " blink signatures approved with " << failures.size() << " signature validation failures");
+        MINFO("Flash tx " << bdata.tx_hash << " flash signatures approved with " << failures.size() << " signature validation failures");
         for (auto &f : failures)
           MDEBUG("- failure for quorum " << int(bdata.quorum[f.first]) << ", position " << int(bdata.position[f.first]) << ": " << f.second);
       }
       else
       {
         std::ostringstream os;
-        os << "Blink validation failed:";
+        os << "Flash validation failed:";
         for (auto &f : failures)
           os << " [" << int(bdata.quorum[f.first]) << ":" << int(bdata.position[f.first]) << "]: " << f.second;
-        MINFO("Invalid blink tx " << bdata.tx_hash << ": " << os.str());
+        MINFO("Invalid flash tx " << bdata.tx_hash << ": " << os.str());
       }
     }
 
     return results;
   }
 
-  int core::add_blinks(const std::vector<std::shared_ptr<blink_tx>> &blinks)
+  int core::add_flashes(const std::vector<std::shared_ptr<flash_tx>> &flashes)
   {
     int added = 0;
-    if (blinks.empty())
+    if (flashes.empty())
       return added;
 
-    auto lock = m_mempool.blink_unique_lock();
+    auto lock = m_mempool.flash_unique_lock();
 
-    for (auto &b : blinks)
+    for (auto &b : flashes)
       if (b->approved())
-        if (m_mempool.add_existing_blink(b))
+        if (m_mempool.add_existing_flash(b))
           added++;
 
     if (added)
     {
-      MINFO("Added blink signatures for " << added << " blinks");
+      MINFO("Added flash signatures for " << added << " flashes");
       long_poll_trigger(m_mempool);
     }
 
     return added;
   }
   //-----------------------------------------------------------------------------------------------
-  std::future<std::pair<blink_result, std::string>> core::handle_blink_tx(const std::string &tx_blob)
+  std::future<std::pair<flash_result, std::string>> core::handle_flash_tx(const std::string &tx_blob)
   {
-    return quorumnet_send_blink(*this, tx_blob);
+    return quorumnet_send_flash(*this, tx_blob);
   }
   //-----------------------------------------------------------------------------------------------
   bool core::check_tx_semantic(const transaction& tx, bool keeped_by_block) const
@@ -2115,8 +2115,8 @@ namespace cryptonote
 
     if (bvc.m_verifivation_failed)
     {
-      bool pulse = cryptonote::block_has_pulse_components(b);
-      MERROR_VER((pulse ? "Pulse" : "Mined") << " block failed verification\n" << cryptonote::obj_to_json_str(b));
+      bool POS = cryptonote::block_has_POS_components(b);
+      MERROR_VER((POS ? "POS" : "Mined") << " block failed verification\n" << cryptonote::obj_to_json_str(b));
       return false;
     }
     else if(bvc.m_added_to_main_chain)
@@ -2474,7 +2474,7 @@ namespace cryptonote
     const auto hf_version = get_network_version(m_nettype, m_target_blockchain_height);
 
 
-    static double threshold = 1. / ((24h * 10) / (hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)); // one false positive every 10 days
+    static double threshold = 1. / ((24h * 10) / (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)); // one false positive every 10 days
     static constexpr unsigned int max_blocks_checked = 150;
 
     const time_t now = time(NULL);
@@ -2486,7 +2486,7 @@ namespace cryptonote
       unsigned int b = 0;
       const time_t time_boundary = now - static_cast<time_t>(seconds[n]);
       for (time_t ts: timestamps) b += ts >= time_boundary;
-      const double p = probability(b, seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)));
+      const double p = probability(b, seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)));
       MDEBUG("blocks in the last " << seconds[n] / 60 << " minutes: " << b << " (probability " << p << ")");
       if (p < threshold)
       {
@@ -2495,7 +2495,7 @@ namespace cryptonote
         std::shared_ptr<tools::Notify> block_rate_notify = m_block_rate_notify;
         if (block_rate_notify)
         {
-          auto expected = seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
+          auto expected = seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
           block_rate_notify->notify("%t", std::to_string(seconds[n] / 60).c_str(), "%b", std::to_string(b).c_str(), "%e", std::to_string(expected).c_str(), NULL);
         }
 
@@ -2505,7 +2505,7 @@ namespace cryptonote
 
     return true;
   }
-  
+
   //-----------------------------------------------------------------------------------------------
   void core::flush_bad_txs_cache()
   {

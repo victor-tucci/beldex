@@ -26,7 +26,7 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "tx_blink.h"
+#include "tx_flash.h"
 #include "common/util.h"
 #include "master_node_list.h"
 #include <algorithm>
@@ -36,61 +36,61 @@ namespace cryptonote {
 
 using namespace master_nodes;
 
-static void check_args(blink_tx::subquorum q, int position, const char *func_name) {
-    if (q < blink_tx::subquorum::base || q >= blink_tx::subquorum::_count)
+static void check_args(flash_tx::subquorum q, int position, const char *func_name) {
+    if (q < flash_tx::subquorum::base || q >= flash_tx::subquorum::_count)
         throw std::invalid_argument("Invalid sub-quorum value passed to " + std::string(func_name));
-    if (position < 0 || position >= BLINK_SUBQUORUM_SIZE)
+    if (position < 0 || position >= FLASH_SUBQUORUM_SIZE)
         throw std::invalid_argument("Invalid voter position passed to " + std::string(func_name));
 }
 
-crypto::public_key blink_tx::get_mn_pubkey(subquorum q, int position, const master_node_list &snl) const {
+crypto::public_key flash_tx::get_mn_pubkey(subquorum q, int position, const master_node_list &snl) const {
     check_args(q, position, __func__);
     uint64_t qheight = quorum_height(q);
-    auto blink_quorum = snl.get_quorum(quorum_type::blink, qheight);
-    if (!blink_quorum) {
+    auto flash_quorum = snl.get_quorum(quorum_type::flash, qheight);
+    if (!flash_quorum) {
         // TODO FIXME XXX - we don't want a failure here; if this happens we need to go back into state
         // history to retrieve the state info.  (Or maybe this can't happen?)
-        MERROR("FIXME: could not get blink quorum for blink_tx");
+        MERROR("FIXME: could not get flash quorum for flash_tx");
         return crypto::null_pkey;
     }
 
-    if (position < (int) blink_quorum->validators.size())
-        return blink_quorum->validators[position];
+    if (position < (int) flash_quorum->validators.size())
+        return flash_quorum->validators[position];
 
     return crypto::null_pkey;
 };
 
-crypto::hash blink_tx::hash(bool approved) const {
+crypto::hash flash_tx::hash(bool approved) const {
     auto buf = tools::memcpy_le(height, get_txhash().data, uint8_t{approved});
-    crypto::hash blink_hash;
-    crypto::cn_fast_hash(buf.data(), buf.size(), blink_hash);
-    return blink_hash;
+    crypto::hash flash_hash;
+    crypto::cn_fast_hash(buf.data(), buf.size(), flash_hash);
+    return flash_hash;
 }
 
 
-void blink_tx::limit_signatures(subquorum q, size_t max_size) {
-    if (max_size > BLINK_SUBQUORUM_SIZE)
-        throw std::domain_error("Internal error: too many potential blink signers!");
-    else if (max_size < BLINK_SUBQUORUM_SIZE)
-        for (size_t i = max_size; i < BLINK_SUBQUORUM_SIZE; i++)
+void flash_tx::limit_signatures(subquorum q, size_t max_size) {
+    if (max_size > FLASH_SUBQUORUM_SIZE)
+        throw std::domain_error("Internal error: too many potential flash signers!");
+    else if (max_size < FLASH_SUBQUORUM_SIZE)
+        for (size_t i = max_size; i < FLASH_SUBQUORUM_SIZE; i++)
             signatures_[static_cast<uint8_t>(q)][i].status = signature_status::rejected;
 }
 
-bool blink_tx::add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const crypto::public_key &pubkey) {
+bool flash_tx::add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const crypto::public_key &pubkey) {
     check_args(q, position, __func__);
 
     if (!crypto::check_signature(hash(approved), pubkey, sig))
-        throw signature_verification_error("Given blink quorum signature verification failed!");
+        throw signature_verification_error("Given flash quorum signature verification failed!");
 
     return add_prechecked_signature(q, position, approved, sig);
 }
 
 
-bool blink_tx::add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_node_list &snl) {
+bool flash_tx::add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_node_list &snl) {
     return add_signature(q, position, approved, sig, get_mn_pubkey(q, position, snl));
 }
 
-bool blink_tx::add_prechecked_signature(subquorum q, int position, bool approved, const crypto::signature &sig) {
+bool flash_tx::add_prechecked_signature(subquorum q, int position, bool approved, const crypto::signature &sig) {
     check_args(q, position, __func__);
 
     auto &sig_slot = signatures_[static_cast<uint8_t>(q)][position];
@@ -102,12 +102,12 @@ bool blink_tx::add_prechecked_signature(subquorum q, int position, bool approved
     return true;
 }
 
-blink_tx::signature_status blink_tx::get_signature_status(subquorum q, int position) const {
+flash_tx::signature_status flash_tx::get_signature_status(subquorum q, int position) const {
     check_args(q, position, __func__);
     return signatures_[static_cast<uint8_t>(q)][position].status;
 }
 
-static int sig_count(const std::array<blink_tx::quorum_signature, BLINK_SUBQUORUM_SIZE>& sigs, blink_tx::signature_status status) {
+static int sig_count(const std::array<flash_tx::quorum_signature, FLASH_SUBQUORUM_SIZE>& sigs, flash_tx::signature_status status) {
     int count = 0;
     for (auto& s : sigs)
         if (s.status == status)
@@ -115,24 +115,24 @@ static int sig_count(const std::array<blink_tx::quorum_signature, BLINK_SUBQUORU
     return count;
 }
 
-bool blink_tx::approved() const {
+bool flash_tx::approved() const {
     for (auto& sigs : signatures_)
-        if (sig_count(sigs, signature_status::approved) < BLINK_MIN_VOTES)
+        if (sig_count(sigs, signature_status::approved) < FLASH_MIN_VOTES)
             return false;
     return true;
 }
 
-bool blink_tx::rejected() const {
+bool flash_tx::rejected() const {
     for (auto& sigs : signatures_)
-        if (sig_count(sigs, signature_status::rejected) > BLINK_SUBQUORUM_SIZE - BLINK_MIN_VOTES)
+        if (sig_count(sigs, signature_status::rejected) > FLASH_SUBQUORUM_SIZE - FLASH_MIN_VOTES)
             return true;
     return false;
 }
 
-void blink_tx::fill_serialization_data(crypto::hash &tx_hash, uint64_t &height, std::vector<uint8_t> &quorum, std::vector<uint8_t> &position, std::vector<crypto::signature> &signature) const {
+void flash_tx::fill_serialization_data(crypto::hash &tx_hash, uint64_t &height, std::vector<uint8_t> &quorum, std::vector<uint8_t> &position, std::vector<crypto::signature> &signature) const {
     tx_hash = get_txhash();
     height = this->height;
-    constexpr size_t res_size = tools::enum_count<subquorum> * master_nodes::BLINK_SUBQUORUM_SIZE;
+    constexpr size_t res_size = tools::enum_count<subquorum> * master_nodes::FLASH_SUBQUORUM_SIZE;
     quorum.reserve(res_size);
     position.reserve(res_size);
     signature.reserve(res_size);
@@ -148,7 +148,7 @@ void blink_tx::fill_serialization_data(crypto::hash &tx_hash, uint64_t &height, 
     }
 }
 
-crypto::hash blink_tx::tx_hash_visitor::operator()(const transaction &tx) const {
+crypto::hash flash_tx::tx_hash_visitor::operator()(const transaction &tx) const {
     crypto::hash h;
     if (!cryptonote::get_transaction_hash(tx, h))
         throw std::runtime_error("Failed to calculate transaction hash");

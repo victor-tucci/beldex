@@ -1,6 +1,6 @@
 // Copyright (c) 2014-2018, The Monero Project
 // Copyright (c)      2018, The Beldex Project
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification, are
@@ -218,7 +218,7 @@ namespace tools::wallet_rpc {
 
     struct request
     {
-      cryptonote::subaddress_index index; // Major & minor address index 
+      cryptonote::subaddress_index index; // Major & minor address index
       std::string label;                  // Label for the address.
 
       KV_MAP_SERIALIZABLE
@@ -406,7 +406,7 @@ namespace tools::wallet_rpc {
       std::list<wallet::transfer_destination> destinations; // Array of destinations to receive BELDEX.
       uint32_t account_index;                       // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices;           // (Optional) Transfer from this set of subaddresses. (Defaults to 0)
-      uint32_t priority;                            // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for blink. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
+      uint32_t priority;                            // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for flash. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
       uint64_t unlock_time;                         // Number of blocks before the beldex can be spent (0 to use the default lock time).
       std::string payment_id;                       // (Optional) Random 64-character hex string to identify a transaction.
       bool get_tx_key;                              // (Optional) Return the transaction key after sending.
@@ -443,7 +443,7 @@ namespace tools::wallet_rpc {
       std::list<wallet::transfer_destination> destinations; // Array of destinations to receive BELDEX:
       uint32_t account_index;                       // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices;           // (Optional) Transfer from this set of subaddresses. (Defaults to 0)
-      uint32_t priority;                            // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for blink. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
+      uint32_t priority;                            // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for flash. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
       uint64_t unlock_time;                         // Number of blocks before the beldex can be spent (0 to not add a lock).
       std::string payment_id;                       // (Optional) Random 32-byte/64-character hex string to identify a transaction.
       bool get_tx_keys;                             // (Optional) Return the transaction keys after sending.
@@ -500,7 +500,7 @@ namespace tools::wallet_rpc {
       uint64_t change_amount;          // Change received from transaction in atomic units.
       std::string change_address;      // Address the change was sent to.
       uint64_t fee;                    // Fee of the transaction in atomic units.
-      uint32_t dummy_outputs;          // 
+      uint32_t dummy_outputs;          //
       std::string extra;               // Data stored in the tx extra represented in hex.
 
       KV_MAP_SERIALIZABLE
@@ -587,7 +587,7 @@ namespace tools::wallet_rpc {
 
     struct key_list
     {
-      std::list<std::string> keys; 
+      std::list<std::string> keys;
 
       KV_MAP_SERIALIZABLE
     };
@@ -599,7 +599,7 @@ namespace tools::wallet_rpc {
       std::list<uint64_t> amount_list;         // The amount transferred for every transaction.
       std::list<uint64_t> fee_list;            // The amount of fees paid for every transaction.
       std::list<std::string> tx_blob_list;     // The tx as hex string for every transaction.
-      std::list<std::string> tx_metadata_list; // List of transaction metadata needed to relay the transactions later. 
+      std::list<std::string> tx_metadata_list; // List of transaction metadata needed to relay the transactions later.
       std::string multisig_txset;              // The set of signing keys used in a multisig transaction (empty for non-multisig).
       std::string unsigned_txset;              // Set of unsigned tx for cold-signing purposes.
 
@@ -619,8 +619,8 @@ namespace tools::wallet_rpc {
       uint32_t account_index;             // Sweep transactions from this account.
       std::set<uint32_t> subaddr_indices; // (Optional) Sweep from this set of subaddresses in the account.
       bool subaddr_indices_all;           //
-      uint32_t priority;                  // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for blink. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
-      uint64_t outputs;                   // 
+      uint32_t priority;                  // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for flash. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
+      uint64_t outputs;                   //
       uint64_t unlock_time;               // Number of blocks before the beldex can be spent (0 to not add a lock).
       std::string payment_id;             // (Optional) 64-character hex string to identify a transaction.
       bool get_tx_keys;                   // (Optional) Return the transaction keys after sending.
@@ -663,8 +663,8 @@ namespace tools::wallet_rpc {
     struct request
     {
       std::string address;    // Destination public address.
-      uint32_t priority;      // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for blink. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
-      uint64_t outputs;       // 
+      uint32_t priority;      // Set a priority for the transaction. Accepted values are: 1 for unimportant or 5 for flash. (0 and 2-4 are accepted for backwards compatibility and are equivalent to 5)
+      uint64_t outputs;       //
       uint64_t unlock_time;   // Number of blocks before the beldex can be spent (0 to not add a lock).
       std::string payment_id; // (Optional) 64-character hex string to identify a transaction.
       bool get_tx_key;        // (Optional) Return the transaction keys after sending.
@@ -692,7 +692,7 @@ namespace tools::wallet_rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  // Relay transaction metadata to the daemon 
+  // Relay transaction metadata to the daemon
   struct RELAY_TX : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("relay_tx"); }
@@ -700,7 +700,7 @@ namespace tools::wallet_rpc {
     struct request
     {
       std::string hex; // Transaction metadata returned from a transfer method with get_tx_metadata set to true.
-      bool blink;      // (Optional): Set to true if this tx was constructed with a blink priority and should be submitted to the blink quorum.
+      bool flash;      // (Optional): Set to true if this tx was constructed with a flash priority and should be submitted to the flash quorum.
 
       KV_MAP_SERIALIZABLE
     };
@@ -725,7 +725,7 @@ namespace tools::wallet_rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  // 
+  //
   struct payment_details
   {
     std::string payment_id;                     // Payment ID matching the input parameter.
@@ -762,11 +762,11 @@ namespace tools::wallet_rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  // Get a list of incoming payments using a given payment id, 
-  // or a list of payments ids, from a given height. 
+  // Get a list of incoming payments using a given payment id,
+  // or a list of payments ids, from a given height.
   //
-  // This method is the preferred method over  get_paymentsbecause it 
-  // has the same functionality but is more extendable. 
+  // This method is the preferred method over  get_paymentsbecause it
+  // has the same functionality but is more extendable.
   // Either is fine for looking up transactions by a single payment ID.
   struct GET_BULK_PAYMENTS : RPC_COMMAND
   {
@@ -782,14 +782,14 @@ namespace tools::wallet_rpc {
 
     struct response
     {
-      std::list<payment_details> payments; // List of payment details: 
+      std::list<payment_details> payments; // List of payment details:
 
       KV_MAP_SERIALIZABLE
     };
   };
-  
+
   BELDEX_RPC_DOC_INTROSPECT
-  // 
+  //
   struct transfer_details
   {
     uint64_t amount;                            // Amount of this transfer.
@@ -865,7 +865,7 @@ namespace tools::wallet_rpc {
 
     struct response
     {
-      std::string integrated_address; // 
+      std::string integrated_address; //
       std::string payment_id;         // Hex encoded.
 
       KV_MAP_SERIALIZABLE
@@ -880,16 +880,16 @@ namespace tools::wallet_rpc {
 
     struct request
     {
-      std::string integrated_address; // 
+      std::string integrated_address; //
 
       KV_MAP_SERIALIZABLE
     };
 
     struct response
     {
-      std::string standard_address; // 
-      std::string payment_id;       // 
-      bool is_subaddress;           // 
+      std::string standard_address; //
+      std::string payment_id;       //
+      bool is_subaddress;           //
 
       KV_MAP_SERIALIZABLE
     };
@@ -907,10 +907,10 @@ namespace tools::wallet_rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  // Rescan the blockchain from scratch, losing any information 
+  // Rescan the blockchain from scratch, losing any information
   // which can not be recovered from the blockchain itself.
   // This includes destination addresses, tx secret keys, tx notes, etc.
-  
+
   // Warning: This blocks the Wallet RPC executable until rescanning is complete.
   struct RESCAN_BLOCKCHAIN : RESTRICTED
   {
@@ -918,7 +918,7 @@ namespace tools::wallet_rpc {
 
     struct request
     {
-      bool hard; // 
+      bool hard; //
 
       KV_MAP_SERIALIZABLE
     };

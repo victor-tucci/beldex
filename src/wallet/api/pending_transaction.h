@@ -47,7 +47,7 @@ public:
     std::pair<int, std::string> status() const override { return m_status; }
     void setError(std::string error_msg) override;
     bool good() const override { return m_status.first == Status_Ok; }
-    bool commit(std::string_view filename = "", bool overwrite = false, bool blink = false) override;
+    bool commit(std::string_view filename = "", bool overwrite = false, bool flash = false) override;
     uint64_t amount() const override;
     uint64_t dust() const override;
     uint64_t fee() const override;

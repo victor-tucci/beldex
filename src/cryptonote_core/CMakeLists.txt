@@ -35,12 +35,12 @@ add_library(cryptonote_core
   master_node_voting.cpp
   master_node_quorum_cop.cpp
   master_node_swarm.cpp
-  tx_blink.cpp
+  tx_flash.cpp
   beldex_name_system.cpp
   tx_pool.cpp
   tx_sanity_check.cpp
   cryptonote_tx_utils.cpp
-  pulse.cpp
+  pos.cpp
   uptime_proof.cpp)
 
 target_link_libraries(cryptonote_core

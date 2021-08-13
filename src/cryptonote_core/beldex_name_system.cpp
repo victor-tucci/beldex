@@ -614,7 +614,7 @@ std::vector<mapping_type> all_mapping_types(uint8_t hf_version) {
   result.reserve(2);
   if (hf_version >= cryptonote::network_version_16_bns)
     result.push_back(mapping_type::session);
-  if (hf_version >= cryptonote::network_version_17_pulse)
+  if (hf_version >= cryptonote::network_version_17_POS)
     result.push_back(mapping_type::beldexnet);
   if (hf_version >= cryptonote::network_version_18)
     result.push_back(mapping_type::wallet);
@@ -1288,7 +1288,7 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
   std::optional<bns::mapping_type> mapping_type_;
   if (txtype != bns_tx_type::renew && tools::string_iequal(mapping, "session"))
     mapping_type_ = bns::mapping_type::session;
-  else if (hf_version >= cryptonote::network_version_17_pulse)
+  else if (hf_version >= cryptonote::network_version_17_POS)
   {
     if (tools::string_iequal(mapping, "beldexnet"))
       mapping_type_ = bns::mapping_type::beldexnet;

@@ -396,12 +396,12 @@ namespace cryptonote::rpc {
               throw parse_error{"Failed to parse binary data parameterZ"};
    // }
    // else {
-   //     req.blinked_txs_only = false;
+   //     req.flashed_txs_only = false;
     //}
 
     std::vector<crypto::hash> pool_hashes;
     MTRACE("invoke_txpool_hashes_bin get_transaction_hashes...");
-    data->core_rpc.get_core().get_pool().get_transaction_hashes(pool_hashes, data->request.context.admin, req.blinked_txs_only /*include_only_blinked*/);
+    data->core_rpc.get_core().get_pool().get_transaction_hashes(pool_hashes, data->request.context.admin, req.flashed_txs_only /*include_only_flashed*/);
 
     if (req.long_poll)
     {
@@ -443,7 +443,7 @@ namespace cryptonote::rpc {
       if (!body)
       {
         std::vector<crypto::hash> pool_hashes;
-        pool.get_transaction_hashes(pool_hashes, data.request.context.admin, true /*include_only_blinked*/);
+        pool.get_transaction_hashes(pool_hashes, data.request.context.admin, true /*include_only_flashed*/);
         body = pool_hashes_response(std::move(pool_hashes));
       }
       MTRACE("Sending deferred long poll pool update to " << data.request.context.remote);

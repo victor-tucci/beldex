@@ -31,9 +31,9 @@
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_core/master_node_voting.h"
 #include "cryptonote_core/master_node_rules.h"
-#include "cryptonote_core/tx_blink.h"
+#include "cryptonote_core/tx_flash.h"
 #include "cryptonote_core/tx_pool.h"
-#include "cryptonote_core/pulse.h"
+#include "cryptonote_core/pos.h"
 #include "cryptonote_core/uptime_proof.h"
 #include "quorumnet_conn_matrix.h"
 #include "cryptonote_config.h"
@@ -55,12 +55,12 @@ namespace {
 using namespace master_nodes;
 using namespace oxenmq;
 
-using blink_tx = cryptonote::blink_tx;
+using flash_tx = cryptonote::flash_tx;
 
-constexpr auto NUM_BLINK_QUORUMS = tools::enum_count<blink_tx::subquorum>;
-static_assert(std::is_same<const uint8_t, decltype(NUM_BLINK_QUORUMS)>(), "unexpected underlying blink quorum count type");
+constexpr auto NUM_FLASH_QUORUMS = tools::enum_count<flash_tx::subquorum>;
+static_assert(std::is_same<const uint8_t, decltype(NUM_FLASH_QUORUMS)>(), "unexpected underlying flash quorum count type");
 
-using quorum_array = std::array<std::shared_ptr<const master_nodes::quorum>, NUM_BLINK_QUORUMS>;
+using quorum_array = std::array<std::shared_ptr<const master_nodes::quorum>, NUM_FLASH_QUORUMS>;
 
 using pending_signature = std::tuple<bool, uint8_t, int, crypto::signature>; // approval, subquorum, subquorum position, signature
 
@@ -74,26 +74,26 @@ struct QnetState {
     cryptonote::core &core;
     OxenMQ &omq{core.get_omq()};
 
-    // Track submitted blink txes here; unlike the blinks stored in the mempool we store these ones
-    // more liberally to track submitted blinks, even if unsigned/unacceptable, while the mempool
-    // only stores approved blinks.
+    // Track submitted flash txes here; unlike the flashes stored in the mempool we store these ones
+    // more liberally to track submitted flashes, even if unsigned/unacceptable, while the mempool
+    // only stores approved flashes.
     std::shared_mutex mutex;
 
-    struct blink_metadata {
-        std::shared_ptr<blink_tx> btxptr;
+    struct flash_metadata {
+        std::shared_ptr<flash_tx> btxptr;
         pending_signature_set pending_sigs;
         ConnectionID reply_conn;
         uint64_t reply_tag = 0;
     };
-    // { height => { txhash => {blink_tx,conn,reply}, ... }, ... }
-    std::map<uint64_t, std::unordered_map<crypto::hash, blink_metadata>> blinks;
+    // { height => { txhash => {flash_tx,conn,reply}, ... }, ... }
+    std::map<uint64_t, std::unordered_map<crypto::hash, flash_metadata>> flashes;
 
     // FIXME:
-    //std::chrono::steady_clock::time_point last_blink_cleanup = std::chrono::steady_clock::now();
+    //std::chrono::steady_clock::time_point last_flash_cleanup = std::chrono::steady_clock::now();
 
-    std::mutex pulse_message_queue_mutex;
-    std::condition_variable pulse_message_queue_cv;
-    std::queue<pulse::message> pulse_message_queue;
+    std::mutex POS_message_queue_mutex;
+    std::condition_variable POS_message_queue_cv;
+    std::queue<POS::message> POS_message_queue;
 
     QnetState(cryptonote::core &core) : core{core} {}
 
@@ -153,7 +153,7 @@ struct prepared_relay_destinations
 template <typename It>
 std::vector<prepared_relay_destinations>
 peer_prepare_relay_to_quorum_subset(cryptonote::core &core, It quorum_begin, It quorum_end, size_t num_peers) {
-    // Lookup the x25519 and ZMQ connection string for all possible blink recipients so that we
+    // Lookup the x25519 and ZMQ connection string for all possible flash recipients so that we
     // know where to send it to, and so that we can immediately exclude MNs that aren't active
     // anymore.
     std::unordered_set<crypto::public_key> candidates;
@@ -352,7 +352,7 @@ private:
     void compute_validator_peers(QuorumIt qbegin, QuorumIt qend, bool opportunistic) {
 
         // TODO: when we receive a new block, if our quorum starts soon we can tell SNNetwork to
-        // pre-connect (to save the time in handshaking when we get an actual blink tx).
+        // pre-connect (to save the time in handshaking when we get an actual flash tx).
 
         strong_peers = 0;
 
@@ -381,7 +381,7 @@ private:
             }
 
             // Now establish strong interconnections between quorums, if we have multiple subquorums
-            // (i.e.  blink quorums).
+            // (i.e.  flash quorums).
             //
             // If I'm in the last half* of the first quorum then I relay to the first half (roughly) of
             // the next quorum.  i.e. nodes 5-9 in Q send to nodes 0-4 in Q'.  For odd numbers the last
@@ -587,36 +587,36 @@ std::enable_if_t<std::is_integral<I>::value, I> get_or(bt_dict &d, const std::st
     return fallback;
 }
 
-// Obtains the blink quorums, verifies that they are of an acceptable size, and verifies the given
+// Obtains the flash quorums, verifies that they are of an acceptable size, and verifies the given
 // input quorum checksum matches the computed checksum for the quorums (if provided), otherwise sets
 // the given output checksum (if provided) to the calculated value.  Throws std::runtime_error on
 // failure.
-quorum_array get_blink_quorums(uint64_t blink_height, const master_node_list &snl, const uint64_t *input_checksum, uint64_t *output_checksum = nullptr) {
+quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &snl, const uint64_t *input_checksum, uint64_t *output_checksum = nullptr) {
     // We currently just use two quorums, Q and Q' in the whitepaper, but this code is designed to
     // work fine with more quorums (but don't use a single subquorum; that could only be secure or
     // reliable but not both).
     quorum_array result;
 
     uint64_t local_checksum = 0;
-    for (uint8_t qi = 0; qi < NUM_BLINK_QUORUMS; qi++) {
-        auto height = blink_tx::quorum_height(blink_height, static_cast<blink_tx::subquorum>(qi));
+    for (uint8_t qi = 0; qi < NUM_FLASH_QUORUMS; qi++) {
+        auto height = flash_tx::quorum_height(flash_height, static_cast<flash_tx::subquorum>(qi));
         if (!height)
             throw std::runtime_error("too early in blockchain to create a quorum");
-        result[qi] = snl.get_quorum(quorum_type::blink, height);
+        result[qi] = snl.get_quorum(quorum_type::flash, height);
         if (!result[qi])
-            throw std::runtime_error("failed to obtain a blink quorum");
+            throw std::runtime_error("failed to obtain a flash quorum");
         auto &v = result[qi]->validators;
-        if (v.size() < BLINK_MIN_VOTES || v.size() > BLINK_SUBQUORUM_SIZE)
-            throw std::runtime_error("not enough blink nodes to form a quorum");
-        local_checksum += quorum_checksum(v, qi * BLINK_SUBQUORUM_SIZE);
+        if (v.size() < FLASH_MIN_VOTES || v.size() > FLASH_SUBQUORUM_SIZE)
+            throw std::runtime_error("not enough flash nodes to form a quorum");
+        local_checksum += quorum_checksum(v, qi * FLASH_SUBQUORUM_SIZE);
     }
-    MTRACE("Verified enough active blink nodes for a quorum; quorum checksum: " << local_checksum);
+    MTRACE("Verified enough active flash nodes for a quorum; quorum checksum: " << local_checksum);
 
     if (input_checksum) {
         if (*input_checksum != local_checksum)
             throw std::runtime_error("wrong quorum checksum: expected " + std::to_string(local_checksum) + ", received " + std::to_string(*input_checksum));
 
-        MTRACE("Blink quorum checksum matched");
+        MTRACE("Flash quorum checksum matched");
     }
     if (output_checksum)
         *output_checksum = local_checksum;
@@ -627,18 +627,18 @@ quorum_array get_blink_quorums(uint64_t blink_height, const master_node_list &sn
 // Used when debugging is enabled to print known signatures.
 // Prints [x x x ...] [x x x ...] for the quorums where each "x" is either "A" for an approval
 // signature, "R" for a rejection signature, or "-" for no signature.
-std::string debug_known_signatures(blink_tx &btx, quorum_array &blink_quorums) {
+std::string debug_known_signatures(flash_tx &btx, quorum_array &flash_quorums) {
     std::ostringstream os;
     bool first = true;
-    for (uint8_t qi = 0; qi < blink_quorums.size(); qi++) {
+    for (uint8_t qi = 0; qi < flash_quorums.size(); qi++) {
         if (qi > 0) os << ' ';
         os << '[';
-        const auto q = static_cast<blink_tx::subquorum>(qi);
-        const int slots = blink_quorums[qi]->validators.size();
+        const auto q = static_cast<flash_tx::subquorum>(qi);
+        const int slots = flash_quorums[qi]->validators.size();
         for (int i = 0; i < slots; i++) {
             if (i > 0) os << ' ';
             auto st = btx.get_signature_status(q, i);
-            os << (st == blink_tx::signature_status::approved ? 'A' : st == blink_tx::signature_status::rejected ? 'R' : '-');
+            os << (st == flash_tx::signature_status::approved ? 'A' : st == flash_tx::signature_status::rejected ? 'R' : '-');
         }
         os << ']';
     }
@@ -646,9 +646,9 @@ std::string debug_known_signatures(blink_tx &btx, quorum_array &blink_quorums) {
 }
 
 
-/// Processes blink signatures; called immediately upon receiving a signature if we know about the
+/// Processes flash signatures; called immediately upon receiving a signature if we know about the
 /// tx; otherwise signatures are stored until we learn about the tx and then processed.
-void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &btxptr, quorum_array &blink_quorums, uint64_t quorum_checksum, std::list<pending_signature> &&signatures,
+void process_flash_signatures(QnetState &qnet, const std::shared_ptr<flash_tx> &btxptr, quorum_array &flash_quorums, uint64_t quorum_checksum, std::list<pending_signature> &&signatures,
         uint64_t reply_tag, // > 0 if we are expected to send a status update if it becomes accepted/rejected
         ConnectionID reply_conn, // who we are supposed to send the status update to
         const std::string &received_from = ""s /* x25519 of the peer that sent this, if available (to avoid trying to pointlessly relay back to them) */) {
@@ -663,13 +663,13 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
             auto &qi = std::get<uint8_t>(pending);
             auto &position = std::get<int>(pending);
 
-            auto subquorum = static_cast<blink_tx::subquorum>(qi);
-            auto &validators = blink_quorums[qi]->validators;
+            auto subquorum = static_cast<flash_tx::subquorum>(qi);
+            auto &validators = flash_quorums[qi]->validators;
 
             if (position < 0 || position >= (int) validators.size()) {
-                MWARNING("Invalid blink signature: subquorum position is invalid");
+                MWARNING("Invalid flash signature: subquorum position is invalid");
                 it = signatures.erase(it);
-            } else if (btx.get_signature_status(subquorum, position) != blink_tx::signature_status::none) {
+            } else if (btx.get_signature_status(subquorum, position) != flash_tx::signature_status::none) {
                 it = signatures.erase(it);
             } else {
                 ++it;
@@ -687,11 +687,11 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
         auto &position = std::get<int>(pending);
         auto &signature = std::get<crypto::signature>(pending);
 
-        auto subquorum = static_cast<blink_tx::subquorum>(qi);
-        auto &validators = blink_quorums[qi]->validators;
+        auto subquorum = static_cast<flash_tx::subquorum>(qi);
+        auto &validators = flash_quorums[qi]->validators;
 
         if (!crypto::check_signature(btx.hash(approval), validators[position], signature)) {
-            MWARNING("Invalid blink signature: signature verification failed");
+            MWARNING("Invalid flash signature: signature verification failed");
             it = signatures.erase(it);
             continue;
         }
@@ -708,7 +708,7 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
         bool already_approved = btx.approved(),
              already_rejected = !already_approved && btx.rejected();
 
-        MTRACE("Before recording new signatures I have existing signatures: " << debug_known_signatures(btx, blink_quorums));
+        MTRACE("Before recording new signatures I have existing signatures: " << debug_known_signatures(btx, flash_quorums));
 
         // Now actually add them (and do one last check on them)
         for (auto it = signatures.begin(); it != signatures.end(); ) {
@@ -718,8 +718,8 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
             auto &position = std::get<int>(pending);
             auto &signature = std::get<crypto::signature>(pending);
 
-            auto subquorum = static_cast<blink_tx::subquorum>(qi);
-            auto &validators = blink_quorums[qi]->validators;
+            auto subquorum = static_cast<flash_tx::subquorum>(qi);
+            auto &validators = flash_quorums[qi]->validators;
 
             if (btx.add_prechecked_signature(subquorum, position, approval, signature)) {
                 MDEBUG("Validated and stored " << (approval ? "approval" : "rejection") << " signature for tx " << btx.get_txhash() << ", subquorum " << int{qi} << ", position " << position);
@@ -733,7 +733,7 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
         }
 
         if (!signatures.empty()) {
-            MDEBUG("Updated signatures; now have signatures: " << debug_known_signatures(btx, blink_quorums));
+            MDEBUG("Updated signatures; now have signatures: " << debug_known_signatures(btx, flash_quorums));
 
             if (!already_approved && !already_rejected) {
                 if (btx.approved()) {
@@ -746,11 +746,11 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
     }
 
     if (became_approved) {
-        MINFO("Accumulated enough signatures for blink tx: enabling tx relay");
+        MINFO("Accumulated enough signatures for flash tx: enabling tx relay");
         auto &pool = qnet.core.get_pool();
         {
-            auto lock = pool.blink_unique_lock();
-            pool.add_existing_blink(btxptr);
+            auto lock = pool.flash_unique_lock();
+            pool.add_existing_flash(btxptr);
         }
         pool.set_relayable({{btx.get_txhash()}});
         qnet.core.relay_txpool_transactions();
@@ -766,12 +766,12 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
             relay_exclude.insert(std::move(pubkey));
     }
 
-    // We added new signatures that we didn't have before, so relay those signatures to blink peers
-    peer_info pinfo{qnet, quorum_type::blink, blink_quorums.begin(), blink_quorums.end(), true /*opportunistic*/,
+    // We added new signatures that we didn't have before, so relay those signatures to flash peers
+    peer_info pinfo{qnet, quorum_type::flash, flash_quorums.begin(), flash_quorums.end(), true /*opportunistic*/,
         std::move(relay_exclude)};
 
-    MDEBUG("Relaying " << signatures.size() << " blink signatures to " << pinfo.strong_peers << " (strong) + " <<
-            (pinfo.peers.size() - pinfo.strong_peers) << " (opportunistic) blink peers");
+    MDEBUG("Relaying " << signatures.size() << " flash signatures to " << pinfo.strong_peers << " (strong) + " <<
+            (pinfo.peers.size() - pinfo.strong_peers) << " (opportunistic) flash peers");
 
     bt_list i_list, p_list, r_list, s_list;
     for (auto &s : signatures) {
@@ -781,7 +781,7 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
         s_list.emplace_back(get_data_as_string(std::get<crypto::signature>(s)));
     }
 
-    bt_dict blink_sign_data{
+    bt_dict flash_sign_data{
         {"h", btx.height},
         {"#", get_data_as_string(btx.get_txhash())},
         {"q", quorum_checksum},
@@ -791,16 +791,16 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
         {"s", std::move(s_list)},
     };
 
-    pinfo.relay_to_peers("quorum.blink_sign", blink_sign_data);
+    pinfo.relay_to_peers("quorum.flash_sign", flash_sign_data);
 
-    MTRACE("Done blink signature relay");
+    MTRACE("Done flash signature relay");
 
     if (reply_tag && reply_conn) {
         if (became_approved) {
-            MINFO("Blink tx became approved; sending result back to originating node");
+            MINFO("Flash tx became approved; sending result back to originating node");
             qnet.omq.send(reply_conn, "bl.good", bt_serialize(bt_dict{{"!", reply_tag}}), send_option::optional{});
         } else if (became_rejected) {
-            MINFO("Blink tx became rejected; sending result back to originating node");
+            MINFO("Flash tx became rejected; sending result back to originating node");
             qnet.omq.send(reply_conn, "bl.bad", bt_serialize(bt_dict{{"!", reply_tag}}), send_option::optional{});
         }
     }
@@ -808,8 +808,8 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
 
 
 
-/// A "blink" message is used to submit a blink tx from a node to members of the blink quorum and
-/// also used to relay the blink tx between quorum members.  Fields are:
+/// A "flash" message is used to submit a flash tx from a node to members of the flash quorum and
+/// also used to relay the flash tx between quorum members.  Fields are:
 ///
 ///     "!" - Non-zero positive integer value for a connecting node; we include the tag in any
 ///           response if present so that the initiator can associate the response to the request.
@@ -817,18 +817,18 @@ void process_blink_signatures(QnetState &qnet, const std::shared_ptr<blink_tx> &
 ///           node-to-MN submission but not MN-to-MN relaying (which doesn't return a response
 ///           message).
 ///
-///     "h" - Blink authorization height for the transaction.  Must be within 2 of the current
+///     "h" - Flash authorization height for the transaction.  Must be within 2 of the current
 ///           height for the tx to be accepted.  Mandatory.
 ///
-///     "q" - checksum of blink quorum members.  Mandatory, and must match the receiving MN's
-///           locally computed checksum of blink quorum members.
+///     "q" - checksum of flash quorum members.  Mandatory, and must match the receiving MN's
+///           locally computed checksum of flash quorum members.
 ///
 ///     "t" - the serialized transaction data.
 ///
-///     "#" - precomputed tx hash.  This much match the actual hash of the transaction (the blink
+///     "#" - precomputed tx hash.  This much match the actual hash of the transaction (the flash
 ///           submission will fail immediately if it does not).
 ///
-void handle_blink(oxenmq::Message& m, QnetState& qnet) {
+void handle_flash(oxenmq::Message& m, QnetState& qnet) {
     // TODO: if someone sends an invalid tx (i.e. one that doesn't get to the distribution stage)
     // then put a timeout on that IP during which new submissions from them are dropped for a short
     // time.
@@ -838,7 +838,7 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
     //   message and close it.
     // If an outgoing connection - refuse reconnections via ZAP and just close it.
 
-    MDEBUG("Received a blink tx from " << (m.conn.sn() ? "MN " : "non-MN ") << to_hex(m.conn.pubkey()));
+    MDEBUG("Received a flash tx from " << (m.conn.sn() ? "MN " : "non-MN ") << to_hex(m.conn.pubkey()));
 
     assert(qnet.core.master_node());
     if (!qnet.core.master_node())
@@ -846,7 +846,7 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
     const auto& keys = qnet.core.get_master_keys();
 
     if (m.data.size() != 1) {
-        MINFO("Rejecting blink message: expected one data entry not " << m.data.size());
+        MINFO("Rejecting flash message: expected one data entry not " << m.data.size());
         // No valid data and so no reply tag; we can't send a response
         return;
     }
@@ -857,40 +857,40 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
     auto local_height = qnet.core.get_current_blockchain_height();
 
     auto hf_version = get_network_version(qnet.core.get_nettype(), local_height);
-    if (hf_version < HF_VERSION_BLINK) {
-        MWARNING("Rejecting blink message: blink is not available for hardfork " << (int) hf_version);
+    if (hf_version < HF_VERSION_FLASH) {
+        MWARNING("Rejecting flash message: flash is not available for hardfork " << (int) hf_version);
         if (tag)
-            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid blink authorization height"sv}}));
+            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid flash authorization height"sv}}));
         return;
     }
 
     // verify that height is within-2 of current height
-    auto blink_height = get_int<uint64_t>(data.at("h"));
+    auto flash_height = get_int<uint64_t>(data.at("h"));
 
-    if (blink_height < local_height - 2) {
-        MINFO("Rejecting blink tx because blink auth height is too low (" << blink_height << " vs. " << local_height << ")");
+    if (flash_height < local_height - 2) {
+        MINFO("Rejecting flash tx because flash auth height is too low (" << flash_height << " vs. " << local_height << ")");
         if (tag)
-            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid blink authorization height"sv}}));
+            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid flash authorization height"sv}}));
         return;
-    } else if (blink_height > local_height + 2) {
+    } else if (flash_height > local_height + 2) {
         // TODO: if within some threshold (maybe 5-10?) we could hold it and process it once we are
         // within 2.
-        MINFO("Rejecting blink tx because blink auth height is too high (" << blink_height << " vs. " << local_height << ")");
+        MINFO("Rejecting flash tx because flash auth height is too high (" << flash_height << " vs. " << local_height << ")");
         if (tag)
-            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid blink authorization height"sv}}));
+            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid flash authorization height"sv}}));
         return;
     }
-    MTRACE("Blink tx auth height " << blink_height << " is valid (local height is " << local_height << ")");
+    MTRACE("Flash tx auth height " << flash_height << " is valid (local height is " << local_height << ")");
 
     auto t_it = data.find("t");
     if (t_it == data.end()) {
-        MINFO("Rejecting blink tx: no tx data included in request");
+        MINFO("Rejecting flash tx: no tx data included in request");
         if (tag)
-            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "No transaction included in blink request"sv}}));
+            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "No transaction included in flash request"sv}}));
         return;
     }
     const std::string &tx_data = var::get<std::string>(t_it->second);
-    MTRACE("Blink tx data is " << tx_data.size() << " bytes");
+    MTRACE("Flash tx data is " << tx_data.size() << " bytes");
 
     // "hash" is optional -- it lets us short-circuit processing the tx if we've already seen it,
     // and is added internally by MN-to-MN forwards but not the original submitter.  We don't trust
@@ -902,19 +902,19 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
     if (tx_hash_str.size() == sizeof(crypto::hash)) {
         std::memcpy(tx_hash.data, tx_hash_str.data(), sizeof(crypto::hash));
         std::shared_lock lock{qnet.mutex};
-        auto bit = qnet.blinks.find(blink_height);
-        if (bit != qnet.blinks.end()) {
+        auto bit = qnet.flashes.find(flash_height);
+        if (bit != qnet.flashes.end()) {
             auto &umap = bit->second;
             auto it = umap.find(tx_hash);
             if (it != umap.end() && it->second.btxptr) {
                 if (tag) {
-                    // This is a direct blink submission, not a quorum-relayed submission
+                    // This is a direct flash submission, not a quorum-relayed submission
                     already_approved = it->second.btxptr->approved();
                     already_rejected = !already_approved && it->second.btxptr->rejected();
                     if (already_approved || already_rejected) {
-                        // Quorum approved/rejected the tx before we received the submitted blink,
+                        // Quorum approved/rejected the tx before we received the submitted flash,
                         // reply with a bl.good/bl.bad immediately (done below, outside the lock).
-                        MINFO("Submitted blink tx already " << (already_approved ? "approved" : "rejected") <<
+                        MINFO("Submitted flash tx already " << (already_approved ? "approved" : "rejected") <<
                                 "; sending result back to originating node");
                     } else {
                         // We've already seen it but are still waiting on more signatures to
@@ -926,14 +926,14 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
                         return;
                     }
                 } else {
-                    MDEBUG("Already seen and forwarded this blink tx, ignoring it.");
+                    MDEBUG("Already seen and forwarded this flash tx, ignoring it.");
                     return;
                 }
             }
         }
-        MTRACE("Blink tx hash: " << to_hex(tx_hash.data));
+        MTRACE("Flash tx hash: " << to_hex(tx_hash.data));
     } else {
-        MINFO("Rejecting blink tx: invalid tx hash included in request");
+        MINFO("Rejecting flash tx: invalid tx hash included in request");
         if (tag)
             m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid transaction hash"s}}));
         return;
@@ -944,42 +944,42 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
         return;
     }
 
-    quorum_array blink_quorums;
+    quorum_array flash_quorums;
     uint64_t checksum = get_int<uint64_t>(data.at("q"));
     try {
-        blink_quorums = get_blink_quorums(blink_height, qnet.core.get_master_node_list(), &checksum);
+        flash_quorums = get_flash_quorums(flash_height, qnet.core.get_master_node_list(), &checksum);
     } catch (const std::runtime_error &e) {
-        MINFO("Rejecting blink tx: " << e.what());
+        MINFO("Rejecting flash tx: " << e.what());
         if (tag)
-            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Unable to retrieve blink quorum: "s + e.what()}}));
+            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Unable to retrieve flash quorum: "s + e.what()}}));
         return;
     }
 
-    peer_info pinfo{qnet, quorum_type::blink, blink_quorums.begin(), blink_quorums.end(), true /*opportunistic*/,
+    peer_info pinfo{qnet, quorum_type::flash, flash_quorums.begin(), flash_quorums.end(), true /*opportunistic*/,
         {qnet.core.get_master_node_list().get_pubkey_from_x25519(x25519_from_string(m.conn.pubkey()))} // exclude the peer that just sent it to us
         };
 
     if (pinfo.my_position_count > 0)
         MTRACE("Found this MN in " << pinfo.my_position_count << " subquorums");
     else {
-        MINFO("Rejecting blink tx: this master node is not a member of the blink quorum!");
+        MINFO("Rejecting flash tx: this master node is not a member of the flash quorum!");
         if (tag)
-            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Blink tx relayed to non-blink quorum member"sv}}));
+            m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Flash tx relayed to non-flash quorum member"sv}}));
         return;
     }
 
-    auto btxptr = std::make_shared<blink_tx>(blink_height);
+    auto btxptr = std::make_shared<flash_tx>(flash_height);
     auto &btx = *btxptr;
     auto &tx = var::get<cryptonote::transaction>(btx.tx);
     // If any quorums are too small set the extra spaces to rejected (this also checks that no
     // quorums are too big).
-    for (size_t qi = 0; qi < blink_quorums.size(); qi++)
-        btx.limit_signatures(static_cast<blink_tx::subquorum>(qi), blink_quorums[qi]->validators.size());
+    for (size_t qi = 0; qi < flash_quorums.size(); qi++)
+        btx.limit_signatures(static_cast<flash_tx::subquorum>(qi), flash_quorums[qi]->validators.size());
 
     {
         crypto::hash tx_hash_actual;
         if (!cryptonote::parse_and_validate_tx_from_blob(tx_data, tx, tx_hash_actual)) {
-            MINFO("Rejecting blink tx: failed to parse transaction data");
+            MINFO("Rejecting flash tx: failed to parse transaction data");
             if (tag)
                 m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Failed to parse transaction data"sv}}));
             return;
@@ -987,7 +987,7 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
         MTRACE("Successfully parsed transaction data");
 
         if (tx_hash != tx_hash_actual) {
-            MINFO("Rejecting blink tx: submitted tx hash " << tx_hash << " did not match actual tx hash " << tx_hash_actual);
+            MINFO("Rejecting flash tx: submitted tx hash " << tx_hash << " did not match actual tx hash " << tx_hash_actual);
             if (tag)
                 m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid transaction hash"sv}}));
             return;
@@ -999,20 +999,20 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
     // Abort if we don't have at least one strong peer to send it to.  This can only happen if it's
     // a brand new MN (not just restarted!) that hasn't received uptime proofs before.
     if (!pinfo.strong_peers) {
-        MWARNING("Could not find connection info for any blink quorum peers.  Aborting blink tx");
+        MWARNING("Could not find connection info for any flash quorum peers.  Aborting flash tx");
         if (tag)
             m.send_back("bl.nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "No quorum peers are currently reachable"sv}}));
         return;
     }
 
-    // See if we've already handled this blink tx, and if not, store it.  Also check for any pending
-    // signatures for this blink tx that we received or processed before we got here with this tx.
+    // See if we've already handled this flash tx, and if not, store it.  Also check for any pending
+    // signatures for this flash tx that we received or processed before we got here with this tx.
     std::list<pending_signature> signatures;
     {
         std::unique_lock lock{qnet.mutex};
-        auto &bl_info = qnet.blinks[blink_height][tx_hash];
+        auto &bl_info = qnet.flashes[flash_height][tx_hash];
         if (bl_info.btxptr) {
-            MDEBUG("Already seen and forwarded this blink tx, ignoring it.");
+            MDEBUG("Already seen and forwarded this flash tx, ignoring it.");
             return;
         }
         bl_info.btxptr = btxptr;
@@ -1024,7 +1024,7 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
             bl_info.reply_conn = m.conn;
         }
     }
-    MTRACE("Accepted new blink tx for verification");
+    MTRACE("Accepted new flash tx for verification");
 
     // The submission looks good.  We distribute it first, *before* we start verifying the actual tx
     // details, for two reasons: we want other quorum members to start verifying ASAP, and we want
@@ -1037,14 +1037,14 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
 
 
     {
-        bt_dict blink_data{
-            {"h", blink_height},
+        bt_dict flash_data{
+            {"h", flash_height},
             {"q", checksum},
             {"t", tx_data},
             {"#", tx_hash_str},
         };
-        MDEBUG("Relaying blink tx to " << pinfo.strong_peers << " strong and " << (pinfo.peers.size() - pinfo.strong_peers) << " opportunistic blink peers");
-        pinfo.relay_to_peers("blink.submit", blink_data);
+        MDEBUG("Relaying flash tx to " << pinfo.strong_peers << " strong and " << (pinfo.peers.size() - pinfo.strong_peers) << " opportunistic flash peers");
+        pinfo.relay_to_peers("flash.submit", flash_data);
     }
 
     // Anything past this point always results in a success or failure signature getting sent to peers
@@ -1055,13 +1055,13 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
          max = tx.get_max_version_for_hf(hf_version);
     if (tx.version < min || tx.version > max) {
         approved = false;
-        MINFO("Blink TX " << tx_hash << " rejected because TX version " << tx.version << " invalid: TX version not between " << min << " and " << max);
+        MINFO("Flash TX " << tx_hash << " rejected because TX version " << tx.version << " invalid: TX version not between " << min << " and " << max);
     } else {
         bool already_in_mempool;
         cryptonote::tx_verification_context tvc = {};
-        approved = qnet.core.get_pool().add_new_blink(btxptr, tvc, already_in_mempool);
+        approved = qnet.core.get_pool().add_new_flash(btxptr, tvc, already_in_mempool);
 
-        MINFO("Blink TX " << tx_hash << (approved ? " approved and added to mempool" : " rejected"));
+        MINFO("Flash TX " << tx_hash << (approved ? " approved and added to mempool" : " rejected"));
         if (!approved)
             MDEBUG("TX rejected because: " << print_tx_verification_context(tvc));
     }
@@ -1070,25 +1070,25 @@ void handle_blink(oxenmq::Message& m, QnetState& qnet) {
     crypto::signature sig;
     generate_signature(hash_to_sign, keys.pub, keys.key, sig);
 
-    // Now that we have the blink tx stored we can add our signature *and* any other pending
+    // Now that we have the flash tx stored we can add our signature *and* any other pending
     // signatures we are holding onto, then blast the entire thing to our peers.
-    for (uint8_t qi = 0; qi < NUM_BLINK_QUORUMS; qi++)
+    for (uint8_t qi = 0; qi < NUM_FLASH_QUORUMS; qi++)
         if (pinfo.my_position[qi] >= 0)
             signatures.emplace_back(approved, qi, pinfo.my_position[qi], sig);
 
-    process_blink_signatures(qnet, btxptr, blink_quorums, checksum, std::move(signatures), tag, m.conn.pubkey());
+    process_flash_signatures(qnet, btxptr, flash_quorums, checksum, std::move(signatures), tag, m.conn.pubkey());
 }
 
 template <typename Consume>
 void extract_signature_values(bt_dict_consumer& data, std::string_view key, std::list<pending_signature>& signatures, Consume consume) {
-    if (!data.skip_until(key)) throw std::invalid_argument("Invalid blink signature data: missing required field '" + std::string{key} + "'");
+    if (!data.skip_until(key)) throw std::invalid_argument("Invalid flash signature data: missing required field '" + std::string{key} + "'");
     auto list = data.consume_list_consumer();
     auto it = signatures.begin();
     for (; !list.is_finished(); ++it) {
-        if (it == signatures.end()) throw std::invalid_argument("Invalid blink signature data: " + std::string{key} + " size > i size");
+        if (it == signatures.end()) throw std::invalid_argument("Invalid flash signature data: " + std::string{key} + " size > i size");
         std::get<decltype(consume(list))>(*it) = consume(list);
     }
-    if (it != signatures.end()) throw std::invalid_argument("Invalid blink signature data: " + std::string{key} + " size < i size");
+    if (it != signatures.end()) throw std::invalid_argument("Invalid flash signature data: " + std::string{key} + " size < i size");
 }
 
 crypto::signature convert_string_view_bytes_to_signature(std::string_view sig_str)
@@ -1103,61 +1103,61 @@ crypto::signature convert_string_view_bytes_to_signature(std::string_view sig_st
   return result;
 }
 
-/// A "blink_sign" message is used to relay signatures from one quorum member to other members.
+/// A "flash_sign" message is used to relay signatures from one quorum member to other members.
 /// Fields are:
 ///
-///     "h" - Blink authorization height of the signature.
+///     "h" - Flash authorization height of the signature.
 ///
 ///     "#" - tx hash of the transaction.
 ///
-///     "q" - checksum of blink quorum members.  Mandatory, and must match the receiving MN's
-///           locally computed checksum of blink quorum members.
+///     "q" - checksum of flash quorum members.  Mandatory, and must match the receiving MN's
+///           locally computed checksum of flash quorum members.
 ///
 ///     "i" - list of quorum indices, i.e. 0 for the base quorum, 1 for the future quorum
 ///
 ///     "p" - list of quorum positions
 ///
-///     "r" - list of blink signature results (0 if rejected, 1 if approved)
+///     "r" - list of flash signature results (0 if rejected, 1 if approved)
 ///
-///     "s" - list of blink signatures
+///     "s" - list of flash signatures
 ///
 /// Each of "i", "p", "r", and "s" must be exactly the same length; each element at a position in
 /// each list corresponds to the values at the same position of the other lists.
 ///
 /// Signatures will be forwarded if new; known signatures will be ignored.
-void handle_blink_signature(Message& m, QnetState& qnet) {
-    MDEBUG("Received a blink tx signature from MN " << to_hex(m.conn.pubkey()));
+void handle_flash_signature(Message& m, QnetState& qnet) {
+    MDEBUG("Received a flash tx signature from MN " << to_hex(m.conn.pubkey()));
 
     if (m.data.size() != 1)
-        throw std::runtime_error("Rejecting blink signature: expected one data entry not " + std::to_string(m.data.size()));
+        throw std::runtime_error("Rejecting flash signature: expected one data entry not " + std::to_string(m.data.size()));
 
     // Note: this dict_consumer processes in ASCII-order.  Also worth noting is that we skip over
     // unknown values here (which could be helpful if we want to add fields in the future).
     bt_dict_consumer data{m.data[0]};
 
     // # - hash (32 bytes)
-    if (!data.skip_until("#")) throw std::invalid_argument("Invalid blink signature data: missing required field '#'");
+    if (!data.skip_until("#")) throw std::invalid_argument("Invalid flash signature data: missing required field '#'");
     auto hash_str = data.consume_string_view();
     if (hash_str.size() != sizeof(crypto::hash))
-        throw std::invalid_argument("Invalid blink signature data: invalid tx hash");
+        throw std::invalid_argument("Invalid flash signature data: invalid tx hash");
     crypto::hash tx_hash;
     std::memcpy(tx_hash.data, hash_str.data(), sizeof(crypto::hash));
 
     // h - height
-    if (!data.skip_until("h")) throw std::invalid_argument("Invalid blink signature data: missing required field 'h'");
-    uint64_t blink_height = data.consume_integer<uint64_t>();
-    if (!blink_height) throw std::invalid_argument("Invalid blink signature data: height cannot be 0");
+    if (!data.skip_until("h")) throw std::invalid_argument("Invalid flash signature data: missing required field 'h'");
+    uint64_t flash_height = data.consume_integer<uint64_t>();
+    if (!flash_height) throw std::invalid_argument("Invalid flash signature data: height cannot be 0");
 
 
     std::list<pending_signature> signatures;
 
     // i - list of quorum indices
-    if (!data.skip_until("i")) throw std::invalid_argument("Invalid blink signature data: missing required field 'i'");
+    if (!data.skip_until("i")) throw std::invalid_argument("Invalid flash signature data: missing required field 'i'");
     auto quorum_indices = data.consume_list_consumer();
     while (!quorum_indices.is_finished()) {
         uint8_t q = quorum_indices.consume_integer<uint8_t>();
-        if (q >= NUM_BLINK_QUORUMS)
-            throw std::invalid_argument("Invalid blink signature data: invalid quorum index " + std::to_string(q));
+        if (q >= NUM_FLASH_QUORUMS)
+            throw std::invalid_argument("Invalid flash signature data: invalid quorum index " + std::to_string(q));
         signatures.emplace_back();
         std::get<uint8_t>(signatures.back()) = q;
     }
@@ -1165,13 +1165,13 @@ void handle_blink_signature(Message& m, QnetState& qnet) {
     // p - list of quorum positions
     extract_signature_values(data, "p", signatures, [](bt_list_consumer& l) {
         int pos = l.consume_integer<int>();
-        if (pos < 0 || pos >= BLINK_SUBQUORUM_SIZE) // This is only input validation: it might actually have to be smaller depending on the actual quorum (we check later)
-            throw std::invalid_argument("Invalid blink signature data: invalid quorum position " + std::to_string(pos));
+        if (pos < 0 || pos >= FLASH_SUBQUORUM_SIZE) // This is only input validation: it might actually have to be smaller depending on the actual quorum (we check later)
+            throw std::invalid_argument("Invalid flash signature data: invalid quorum position " + std::to_string(pos));
         return pos;
     });
 
     // q - quorum membership checksum
-    if (!data.skip_until("q")) throw std::invalid_argument("Invalid blink signature data: missing required field 'q'");
+    if (!data.skip_until("q")) throw std::invalid_argument("Invalid flash signature data: missing required field 'q'");
     // Before 7.1.8 we get a int64_t on the wire, using 2s-complement representation when the value
     // is a uint64_t that exceeds the max of an int64_t so, if negative, pull it off and static cast
     // it back (the static_cast assumes a 2s-complement architecture which isn't technically
@@ -1190,18 +1190,18 @@ void handle_blink_signature(Message& m, QnetState& qnet) {
         return convert_string_view_bytes_to_signature(l.consume_string_view());
     });
 
-    auto blink_quorums = get_blink_quorums(blink_height, qnet.core.get_master_node_list(), &checksum); // throws if bad quorum or checksum mismatch
+    auto flash_quorums = get_flash_quorums(flash_height, qnet.core.get_master_node_list(), &checksum); // throws if bad quorum or checksum mismatch
 
     uint64_t reply_tag = 0;
     ConnectionID reply_conn;
-    std::shared_ptr<blink_tx> btxptr;
-    auto find_blink = [&]() {
-        auto height_it = qnet.blinks.find(blink_height);
-        if (height_it == qnet.blinks.end())
+    std::shared_ptr<flash_tx> btxptr;
+    auto find_flash = [&]() {
+        auto height_it = qnet.flashes.find(flash_height);
+        if (height_it == qnet.flashes.end())
             return;
-        auto &blinks_at_height = height_it->second;
-        auto it = blinks_at_height.find(tx_hash);
-        if (it == blinks_at_height.end())
+        auto &flashes_at_height = height_it->second;
+        auto it = flashes_at_height.find(tx_hash);
+        if (it == flashes_at_height.end())
             return;
         auto &b_meta = it->second;
         btxptr = b_meta.btxptr;
@@ -1210,11 +1210,11 @@ void handle_blink_signature(Message& m, QnetState& qnet) {
     };
 
     {
-        // Most of the time we'll already know about the blink and don't need a unique lock to
+        // Most of the time we'll already know about the flash and don't need a unique lock to
         // extract info we need.  If we fail, we'll stash the signature to be processed when we get
-        // the blink tx itself.
+        // the flash tx itself.
         std::shared_lock lock{qnet.mutex};
-        find_blink();
+        find_flash();
     }
 
     if (!btxptr) {
@@ -1222,57 +1222,57 @@ void handle_blink_signature(Message& m, QnetState& qnet) {
         // We probably don't have it, so want to stash the signature until we received it.  There's
         // a chance, however, that another thread processed it while we were waiting for this
         // exclusive mutex, so check it again before we stash a delayed signature.
-        find_blink();
+        find_flash();
         if (!btxptr) {
-            MINFO("Blink tx not found in local blink cache; delaying signature verification");
-            auto &delayed = qnet.blinks[blink_height][tx_hash].pending_sigs;
+            MINFO("Flash tx not found in local flash cache; delaying signature verification");
+            auto &delayed = qnet.flashes[flash_height][tx_hash].pending_sigs;
             for (auto &sig : signatures)
                 delayed.insert(std::move(sig));
             return;
         }
     }
 
-    MINFO("Found blink tx in local blink cache");
+    MINFO("Found flash tx in local flash cache");
 
-    process_blink_signatures(qnet, btxptr, blink_quorums, checksum, std::move(signatures), reply_tag, reply_conn, m.conn.pubkey());
+    process_flash_signatures(qnet, btxptr, flash_quorums, checksum, std::move(signatures), reply_tag, reply_conn, m.conn.pubkey());
 }
 
 
-using blink_response = std::pair<cryptonote::blink_result, std::string>;
-struct blink_result_data {
+using flash_response = std::pair<cryptonote::flash_result, std::string>;
+struct flash_result_data {
     crypto::hash hash;
-    std::promise<blink_response> promise;
+    std::promise<flash_response> promise;
     std::chrono::high_resolution_clock::time_point expiry;
     int remote_count;
     std::atomic<int> nostart_count{0};
 };
-std::unordered_map<uint64_t, blink_result_data> pending_blink_results;
-std::shared_mutex pending_blink_result_mutex;
+std::unordered_map<uint64_t, flash_result_data> pending_flash_results;
+std::shared_mutex pending_flash_result_mutex;
 
-// Sanity check against runaway active pending blink submissions
+// Sanity check against runaway active pending flash submissions
 constexpr size_t MAX_ACTIVE_PROMISES = 1000;
 
-std::future<std::pair<cryptonote::blink_result, std::string>> send_blink(cryptonote::core& core, const std::string &tx_blob) {
-    std::promise<std::pair<cryptonote::blink_result, std::string>> promise;
+std::future<std::pair<cryptonote::flash_result, std::string>> send_flash(cryptonote::core& core, const std::string &tx_blob) {
+    std::promise<std::pair<cryptonote::flash_result, std::string>> promise;
     auto future = promise.get_future();
     cryptonote::transaction tx;
     crypto::hash tx_hash;
 
-    uint64_t blink_tag = 0;
-    blink_result_data *brd = nullptr;
+    uint64_t flash_tag = 0;
+    flash_result_data *brd = nullptr;
 
     if (!cryptonote::parse_and_validate_tx_from_blob(tx_blob, tx, tx_hash)) {
-        promise.set_value(std::make_pair(cryptonote::blink_result::rejected, "Could not parse transaction data"));
+        promise.set_value(std::make_pair(cryptonote::flash_result::rejected, "Could not parse transaction data"));
     } else {
         auto now = std::chrono::high_resolution_clock::now();
         bool found = false;
-        std::unique_lock lock{pending_blink_result_mutex};
-        for (auto it = pending_blink_results.begin(); it != pending_blink_results.end(); ) {
+        std::unique_lock lock{pending_flash_result_mutex};
+        for (auto it = pending_flash_results.begin(); it != pending_flash_results.end(); ) {
             auto &b_results = it->second;
             if (b_results.expiry < now) {
-                try { b_results.promise.set_value(std::make_pair(cryptonote::blink_result::timeout, "Blink quorum timeout")); }
+                try { b_results.promise.set_value(std::make_pair(cryptonote::flash_result::timeout, "Flash quorum timeout")); }
                 catch (const std::future_error &) { /* ignore */ }
-                it = pending_blink_results.erase(it);
+                it = pending_flash_results.erase(it);
             } else {
                 if (!found && b_results.hash == tx_hash)
                     found = true;
@@ -1280,15 +1280,15 @@ std::future<std::pair<cryptonote::blink_result, std::string>> send_blink(crypton
             }
         }
         if (found) {
-            promise.set_value(std::make_pair(cryptonote::blink_result::rejected, "Transaction was already submitted"));
-        } else if (pending_blink_results.size() >= MAX_ACTIVE_PROMISES) {
-            promise.set_value(std::make_pair(cryptonote::blink_result::rejected, "Node is busy, try again later"));
+            promise.set_value(std::make_pair(cryptonote::flash_result::rejected, "Transaction was already submitted"));
+        } else if (pending_flash_results.size() >= MAX_ACTIVE_PROMISES) {
+            promise.set_value(std::make_pair(cryptonote::flash_result::rejected, "Node is busy, try again later"));
         } else {
             while (!brd) {
-                // Choose an unused tag randomly so that the blink tag value doesn't give anything away
-                blink_tag = tools::rng();
-                if (blink_tag == 0 || pending_blink_results.count(blink_tag) > 0) continue;
-                brd = &pending_blink_results[blink_tag];
+                // Choose an unused tag randomly so that the flash tag value doesn't give anything away
+                flash_tag = tools::rng();
+                if (flash_tag == 0 || pending_flash_results.count(flash_tag) > 0) continue;
+                brd = &pending_flash_results[flash_tag];
                 brd->hash = tx_hash;
                 brd->promise = std::move(promise);
                 brd->expiry = std::chrono::high_resolution_clock::now() + 30s;
@@ -1296,15 +1296,15 @@ std::future<std::pair<cryptonote::blink_result, std::string>> send_blink(crypton
         }
     }
 
-    if (!blink_tag) return future;
+    if (!flash_tag) return future;
 
     try {
         uint64_t height = core.get_current_blockchain_height();
         uint64_t checksum;
-        auto quorums = get_blink_quorums(height, core.get_master_node_list(), nullptr, &checksum);
+        auto quorums = get_flash_quorums(height, core.get_master_node_list(), nullptr, &checksum);
 
         std::string data = bt_serialize<bt_dict>({
-            {"!", blink_tag},
+            {"!", flash_tag},
             {"#", get_data_as_string(tx_hash)},
             {"h", height},
             {"q", checksum},
@@ -1313,12 +1313,12 @@ std::future<std::pair<cryptonote::blink_result, std::string>> send_blink(crypton
 
         auto destinations = peer_prepare_relay_to_quorum_subset(core, quorums.begin(), quorums.end(), 4 /*num_peers*/);
         brd->remote_count = destinations.size();
-        peer_relay_to_prepared_destinations(core, destinations, "blink.submit"sv, std::move(data));
+        peer_relay_to_prepared_destinations(core, destinations, "flash.submit"sv, std::move(data));
 
     } catch (...) {
-        std::unique_lock lock{pending_blink_result_mutex};
-        auto it = pending_blink_results.find(blink_tag); // Look up again because `brd` might have been deleted
-        if (it != pending_blink_results.end()) {
+        std::unique_lock lock{pending_flash_result_mutex};
+        auto it = pending_flash_results.find(flash_tag); // Look up again because `brd` might have been deleted
+        if (it != pending_flash_results.end()) {
             try {
                 it->second.promise.set_exception(std::current_exception());
             } catch (const std::future_error &) { /* ignore */ }
@@ -1328,26 +1328,26 @@ std::future<std::pair<cryptonote::blink_result, std::string>> send_blink(crypton
     return future;
 }
 
-void common_blink_response(uint64_t tag, cryptonote::blink_result res, std::string msg, bool nostart = false) {
+void common_flash_response(uint64_t tag, cryptonote::flash_result res, std::string msg, bool nostart = false) {
     bool promise_set = false;
     {
-        std::shared_lock lock{pending_blink_result_mutex};
-        auto it = pending_blink_results.find(tag);
-        if (it == pending_blink_results.end())
+        std::shared_lock lock{pending_flash_result_mutex};
+        auto it = pending_flash_results.find(tag);
+        if (it == pending_flash_results.end())
             return; // Already handled, or obsolete
 
         auto &pbr = it->second;
         bool forward_response;
         if (nostart) {
             // On a bl.nostart response wait until we have confirmation from a majority of the nodes
-            // we sent to because it could be a local blink quorum node error.
+            // we sent to because it could be a local flash quorum node error.
             int count = ++pbr.nostart_count;
             forward_response = count > pbr.remote_count / 2;
         } else {
             // Otherwise on bl.good or bl.bad response we immediately send it back.  In theory a
             // master node could lie about this, but there's nothing actually at risk other than a
             // false confirmation message returned to the sender which will get resolved at the next
-            // refresh (the recipient verifies blink signatures and isn't affected).
+            // refresh (the recipient verifies flash signatures and isn't affected).
             forward_response = true;
         }
         if (forward_response) {
@@ -1359,8 +1359,8 @@ void common_blink_response(uint64_t tag, cryptonote::blink_result res, std::stri
         }
     }
     if (promise_set) {
-        std::unique_lock lock{pending_blink_result_mutex};
-        pending_blink_results.erase(tag);
+        std::unique_lock lock{pending_flash_result_mutex};
+        pending_flash_results.erase(tag);
     }
 }
 
@@ -1372,28 +1372,28 @@ void common_blink_response(uint64_t tag, cryptonote::blink_result res, std::stri
 ///
 /// It's possible for some nodes to accept and others to refuse, so we don't actually set the
 /// promise unless we get a nostart response from a majority of the remotes.
-void handle_blink_not_started(Message& m) {
+void handle_flash_not_started(Message& m) {
     if (m.data.size() != 1) {
-        MERROR("Bad blink not started response: expected one data entry not " << m.data.size());
+        MERROR("Bad flash not started response: expected one data entry not " << m.data.size());
         return;
     }
     auto data = bt_deserialize<bt_dict>(m.data[0]);
     auto tag = get_int<uint64_t>(data.at("!"));
     auto& error = var::get<std::string>(data.at("e"));
 
-    MINFO("Received no-start blink response: " << error);
+    MINFO("Received no-start flash response: " << error);
 
-    common_blink_response(tag, cryptonote::blink_result::rejected, std::move(error), true /*nostart*/);
+    common_flash_response(tag, cryptonote::flash_result::rejected, std::move(error), true /*nostart*/);
 }
-/// bl.bad gets returned once we know enough of the blink quorum has rejected the result to make it
+/// bl.bad gets returned once we know enough of the flash quorum has rejected the result to make it
 /// unequivocal that it has been rejected.  We require a failure response from a majority of the
 /// remotes before setting the promise.
 ///
 ///     ! - the tag as included in the submission
 ///
-void handle_blink_failure(Message &m) {
+void handle_flash_failure(Message &m) {
     if (m.data.size() != 1) {
-        MERROR("Blink failure message not understood: expected one data entry not " << m.data.size());
+        MERROR("Flash failure message not understood: expected one data entry not " << m.data.size());
         return;
     }
     auto data = bt_deserialize<bt_dict>(m.data[0]);
@@ -1405,63 +1405,63 @@ void handle_blink_failure(Message &m) {
     // signature receipt, not at rejection time), so for now we don't include it.
     //auto &error = var::get<std::string>(data.at("e"));
 
-    MINFO("Received blink failure response");
+    MINFO("Received flash failure response");
 
-    common_blink_response(tag, cryptonote::blink_result::rejected, "Transaction rejected by quorum"s);
+    common_flash_response(tag, cryptonote::flash_result::rejected, "Transaction rejected by quorum"s);
 }
 
-/// bl.good gets returned once we know enough of the blink quorum has accepted the result to make it
+/// bl.good gets returned once we know enough of the flash quorum has accepted the result to make it
 /// valid.  We require a good response from a majority of the remotes before setting the promise.
 ///
 ///     ! - the tag as included in the submission
 ///
-void handle_blink_success(Message& m) {
+void handle_flash_success(Message& m) {
     if (m.data.size() != 1) {
-        MERROR("Blink success message not understood: expected one data entry not " << m.data.size());
+        MERROR("Flash success message not understood: expected one data entry not " << m.data.size());
         return;
     }
     auto data = bt_deserialize<bt_dict>(m.data[0]);
     auto tag = get_int<uint64_t>(data.at("!"));
 
-    MINFO("Received blink success response");
+    MINFO("Received flash success response");
 
-    common_blink_response(tag, cryptonote::blink_result::accepted, ""s);
+    common_flash_response(tag, cryptonote::flash_result::accepted, ""s);
 }
 
 //
-// Pulse
+// POS
 //
 
-// NOTE: Common header fields in pulse::message (quorum position, round,
+// NOTE: Common header fields in POS::message (quorum position, round,
 // signature) are tagged lexicographically sorted with the header to allow
 // sequentially parsing out the header data in one shot.
 
-const std::string PULSE_TAG_QUORUM_POSITION   = "q";
-const std::string PULSE_TAG_BLOCK_ROUND       = "r";
-const std::string PULSE_TAG_SIGNATURE         = "s";
+const std::string POS_TAG_QUORUM_POSITION   = "q";
+const std::string POS_TAG_BLOCK_ROUND       = "r";
+const std::string POS_TAG_SIGNATURE         = "s";
 
 // Extra fields are intentionally given tags after the common header fields.
-const std::string PULSE_TAG_BLOCK_TEMPLATE        = "t";
-const std::string PULSE_TAG_VALIDATOR_BITSET      = "u";
-const std::string PULSE_TAG_RANDOM_VALUE          = "v";
-const std::string PULSE_TAG_RANDOM_VALUE_HASH     = "x";
-const std::string PULSE_TAG_FINAL_BLOCK_SIGNATURE = "z";
+const std::string POS_TAG_BLOCK_TEMPLATE        = "t";
+const std::string POS_TAG_VALIDATOR_BITSET      = "u";
+const std::string POS_TAG_RANDOM_VALUE          = "v";
+const std::string POS_TAG_RANDOM_VALUE_HASH     = "x";
+const std::string POS_TAG_FINAL_BLOCK_SIGNATURE = "z";
 
-const std::string PULSE_CMD_CATEGORY               = "pulse";
-const std::string PULSE_CMD_VALIDATOR_BITSET       = "validator_bitset";
-const std::string PULSE_CMD_VALIDATOR_BIT          = "validator_bit";
-const std::string PULSE_CMD_BLOCK_TEMPLATE         = "block_template";
-const std::string PULSE_CMD_RANDOM_VALUE_HASH      = "random_value_hash";
-const std::string PULSE_CMD_RANDOM_VALUE           = "random_value";
-const std::string PULSE_CMD_SIGNED_BLOCK           = "signed_block";
-const std::string PULSE_CMD_SEND_VALIDATOR_BITSET  = PULSE_CMD_CATEGORY + "." + PULSE_CMD_VALIDATOR_BITSET;
-const std::string PULSE_CMD_SEND_VALIDATOR_BIT     = PULSE_CMD_CATEGORY + "." + PULSE_CMD_VALIDATOR_BIT;
-const std::string PULSE_CMD_SEND_BLOCK_TEMPLATE    = PULSE_CMD_CATEGORY + "." + PULSE_CMD_BLOCK_TEMPLATE;
-const std::string PULSE_CMD_SEND_RANDOM_VALUE_HASH = PULSE_CMD_CATEGORY + "." + PULSE_CMD_RANDOM_VALUE_HASH;
-const std::string PULSE_CMD_SEND_RANDOM_VALUE      = PULSE_CMD_CATEGORY + "." + PULSE_CMD_RANDOM_VALUE;
-const std::string PULSE_CMD_SEND_SIGNED_BLOCK      = PULSE_CMD_CATEGORY + "." + PULSE_CMD_SIGNED_BLOCK;
+const std::string POS_CMD_CATEGORY               = "POS";
+const std::string POS_CMD_VALIDATOR_BITSET       = "validator_bitset";
+const std::string POS_CMD_VALIDATOR_BIT          = "validator_bit";
+const std::string POS_CMD_BLOCK_TEMPLATE         = "block_template";
+const std::string POS_CMD_RANDOM_VALUE_HASH      = "random_value_hash";
+const std::string POS_CMD_RANDOM_VALUE           = "random_value";
+const std::string POS_CMD_SIGNED_BLOCK           = "signed_block";
+const std::string POS_CMD_SEND_VALIDATOR_BITSET  = POS_CMD_CATEGORY + "." + POS_CMD_VALIDATOR_BITSET;
+const std::string POS_CMD_SEND_VALIDATOR_BIT     = POS_CMD_CATEGORY + "." + POS_CMD_VALIDATOR_BIT;
+const std::string POS_CMD_SEND_BLOCK_TEMPLATE    = POS_CMD_CATEGORY + "." + POS_CMD_BLOCK_TEMPLATE;
+const std::string POS_CMD_SEND_RANDOM_VALUE_HASH = POS_CMD_CATEGORY + "." + POS_CMD_RANDOM_VALUE_HASH;
+const std::string POS_CMD_SEND_RANDOM_VALUE      = POS_CMD_CATEGORY + "." + POS_CMD_RANDOM_VALUE;
+const std::string POS_CMD_SEND_SIGNED_BLOCK      = POS_CMD_CATEGORY + "." + POS_CMD_SIGNED_BLOCK;
 
-void pulse_relay_message_to_quorum(void *self, pulse::message const &msg, master_nodes::quorum const &quorum, bool block_producer)
+void POS_relay_message_to_quorum(void *self, POS::message const &msg, master_nodes::quorum const &quorum, bool block_producer)
 {
   peer_info::exclude_set relay_exclude;
 
@@ -1469,65 +1469,65 @@ void pulse_relay_message_to_quorum(void *self, pulse::message const &msg, master
   std::string_view command    = {};
 
   bt_dict data                = {};
-  data[PULSE_TAG_SIGNATURE]   = tools::view_guts(msg.signature);
-  data[PULSE_TAG_BLOCK_ROUND] = msg.round;
+  data[POS_TAG_SIGNATURE]   = tools::view_guts(msg.signature);
+  data[POS_TAG_BLOCK_ROUND] = msg.round;
 
-  if (msg.type == pulse::message_type::block_template)
+  if (msg.type == POS::message_type::block_template)
   {
-    command                        = PULSE_CMD_SEND_BLOCK_TEMPLATE;
-    data[PULSE_TAG_BLOCK_TEMPLATE] = msg.block_template.blob;
+    command                        = POS_CMD_SEND_BLOCK_TEMPLATE;
+    data[POS_TAG_BLOCK_TEMPLATE] = msg.block_template.blob;
   }
   else
   {
-    data[PULSE_TAG_QUORUM_POSITION] = msg.quorum_position;
+    data[POS_TAG_QUORUM_POSITION] = msg.quorum_position;
 
     switch(msg.type)
     {
-      case pulse::message_type::invalid:
+      case POS::message_type::invalid:
         assert("Invalid Code Path" == nullptr);
         break;
 
-      case pulse::message_type::signed_block:
+      case POS::message_type::signed_block:
       {
-        command = PULSE_CMD_SEND_SIGNED_BLOCK;
-        data[PULSE_TAG_FINAL_BLOCK_SIGNATURE] = tools::view_guts(msg.signed_block.signature_of_final_block_hash);
+        command = POS_CMD_SEND_SIGNED_BLOCK;
+        data[POS_TAG_FINAL_BLOCK_SIGNATURE] = tools::view_guts(msg.signed_block.signature_of_final_block_hash);
       }
       break;
 
-      case pulse::message_type::block_template: break;
+      case POS::message_type::block_template: break;
 
-      case pulse::message_type::handshake: /* FALLTHRU */
-      case pulse::message_type::handshake_bitset:
+      case POS::message_type::handshake: /* FALLTHRU */
+      case POS::message_type::handshake_bitset:
       {
         assert(msg.quorum_position < quorum.validators.size());
 
-        include_block_producer = msg.type == pulse::message_type::handshake_bitset;
+        include_block_producer = msg.type == POS::message_type::handshake_bitset;
         relay_exclude.insert(quorum.validators[msg.quorum_position]);
 
-        if (msg.type == pulse::message_type::handshake)
+        if (msg.type == POS::message_type::handshake)
         {
-          command = PULSE_CMD_SEND_VALIDATOR_BIT;
+          command = POS_CMD_SEND_VALIDATOR_BIT;
         }
         else
         {
-          assert(msg.type == pulse::message_type::handshake_bitset);
-          command = PULSE_CMD_SEND_VALIDATOR_BITSET;
-          data[PULSE_TAG_VALIDATOR_BITSET] = msg.handshakes.validator_bitset;
+          assert(msg.type == POS::message_type::handshake_bitset);
+          command = POS_CMD_SEND_VALIDATOR_BITSET;
+          data[POS_TAG_VALIDATOR_BITSET] = msg.handshakes.validator_bitset;
         }
       }
       break;
 
-      case pulse::message_type::random_value_hash:
+      case POS::message_type::random_value_hash:
       {
-        command = PULSE_CMD_SEND_RANDOM_VALUE_HASH;
-        data[PULSE_TAG_RANDOM_VALUE_HASH] = tools::view_guts(msg.random_value_hash.hash);
+        command = POS_CMD_SEND_RANDOM_VALUE_HASH;
+        data[POS_TAG_RANDOM_VALUE_HASH] = tools::view_guts(msg.random_value_hash.hash);
       }
       break;
 
-      case pulse::message_type::random_value:
+      case POS::message_type::random_value:
       {
-        command = PULSE_CMD_SEND_RANDOM_VALUE;
-        data[PULSE_TAG_RANDOM_VALUE] = tools::view_guts(msg.random_value.value);
+        command = POS_CMD_SEND_RANDOM_VALUE;
+        data[POS_TAG_RANDOM_VALUE] = tools::view_guts(msg.random_value.value);
       }
       break;
     }
@@ -1544,7 +1544,7 @@ void pulse_relay_message_to_quorum(void *self, pulse::message const &msg, master
   else
   {
     peer_info peer_list{qnet,
-                        quorum_type::pulse,
+                        quorum_type::POS,
                         &quorum,
                         true /*opportunistic*/,
                         std::move(relay_exclude),
@@ -1553,25 +1553,25 @@ void pulse_relay_message_to_quorum(void *self, pulse::message const &msg, master
   }
 }
 
-pulse::message pulse_parse_msg_header_fields(pulse::message_type type, bt_dict_consumer &data, std::string_view error_prefix)
+POS::message POS_parse_msg_header_fields(POS::message_type type, bt_dict_consumer &data, std::string_view error_prefix)
 {
-  pulse::message result = {};
+  POS::message result = {};
   result.type           = type;
 
-  if (type != pulse::message_type::block_template)
+  if (type != POS::message_type::block_template)
   {
-    if (auto const &tag = PULSE_TAG_QUORUM_POSITION; data.skip_until(tag))
+    if (auto const &tag = POS_TAG_QUORUM_POSITION; data.skip_until(tag))
       result.quorum_position = data.consume_integer<int>();
     else
       throw std::invalid_argument(std::string(error_prefix) + tag + "'");
   }
 
-  if (auto const &tag = PULSE_TAG_BLOCK_ROUND; data.skip_until(tag))
+  if (auto const &tag = POS_TAG_BLOCK_ROUND; data.skip_until(tag))
     result.round = data.consume_integer<uint8_t>();
   else
     throw std::invalid_argument(std::string(error_prefix) + tag + "'");
 
-  if (auto const &tag = PULSE_TAG_SIGNATURE; data.skip_until(tag)) {
+  if (auto const &tag = POS_TAG_SIGNATURE; data.skip_until(tag)) {
     auto sig_str     = data.consume_string_view();
     result.signature = convert_string_view_bytes_to_signature(sig_str);
   } else {
@@ -1583,58 +1583,58 @@ pulse::message pulse_parse_msg_header_fields(pulse::message_type type, bt_dict_c
 
 // Invoked when daemon has received a participation handshake message via
 // QuorumNet from another validator, either forwarded or originating from that
-// node. The message is added to the Pulse message queue and validating the
+// node. The message is added to the POS message queue and validating the
 // contents of the message is left to the caller.
-void handle_pulse_participation_bit_or_bitset(Message &m, QnetState& qnet, bool bitset)
+void handle_POS_participation_bit_or_bitset(Message &m, QnetState& qnet, bool bitset)
 {
   if (m.data.size() != 1)
-      throw std::runtime_error("Rejecting pulse participation "s + (bitset ? "bitset" : "handshake") + ": expected one data entry not " + std::to_string(m.data.size()));
+      throw std::runtime_error("Rejecting POS participation "s + (bitset ? "bitset" : "handshake") + ": expected one data entry not " + std::to_string(m.data.size()));
 
-  std::string_view const INVALID_ARG_PREFIX = bitset ? "Invalid pulse validator bitset: missing required field '"sv
-                                                     : "Invalid pulse validator bit: missing required field '"sv;
+  std::string_view const INVALID_ARG_PREFIX = bitset ? "Invalid POS validator bitset: missing required field '"sv
+                                                     : "Invalid POS validator bit: missing required field '"sv;
   bt_dict_consumer data{m.data[0]};
-  auto type          = (bitset) ? pulse::message_type::handshake_bitset : pulse::message_type::handshake;
-  pulse::message msg = pulse_parse_msg_header_fields(type, data, INVALID_ARG_PREFIX);
+  auto type          = (bitset) ? POS::message_type::handshake_bitset : POS::message_type::handshake;
+  POS::message msg = POS_parse_msg_header_fields(type, data, INVALID_ARG_PREFIX);
 
   if (bitset)
   {
-    if (auto const &tag = PULSE_TAG_VALIDATOR_BITSET; data.skip_until(tag))
+    if (auto const &tag = POS_TAG_VALIDATOR_BITSET; data.skip_until(tag))
       msg.handshakes.validator_bitset = data.consume_integer<uint16_t>();
     else
       throw std::invalid_argument(std::string(INVALID_ARG_PREFIX) + tag + "'");
   }
 
-  qnet.omq.job([&qnet, data = std::move(msg)]() { pulse::handle_message(&qnet, data); }, qnet.core.pulse_thread_id());
+  qnet.omq.job([&qnet, data = std::move(msg)]() { POS::handle_message(&qnet, data); }, qnet.core.POS_thread_id());
 }
 
-void handle_pulse_block_template(Message &m, QnetState &qnet)
+void handle_POS_block_template(Message &m, QnetState &qnet)
 {
   if (m.data.size() != 1)
-      throw std::runtime_error("Rejecting pulse block template expected one data entry not "s + std::to_string(m.data.size()));
+      throw std::runtime_error("Rejecting POS block template expected one data entry not "s + std::to_string(m.data.size()));
 
   bt_dict_consumer data{m.data[0]};
-  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid pulse block template: missing required field '"sv;
-  pulse::message msg = pulse_parse_msg_header_fields(pulse::message_type::block_template, data, INVALID_ARG_PREFIX);
+  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid POS block template: missing required field '"sv;
+  POS::message msg = POS_parse_msg_header_fields(POS::message_type::block_template, data, INVALID_ARG_PREFIX);
 
-  if (auto const &tag = PULSE_TAG_BLOCK_TEMPLATE; data.skip_until(tag))
+  if (auto const &tag = POS_TAG_BLOCK_TEMPLATE; data.skip_until(tag))
     msg.block_template.blob = data.consume_string_view();
   else
     throw std::invalid_argument(std::string(INVALID_ARG_PREFIX) + tag + "'");
 
-  qnet.omq.job([&qnet, data = std::move(msg)]() { pulse::handle_message(&qnet, data); }, qnet.core.pulse_thread_id());
+  qnet.omq.job([&qnet, data = std::move(msg)]() { POS::handle_message(&qnet, data); }, qnet.core.POS_thread_id());
 }
 
-void handle_pulse_random_value_hash(Message &m, QnetState &qnet)
+void handle_POS_random_value_hash(Message &m, QnetState &qnet)
 {
   if (m.data.size() != 1)
-      throw std::runtime_error("Rejecting pulse random value hash expected one data entry not "s + std::to_string(m.data.size()));
+      throw std::runtime_error("Rejecting POS random value hash expected one data entry not "s + std::to_string(m.data.size()));
 
   bt_dict_consumer data{m.data[0]};
 
-  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid pulse random value hash: missing required field '"sv;
-  pulse::message msg = pulse_parse_msg_header_fields(pulse::message_type::random_value_hash, data, INVALID_ARG_PREFIX);
+  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid POS random value hash: missing required field '"sv;
+  POS::message msg = POS_parse_msg_header_fields(POS::message_type::random_value_hash, data, INVALID_ARG_PREFIX);
 
-  if (auto const &tag = PULSE_TAG_RANDOM_VALUE_HASH; data.skip_until(tag)) {
+  if (auto const &tag = POS_TAG_RANDOM_VALUE_HASH; data.skip_until(tag)) {
     auto str = data.consume_string_view();
     if (str.size() != sizeof(msg.random_value_hash.hash))
       throw std::invalid_argument("Invalid hash data size: " + std::to_string(str.size()));
@@ -1644,19 +1644,19 @@ void handle_pulse_random_value_hash(Message &m, QnetState &qnet)
     throw std::invalid_argument(std::string(INVALID_ARG_PREFIX) + tag + "'");
   }
 
-  qnet.omq.job([&qnet, data = std::move(msg)]() { pulse::handle_message(&qnet, data); }, qnet.core.pulse_thread_id());
+  qnet.omq.job([&qnet, data = std::move(msg)]() { POS::handle_message(&qnet, data); }, qnet.core.POS_thread_id());
 }
 
-void handle_pulse_random_value(Message &m, QnetState &qnet)
+void handle_POS_random_value(Message &m, QnetState &qnet)
 {
   if (m.data.size() != 1)
-      throw std::runtime_error("Rejecting pulse random value expected one data entry not "s + std::to_string(m.data.size()));
+      throw std::runtime_error("Rejecting POS random value expected one data entry not "s + std::to_string(m.data.size()));
 
-  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid pulse random value: missing required field '"sv;
+  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid POS random value: missing required field '"sv;
   bt_dict_consumer data{m.data[0]};
 
-  pulse::message msg = pulse_parse_msg_header_fields(pulse::message_type::random_value, data, INVALID_ARG_PREFIX);
-  if (auto const &tag = PULSE_TAG_RANDOM_VALUE; data.skip_until(tag)) {
+  POS::message msg = POS_parse_msg_header_fields(POS::message_type::random_value, data, INVALID_ARG_PREFIX);
+  if (auto const &tag = POS_TAG_RANDOM_VALUE; data.skip_until(tag)) {
     auto str = data.consume_string_view();
     if (str.size() != sizeof(msg.random_value.value.data))
       throw std::invalid_argument("Invalid data size: " + std::to_string(str.size()));
@@ -1665,26 +1665,26 @@ void handle_pulse_random_value(Message &m, QnetState &qnet)
     throw std::invalid_argument(std::string(INVALID_ARG_PREFIX) + tag + "'");
   }
 
-  qnet.omq.job([&qnet, data = std::move(msg)]() { pulse::handle_message(&qnet, data); }, qnet.core.pulse_thread_id());
+  qnet.omq.job([&qnet, data = std::move(msg)]() { POS::handle_message(&qnet, data); }, qnet.core.POS_thread_id());
 }
 
-void handle_pulse_signed_block(Message &m, QnetState &qnet)
+void handle_POS_signed_block(Message &m, QnetState &qnet)
 {
   if (m.data.size() != 1)
-      throw std::runtime_error("Rejecting pulse signed block expected one data entry not "s + std::to_string(m.data.size()));
+      throw std::runtime_error("Rejecting POS signed block expected one data entry not "s + std::to_string(m.data.size()));
 
-  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid pulse signed block: missing required field '"sv;
+  std::string_view constexpr INVALID_ARG_PREFIX = "Invalid POS signed block: missing required field '"sv;
   bt_dict_consumer data{m.data[0]};
-  pulse::message msg = pulse_parse_msg_header_fields(pulse::message_type::signed_block, data, INVALID_ARG_PREFIX);
+  POS::message msg = POS_parse_msg_header_fields(POS::message_type::signed_block, data, INVALID_ARG_PREFIX);
 
-  if (auto const &tag = PULSE_TAG_FINAL_BLOCK_SIGNATURE; data.skip_until(tag)) {
+  if (auto const &tag = POS_TAG_FINAL_BLOCK_SIGNATURE; data.skip_until(tag)) {
     auto sig_str                                   = data.consume_string_view();
     msg.signed_block.signature_of_final_block_hash = convert_string_view_bytes_to_signature(sig_str);
   } else {
-    throw std::invalid_argument("Invalid pulse signed block: missing required field '"s + tag + "'");
+    throw std::invalid_argument("Invalid POS signed block: missing required field '"s + tag + "'");
   }
 
-  qnet.omq.job([&qnet, data = std::move(msg)]() { pulse::handle_message(&qnet, data); }, qnet.core.pulse_thread_id());
+  qnet.omq.job([&qnet, data = std::move(msg)]() { POS::handle_message(&qnet, data); }, qnet.core.POS_thread_id());
 }
 
 } // end empty namespace
@@ -1697,8 +1697,8 @@ void init_core_callbacks() {
     cryptonote::quorumnet_init = setup_endpoints;
     cryptonote::quorumnet_delete = delete_qnetstate;
     cryptonote::quorumnet_relay_obligation_votes = relay_obligation_votes;
-    cryptonote::quorumnet_send_blink = send_blink;
-    cryptonote::quorumnet_pulse_relay_message_to_quorum = pulse_relay_message_to_quorum;
+    cryptonote::quorumnet_send_flash = send_flash;
+    cryptonote::quorumnet_POS_relay_message_to_quorum = POS_relay_message_to_quorum;
 }
 
 namespace {
@@ -1713,45 +1713,45 @@ void setup_endpoints(cryptonote::core& core, void* obj) {
         omq.add_category("quorum", Access{AuthLevel::none, true /*remote mn*/, true /*local mn*/}, 2 /*reserved threads*/)
             // Receives an obligation vote
             .add_command("vote_ob", [&qnet](Message& m) { handle_obligation_vote(m, qnet); })
-            // Receives blink tx signatures or rejections between quorum members (either original or
+            // Receives flash tx signatures or rejections between quorum members (either original or
             // forwarded).  These are propagated by the receiver if new
-            .add_command("blink_sign", [&qnet](Message& m) { handle_blink_signature(m, qnet); })
+            .add_command("flash_sign", [&qnet](Message& m) { handle_flash_signature(m, qnet); })
             // Receives a request for the timestamp
             .add_request_command("timestamp", [](Message& m) { handle_timestamp(m); })
             ;
 
-        // blink.*: commands sent to blink quorum members from anyone (e.g. blink submission)
-        omq.add_category("blink", Access{AuthLevel::none, false /*remote mn*/, true /*local mn*/}, 1 /*reserved thread*/)
-            // Receives a new blink tx submission from an external node, or forward from other quorum
+        // flash.*: commands sent to flash quorum members from anyone (e.g. flash submission)
+        omq.add_category("flash", Access{AuthLevel::none, false /*remote mn*/, true /*local mn*/}, 1 /*reserved thread*/)
+            // Receives a new flash tx submission from an external node, or forward from other quorum
             // members who received it from an external node.
-            .add_command("submit", [&qnet](Message& m) { handle_blink(m, qnet); })
+            .add_command("submit", [&qnet](Message& m) { handle_flash(m, qnet); })
             ;
 
-        omq.add_category(PULSE_CMD_CATEGORY, Access{AuthLevel::none, true /*remote mn*/, true /*local mn*/}, 1 /*reserved thread*/)
-            .add_command(PULSE_CMD_VALIDATOR_BIT, [&qnet](Message& m) { handle_pulse_participation_bit_or_bitset(m, qnet, false /*bitset*/); })
-            .add_command(PULSE_CMD_VALIDATOR_BITSET, [&qnet](Message& m) { handle_pulse_participation_bit_or_bitset(m, qnet, true /*bitset*/); })
-            .add_command(PULSE_CMD_BLOCK_TEMPLATE, [&qnet](Message& m) { handle_pulse_block_template(m, qnet); })
-            .add_command(PULSE_CMD_RANDOM_VALUE_HASH, [&qnet](Message& m) { handle_pulse_random_value_hash(m, qnet); })
-            .add_command(PULSE_CMD_RANDOM_VALUE, [&qnet](Message& m) { handle_pulse_random_value(m, qnet); })
-            .add_command(PULSE_CMD_SIGNED_BLOCK, [&qnet](Message& m) { handle_pulse_signed_block(m, qnet); })
+        omq.add_category(POS_CMD_CATEGORY, Access{AuthLevel::none, true /*remote mn*/, true /*local mn*/}, 1 /*reserved thread*/)
+            .add_command(POS_CMD_VALIDATOR_BIT, [&qnet](Message& m) { handle_POS_participation_bit_or_bitset(m, qnet, false /*bitset*/); })
+            .add_command(POS_CMD_VALIDATOR_BITSET, [&qnet](Message& m) { handle_POS_participation_bit_or_bitset(m, qnet, true /*bitset*/); })
+            .add_command(POS_CMD_BLOCK_TEMPLATE, [&qnet](Message& m) { handle_POS_block_template(m, qnet); })
+            .add_command(POS_CMD_RANDOM_VALUE_HASH, [&qnet](Message& m) { handle_POS_random_value_hash(m, qnet); })
+            .add_command(POS_CMD_RANDOM_VALUE, [&qnet](Message& m) { handle_POS_random_value(m, qnet); })
+            .add_command(POS_CMD_SIGNED_BLOCK, [&qnet](Message& m) { handle_POS_signed_block(m, qnet); })
             ;
     }
 
-    // bl.*: responses to blinks sent from quorum members back to the node who submitted the blink
+    // bl.*: responses to flashes sent from quorum members back to the node who submitted the flash
     omq.add_category("bl", Access{AuthLevel::none, true /*remote mn*/, false /*local mn*/})
-        // Message sent back to the blink initiator that the transaction was NOT relayed, either
+        // Message sent back to the flash initiator that the transaction was NOT relayed, either
         // because the height was invalid or the quorum checksum failed.  This is only sent by the
         // entry point master nodes into the quorum to let it know the tx verification has not
         // started from that node.  It does not necessarily indicate a failure unless all entry
         // point attempts return the same.
-        .add_command("nostart", handle_blink_not_started)
-        // Message send back from the entry MNs back to the initiator that the Blink tx has been
-        // rejected: that is, enough signed rejections have occured that the Blink tx cannot be
+        .add_command("nostart", handle_flash_not_started)
+        // Message send back from the entry MNs back to the initiator that the Flash tx has been
+        // rejected: that is, enough signed rejections have occured that the Flash tx cannot be
         // accepted.
-        .add_command("bad", handle_blink_failure)
-        // Sends a message from the entry MNs back to the initiator that the Blink tx has been
+        .add_command("bad", handle_flash_failure)
+        // Sends a message from the entry MNs back to the initiator that the Flash tx has been
         // accepted and validated and is being broadcast to the network.
-        .add_command("good", handle_blink_success)
+        .add_command("good", handle_flash_success)
         ;
 
     // Compatibility aliases.  No longer used since 7.1.4, but can still be received from previous
@@ -1763,9 +1763,9 @@ void setup_endpoints(cryptonote::core& core, void* obj) {
     // be left.
 
     omq.add_command_alias("vote_ob", "quorum.vote_ob");
-    omq.add_command_alias("blink_sign", "quorum.blink_sign");
+    omq.add_command_alias("flash_sign", "quorum.flash_sign");
     omq.add_command_alias("timestamp", "quorum.timestamp");
-    omq.add_command_alias("blink", "blink.submit");
+    omq.add_command_alias("flash", "flash.submit");
     omq.add_command_alias("bl_nostart", "bl.nostart");
     omq.add_command_alias("bl_bad", "bl.bad");
     omq.add_command_alias("bl_good", "bl.good");

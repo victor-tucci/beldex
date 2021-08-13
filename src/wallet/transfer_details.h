@@ -1,22 +1,22 @@
 // Copyright (c) 2018-2020, The Beldex Project
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -44,8 +44,8 @@ struct transfer_details
   uint64_t m_global_output_index;
   bool m_spent;
   bool m_frozen;
-  bool m_unmined_blink;
-  bool m_was_blink;
+  bool m_unmined_flash;
+  bool m_was_flash;
   uint64_t m_spent_height;
   crypto::key_image m_key_image; //TODO: key_image stored twice :(
   rct::key m_mask;
@@ -77,8 +77,8 @@ void serialize_value(Archive& ar, transfer_details& x) {
   field(ar, "m_global_output_index", x.m_global_output_index);
   field(ar, "m_spent", x.m_spent);
   field(ar, "m_frozen", x.m_frozen);
-  field(ar, "m_unmined_blink", x.m_unmined_blink);
-  field(ar, "m_was_blink", x.m_was_blink);
+  field(ar, "m_unmined_flash", x.m_unmined_flash);
+  field(ar, "m_was_flash", x.m_was_flash);
   field(ar, "m_spent_height", x.m_spent_height);
   field(ar, "m_key_image", x.m_key_image);
   field(ar, "m_mask", x.m_mask);
@@ -127,9 +127,9 @@ void serialize(Archive &a, wallet::transfer_details &x, const unsigned int ver)
   if (ver > 11)
     a & x.m_frozen;
   if (ver > 12)
-    a & x.m_unmined_blink;
+    a & x.m_unmined_flash;
   if (ver > 13)
-    a & x.m_was_blink;
+    a & x.m_was_flash;
 
   if constexpr (typename Archive::is_loading())
   {
@@ -138,9 +138,9 @@ void serialize(Archive &a, wallet::transfer_details &x, const unsigned int ver)
     if (ver < 12)
       x.m_frozen = false;
     if (ver < 13)
-      x.m_unmined_blink = false;
+      x.m_unmined_flash = false;
     if (ver < 14)
-      x.m_was_blink = false;
+      x.m_was_flash = false;
   }
 }
 

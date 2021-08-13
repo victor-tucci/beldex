@@ -62,22 +62,22 @@ namespace cryptonote {
   /* Cryptonote helper functions                                          */
   /************************************************************************/
   //-----------------------------------------------------------------------------------------------
-  bool block_header_has_pulse_components(block_header const &blk_header)
+  bool block_header_has_POS_components(block_header const &blk_header)
   {
-    constexpr cryptonote::pulse_random_value empty_random_value = {};
-    bool bitset        = blk_header.pulse.validator_bitset > 0;
-    bool random_value  = !(blk_header.pulse.random_value == empty_random_value);
+    constexpr cryptonote::POS_random_value empty_random_value = {};
+    bool bitset        = blk_header.POS.validator_bitset > 0;
+    bool random_value  = !(blk_header.POS.random_value == empty_random_value);
     uint8_t hf_version = blk_header.major_version;
-    bool result        = hf_version >= cryptonote::network_version_17_pulse && (bitset || random_value);
+    bool result        = hf_version >= cryptonote::network_version_17_POS && (bitset || random_value);
     return result;
   }
   //-----------------------------------------------------------------------------------------------
-  bool block_has_pulse_components(block const &blk)
+  bool block_has_POS_components(block const &blk)
   {
     bool signatures    = blk.signatures.size();
     uint8_t hf_version = blk.major_version;
     bool result =
-        (hf_version >= cryptonote::network_version_17_pulse && signatures) || block_header_has_pulse_components(blk);
+        (hf_version >= cryptonote::network_version_17_POS && signatures) || block_header_has_POS_components(blk);
     return result;
   }
   //-----------------------------------------------------------------------------------------------
@@ -130,7 +130,7 @@ namespace cryptonote {
       return true;
     }
 
-	if((height>=56500) && (version<network_version_17_pulse))
+	if((height>=56500) && (version<network_version_17_POS))
 	{
 		reward = COIN * 2;
 		return true;
@@ -139,7 +139,7 @@ namespace cryptonote {
     static_assert(TARGET_BLOCK_TIME_V17 % 1 == 0s, "difficulty targets must be a multiple of 60");
 
     uint64_t base_reward =
-      version >= network_version_17_pulse ? BLOCK_REWARD_HF17_PULSE :
+      version >= network_version_17_POS ? BLOCK_REWARD_HF17_POS :
       version >= network_version_16_bns ? BLOCK_REWARD_HF16 :
         block_reward_unpenalized_formula_v7(version, already_generated_coins, height);
 

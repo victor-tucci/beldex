@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "beldex_tests.h"
@@ -436,9 +436,9 @@ bool beldex_checkpointing_master_node_checkpoints_check_reorg_windows::generate(
   return true;
 }
 
-bool beldex_core_block_reward_unpenalized_pre_pulse::generate(std::vector<test_event_entry>& events)
+bool beldex_core_block_reward_unpenalized_pre_POS::generate(std::vector<test_event_entry>& events)
 {
-  auto hard_forks = beldex_generate_hard_fork_table(cryptonote::network_version_17_pulse - 1);
+  auto hard_forks = beldex_generate_hard_fork_table(cryptonote::network_version_17_POS - 1);
   beldex_chain_generator gen(events, hard_forks);
   gen.add_blocks_until_version(hard_forks.back().version);
 
@@ -475,7 +475,7 @@ bool beldex_core_block_reward_unpenalized_pre_pulse::generate(std::vector<test_e
   return true;
 }
 
-bool beldex_core_block_reward_unpenalized_post_pulse::generate(std::vector<test_event_entry>& events)
+bool beldex_core_block_reward_unpenalized_post_POS::generate(std::vector<test_event_entry>& events)
 {
   std::vector<cryptonote::hard_fork> hard_forks = beldex_generate_hard_fork_table(cryptonote::network_version_count -1, 150 /*Proof Of Stake Delay*/);
   beldex_chain_generator gen(events, hard_forks);
@@ -545,7 +545,7 @@ bool beldex_core_fee_burning::generate(std::vector<test_event_entry>& events)
   gen.add_blocks_until_version(hard_forks.back().version);
 
   uint8_t newest_hf = hard_forks.back().version;
-  assert(newest_hf >= cryptonote::network_version_15_blink);
+  assert(newest_hf >= cryptonote::network_version_15_flash);
 
   gen.add_mined_money_unlock_blocks();
 
@@ -699,7 +699,7 @@ bool beldex_core_block_rewards_lrc6::generate(std::vector<test_event_entry>& eve
 {
   constexpr auto& network = cryptonote::get_config(cryptonote::FAKECHAIN);
   std::vector<cryptonote::hard_fork> hard_forks = beldex_generate_hard_fork_table(cryptonote::network_version_16_bns);
-  hard_forks.push_back({cryptonote::network_version_17_pulse,0, hard_forks.back().height + network.GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS + 10});
+  hard_forks.push_back({cryptonote::network_version_17_POS,0, hard_forks.back().height + network.GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS + 10});
   hard_forks.push_back({cryptonote::network_version_18,0, hard_forks.back().height + network.GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS});
   beldex_chain_generator batched_governance_generator(events, hard_forks);
   batched_governance_generator.add_blocks_until_version(cryptonote::network_version_18);
@@ -710,7 +710,7 @@ bool beldex_core_block_rewards_lrc6::generate(std::vector<test_event_entry>& eve
   {
     if (hf.version == cryptonote::network_version_16_bns)
       hf15_height = hf.height;
-    else if (hf.version == cryptonote::network_version_17_pulse)
+    else if (hf.version == cryptonote::network_version_17_POS)
       hf16_height = hf.height;
     else
       hf17_height = hf.height;
@@ -942,7 +942,7 @@ bool beldex_core_test_deregister_on_split::generate(std::vector<test_event_entry
 
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
- 
+
   add_master_nodes(gen, master_nodes::CHECKPOINT_QUORUM_SIZE + 1);
   gen.create_and_add_next_block(); // Can't change master node state on the same height it was registered in
   auto fork = gen;
@@ -3008,7 +3008,7 @@ bool beldex_master_nodes_insufficient_contribution::generate(std::vector<test_ev
   return true;
 }
 
-static beldex_chain_generator setup_pulse_tests(std::vector<test_event_entry> &events)
+static beldex_chain_generator setup_POS_tests(std::vector<test_event_entry> &events)
 {
   auto hard_forks = beldex_generate_hard_fork_table();
   beldex_chain_generator result(events, hard_forks);
@@ -3016,8 +3016,8 @@ static beldex_chain_generator setup_pulse_tests(std::vector<test_event_entry> &e
   result.add_blocks_until_version(hard_forks.back().version);
   result.add_mined_money_unlock_blocks();
 
-  std::vector<cryptonote::transaction> registration_txs(master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN));
-  for (auto i = 0u; i < master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN); ++i)
+  std::vector<cryptonote::transaction> registration_txs(master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN));
+  for (auto i = 0u; i < master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN); ++i)
     registration_txs[i] = result.create_and_add_registration_tx(result.first_miner());
 
   // NOTE: Generate Valid Blocks
@@ -3026,26 +3026,26 @@ static beldex_chain_generator setup_pulse_tests(std::vector<test_event_entry> &e
   return result;
 }
 
-bool beldex_pulse_invalid_validator_bitset::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_invalid_validator_bitset::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
+  beldex_chain_generator gen = setup_POS_tests(events);
   gen.add_event_msg("Invalid Block: Validator bitset wrong");
   beldex_blockchain_entry entry     = {};
   beldex_create_block_params params = gen.next_block_params();
   gen.block_begin(entry, params, {} /*tx_list*/);
 
   // NOTE: Overwrite valiadator bitset to be wrong
-  entry.block.pulse.validator_bitset = ~master_nodes::pulse_validator_bit_mask();
+  entry.block.POS.validator_bitset = ~master_nodes::POS_validator_bit_mask();
 
   gen.block_end(entry, params);
-  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid Pulse Block, specifies the wrong validator bitset");
+  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid POS Block, specifies the wrong validator bitset");
 
   return true;
 }
 
-bool beldex_pulse_invalid_signature::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_invalid_signature::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
+  beldex_chain_generator gen = setup_POS_tests(events);
   gen.add_event_msg("Invalid Block: Wrong signature given (null signature)");
   beldex_blockchain_entry entry     = {};
   beldex_create_block_params params = gen.next_block_params();
@@ -3054,30 +3054,30 @@ bool beldex_pulse_invalid_signature::generate(std::vector<test_event_entry> &eve
   // NOTE: Overwrite signature
   entry.block.signatures[0].signature = {};
   gen.block_end(entry, params);
-  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid Pulse Block, specifies the wrong validator bitset");
+  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid POS Block, specifies the wrong validator bitset");
 
   return true;
 }
 
-bool beldex_pulse_oob_voter_index::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_oob_voter_index::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
+  beldex_chain_generator gen = setup_POS_tests(events);
   gen.add_event_msg("Invalid Block: Quorum index that indexes out of bounds");
   beldex_blockchain_entry entry     = {};
   beldex_create_block_params params = gen.next_block_params();
   gen.block_begin(entry, params, {} /*tx_list*/);
 
   // NOTE: Overwrite oob voter index
-  entry.block.signatures.back().voter_index = master_nodes::PULSE_QUORUM_NUM_VALIDATORS + 1;
+  entry.block.signatures.back().voter_index = master_nodes::POS_QUORUM_NUM_VALIDATORS + 1;
   gen.block_end(entry, params);
-  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid Pulse Block, specifies the wrong validator bitset");
+  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid POS Block, specifies the wrong validator bitset");
 
   return true;
 }
 
-bool beldex_pulse_non_participating_validator::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_non_participating_validator::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
+  beldex_chain_generator gen = setup_POS_tests(events);
   gen.add_event_msg("Invalid Block: Validator gave signature but is not locked in to participate this round.");
   beldex_blockchain_entry entry     = {};
   beldex_create_block_params params = gen.next_block_params();
@@ -3085,29 +3085,29 @@ bool beldex_pulse_non_participating_validator::generate(std::vector<test_event_e
 
   // NOTE: Manually generate signatures to break test
   {
-    entry.block.pulse = {};
+    entry.block.POS = {};
     entry.block.signatures.clear();
 
     {
-      entry.block.pulse.round = 0;
-      for (size_t i = 0; i < sizeof(entry.block.pulse.random_value.data); i++)
-        entry.block.pulse.random_value.data[i] = static_cast<char>(tools::uniform_distribution_portable(tools::rng, 256));
+      entry.block.POS.round = 0;
+      for (size_t i = 0; i < sizeof(entry.block.POS.random_value.data); i++)
+        entry.block.POS.random_value.data[i] = static_cast<char>(tools::uniform_distribution_portable(tools::rng, 256));
     }
 
     master_nodes::quorum quorum = {};
     {
       std::vector<master_nodes::pubkey_and_mninfo> active_mnode_list = params.prev.master_node_state.active_master_nodes_infos();
-      std::vector<crypto::hash> entropy = master_nodes::get_pulse_entropy_for_next_block(gen.db_, params.prev.block, entry.block.pulse.round);
-      quorum = generate_pulse_quorum(cryptonote::FAKECHAIN, params.block_leader.key, entry.block.major_version, active_mnode_list, entropy, entry.block.pulse.round);
-      assert(quorum.validators.size() == master_nodes::PULSE_QUORUM_NUM_VALIDATORS);
+      std::vector<crypto::hash> entropy = master_nodes::get_POS_entropy_for_next_block(gen.db_, params.prev.block, entry.block.POS.round);
+      quorum = generate_POS_quorum(cryptonote::FAKECHAIN, params.block_leader.key, entry.block.major_version, active_mnode_list, entropy, entry.block.POS.round);
+      assert(quorum.validators.size() == master_nodes::POS_QUORUM_NUM_VALIDATORS);
       assert(quorum.workers.size() == 1);
     }
 
     // NOTE: First 7 validators are locked in. We received signatures from the
     // first 6 in the quorum, then the 8th validator in the quorum (who is not
     // meant to be participating).
-    static_assert(master_nodes::PULSE_QUORUM_NUM_VALIDATORS > master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES);
-    entry.block.pulse.validator_bitset = 0b0000'000'0111'1111;
+    static_assert(master_nodes::POS_QUORUM_NUM_VALIDATORS > master_nodes::POS_BLOCK_REQUIRED_SIGNATURES);
+    entry.block.POS.validator_bitset = 0b0000'000'0111'1111;
     size_t const voter_indexes[]       = {0, 1, 2, 3, 4, 5, 7};
 
     crypto::hash block_hash = cryptonote::get_block_hash(entry.block);
@@ -3124,20 +3124,20 @@ bool beldex_pulse_non_participating_validator::generate(std::vector<test_event_e
   }
 
   gen.block_end(entry, params);
-  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid Pulse Block, specifies the wrong validator bitset");
+  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid POS Block, specifies the wrong validator bitset");
 
   return true;
 }
 
-bool beldex_pulse_generate_all_rounds::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_generate_all_rounds::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
+  beldex_chain_generator gen = setup_POS_tests(events);
 
   for (uint8_t round = 0; round < static_cast<uint8_t>(-1); round++)
   {
     beldex_blockchain_entry entry     = {};
     beldex_create_block_params params = gen.next_block_params();
-    params.pulse_round              = round;
+    params.POS_round              = round;
     gen.block_begin(entry, params, {} /*tx_list*/);
     gen.block_end(entry, params);
     gen.add_block(entry, true);
@@ -3146,9 +3146,9 @@ bool beldex_pulse_generate_all_rounds::generate(std::vector<test_event_entry> &e
   return true;
 }
 
-bool beldex_pulse_out_of_order_voters::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_out_of_order_voters::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
+  beldex_chain_generator gen = setup_POS_tests(events);
   gen.add_event_msg("Invalid Block: Quorum voters are out of order");
   beldex_blockchain_entry entry     = {};
   beldex_create_block_params params = gen.next_block_params();
@@ -3158,29 +3158,29 @@ bool beldex_pulse_out_of_order_voters::generate(std::vector<test_event_entry> &e
   entry.block.signatures.back()  = entry.block.signatures.front();
   entry.block.signatures.front() = tmp;
   gen.block_end(entry, params);
-  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid Pulse Block, specifies the signatures not in sorted order");
+  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid POS Block, specifies the signatures not in sorted order");
 
   return true;
 }
 
-bool beldex_pulse_reject_miner_block::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_reject_miner_block::generate(std::vector<test_event_entry> &events)
 {
-  beldex_chain_generator gen = setup_pulse_tests(events);
-  gen.add_event_msg("Invalid Block: PoW Block but we have enough master nodes for Pulse");
+  beldex_chain_generator gen = setup_POS_tests(events);
+  gen.add_event_msg("Invalid Block: PoW Block but we have enough master nodes for POS");
   beldex_blockchain_entry entry     = {};
   beldex_create_block_params params = gen.next_block_params();
   params.type = beldex_create_block_type::miner;
   gen.block_begin(entry, params, {} /*tx_list*/);
 
-  // NOTE: Create an ordinary miner block even when we have enough master nodes for Pulse.
+  // NOTE: Create an ordinary miner block even when we have enough master nodes for POS.
   fill_nonce_with_beldex_generator(&gen, entry.block, TEST_DEFAULT_DIFFICULTY, cryptonote::get_block_height(entry.block));
 
   gen.block_end(entry, params);
-  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid Pulse Block, block was mined with a miner but we have enough nodes for Pulse");
+  gen.add_block(entry, false /*can_be_added_to_blockchain*/, "Invalid POS Block, block was mined with a miner but we have enough nodes for POS");
   return true;
 }
 
-bool beldex_pulse_generate_blocks::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_generate_blocks::generate(std::vector<test_event_entry> &events)
 {
   auto hard_forks = beldex_generate_hard_fork_table();
   beldex_chain_generator gen(events, hard_forks);
@@ -3188,23 +3188,23 @@ bool beldex_pulse_generate_blocks::generate(std::vector<test_event_entry> &event
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
-  add_master_nodes(gen, master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN));
-  gen.add_n_blocks(40); // Chain genereator will generate blocks via Pulse quorums
+  add_master_nodes(gen, master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN));
+  gen.add_n_blocks(40); // Chain genereator will generate blocks via POS quorums
 
-  beldex_register_callback(events, "check_pulse_blocks", [](cryptonote::core &c, size_t ev_index)
+  beldex_register_callback(events, "check_POS_blocks", [](cryptonote::core &c, size_t ev_index)
   {
-    DEFINE_TESTS_ERROR_CONTEXT("check_pulse_blocks");
+    DEFINE_TESTS_ERROR_CONTEXT("check_POS_blocks");
     uint64_t top_height;
     crypto::hash top_hash;
     c.get_blockchain_top(top_height, top_hash);
     cryptonote::block top_block = c.get_blockchain_storage().get_db().get_block(top_hash);
-    CHECK_TEST_CONDITION(cryptonote::block_has_pulse_components(top_block));
+    CHECK_TEST_CONDITION(cryptonote::block_has_POS_components(top_block));
     return true;
   });
   return true;
 }
 
-bool beldex_pulse_fallback_to_pow_and_back::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_fallback_to_pow_and_back::generate(std::vector<test_event_entry> &events)
 {
   auto hard_forks = beldex_generate_hard_fork_table();
   beldex_chain_generator gen(events, hard_forks);
@@ -3212,10 +3212,10 @@ bool beldex_pulse_fallback_to_pow_and_back::generate(std::vector<test_event_entr
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
-  add_master_nodes(gen, master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN));
+  add_master_nodes(gen, master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN));
   gen.create_and_add_next_block();
 
-  gen.add_event_msg("Deregister 1 node, we now have insufficient nodes for Pulse");
+  gen.add_event_msg("Deregister 1 node, we now have insufficient nodes for POS");
   {
     const auto deregister_pub_key_1 = gen.top_quorum().obligations->workers[0];
     cryptonote::transaction tx =
@@ -3231,18 +3231,18 @@ bool beldex_pulse_fallback_to_pow_and_back::generate(std::vector<test_event_entr
     beldex_blockchain_entry entry = {};
     bool created = gen.create_block(entry, block_params, {});
     assert(created);
-    gen.add_block(entry, true, "Can add a Miner block, we have insufficient nodes for Pulse so we fall back to PoW blocks.");
+    gen.add_block(entry, true, "Can add a Miner block, we have insufficient nodes for POS so we fall back to PoW blocks.");
   }
 
-  beldex_register_callback(events, "check_no_pulse_quorum_exists", [](cryptonote::core &c, size_t ev_index)
+  beldex_register_callback(events, "check_no_POS_quorum_exists", [](cryptonote::core &c, size_t ev_index)
   {
-    DEFINE_TESTS_ERROR_CONTEXT("check_no_pulse_quorum_exists");
-    const auto quorum = c.get_quorum(master_nodes::quorum_type::pulse, c.get_current_blockchain_height() - 1, false, nullptr);
+    DEFINE_TESTS_ERROR_CONTEXT("check_no_POS_quorum_exists");
+    const auto quorum = c.get_quorum(master_nodes::quorum_type::POS, c.get_current_blockchain_height() - 1, false, nullptr);
     CHECK_TEST_CONDITION(quorum.get() == nullptr);
     return true;
   });
 
-  gen.add_event_msg("Re-register a node, allowing us to re-enter Pulse");
+  gen.add_event_msg("Re-register a node, allowing us to re-enter POS");
   {
     cryptonote::transaction registration_txs = gen.create_and_add_registration_tx(gen.first_miner());
     gen.create_and_add_next_block({registration_txs});
@@ -3252,14 +3252,14 @@ bool beldex_pulse_fallback_to_pow_and_back::generate(std::vector<test_event_entr
   return true;
 }
 
-bool beldex_pulse_chain_split::generate(std::vector<test_event_entry> &events)
+bool beldex_POS_chain_split::generate(std::vector<test_event_entry> &events)
 {
   auto hard_forks = beldex_generate_hard_fork_table();
   beldex_chain_generator gen(events, hard_forks);
 
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
-  add_master_nodes(gen, std::max(master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN), master_nodes::CHECKPOINT_QUORUM_SIZE));
+  add_master_nodes(gen, std::max(master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN), master_nodes::CHECKPOINT_QUORUM_SIZE));
 
   gen.create_and_add_next_block();
 
@@ -3283,9 +3283,9 @@ bool beldex_pulse_chain_split::generate(std::vector<test_event_entry> &events)
   fork.create_and_add_next_block();
 
   crypto::hash const fork_top_hash = cryptonote::get_block_hash(fork.top().block);
-  beldex_register_callback(events, "check_reorganized_to_pulse_chain_with_checkpoints", [fork_top_hash](cryptonote::core &c, size_t ev_index)
+  beldex_register_callback(events, "check_reorganized_to_POS_chain_with_checkpoints", [fork_top_hash](cryptonote::core &c, size_t ev_index)
   {
-    DEFINE_TESTS_ERROR_CONTEXT("check_reorganized_to_pulse_chain_with_checkpoints");
+    DEFINE_TESTS_ERROR_CONTEXT("check_reorganized_to_POS_chain_with_checkpoints");
     uint64_t top_height;
     crypto::hash top_hash;
     c.get_blockchain_top(top_height, top_hash);
@@ -3295,16 +3295,16 @@ bool beldex_pulse_chain_split::generate(std::vector<test_event_entry> &events)
   return true;
 }
 
-// Same as beldex_pulse_chain_split but, we don't use checkpoints. We rely on
-// Pulse chain weight to switch over.
-bool beldex_pulse_chain_split_with_no_checkpoints::generate(std::vector<test_event_entry> &events)
+// Same as beldex_POS_chain_split but, we don't use checkpoints. We rely on
+// POS chain weight to switch over.
+bool beldex_POS_chain_split_with_no_checkpoints::generate(std::vector<test_event_entry> &events)
 {
   auto hard_forks = beldex_generate_hard_fork_table();
   beldex_chain_generator gen(events, hard_forks);
 
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
-  add_master_nodes(gen, std::max(master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN), master_nodes::CHECKPOINT_QUORUM_SIZE));
+  add_master_nodes(gen, std::max(master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN), master_nodes::CHECKPOINT_QUORUM_SIZE));
 
   gen.create_and_add_next_block();
 
@@ -3315,9 +3315,9 @@ bool beldex_pulse_chain_split_with_no_checkpoints::generate(std::vector<test_eve
 
   fork.create_and_add_next_block();
   crypto::hash const fork_top_hash = cryptonote::get_block_hash(fork.top().block);
-  beldex_register_callback(events, "check_reorganized_to_pulse_chain_with_no_checkpoints", [fork_top_hash](cryptonote::core &c, size_t ev_index)
+  beldex_register_callback(events, "check_reorganized_to_POS_chain_with_no_checkpoints", [fork_top_hash](cryptonote::core &c, size_t ev_index)
   {
-    DEFINE_TESTS_ERROR_CONTEXT("check_reorganized_to_pulse_chain_with_no_checkpoints");
+    DEFINE_TESTS_ERROR_CONTEXT("check_reorganized_to_POS_chain_with_no_checkpoints");
     uint64_t top_height;
     crypto::hash top_hash;
     c.get_blockchain_top(top_height, top_hash);

@@ -138,7 +138,7 @@ class MNNetwork:
 
         self.print_wallet_balances()
 
-        vprint("Mining 40 blocks (registrations + blink quorum lag) and waiting for nodes to sync")
+        vprint("Mining 40 blocks (registrations + flash quorum lag) and waiting for nodes to sync")
         self.sync_nodes(self.mine(40))
 
         self.print_wallet_balances()

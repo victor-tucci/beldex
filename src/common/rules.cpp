@@ -57,7 +57,7 @@ bool is_output_unlocked(uint64_t unlock_time, uint64_t height,network_type netty
     auto hf_version = ::cryptonote::get_network_version(nettype, height);
     //interpret as time
     uint64_t current_time = static_cast<uint64_t>(time(NULL));
-    if(current_time + tools::to_seconds((hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3:CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2)) >= unlock_time)
+    if(current_time + tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3:CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2)) >= unlock_time)
       return true;
     else
       return false;

@@ -6,57 +6,57 @@
 #include <chrono>
 
 namespace master_nodes {
-  constexpr size_t PULSE_QUORUM_ENTROPY_LAG    = 21; // How many blocks back from the tip of the Blockchain to source entropy for the Pulse quorums.
+  constexpr size_t POS_QUORUM_ENTROPY_LAG    = 21; // How many blocks back from the tip of the Blockchain to source entropy for the POS quorums.
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
-  constexpr auto PULSE_ROUND_TIME                                   = 20s;
-  constexpr auto PULSE_WAIT_FOR_HANDSHAKES_DURATION                 = 3s;
-  constexpr auto PULSE_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION = 3s;
-  constexpr auto PULSE_WAIT_FOR_BLOCK_TEMPLATE_DURATION             = 3s;
-  constexpr auto PULSE_WAIT_FOR_RANDOM_VALUE_HASH_DURATION          = 3s;
-  constexpr auto PULSE_WAIT_FOR_RANDOM_VALUE_DURATION               = 3s;
-  constexpr auto PULSE_WAIT_FOR_SIGNED_BLOCK_DURATION               = 5s;
+  constexpr auto POS_ROUND_TIME                                   = 20s;
+  constexpr auto POS_WAIT_FOR_HANDSHAKES_DURATION                 = 3s;
+  constexpr auto POS_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION = 3s;
+  constexpr auto POS_WAIT_FOR_BLOCK_TEMPLATE_DURATION             = 3s;
+  constexpr auto POS_WAIT_FOR_RANDOM_VALUE_HASH_DURATION          = 3s;
+  constexpr auto POS_WAIT_FOR_RANDOM_VALUE_DURATION               = 3s;
+  constexpr auto POS_WAIT_FOR_SIGNED_BLOCK_DURATION               = 5s;
 
-  constexpr size_t PULSE_QUORUM_NUM_VALIDATORS     = 7;
-  constexpr size_t PULSE_BLOCK_REQUIRED_SIGNATURES = 6;  // A block must have exactly N signatures to be considered properly
+  constexpr size_t POS_QUORUM_NUM_VALIDATORS     = 7;
+  constexpr size_t POS_BLOCK_REQUIRED_SIGNATURES = 6;  // A block must have exactly N signatures to be considered properly
 #else
-  constexpr auto PULSE_ROUND_TIME                                   = 60s;
-  constexpr auto PULSE_WAIT_FOR_HANDSHAKES_DURATION                 = 10s;
-  constexpr auto PULSE_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION = 10s;
-  constexpr auto PULSE_WAIT_FOR_BLOCK_TEMPLATE_DURATION             = 10s;
-  constexpr auto PULSE_WAIT_FOR_RANDOM_VALUE_HASH_DURATION          = 10s;
-  constexpr auto PULSE_WAIT_FOR_RANDOM_VALUE_DURATION               = 10s;
-  constexpr auto PULSE_WAIT_FOR_SIGNED_BLOCK_DURATION               = 10s;
+  constexpr auto POS_ROUND_TIME                                   = 60s;
+  constexpr auto POS_WAIT_FOR_HANDSHAKES_DURATION                 = 10s;
+  constexpr auto POS_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION = 10s;
+  constexpr auto POS_WAIT_FOR_BLOCK_TEMPLATE_DURATION             = 10s;
+  constexpr auto POS_WAIT_FOR_RANDOM_VALUE_HASH_DURATION          = 10s;
+  constexpr auto POS_WAIT_FOR_RANDOM_VALUE_DURATION               = 10s;
+  constexpr auto POS_WAIT_FOR_SIGNED_BLOCK_DURATION               = 10s;
 
-  constexpr size_t PULSE_QUORUM_NUM_VALIDATORS     = 11;
-  constexpr size_t PULSE_BLOCK_REQUIRED_SIGNATURES = 7;  // A block must have exactly N signatures to be considered properly
+  constexpr size_t POS_QUORUM_NUM_VALIDATORS     = 11;
+  constexpr size_t POS_BLOCK_REQUIRED_SIGNATURES = 7;  // A block must have exactly N signatures to be considered properly
 #endif
 
-  constexpr auto PULSE_MIN_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME_V17 - 15s;
-  constexpr auto PULSE_MAX_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME_V17 + 15s;
-  constexpr size_t PULSE_QUORUM_SIZE = PULSE_QUORUM_NUM_VALIDATORS + 1 /*Leader*/;
+  constexpr auto POS_MIN_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME_V17 - 15s;
+  constexpr auto POS_MAX_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME_V17 + 15s;
+  constexpr size_t POS_QUORUM_SIZE = POS_QUORUM_NUM_VALIDATORS + 1 /*Leader*/;
 
-  static_assert(PULSE_ROUND_TIME >=
-                PULSE_WAIT_FOR_HANDSHAKES_DURATION +
-                PULSE_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION +
-                PULSE_WAIT_FOR_BLOCK_TEMPLATE_DURATION +
-                PULSE_WAIT_FOR_RANDOM_VALUE_HASH_DURATION +
-                PULSE_WAIT_FOR_RANDOM_VALUE_DURATION +
-                PULSE_WAIT_FOR_SIGNED_BLOCK_DURATION);
+  static_assert(POS_ROUND_TIME >=
+                POS_WAIT_FOR_HANDSHAKES_DURATION +
+                POS_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION +
+                POS_WAIT_FOR_BLOCK_TEMPLATE_DURATION +
+                POS_WAIT_FOR_RANDOM_VALUE_HASH_DURATION +
+                POS_WAIT_FOR_RANDOM_VALUE_DURATION +
+                POS_WAIT_FOR_SIGNED_BLOCK_DURATION);
 
-  static_assert(PULSE_QUORUM_NUM_VALIDATORS >= PULSE_BLOCK_REQUIRED_SIGNATURES);
-  static_assert(PULSE_QUORUM_ENTROPY_LAG >= PULSE_QUORUM_SIZE, "We need to pull atleast PULSE_QUORUM_SIZE number of blocks from the Blockchain, we can't if the amount of blocks to go back from the tip of the Blockchain is less than the blocks we need.");
-  
-  constexpr size_t pulse_min_master_nodes(cryptonote::network_type nettype)
+  static_assert(POS_QUORUM_NUM_VALIDATORS >= POS_BLOCK_REQUIRED_SIGNATURES);
+  static_assert(POS_QUORUM_ENTROPY_LAG >= POS_QUORUM_SIZE, "We need to pull atleast POS_QUORUM_SIZE number of blocks from the Blockchain, we can't if the amount of blocks to go back from the tip of the Blockchain is less than the blocks we need.");
+
+  constexpr size_t POS_min_master_nodes(cryptonote::network_type nettype)
   {
-    return (nettype == cryptonote::MAINNET) ? 50 : PULSE_QUORUM_SIZE;
+    return (nettype == cryptonote::MAINNET) ? 50 : POS_QUORUM_SIZE;
   }
-  static_assert(pulse_min_master_nodes(cryptonote::MAINNET) >= PULSE_QUORUM_SIZE);
-  static_assert(pulse_min_master_nodes(cryptonote::TESTNET) >= PULSE_QUORUM_SIZE);
+  static_assert(POS_min_master_nodes(cryptonote::MAINNET) >= POS_QUORUM_SIZE);
+  static_assert(POS_min_master_nodes(cryptonote::TESTNET) >= POS_QUORUM_SIZE);
 
-  constexpr uint16_t pulse_validator_bit_mask()
+  constexpr uint16_t POS_validator_bit_mask()
   {
     uint16_t result = 0;
-    for (size_t validator_index = 0; validator_index < PULSE_QUORUM_NUM_VALIDATORS; validator_index++)
+    for (size_t validator_index = 0; validator_index < POS_QUORUM_NUM_VALIDATORS; validator_index++)
       result |= 1 << validator_index;
     return result;
   }
@@ -108,7 +108,7 @@ namespace master_nodes {
   constexpr uint64_t  CHECKPOINT_VOTE_LIFETIME                      = CHECKPOINT_STORE_PERSISTENTLY_INTERVAL; // Keep the last 60 blocks worth of votes
 
   constexpr int16_t QUORUM_VOTE_CHECK_COUNT       = 8;
-  constexpr int16_t PULSE_MAX_MISSABLE_VOTES      = 4;
+  constexpr int16_t POS_MAX_MISSABLE_VOTES      = 4;
   constexpr int16_t CHECKPOINT_MAX_MISSABLE_VOTES = 4;
   constexpr int16_t TIMESTAMP_MAX_MISSABLE_VOTES  = 4;
   constexpr int16_t TIMESYNC_MAX_UNSYNCED_VOTES   = 4;
@@ -116,11 +116,11 @@ namespace master_nodes {
                 "The maximum number of votes a master node can miss cannot be greater than the amount of checkpoint "
                 "quorums they must participate in before we check if they should be deregistered or not.");
 
-  constexpr int BLINK_QUORUM_INTERVAL = 5; // We generate a new sub-quorum every N blocks (two consecutive quorums are needed for a blink signature)
-  constexpr int BLINK_QUORUM_LAG      = 7 * BLINK_QUORUM_INTERVAL; // The lag (which must be a multiple of BLINK_QUORUM_INTERVAL) in determining the base blink quorum height
-  constexpr int BLINK_EXPIRY_BUFFER   = BLINK_QUORUM_LAG + 10; // We don't select any MNs that have a scheduled unlock within this many blocks (measured from the lagged height)
-  static_assert(BLINK_QUORUM_LAG % BLINK_QUORUM_INTERVAL == 0, "BLINK_QUORUM_LAG must be an integral multiple of BLINK_QUORUM_INTERVAL");
-  static_assert(BLINK_EXPIRY_BUFFER > BLINK_QUORUM_LAG + BLINK_QUORUM_INTERVAL, "BLINK_EXPIRY_BUFFER is too short to cover a blink quorum height range");
+  constexpr int FLASH_QUORUM_INTERVAL = 5; // We generate a new sub-quorum every N blocks (two consecutive quorums are needed for a flash signature)
+  constexpr int FLASH_QUORUM_LAG      = 7 * FLASH_QUORUM_INTERVAL; // The lag (which must be a multiple of FLASH_QUORUM_INTERVAL) in determining the base flash quorum height
+  constexpr int FLASH_EXPIRY_BUFFER   = FLASH_QUORUM_LAG + 10; // We don't select any MNs that have a scheduled unlock within this many blocks (measured from the lagged height)
+  static_assert(FLASH_QUORUM_LAG % FLASH_QUORUM_INTERVAL == 0, "FLASH_QUORUM_LAG must be an integral multiple of FLASH_QUORUM_INTERVAL");
+  static_assert(FLASH_EXPIRY_BUFFER > FLASH_QUORUM_LAG + FLASH_QUORUM_INTERVAL, "FLASH_EXPIRY_BUFFER is too short to cover a flash quorum height range");
 
   // State change quorums are in charge of policing the network by changing the state of a master
   // node on the network: temporary decommissioning, recommissioning, and permanent deregistration.
@@ -134,22 +134,22 @@ namespace master_nodes {
   constexpr int    MIN_TIME_IN_S_BEFORE_VOTING            = 0;
   constexpr size_t CHECKPOINT_QUORUM_SIZE                 = 5;
   constexpr size_t CHECKPOINT_MIN_VOTES                   = 1;
-  constexpr int    BLINK_SUBQUORUM_SIZE                   = 5;
-  constexpr int    BLINK_MIN_VOTES                        = 1;
+  constexpr int    FLASH_SUBQUORUM_SIZE                   = 5;
+  constexpr int    FLASH_MIN_VOTES                        = 1;
 #else
   constexpr size_t STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE = 7;
   constexpr size_t STATE_CHANGE_QUORUM_SIZE               = 10;
   constexpr size_t CHECKPOINT_QUORUM_SIZE                 = 20;
   constexpr size_t CHECKPOINT_MIN_VOTES                   = 13;
-  constexpr int    BLINK_SUBQUORUM_SIZE                   = 10;
-  constexpr int    BLINK_MIN_VOTES                        = 7;
+  constexpr int    FLASH_SUBQUORUM_SIZE                   = 10;
+  constexpr int    FLASH_MIN_VOTES                        = 7;
 #endif
 
   static_assert(STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE <= STATE_CHANGE_QUORUM_SIZE, "The number of votes required to kick can't exceed the actual quorum size, otherwise we never kick.");
   static_assert(CHECKPOINT_MIN_VOTES <= CHECKPOINT_QUORUM_SIZE, "The number of votes required to add a checkpoint can't exceed the actual quorum size, otherwise we never add checkpoints.");
-  static_assert(BLINK_MIN_VOTES <= BLINK_SUBQUORUM_SIZE, "The number of votes required can't exceed the actual blink subquorum size, otherwise we never approve.");
+  static_assert(FLASH_MIN_VOTES <= FLASH_SUBQUORUM_SIZE, "The number of votes required can't exceed the actual flash subquorum size, otherwise we never approve.");
 #ifndef BELDEX_ENABLE_INTEGRATION_TEST_HOOKS
-  static_assert(BLINK_MIN_VOTES > BLINK_SUBQUORUM_SIZE / 2, "Blink approvals must require a majority of quorum members to prevent conflicting, signed blinks.");
+  static_assert(FLASH_MIN_VOTES > FLASH_SUBQUORUM_SIZE / 2, "Flash approvals must require a majority of quorum members to prevent conflicting, signed flashes.");
 #endif
 
   // NOTE: We can reorg up to last 2 checkpoints + the number of extra blocks before the next checkpoint is set
@@ -199,9 +199,9 @@ namespace master_nodes {
   };
 
   constexpr proof_version MIN_UPTIME_PROOF_VERSIONS[] = {
-    proof_version{{cryptonote::network_version_17_pulse, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
+    proof_version{{cryptonote::network_version_17_POS, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_16_bns, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
-    proof_version{{cryptonote::network_version_15_blink, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
+    proof_version{{cryptonote::network_version_15_flash, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_14_enforce_checkpoints, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_13_checkpointing, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
   };
@@ -213,7 +213,7 @@ namespace master_nodes {
     return
       q == quorum_type::obligations     ? STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE :
       q == quorum_type::checkpointing   ? CHECKPOINT_MIN_VOTES :
-      q == quorum_type::blink           ? BLINK_MIN_VOTES :
+      q == quorum_type::flash           ? FLASH_MIN_VOTES :
       std::numeric_limits<size_t>::max();
   };
 
@@ -221,9 +221,9 @@ namespace master_nodes {
   {
     return
         hf_version <= cryptonote::network_version_13_checkpointing ? quorum_type::obligations :
-        hf_version <  cryptonote::network_version_15_blink         ? quorum_type::checkpointing :
-        hf_version <  cryptonote::network_version_17_pulse         ? quorum_type::blink :
-        quorum_type::pulse;
+        hf_version <  cryptonote::network_version_15_flash         ? quorum_type::checkpointing :
+        hf_version <  cryptonote::network_version_17_POS         ? quorum_type::flash :
+        quorum_type::POS;
   }
 
   constexpr uint64_t staking_num_lock_blocks(cryptonote::network_type nettype,uint8_t hf_version)

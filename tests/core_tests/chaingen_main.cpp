@@ -99,8 +99,8 @@ int main(int argc, char* argv[])
     GENERATE_AND_PLAY(beldex_checkpointing_alt_chain_with_increasing_master_node_checkpoints);
     GENERATE_AND_PLAY(beldex_checkpointing_master_node_checkpoint_from_votes);
     GENERATE_AND_PLAY(beldex_checkpointing_master_node_checkpoints_check_reorg_windows);
-    GENERATE_AND_PLAY(beldex_core_block_reward_unpenalized_pre_pulse);
-    GENERATE_AND_PLAY(beldex_core_block_reward_unpenalized_post_pulse);
+    GENERATE_AND_PLAY(beldex_core_block_reward_unpenalized_pre_POS);
+    GENERATE_AND_PLAY(beldex_core_block_reward_unpenalized_post_POS);
     GENERATE_AND_PLAY(beldex_core_block_rewards_lrc6);
     GENERATE_AND_PLAY(beldex_core_fee_burning);
     GENERATE_AND_PLAY(beldex_core_governance_batched_reward);
@@ -136,17 +136,17 @@ int main(int argc, char* argv[])
     GENERATE_AND_PLAY(beldex_master_nodes_insufficient_contribution);
     GENERATE_AND_PLAY(beldex_master_nodes_test_rollback);
     GENERATE_AND_PLAY(beldex_master_nodes_test_swarms_basic);
-    GENERATE_AND_PLAY(beldex_pulse_invalid_validator_bitset);
-    GENERATE_AND_PLAY(beldex_pulse_invalid_signature);
-    GENERATE_AND_PLAY(beldex_pulse_oob_voter_index);
-    GENERATE_AND_PLAY(beldex_pulse_non_participating_validator);
-    GENERATE_AND_PLAY(beldex_pulse_generate_all_rounds);
-    GENERATE_AND_PLAY(beldex_pulse_out_of_order_voters);
-    GENERATE_AND_PLAY(beldex_pulse_reject_miner_block);
-    GENERATE_AND_PLAY(beldex_pulse_generate_blocks);
-    GENERATE_AND_PLAY(beldex_pulse_fallback_to_pow_and_back);
-    GENERATE_AND_PLAY(beldex_pulse_chain_split);
-    GENERATE_AND_PLAY(beldex_pulse_chain_split_with_no_checkpoints);
+    GENERATE_AND_PLAY(beldex_POS_invalid_validator_bitset);
+    GENERATE_AND_PLAY(beldex_POS_invalid_signature);
+    GENERATE_AND_PLAY(beldex_POS_oob_voter_index);
+    GENERATE_AND_PLAY(beldex_POS_non_participating_validator);
+    GENERATE_AND_PLAY(beldex_POS_generate_all_rounds);
+    GENERATE_AND_PLAY(beldex_POS_out_of_order_voters);
+    GENERATE_AND_PLAY(beldex_POS_reject_miner_block);
+    GENERATE_AND_PLAY(beldex_POS_generate_blocks);
+    GENERATE_AND_PLAY(beldex_POS_fallback_to_pow_and_back);
+    GENERATE_AND_PLAY(beldex_POS_chain_split);
+    GENERATE_AND_PLAY(beldex_POS_chain_split_with_no_checkpoints);
 
     // NOTE: Monero Tests
     GENERATE_AND_PLAY(gen_simple_chain_001);

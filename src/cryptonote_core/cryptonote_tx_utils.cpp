@@ -135,14 +135,14 @@ namespace cryptonote
 
   uint64_t governance_reward_formula(uint64_t base_reward, uint8_t hf_version)
   {
-    return hf_version >= network_version_17_pulse ? FOUNDATION_REWARD_HF17 : 0;// governance planned at V17
+    return hf_version >= network_version_17_POS ? FOUNDATION_REWARD_HF17 : 0;// governance planned at V17
   }
   
   uint64_t derive_governance_from_block_reward(network_type nettype, const cryptonote::block &block, uint8_t hf_version)
   {
     uint64_t height = get_block_height(block);
     if (height==742425) return 8500000000; // mint 8.5 billion bdx governance in this block
-    if (hf_version >= network_version_17_pulse)
+    if (hf_version >= network_version_17_POS)
       return governance_reward_formula(0, hf_version);
     uint64_t result       = 0;
     uint64_t mnode_reward = 0;
@@ -179,7 +179,7 @@ namespace cryptonote
 
   bool height_has_governance_output(network_type nettype, uint8_t hard_fork_version, uint64_t height)
   {
-    if (hard_fork_version < network_version_17_pulse)
+    if (hard_fork_version < network_version_17_POS)
       return false;
 
     if (height % cryptonote::get_config(nettype).GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS != 0)
@@ -193,7 +193,7 @@ namespace cryptonote
   uint64_t master_node_reward_formula(uint64_t base_reward, uint8_t hard_fork_version)
   {
     return
-      hard_fork_version >= network_version_17_pulse          ? MN_REWARD_HF17_PULSE :
+      hard_fork_version >= network_version_17_POS          ? MN_REWARD_HF17_POS :
       hard_fork_version >= network_version_11_infinite_staking ? (base_reward / 10) * (MASTER_NODE_BASE_REWARD_PERCENTAGE/10) : // 90% of base reward up until HF15's fixed payout
       0;
   }
@@ -310,21 +310,21 @@ namespace cryptonote
     // - Up To 4 | Block Leader (Queued node at the top of the Master Node List)
     // - Up To 1 | Governance
     //
-    // Pulse Block
+    // POS Block
     // - Up to 4 | Block Producer (0-3 for Pooled Master Node)
     // - Up To 4 | Block Leader   (Queued node at the top of the Master Node List)
     // - Up To 1 | Governance     (When a block is at the Governance payout interval)
     //
-    // NOTE: Pulse Block Payment Details
+    // NOTE: POS Block Payment Details
     //
-    // By default, when Pulse round is 0, the Block Producer is the Block
+    // By default, when POS round is 0, the Block Producer is the Block
     // Leader. Coinbase and transaction fees are given to the Block Leader.
     // This is the common case, and in that instance we avoid generating
     // duplicate outputs and payment occurs in 1 output.
     //
     // On alternative rounds, transaction fees are given to the alternative
     // block producer (which is now different from the Block Leader). The
-    // original block producer still receives the coinbase reward. A Pulse
+    // original block producer still receives the coinbase reward. A POS
     // round's failure is determined by the non-participation of the members of
     // the quorum, so failing a round's onus is not always on the original block
     // producer (it could be the validators colluding) hence why they still
@@ -349,21 +349,21 @@ namespace cryptonote
 
     // NOTE: Add Block Producer Reward
     master_nodes::payout const &leader = miner_tx_context.block_leader;
-    if (miner_tx_context.pulse)
+    if (miner_tx_context.POS)
     {
-      CHECK_AND_ASSERT_MES(miner_tx_context.pulse_block_producer.payouts.size(), false, "Constructing a reward for block produced by pulse but no payout entries specified");
-      CHECK_AND_ASSERT_MES(miner_tx_context.pulse_block_producer.key, false, "Null Key given for Pulse Block Producer");
-      CHECK_AND_ASSERT_MES(hard_fork_version >= cryptonote::network_version_17_pulse, false, "Pulse Block Producer is not valid until HF16, current HF" << hard_fork_version);
+      CHECK_AND_ASSERT_MES(miner_tx_context.POS_block_producer.payouts.size(), false, "Constructing a reward for block produced by POS but no payout entries specified");
+      CHECK_AND_ASSERT_MES(miner_tx_context.POS_block_producer.key, false, "Null Key given for POS Block Producer");
+      CHECK_AND_ASSERT_MES(hard_fork_version >= cryptonote::network_version_17_POS, false, "POS Block Producer is not valid until HF16, current HF" << hard_fork_version);
 
       uint64_t leader_reward = reward_parts.master_node_total;
-      if (miner_tx_context.block_leader.key == miner_tx_context.pulse_block_producer.key)
+      if (miner_tx_context.block_leader.key == miner_tx_context.POS_block_producer.key)
       {
         leader_reward += reward_parts.miner_fee;
       }
       else if (reward_parts.miner_fee)
       {
         // Alternative Block Producer (receives just miner fee, if there is one)
-        master_nodes::payout const &producer = miner_tx_context.pulse_block_producer;
+        master_nodes::payout const &producer = miner_tx_context.POS_block_producer;
         std::vector<uint64_t> split_rewards   = distribute_reward_by_portions(producer.payouts, reward_parts.miner_fee, true /*distribute_remainder*/);
 
         for (size_t i = 0; i < producer.payouts.size(); i++)
@@ -377,7 +377,7 @@ namespace cryptonote
     else
     {
 
-      CHECK_AND_ASSERT_MES(miner_tx_context.pulse_block_producer.payouts.empty(), false, "Constructing a reward for block produced by miner but payout entries specified");
+      CHECK_AND_ASSERT_MES(miner_tx_context.POS_block_producer.payouts.empty(), false, "Constructing a reward for block produced by miner but payout entries specified");
 
       if (uint64_t miner_amount = reward_parts.base_miner + reward_parts.miner_fee; miner_amount)
         rewards[rewards_length++] = {reward_type::miner, miner_tx_context.miner_block_producer, miner_amount};
@@ -387,18 +387,18 @@ namespace cryptonote
         std::vector<uint64_t> split_rewards =
             distribute_reward_by_portions(leader.payouts,
                                           reward_parts.master_node_total,
-                                          hard_fork_version >= cryptonote::network_version_17_pulse /*distribute_remainder*/);
+                                          hard_fork_version >= cryptonote::network_version_17_POS /*distribute_remainder*/);
         for (size_t i = 0; i < leader.payouts.size(); i++)
           rewards[rewards_length++] = {reward_type::mnode, leader.payouts[i].address, split_rewards[i]};
       }
     }
 
     // NOTE: Add Governance Payout
-    if (hard_fork_version >= network_version_17_pulse && already_generated_coins != 0)
+    if (hard_fork_version >= network_version_17_POS && already_generated_coins != 0)
     {
       if (reward_parts.governance_paid == 0)
       {
-        CHECK_AND_ASSERT_MES(hard_fork_version >= network_version_17_pulse, false, "Governance reward can NOT be 0 before hardfork 17, hard_fork_version: " << hard_fork_version);
+        CHECK_AND_ASSERT_MES(hard_fork_version >= network_version_17_POS, false, "Governance reward can NOT be 0 before hardfork 17, hard_fork_version: " << hard_fork_version);
       }
       else
       {
@@ -473,7 +473,7 @@ namespace cryptonote
     //LOG_PRINT("MINER_TX generated ok, block_reward=" << print_money(block_reward) << "("  << print_money(block_reward - fee) << "+" << print_money(fee)
     //  << "), current_block_size=" << current_block_size << ", already_generated_coins=" << already_generated_coins << ", tx_id=" << get_transaction_hash(tx), LOG_LEVEL_2);
 
-    if ((hard_fork_version>=network_version_12_security_signature) && !miner_tx_context.pulse) {
+    if ((hard_fork_version>=network_version_12_security_signature) && !miner_tx_context.POS) {
       add_security_signature_to_tx_extra(tx.extra, security_signature);
     }
     LOG_PRINT_L2("MINER_TX generated ok");
@@ -517,7 +517,7 @@ namespace cryptonote
         : result.governance_due;
 
     uint64_t const master_node_reward = master_node_reward_formula(result.original_base_reward, hard_fork_version);
-    if (hard_fork_version < cryptonote::network_version_17_pulse)
+    if (hard_fork_version < cryptonote::network_version_17_POS)
     {
       result.master_node_total = calculate_sum_of_portions(beldex_context.block_leader_payouts, master_node_reward);
       // The base_miner amount is everything left in the base reward after subtracting off the master

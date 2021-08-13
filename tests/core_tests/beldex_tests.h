@@ -42,8 +42,8 @@ struct beldex_checkpointing_alt_chain_too_old_should_be_dropped                 
 struct beldex_checkpointing_alt_chain_with_increasing_master_node_checkpoints         : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_checkpointing_master_node_checkpoint_from_votes                         : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_checkpointing_master_node_checkpoints_check_reorg_windows               : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_core_block_reward_unpenalized_pre_pulse                                  : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_core_block_reward_unpenalized_post_pulse                                 : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_core_block_reward_unpenalized_pre_POS                                  : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_core_block_reward_unpenalized_post_POS                                 : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_core_fee_burning                                                         : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_core_governance_batched_reward                                           : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_core_block_rewards_lrc6                                                  : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
@@ -79,15 +79,15 @@ struct beldex_master_nodes_gen_nodes                                            
 struct beldex_master_nodes_insufficient_contribution                                  : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_master_nodes_test_rollback                                              : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 struct beldex_master_nodes_test_swarms_basic                                          : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_invalid_validator_bitset                                           : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_invalid_signature                                                  : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_oob_voter_index                                                    : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_non_participating_validator                                        : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_generate_all_rounds                                                : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_out_of_order_voters                                                : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_reject_miner_block                                                 : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_generate_blocks                                                    : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_fallback_to_pow_and_back                                           : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_chain_split                                                        : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
-struct beldex_pulse_chain_split_with_no_checkpoints                                    : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_invalid_validator_bitset                                           : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_invalid_signature                                                  : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_oob_voter_index                                                    : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_non_participating_validator                                        : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_generate_all_rounds                                                : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_out_of_order_voters                                                : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_reject_miner_block                                                 : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_generate_blocks                                                    : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_fallback_to_pow_and_back                                           : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_chain_split                                                        : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
+struct beldex_POS_chain_split_with_no_checkpoints                                    : public test_chain_unit_base { bool generate(std::vector<test_event_entry>& events); };
 

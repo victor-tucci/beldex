@@ -58,26 +58,26 @@ namespace master_nodes
   BELDEX_RPC_DOC_INTROSPECT
   struct participation_entry
   {
-    bool is_pulse   = false;
+    bool is_POS   = false;
     uint64_t height = INVALID_HEIGHT;
     bool voted      = true;
 
     struct
     {
       uint8_t round = 0;
-    } pulse;
+    } POS;
 
     bool pass() const {
       return voted;
-    }; 
+    };
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(height);
       KV_SERIALIZE(voted);
-      KV_SERIALIZE(is_pulse);
-      if (this_ref.is_pulse)
+      KV_SERIALIZE(is_POS);
+      if (this_ref.is_POS)
       {
-        KV_SERIALIZE_N(pulse.round, "pulse_round");
+        KV_SERIALIZE_N(POS.round, "POS_round");
       }
     END_KV_SERIALIZE_MAP()
   };
@@ -87,7 +87,7 @@ namespace master_nodes
     bool participated      = true;
     bool pass() const {
       return participated;
-    }; 
+    };
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(participated);
@@ -99,7 +99,7 @@ namespace master_nodes
     bool in_sync       = true;
     bool pass() const {
       return in_sync;
-    }; 
+    };
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(in_sync);
@@ -146,7 +146,7 @@ namespace master_nodes
   {
     proof_info();
 
-    participation_history<participation_entry> pulse_participation{};
+    participation_history<participation_entry> POS_participation{};
     participation_history<participation_entry> checkpoint_participation{};
     participation_history<timestamp_participation_entry> timestamp_participation{};
     participation_history<timesync_entry> timesync_status{};
@@ -202,16 +202,16 @@ namespace master_nodes
     void store(const crypto::public_key &pubkey, cryptonote::Blockchain &blockchain);
   };
 
-  struct pulse_sort_key
+  struct POS_sort_key
   {
     uint64_t last_height_validating_in_quorum = 0;
     uint8_t quorum_index                      = 0;
 
-    bool operator==(pulse_sort_key const &other) const
+    bool operator==(POS_sort_key const &other) const
     {
       return last_height_validating_in_quorum == other.last_height_validating_in_quorum && quorum_index == other.quorum_index;
     }
-    bool operator<(pulse_sort_key const &other) const
+    bool operator<(POS_sort_key const &other) const
     {
       bool result = std::make_pair(last_height_validating_in_quorum, quorum_index) < std::make_pair(other.last_height_validating_in_quorum, other.quorum_index);
       return result;
@@ -232,7 +232,7 @@ namespace master_nodes
       v2_ed25519,
       v3_quorumnet,
       v4_noproofs,
-      v5_pulse_recomm_credit,
+      v5_POS_recomm_credit,
       v6_reassign_sort_keys,
       v7_decommission_reason,
       _count
@@ -309,7 +309,7 @@ namespace master_nodes
     uint64_t                           last_ip_change_height = 0; // The height of the last quorum penalty for changing IPs
     version_t                          version = tools::enum_top<version_t>;
     uint8_t                            registration_hf_version = 0;
-    pulse_sort_key                     pulse_sorter;
+    POS_sort_key                     POS_sorter;
 
     master_node_info() = default;
     bool is_fully_funded() const { return total_contributed >= staking_requirement; }
@@ -353,10 +353,10 @@ namespace master_nodes
           VARINT_FIELD_N("quorumnet_port", fake_port)
         }
       }
-      if (version >= version_t::v5_pulse_recomm_credit)
+      if (version >= version_t::v5_POS_recomm_credit)
       {
         VARINT_FIELD(recommission_credit)
-        FIELD(pulse_sorter)
+        FIELD(POS_sorter)
       }
       if (version >= version_t::v7_decommission_reason)
       {
@@ -472,7 +472,7 @@ namespace master_nodes
     /// For checkpointing, quorums are only generated when height % CHECKPOINT_INTERVAL == 0 (and
     /// the actual internal quorum used is for `height - REORG_SAFETY_BUFFER_BLOCKS_POST_HF12`, i.e.
     /// do no subtract off the buffer in advance).
-    /// Similarly for blink (but on BLINK_QUORUM_INTERVAL, but without any buffer offset applied here).
+    /// Similarly for flash (but on FLASH_QUORUM_INTERVAL, but without any buffer offset applied here).
     /// return: nullptr if the quorum is not cached in memory (pruned from memory).
     std::shared_ptr<const quorum> get_quorum(quorum_type type, uint64_t height, bool include_old = false, std::vector<std::shared_ptr<const quorum>> *alt_states = nullptr) const;
     bool                          get_quorum_pubkey(quorum_type type, quorum_group group, uint64_t height, size_t quorum_index, crypto::public_key &key) const;
@@ -556,7 +556,7 @@ namespace master_nodes
                                                                    uint16_t storage_https_port,
                                                                    uint16_t storage_omq_port,
                                                                    uint16_t quorumnet_port) const;
-    
+
     uptime_proof::Proof generate_uptime_proof(uint32_t public_ip, uint16_t storage_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> beldexnet_version) const;
 
     //TODO: remove after HF18
@@ -720,7 +720,7 @@ namespace master_nodes
           const master_node_keys *my_keys);
       bool process_key_image_unlock_tx(cryptonote::network_type nettype, uint64_t block_height, const cryptonote::transaction &tx,uint8_t version);
       payout get_block_leader() const;
-      payout get_block_producer(uint8_t pulse_round) const;
+      payout get_block_producer(uint8_t POS_round) const;
     };
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
@@ -732,7 +732,7 @@ namespace master_nodes
     // Note(maxim): private methods don't have to be protected the mutex
     bool m_rescanning = false; /* set to true when doing a rescan so we know not to reset proofs */
     void process_block(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs);
-    void record_pulse_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated);
+    void record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated);
 
     // Verify block against Master Node state that has just been called with 'state.update_from_block(block)'.
     bool verify_block(const cryptonote::block& block, bool alt_block, cryptonote::checkpoint_t const *checkpoint);
@@ -817,19 +817,19 @@ namespace master_nodes
       std::string &cmd,
       bool make_friendly);
 
-  master_nodes::quorum generate_pulse_quorum(cryptonote::network_type nettype,
+  master_nodes::quorum generate_POS_quorum(cryptonote::network_type nettype,
                                               crypto::public_key const &leader,
                                               uint8_t hf_version,
                                               std::vector<pubkey_and_mninfo> const &active_mnode_list,
-                                              std::vector<crypto::hash> const &pulse_entropy,
-                                              uint8_t pulse_round);
+                                              std::vector<crypto::hash> const &POS_entropy,
+                                              uint8_t POS_round);
 
-  // The pulse entropy is generated for the next block after the top_block passed in.
-  std::vector<crypto::hash> get_pulse_entropy_for_next_block(cryptonote::BlockchainDB const &db, cryptonote::block const &top_block, uint8_t pulse_round);
-  std::vector<crypto::hash> get_pulse_entropy_for_next_block(cryptonote::BlockchainDB const &db, crypto::hash const &top_hash, uint8_t pulse_round);
+  // The POS entropy is generated for the next block after the top_block passed in.
+  std::vector<crypto::hash> get_POS_entropy_for_next_block(cryptonote::BlockchainDB const &db, cryptonote::block const &top_block, uint8_t POS_round);
+  std::vector<crypto::hash> get_POS_entropy_for_next_block(cryptonote::BlockchainDB const &db, crypto::hash const &top_hash, uint8_t POS_round);
   // Same as above, but uses the current blockchain top block and defaults to round 0 if not
   // specified.
-  std::vector<crypto::hash> get_pulse_entropy_for_next_block(cryptonote::BlockchainDB const &db, uint8_t pulse_round = 0);
+  std::vector<crypto::hash> get_POS_entropy_for_next_block(cryptonote::BlockchainDB const &db, uint8_t POS_round = 0);
 
   payout master_node_info_to_payout(crypto::public_key const &key, master_node_info const &info);
 

@@ -40,10 +40,10 @@ if len(sys.argv) > 1 and len(sys.argv[1]) == 64 and all(x in "0123456789abcdefAB
 
 if (not 2 <= len(sys.argv) <= 3
         or any(x in y for x in ("--help", "-h") for y in sys.argv[1:])
-        or not all(x in ('BLOCK', 'TX', 'BLINK') for x in sys.argv[1:])):
-    print("Usage: {} [ipc:///path/to/sock|tcp://1.2.3.4:5678] [SERVER_CURVE_PUBKEY [LOCAL_CURVE_PRIVKEY]] [BLOCK] [TX|BLINK]\n"
+        or not all(x in ('BLOCK', 'TX', 'FLASH') for x in sys.argv[1:])):
+    print("Usage: {} [ipc:///path/to/sock|tcp://1.2.3.4:5678] [SERVER_CURVE_PUBKEY [LOCAL_CURVE_PRIVKEY]] [BLOCK] [TX|FLASH]\n"
             "  Connects to the given server and waits for new blocks (if BLOCK specified), new mempool transactions of\n"
-            "  any type (if TX specified), and/or new blinks (if BLINK specified).  TX and BLINK are mutually exclusive.".format(sys.argv[0]),
+            "  any type (if TX specified), and/or new flashes (if FLASH specified).  TX and FLASH are mutually exclusive.".format(sys.argv[0]),
             file=sys.stderr)
     sys.exit(1)
 
@@ -58,8 +58,8 @@ def subscribe():
         socket.send_multipart([b'sub.block', b'_blocksub'])
     if 'TX' in sys.argv[1:]:
         socket.send_multipart([b'sub.mempool', b'_txallsub', b'all'])
-    elif 'BLINK' in sys.argv[1:]:
-        socket.send_multipart([b'sub.mempool', b'_txblinksub', b'blink'])
+    elif 'FLASH' in sys.argv[1:]:
+        socket.send_multipart([b'sub.mempool', b'_txflashesub', b'flash'])
     global last_sub_time
     last_sub_time = time.time()
 
@@ -81,10 +81,10 @@ while True:
         continue
 
     m = socket.recv_multipart()
-    if len(m) == 3 and m[0] == b'REPLY' and m[1] in (b'_blocksub', b'_txallsub', b'_txblinksub') and m[2] in (b'OK', b'ALREADY'):
+    if len(m) == 3 and m[0] == b'REPLY' and m[1] in (b'_blocksub', b'_txallsub', b'_txflashesub') and m[2] in (b'OK', b'ALREADY'):
         if m[2] == b'ALREADY':
             continue
-        what = 'new blocks' if m[1] == b'_blocksub' else 'new txes' if m[1] == b'_txallsub' else 'new blinks'
+        what = 'new blocks' if m[1] == b'_blocksub' else 'new txes' if m[1] == b'_txallsub' else 'new flashes'
         if what in subbed:
             print("Re-subscribed to {} (perhaps the server restarted?)".format(what))
         else:

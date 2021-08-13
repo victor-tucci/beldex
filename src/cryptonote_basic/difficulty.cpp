@@ -128,7 +128,7 @@ namespace cryptonote {
     timestamps.push_back(timestamp);
     difficulties.push_back(cumulative_difficulty);
 
-    bool before_hf16 = !is_hard_fork_at_least(nettype, network_version_17_pulse, chain_height);
+    bool before_hf16 = !is_hard_fork_at_least(nettype, network_version_17_POS, chain_height);
 
     // Trim down arrays
     while (timestamps.size() > DIFFICULTY_BLOCKS_COUNT(before_hf16))
@@ -174,8 +174,8 @@ namespace cryptonote {
     else if (auto randomx_start_height = get_hard_fork_heights(nettype, network_version_13_checkpointing).first;
         randomx_start_height && height >= *randomx_start_height && height <= *randomx_start_height + DIFFICULTY_WINDOW)
       result = difficulty_calc_mode::hf12_override;
-    else if (auto pulse_start_height = get_hard_fork_heights(nettype, network_version_17_pulse).first;
-        nettype == MAINNET && pulse_start_height && height >= *pulse_start_height && height <= *pulse_start_height + DIFFICULTY_WINDOW)
+    else if (auto POS_start_height = get_hard_fork_heights(nettype, network_version_17_POS).first;
+        nettype == MAINNET && POS_start_height && height >= *POS_start_height && height <= *POS_start_height + DIFFICULTY_WINDOW)
       result = difficulty_calc_mode::hf16_override;
 
     return result;
@@ -247,7 +247,7 @@ namespace cryptonote {
     if (mode == difficulty_calc_mode::hf12_override)
       return std::min(next_difficulty, 30'000'000 * uint64_t(target_seconds));
     else if (mode == difficulty_calc_mode::hf16_override)
-      return std::min(next_difficulty, PULSE_FIXED_DIFFICULTY);
+      return std::min(next_difficulty, POS_FIXED_DIFFICULTY);
 
     return next_difficulty;
   }

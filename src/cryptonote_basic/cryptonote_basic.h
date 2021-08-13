@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification, are
@@ -165,9 +165,9 @@ namespace cryptonote
 
   };
 
-  // Blink quorum statuses.  Note that the underlying numeric values is used in the RPC.  `none` is
-  // only used in places like the RPC where we return a value even if not a blink at all.
-  enum class blink_result { none = 0, rejected, accepted, timeout };
+  // Flahs quorum statuses.  Note that the underlying numeric values is used in the RPC.  `none` is
+  // only used in places like the RPC where we return a value even if not a flash at all.
+  enum class flash_result { none = 0, rejected, accepted, timeout };
 
   class transaction_prefix
   {
@@ -366,23 +366,23 @@ namespace cryptonote
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/
-  struct pulse_random_value
+  struct POS_random_value
   {
     unsigned char data[16];
-    bool operator==(pulse_random_value const &other) const { return std::memcmp(data, other.data, sizeof(data)) == 0; }
+    bool operator==(POS_random_value const &other) const { return std::memcmp(data, other.data, sizeof(data)) == 0; }
 
     static constexpr bool binary_serializable = true;
   };
 
-  struct pulse_header
+  struct POS_header
   {
-    pulse_random_value random_value;
+    POS_random_value random_value;
     uint8_t            round;
     uint16_t           validator_bitset;
   };
 
   template <typename Archive>
-  void serialize_value(Archive& ar, pulse_header& p)
+  void serialize_value(Archive& ar, POS_header& p)
   {
     auto obj = ar.begin_object();
     serialization::field(ar, "random_value", p.random_value);
@@ -397,7 +397,7 @@ namespace cryptonote
     uint64_t timestamp;
     crypto::hash  prev_id;
     uint32_t nonce;
-    pulse_header pulse = {};
+    POS_header POS = {};
 
     BEGIN_SERIALIZE()
       VARINT_FIELD(major_version)
@@ -405,8 +405,8 @@ namespace cryptonote
       VARINT_FIELD(timestamp)
       FIELD(prev_id)
       FIELD(nonce)
-      if (major_version >= cryptonote::network_version_17_pulse)
-        FIELD(pulse)
+      if (major_version >= cryptonote::network_version_17_POS)
+        FIELD(POS)
     END_SERIALIZE()
   };
 
@@ -443,7 +443,7 @@ namespace cryptonote
       FIELD(tx_hashes)
       if (tx_hashes.size() > CRYPTONOTE_MAX_TX_PER_BLOCK)
         throw std::invalid_argument{"too many txs in block"};
-      if (major_version >= cryptonote::network_version_17_pulse)
+      if (major_version >= cryptonote::network_version_17_POS)
         FIELD(signatures)
     END_SERIALIZE()
   };
@@ -530,7 +530,7 @@ namespace cryptonote
   {
     txtype result = txtype::standard;
     if      (hf_version >= network_version_16_bns)              result = txtype::beldex_name_system;
-    else if (hf_version >= network_version_15_blink)            result = txtype::stake;
+    else if (hf_version >= network_version_15_flash)            result = txtype::stake;
     else if (hf_version >= network_version_11_infinite_staking) result = txtype::key_image_unlock;
     else if (hf_version >= network_version_9_master_nodes)     result = txtype::state_change;
 

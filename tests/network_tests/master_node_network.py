@@ -1,7 +1,7 @@
 # Provides a pytest fixture of a configured master node network with 20 master nodes, 3 regular
 # nodes, and 3 wallets (each connected to a different node).
 #
-# The 20 master nodes are registered, have mined enough to make the blink quorum active, and have
+# The 20 master nodes are registered, have mined enough to make the flash quorum active, and have
 # sent uptime proofs to each other.
 #
 # The 3 nodes are ordinary, non-master node nodes.
@@ -143,7 +143,7 @@ class MNNetwork:
 
         self.print_wallet_balances()
 
-        vprint("Mining 40 blocks (registrations + blink quorum lag) and waiting for nodes to sync")
+        vprint("Mining 40 blocks (registrations + flash quorum lag) and waiting for nodes to sync")
         self.sync_nodes(self.mine(40))
 
         self.print_wallet_balances()
@@ -308,7 +308,7 @@ def chuck(net):
     private node, `chuck.hidden.node`.  This node is connected to the network exclusively through a
     second node that Chuck runs, `chuck.bridge`.  This allows chuck to disconnect from the network
     by stopping the bridge node and reconnect by restarting it.  Note that the bridge and hidden
-    nodes will not have received proofs (and so can't be used to submit blinks).
+    nodes will not have received proofs (and so can't be used to submit flashes).
     """
 
     chuck = Wallet(node=net.nodes[0], name='Chuck', rpc_wallet=net.binpath+'/beldex-wallet-rpc', datadir=net.datadir)
@@ -364,12 +364,12 @@ def chuck_double_spend(net, alice, mike, chuck):
     """
     Importing this fixture (along with `chuck` itself!) extends the chuck setup to transfer 100
     coins to chuck, mine them to confirmation, then stop his bridge node to double-spend those
-    funds.  This consists of a blink tx of 95 (sent to alice) on the connected network and a
+    funds.  This consists of a flash tx of 95 (sent to alice) on the connected network and a
     conflicting regular tx (sent to himself) submitted to the mempool of his local hidden (and now
     disconnected) node.
 
     The fixture value is a tuple of the submitted tx details as returned by the rpc wallet,
-    `(blinked_tx, hidden_tx)`.
+    `(flashed_tx, hidden_tx)`.
     """
 
     assert(chuck.balances() == (0, 0))
@@ -383,29 +383,29 @@ def chuck_double_spend(net, alice, mike, chuck):
     # Now we disconnect chuck's bridge node, which will isolate the hidden node.
     chuck.bridge.stop()
 
-    tx_blink = chuck.transfer(alice, coins(95), priority=5)
-    assert len(tx_blink['tx_hash_list']) == 1
-    blink_hash = tx_blink['tx_hash_list'][0]
+    tx_flash = chuck.transfer(alice, coins(95), priority=5)
+    assert len(tx_flash['tx_hash_list']) == 1
+    flash_hash = tx_flash['tx_hash_list'][0]
 
-    time.sleep(0.5)  # allow blink to propagate
+    time.sleep(0.5)  # allow flash to propagate
 
     # ... but it shouldn't have propagated here because this is disconnected, so we can submit a
     # conflicting tx:
     tx_hidden = chuck.hidden.transfer(chuck, coins(95), priority=1)
     assert len(tx_hidden['tx_hash_list']) == 1
     hidden_hash = tx_hidden['tx_hash_list'][0]
-    assert hidden_hash != blink_hash
+    assert hidden_hash != flash_hash
 
-    vprint("double-spend txs: blink: {}, hidden: {}".format(blink_hash, hidden_hash))
+    vprint("double-spend txs: flash: {}, hidden: {}".format(flash_hash, hidden_hash))
 
     net.sync()
     alice.refresh()
     assert alice.balances() == coins(95, 0)
 
     mike_txpool = [x['id_hash'] for x in mike.node.rpc("/get_transaction_pool").json()['transactions']]
-    assert mike_txpool == [blink_hash]
+    assert mike_txpool == [flash_hash]
 
     hidden_txpool = [x['id_hash'] for x in chuck.hidden.node.rpc("/get_transaction_pool").json()['transactions']]
     assert hidden_txpool == [hidden_hash]
 
-    return (tx_blink, tx_hidden)
+    return (tx_flash, tx_hidden)

@@ -522,12 +522,12 @@ bool rpc_command_executor::show_status() {
       str << " was used";
   }
 
-  if (hfres.version < HF_VERSION_PULSE && !has_mining_info)
+  if (hfres.version < HF_VERSION_POS && !has_mining_info)
     str << ", mining info unavailable";
   if (has_mining_info && !mining_busy && mres.active)
     str << ", mining at " << get_mining_speed(mres.speed);
 
-  if (hfres.version < HF_VERSION_PULSE)
+  if (hfres.version < HF_VERSION_POS)
     str << ", net hash " << get_mining_speed(ires.difficulty / ires.target);
 
   str << ", v" << (ires.version.empty() ? "?.?.?" : ires.version);
@@ -953,7 +953,7 @@ static void print_pool(const std::vector<cryptonote::rpc::tx_info> &transactions
       << "relayed: " << (tx_info.relayed ? std::to_string(tx_info.last_relayed_time) + " (" + get_human_time_ago(tx_info.last_relayed_time, now) + ")" : "no") << "\n"
       << std::boolalpha
       << "do_not_relay: " << tx_info.do_not_relay << "\n"
-      << "blink: " << tx_info.blink << "\n"
+      << "flash: " << tx_info.flash << "\n"
       << "kept_by_block: " << tx_info.kept_by_block << "\n"
       << "double_spend_seen: " << tx_info.double_spend_seen << "\n"
       << std::noboolalpha
@@ -1206,7 +1206,7 @@ bool rpc_command_executor::print_bans()
             tools::msg_writer() << i->host << " banned for " << i->seconds << " seconds";
         }
     }
-    else 
+    else
         tools::msg_writer() << "No IPs are banned";
 
     return true;
@@ -1549,9 +1549,9 @@ static void print_vote_history(std::ostringstream &stream, std::vector<master_no
     if (i > 0) stream << ", ";
     const auto& entry = votes[(offset + i) % votes.size()];
     stream << "[" << entry.height;
-    if (entry.is_pulse and entry.pulse.round > 0)
-      // For a typical pulse round just [1234,yes].  For a backup round: [1234+3,yes]
-      stream << "+" << +entry.pulse.round;
+    if (entry.is_POS and entry.POS.round > 0)
+      // For a typical POS round just [1234,yes].  For a backup round: [1234+3,yes]
+      stream << "+" << +entry.POS.round;
 
     stream << "," << (entry.voted ? "yes" : "NO") << "]";
   }
@@ -1617,7 +1617,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     else
     {
       uint64_t delta_height      = (blockchain_height >= expiry_height) ? 0 : expiry_height - blockchain_height;
-      uint64_t expiry_epoch_time = now + (delta_height * tools::to_seconds((entry.registration_hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)));
+      uint64_t expiry_epoch_time = now + (delta_height * tools::to_seconds((entry.registration_hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)));
       stream << expiry_height << " (in " << delta_height << ") blocks\n";
       stream << indent2 << "Expiry Date (estimated): " << get_date_time(expiry_epoch_time) << " (" << get_human_time_ago(expiry_epoch_time, now) << ")\n";
     }
@@ -1711,8 +1711,8 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     stream << indent2 <<  "Checkpoints [Height,Voted]: ";
     print_vote_history(stream, entry.checkpoint_participation);
 
-    stream << "\n" << indent2 << "Pulse [Height,Voted]: ";
-    print_vote_history(stream, entry.pulse_participation);
+    stream << "\n" << indent2 << "POS [Height,Voted]: ";
+    print_vote_history(stream, entry.POS_participation);
 
     stream << "\n" << indent2 << "Timestamps [in_sync]: ";
     print_participation_history(stream, entry.timestamp_participation);

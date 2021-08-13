@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -50,7 +50,7 @@ namespace light_rpc
       static constexpr auto name = "get_address_txs"sv;
       struct request
       {
-        std::string address;      // Address of wallet to receive tx information. 
+        std::string address;      // Address of wallet to receive tx information.
         std::string view_key;     // View key of Address.
 
         BEGIN_KV_SERIALIZE_MAP()
@@ -108,14 +108,14 @@ namespace light_rpc
           KV_SERIALIZE(mixin)
         END_KV_SERIALIZE_MAP()
       };
-      
-      
+
+
       struct response
       {
         //std::list<std::string> txs_as_json;
         uint64_t total_received;                 // Total Beldex received in atomic units.
         uint64_t total_received_unlocked = 0;    // OpenMonero only
-        uint64_t scanned_height;                 // 
+        uint64_t scanned_height;                 //
         std::vector<transaction> transactions;
         uint64_t blockchain_height;
         uint64_t scanned_block_height;
@@ -149,8 +149,8 @@ namespace light_rpc
           KV_SERIALIZE(view_key)
         END_KV_SERIALIZE_MAP()
       };
-      
-      struct spent_output 
+
+      struct spent_output
       {
         uint64_t amount;
         std::string key_image;
@@ -166,9 +166,9 @@ namespace light_rpc
           KV_SERIALIZE(mixin)
         END_KV_SERIALIZE_MAP()
       };
- 
+
       struct response
-      { 
+      {
         uint64_t locked_funds;
         uint64_t total_received;
         uint64_t total_sent;
@@ -218,8 +218,8 @@ namespace light_rpc
           KV_SERIALIZE(dust_threshold)
         END_KV_SERIALIZE_MAP()
       };
-    
-      
+
+
       struct output {
         uint64_t amount;
         std::string public_key;
@@ -247,7 +247,7 @@ namespace light_rpc
           KV_SERIALIZE(height)
         END_KV_SERIALIZE_MAP()
       };
-      
+
       struct response
       {
         uint64_t amount;
@@ -276,13 +276,13 @@ namespace light_rpc
         std::string address;
         std::string view_key;
         std::string tx;
-        bool blink;
+        bool flash;
 
         BEGIN_KV_SERIALIZE_MAP()
           KV_SERIALIZE(address)
           KV_SERIALIZE(view_key)
           KV_SERIALIZE(tx)
-          KV_SERIALIZE_OPT(blink, false)
+          KV_SERIALIZE_OPT(flash, false)
         END_KV_SERIALIZE_MAP()
       };
 

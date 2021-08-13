@@ -1,6 +1,6 @@
 // Copyright (c) 2014-2018, The Monero Project
 // Copyright (c)      2018, The Beldex Project
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without modification, are
@@ -158,11 +158,11 @@ namespace
 
   uint32_t convert_priority(uint32_t priority)
   {
-    // NOTE: Map all priorites to blink for backwards compatibility purposes
+    // NOTE: Map all priorites to flash for backwards compatibility purposes
     // and leaving priority 'unimportant' or '1' as the only other alternative.
     uint32_t result = priority;
     if (result != tools::tx_priority_unimportant)
-      result = tools::tx_priority_blink;
+      result = tools::tx_priority_flash;
     return result;
   }
 
@@ -293,8 +293,8 @@ namespace tools
         json_error = {error_code::ADDRESS_INDEX_OUT_OF_BOUNDS, e.what()};
       } catch (const error::signature_check_failed& e) {
         json_error = {error_code::WRONG_SIGNATURE, e.what()};
-      } catch (const error::tx_blink_rejected& e) {
-        json_error = {error_code::BLINK_FAILED, e.what()};
+      } catch (const error::tx_flash_rejected& e) {
+        json_error = {error_code::FLASH_FAILED, e.what()};
       } catch (const std::exception& e) {
         json_error = {error_code::UNKNOWN_ERROR, e.what()};
       } catch (...) {
@@ -993,7 +993,7 @@ namespace tools
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename Ts, typename Tu>
   void wallet_rpc_server::fill_response(std::vector<wallet::pending_tx> &ptx_vector,
-      bool get_tx_key, Ts& tx_key, Tu &amount, Tu &fee, std::string &multisig_txset, std::string &unsigned_txset, bool do_not_relay, bool blink,
+      bool get_tx_key, Ts& tx_key, Tu &amount, Tu &fee, std::string &multisig_txset, std::string &unsigned_txset, bool do_not_relay, bool flash,
       Ts &tx_hash, bool get_tx_hex, Ts &tx_blob, bool get_tx_metadata, Ts &tx_metadata)
   {
     for (const auto & ptx : ptx_vector)
@@ -1024,7 +1024,7 @@ namespace tools
           throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Failed to save unsigned tx set after creation"};
       }
       else if (!do_not_relay)
-        m_wallet->commit_tx(ptx_vector, blink);
+        m_wallet->commit_tx(ptx_vector, flash);
 
       // populate response with tx hashes
       for (auto & ptx : ptx_vector)
@@ -1067,7 +1067,7 @@ namespace tools
       if (ptx_vector.size() != 1)
         throw wallet_rpc_error{error_code::TX_TOO_LARGE, "Transaction would be too large.  try /transfer_split."};
 
-      fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_blink,
+      fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_flash,
           res.tx_hash, req.get_tx_hex, res.tx_blob, req.get_tx_metadata, res.tx_metadata);
     }
     return res;
@@ -1100,7 +1100,7 @@ namespace tools
       if (ptx_vector.empty())
         throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "No transaction created"};
 
-      fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_blink,
+      fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_flash,
           res.tx_hash_list, req.get_tx_hex, res.tx_blob_list, req.get_tx_metadata, res.tx_metadata_list);
     }
     return res;
@@ -1347,7 +1347,7 @@ namespace tools
 
     std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_unmixable_sweep_transactions();
 
-    fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, false /*blink*/,
+    fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, false /*flash*/,
           res.tx_hash_list, req.get_tx_hex, res.tx_blob_list, req.get_tx_metadata, res.tx_metadata_list);
 
     return {};
@@ -1386,7 +1386,7 @@ namespace tools
       uint32_t priority = convert_priority(req.priority);
       std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_all(req.below_amount, dsts[0].addr, dsts[0].is_subaddress, req.outputs, CRYPTONOTE_DEFAULT_TX_MIXIN, req.unlock_time, priority, extra, req.account_index, subaddr_indices);
 
-      fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_blink,
+      fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_flash,
             res.tx_hash_list, req.get_tx_hex, res.tx_blob_list, req.get_tx_metadata, res.tx_metadata_list);
     }
     return res;
@@ -1426,7 +1426,7 @@ namespace tools
       if (ptx.selected_transfers.size() > 1)
         throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "The transaction uses multiple inputs, which is not supposed to happen"};
 
-      fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_blink,
+      fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_flash,
           res.tx_hash, req.get_tx_hex, res.tx_blob, req.get_tx_metadata, res.tx_metadata);
     }
     return res;
@@ -1455,7 +1455,7 @@ namespace tools
 
     try
     {
-      m_wallet->commit_tx(ptx, req.blink);
+      m_wallet->commit_tx(ptx, req.flash);
     }
     catch(const std::exception &e)
     {
@@ -1564,7 +1564,7 @@ namespace tools
       rpc_payment.amount       = payment.m_amount;
       rpc_payment.block_height = payment.m_block_height;
       rpc_payment.unlock_time  = payment.m_unlock_time;
-      rpc_payment.locked       = !m_wallet->is_transfer_unlocked(payment.m_unlock_time, payment.m_block_height, payment.m_unmined_blink);
+      rpc_payment.locked       = !m_wallet->is_transfer_unlocked(payment.m_unlock_time, payment.m_block_height, payment.m_unmined_flash);
       rpc_payment.subaddr_index = payment.m_subaddr_index;
       rpc_payment.address      = m_wallet->get_subaddress_as_str(payment.m_subaddr_index);
     }
@@ -1593,7 +1593,7 @@ namespace tools
         rpc_payment.unlock_time  = payment.second.m_unlock_time;
         rpc_payment.subaddr_index = payment.second.m_subaddr_index;
         rpc_payment.address      = m_wallet->get_subaddress_as_str(payment.second.m_subaddr_index);
-        rpc_payment.locked       = !m_wallet->is_transfer_unlocked(payment.second.m_unlock_time, payment.second.m_block_height, payment.second.m_unmined_blink);
+        rpc_payment.locked       = !m_wallet->is_transfer_unlocked(payment.second.m_unlock_time, payment.second.m_block_height, payment.second.m_unmined_flash);
       }
 
       return res;
@@ -1639,7 +1639,7 @@ namespace tools
         rpc_payment.unlock_time  = payment.m_unlock_time;
         rpc_payment.subaddr_index = payment.m_subaddr_index;
         rpc_payment.address      = m_wallet->get_subaddress_as_str(payment.m_subaddr_index);
-        rpc_payment.locked       = !m_wallet->is_transfer_unlocked(payment.m_unlock_time, payment.m_block_height, payment.m_unmined_blink);
+        rpc_payment.locked       = !m_wallet->is_transfer_unlocked(payment.m_unlock_time, payment.m_block_height, payment.m_unmined_flash);
       }
     }
 
@@ -3022,7 +3022,7 @@ namespace {
 
     std::vector<tools::wallet2::pending_tx> ptx_vector = {stake_result.ptx};
 
-    fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, false /*blink*/,
+    fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, false /*flash*/,
           res.tx_hash, req.get_tx_hex, res.tx_blob, req.get_tx_metadata, res.tx_metadata);
 
     return res;
@@ -3048,7 +3048,7 @@ namespace {
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, register_result.msg};
 
     std::vector<tools::wallet2::pending_tx> ptx_vector = {register_result.ptx};
-    fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, false /*blink*/,
+    fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, false /*flash*/,
           res.tx_hash, req.get_tx_hex, res.tx_blob, req.get_tx_metadata, res.tx_metadata);
 
     return res;
@@ -3137,7 +3137,7 @@ namespace {
                            res.multisig_txset,
                            res.unsigned_txset,
                            req.do_not_relay,
-                           false /*blink*/,
+                           false /*flash*/,
                            res.tx_hash,
                            req.get_tx_hex,
                            res.tx_blob,
@@ -3171,7 +3171,7 @@ namespace {
                            res.multisig_txset,
                            res.unsigned_txset,
                            req.do_not_relay,
-                           false /*blink*/,
+                           false /*flash*/,
                            res.tx_hash,
                            req.get_tx_hex,
                            res.tx_blob,
@@ -3223,7 +3223,7 @@ namespace {
                            res.multisig_txset,
                            res.unsigned_txset,
                            req.do_not_relay,
-                           false /*blink*/,
+                           false /*flash*/,
                            res.tx_hash,
                            req.get_tx_hex,
                            res.tx_blob,
@@ -3471,7 +3471,7 @@ namespace {
     if (!bns::mapping_value::validate(m_wallet->nettype(), type, req.value, &value, &reason))
       throw wallet_rpc_error{error_code::BNS_BAD_VALUE, "Invalid BNS value '" + req.value + "': " + reason};
 
-    bool old_argon2 = type == bns::mapping_type::session && *hf_version < cryptonote::network_version_17_pulse;
+    bool old_argon2 = type == bns::mapping_type::session && *hf_version < cryptonote::network_version_17_POS;
     if (!value.encrypt(req.name, nullptr, old_argon2))
       throw wallet_rpc_error{error_code::BNS_VALUE_ENCRYPT_FAILED, "Value encryption failure"};
 

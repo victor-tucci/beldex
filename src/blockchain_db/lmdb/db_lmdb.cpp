@@ -419,7 +419,7 @@ struct mdb_block_info_2 : mdb_block_info_1
 
 struct mdb_block_info_3 : mdb_block_info_2
 {
-  uint8_t bi_pulse;
+  uint8_t bi_POS;
 };
 
 struct mdb_block_info : mdb_block_info_2
@@ -4441,7 +4441,7 @@ std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> BlockchainLMDB::get
         const uint8_t hf_version = cryptonote::get_network_version(nettype, height);
         LOG_PRINT_L2("TX hf_version:"  << hf_version);
 
-        if ((height + (hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)) <= blockchain_height)
+        if ((height + (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)) <= blockchain_height)
           break;
         --num_elems;
       }
@@ -4748,10 +4748,10 @@ void BlockchainLMDB::fixup(cryptonote::network_type nettype)
           add_timestamp_and_difficulty(nettype, curr_chain_height, timestamps, difficulties, curr_timestamp, curr_cumulative_diff);
 
           // NOTE: Calculate next block difficulty
-          if (is_hard_fork_at_least(nettype, cryptonote::network_version_17_pulse, curr_height)
-              && block_header_has_pulse_components(get_block_header_from_height(curr_height)))
+          if (is_hard_fork_at_least(nettype, cryptonote::network_version_17_POS, curr_height)
+              && block_header_has_POS_components(get_block_header_from_height(curr_height)))
           {
-            diff = PULSE_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME_V17
+            diff = POS_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME_V17
           }
           else
           {

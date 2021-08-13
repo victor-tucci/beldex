@@ -427,7 +427,7 @@ namespace cryptonote
   enum Decommission_Reason : uint16_t {
     missed_uptime_proof = 1 << 0,
     missed_checkpoints = 1 << 1,
-    missed_pulse_participations = 1 << 2,
+    missed_POS_participations = 1 << 2,
     storage_server_unreachable = 1 << 3,
     timestamp_response_unreachable = 1 << 4,
     timesync_status_out_of_sync = 1 << 5,

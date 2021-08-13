@@ -43,7 +43,7 @@
 #include "cryptonote_basic/hardfork.h"
 #include "cryptonote_basic/tx_extra.h"
 #include "cryptonote_core/beldex_name_system.h"
-#include "cryptonote_core/pulse.h"
+#include "cryptonote_core/pos.h"
 #include "beldex_economy.h"
 #include "epee/string_tools.h"
 #include "core_rpc_server.h"
@@ -378,11 +378,11 @@ namespace cryptonote { namespace rpc {
     res.top_block_hash = tools::type_to_hex(top_hash);
     res.target_height = m_core.get_target_blockchain_height();
 
-    bool next_block_is_pulse = false;
-    if (pulse::timings t; pulse::get_round_timings(m_core.get_blockchain_storage(), res.height, prev_ts, t)) {
-      res.pulse_ideal_timestamp = tools::to_seconds(t.ideal_timestamp.time_since_epoch());
-      res.pulse_target_timestamp = tools::to_seconds(t.r0_timestamp.time_since_epoch());
-      next_block_is_pulse = pulse::clock::now() < t.miner_fallback_timestamp;
+    bool next_block_is_POS = false;
+    if (POS::timings t; POS::get_round_timings(m_core.get_blockchain_storage(), res.height, prev_ts, t)) {
+      res.POS_ideal_timestamp = tools::to_seconds(t.ideal_timestamp.time_since_epoch());
+      res.POS_target_timestamp = tools::to_seconds(t.r0_timestamp.time_since_epoch());
+      next_block_is_POS = POS::clock::now() < t.miner_fallback_timestamp;
     }
 
     res.immutable_height = 0;
@@ -393,8 +393,8 @@ namespace cryptonote { namespace rpc {
       res.immutable_block_hash = tools::type_to_hex(checkpoint.block_hash);
     }
 
-    res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(next_block_is_pulse);
-    res.target = tools::to_seconds((next_block_is_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
+    res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(next_block_is_POS);
+    res.target = tools::to_seconds((next_block_is_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
     res.tx_count = m_core.get_blockchain_storage().get_total_transactions() - res.height; //without coinbase
     res.tx_pool_size = m_core.get_pool().get_transactions_count();
     if (context.admin)
@@ -943,7 +943,7 @@ namespace cryptonote { namespace rpc {
       res.missed_tx.push_back(tools::type_to_hex(miss_tx));
 
     uint64_t immutable_height = m_core.get_blockchain_storage().get_immutable_height();
-    auto blink_lock = pool.blink_shared_lock(std::defer_lock); // Defer until/unless we actually need it
+    auto flash_lock = pool.flash_shared_lock(std::defer_lock); // Defer until/unless we actually need it
     auto height = m_core.get_current_blockchain_height();
     auto net = nettype();
     auto hf_version = get_network_version(net, height);
@@ -1016,7 +1016,7 @@ namespace cryptonote { namespace rpc {
       }
       auto ptx_it = per_tx_pool_tx_info.find(tx_hash);
       e.in_pool = ptx_it != per_tx_pool_tx_info.end();
-      bool might_be_blink = true;
+      bool might_be_flash = true;
       if (e.in_pool)
       {
         e.block_height = e.block_timestamp = std::numeric_limits<uint64_t>::max();
@@ -1032,7 +1032,7 @@ namespace cryptonote { namespace rpc {
         e.double_spend_seen = false;
         e.relayed = false;
         if (e.block_height <= immutable_height)
-            might_be_blink = false;
+            might_be_flash = false;
       }
 
       if (req.stake_info) {
@@ -1043,10 +1043,10 @@ namespace cryptonote { namespace rpc {
           e.stake_amount = sc.transferred;
       }
 
-      if (might_be_blink)
+      if (might_be_flash)
       {
-        if (!blink_lock) blink_lock.lock();
-        e.blink = pool.has_blink(tx_hash);
+        if (!flash_lock) flash_lock.lock();
+        e.flash = pool.has_flash(tx_hash);
       }
 
       // output indices too if not in pool
@@ -1163,28 +1163,28 @@ namespace cryptonote { namespace rpc {
     }
     res.sanity_check_failed = false;
 
-    if (req.blink)
+    if (req.flash)
     {
-      auto future = m_core.handle_blink_tx(tx_blob);
+      auto future = m_core.handle_flash_tx(tx_blob);
       auto status = future.wait_for(10s);
       if (status != std::future_status::ready) {
         res.status = "Failed";
-        res.reason = "Blink quorum timeout";
-        res.blink_status = blink_result::timeout;
+        res.reason = "Flash quorum timeout";
+        res.flash_status = flash_result::timeout;
         return res;
       }
 
       try {
         auto result = future.get();
-        res.blink_status = result.first;
-        if (result.first == blink_result::accepted) {
+        res.flash_status = result.first;
+        if (result.first == flash_result::accepted) {
           res.status = STATUS_OK;
         } else {
           res.status = "Failed";
-          res.reason = !result.second.empty() ? result.second : result.first == blink_result::timeout ? "Blink quorum timeout" : "Transaction rejected by blink quorum";
+          res.reason = !result.second.empty() ? result.second : result.first == flash_result::timeout ? "Flash quorum timeout" : "Transaction rejected by flash quorum";
         }
       } catch (const std::exception &e) {
-        res.blink_status = blink_result::rejected;
+        res.flash_status = flash_result::rejected;
         res.status = "Failed";
         res.reason = std::string{"Transaction failed: "} + e.what();
       }
@@ -1314,7 +1314,7 @@ namespace cryptonote { namespace rpc {
     const miner& lMiner = m_core.get_miner();
     res.active = lMiner.is_mining();
     res.block_target = tools::to_seconds(TARGET_BLOCK_TIME); // old_block_time
-    res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(false /*pulse*/);
+    res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(false /*POS*/);
     if ( lMiner.is_mining() ) {
       res.speed = lMiner.get_speed();
       res.threads_count = lMiner.get_threads_count();
@@ -1507,7 +1507,7 @@ namespace cryptonote { namespace rpc {
       return res;
 
     std::vector<crypto::hash> tx_pool_hashes;
-    m_core.get_pool().get_transaction_hashes(tx_pool_hashes, context.admin, req.blinked_txs_only);
+    m_core.get_pool().get_transaction_hashes(tx_pool_hashes, context.admin, req.flashed_txs_only);
 
     res.tx_hashes = std::move(tx_pool_hashes);
     res.status    = STATUS_OK;
@@ -2400,10 +2400,10 @@ namespace cryptonote { namespace rpc {
     auto fees = m_core.get_blockchain_storage().get_dynamic_base_fee_estimate(req.grace_blocks);
     res.fee_per_byte = fees.first;
     res.fee_per_output = fees.second;
-    res.blink_fee_fixed = BLINK_BURN_FIXED;
-    constexpr auto blink_percent = BLINK_MINER_TX_FEE_PERCENT + BLINK_BURN_TX_FEE_PERCENT_OLD;
-    res.blink_fee_per_byte = res.fee_per_byte * blink_percent / 100;
-    res.blink_fee_per_output = res.fee_per_output * blink_percent / 100;
+    res.flash_fee_fixed = FLASH_BURN_FIXED;
+    constexpr auto flash_percent = FLASH_MINER_TX_FEE_PERCENT + FLASH_BURN_TX_FEE_PERCENT_OLD;
+    res.flash_fee_per_byte = res.fee_per_byte * flash_percent / 100;
+    res.flash_fee_per_output = res.fee_per_output * flash_percent / 100;
     res.quantization_mask = Blockchain::get_fee_quantization_mask();
     res.status = STATUS_OK;
     return res;
@@ -2820,15 +2820,15 @@ namespace cryptonote { namespace rpc {
       // Our start block for the latest quorum of each type depends on the type being requested:
       // obligations: top block
       // checkpoint: last block with height divisible by CHECKPOINT_INTERVAL (=4)
-      // blink: last block with height divisible by BLINK_QUORUM_INTERVAL (=5)
-      // pulse: current height (i.e. top block height + 1)
+      // flash: last block with height divisible by FLASH_QUORUM_INTERVAL (=5)
+      // POS: current height (i.e. top block height + 1)
       uint64_t top_height = curr_height - 1;
       latest_ob = top_height;
       latest_cp = std::min(start, top_height - top_height % master_nodes::CHECKPOINT_INTERVAL);
-      latest_bl = std::min(start, top_height - top_height % master_nodes::BLINK_QUORUM_INTERVAL);
+      latest_bl = std::min(start, top_height - top_height % master_nodes::FLASH_QUORUM_INTERVAL);
       if (requested_type(master_nodes::quorum_type::checkpointing))
         start = std::min(start, latest_cp);
-      if (requested_type(master_nodes::quorum_type::blink))
+      if (requested_type(master_nodes::quorum_type::flash))
         start = std::min(start, latest_bl);
       end = curr_height;
     }
@@ -2848,9 +2848,9 @@ namespace cryptonote { namespace rpc {
     }
 
     start                = std::min(curr_height, start);
-    // We can also provide the pulse quorum for the current block being produced, so if asked for
+    // We can also provide the POS quorum for the current block being produced, so if asked for
     // that make a note.
-    bool add_curr_pulse = (latest || end > curr_height) && requested_type(master_nodes::quorum_type::pulse);
+    bool add_curr_POS = (latest || end > curr_height) && requested_type(master_nodes::quorum_type::POS);
     end = std::min(curr_height, end);
 
     uint64_t count       = (start > end) ? start - end : end - start;
@@ -2883,8 +2883,8 @@ namespace cryptonote { namespace rpc {
           { // Latest quorum requested, so skip if this is isn't the latest height for *this* quorum type
             if (type == master_nodes::quorum_type::obligations && height != latest_ob) continue;
             if (type == master_nodes::quorum_type::checkpointing && height != latest_cp) continue;
-            if (type == master_nodes::quorum_type::blink && height != latest_bl) continue;
-            if (type == master_nodes::quorum_type::pulse) continue;
+            if (type == master_nodes::quorum_type::flash && height != latest_bl) continue;
+            if (type == master_nodes::quorum_type::POS) continue;
           }
           if (std::shared_ptr<const master_nodes::quorum> quorum = m_core.get_quorum(type, height, true /*include_old*/))
           {
@@ -2903,25 +2903,25 @@ namespace cryptonote { namespace rpc {
       else height--;
     }
 
-    if (uint8_t hf_version; add_curr_pulse
-        && (hf_version = get_network_version(nettype(), curr_height)) >= network_version_17_pulse)
+    if (uint8_t hf_version; add_curr_POS
+        && (hf_version = get_network_version(nettype(), curr_height)) >= network_version_17_POS)
     {
       cryptonote::Blockchain const &blockchain   = m_core.get_blockchain_storage();
       cryptonote::block_header const &top_header = blockchain.get_db().get_block_header_from_height(curr_height - 1);
 
-      pulse::timings next_timings = {};
-      uint8_t pulse_round         = 0;
-      if (pulse::get_round_timings(blockchain, curr_height, top_header.timestamp, next_timings) &&
-          pulse::convert_time_to_round(pulse::clock::now(), next_timings.r0_timestamp, &pulse_round))
+      POS::timings next_timings = {};
+      uint8_t POS_round         = 0;
+      if (POS::get_round_timings(blockchain, curr_height, top_header.timestamp, next_timings) &&
+          POS::convert_time_to_round(POS::clock::now(), next_timings.r0_timestamp, &POS_round))
       {
-        auto entropy = master_nodes::get_pulse_entropy_for_next_block(blockchain.get_db(), pulse_round);
+        auto entropy = master_nodes::get_POS_entropy_for_next_block(blockchain.get_db(), POS_round);
         auto& mn_list = m_core.get_master_node_list();
-        auto quorum = generate_pulse_quorum(m_core.get_nettype(), mn_list.get_block_leader().key, hf_version, mn_list.active_master_nodes_infos(), entropy, pulse_round);
-        if (verify_pulse_quorum_sizes(quorum))
+        auto quorum = generate_POS_quorum(m_core.get_nettype(), mn_list.get_block_leader().key, hf_version, mn_list.active_master_nodes_infos(), entropy, POS_round);
+        if (verify_POS_quorum_sizes(quorum))
         {
           auto& entry = res.quorums.emplace_back();
           entry.height = curr_height;
-          entry.quorum_type = static_cast<uint8_t>(master_nodes::quorum_type::pulse);
+          entry.quorum_type = static_cast<uint8_t>(master_nodes::quorum_type::POS);
 
           entry.quorum.validators = hexify(quorum.validators);
           entry.quorum.workers = hexify(quorum.workers);
@@ -3109,11 +3109,11 @@ namespace cryptonote { namespace rpc {
         entry.beldexnet_last_reachable = reachable_to_time_t(proof.beldexnet_reachable.last_reachable, system_now, steady_now);
 
         master_nodes::participation_history<master_nodes::participation_entry> const &checkpoint_participation = proof.checkpoint_participation;
-        master_nodes::participation_history<master_nodes::participation_entry> const &pulse_participation      = proof.pulse_participation;
+        master_nodes::participation_history<master_nodes::participation_entry> const &POS_participation      = proof.POS_participation;
         master_nodes::participation_history<master_nodes::timestamp_participation_entry> const &timestamp_participation      = proof.timestamp_participation;
         master_nodes::participation_history<master_nodes::timesync_entry> const &timesync_status      = proof.timesync_status;
         entry.checkpoint_participation = std::vector<master_nodes::participation_entry>(checkpoint_participation.begin(), checkpoint_participation.end());
-        entry.pulse_participation      = std::vector<master_nodes::participation_entry>(pulse_participation.begin(),      pulse_participation.end());
+        entry.POS_participation      = std::vector<master_nodes::participation_entry>(POS_participation.begin(),      POS_participation.end());
         entry.timestamp_participation  = std::vector<master_nodes::timestamp_participation_entry>(timestamp_participation.begin(),      timestamp_participation.end());
         entry.timesync_status          = std::vector<master_nodes::timesync_entry>(timesync_status.begin(),      timesync_status.end());
     });

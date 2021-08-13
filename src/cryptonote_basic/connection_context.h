@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -53,8 +53,8 @@ namespace cryptonote
     state m_state{state_before_handshake};
     std::vector<crypto::hash> m_needed_objects;
     std::unordered_set<crypto::hash> m_requested_objects;
-    std::map<uint64_t, std::pair<crypto::hash, bool>> m_blink_state; // HEIGHT => {CHECKSUM, NEEDED}
-    bool m_need_blink_sync{false};
+    std::map<uint64_t, std::pair<crypto::hash, bool>> m_flash_state; // HEIGHT => {CHECKSUM, NEEDED}
+    bool m_need_flash_sync{false};
     uint32_t m_drop_count{0}; // How many times we've wanted to drop
     uint64_t m_remote_blockchain_height{0};
     uint64_t m_last_response_height{0};
@@ -83,7 +83,7 @@ namespace cryptonote
       return "normal";
     default:
       return "unknown";
-    }    
+    }
   }
 
   inline char get_protocol_state_char(cryptonote_connection_context::state s)

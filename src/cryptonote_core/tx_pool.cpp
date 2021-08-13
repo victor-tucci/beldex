@@ -229,14 +229,14 @@ namespace cryptonote
     return false;
   }
 
-  // Blink notes: a blink quorum member adds an incoming blink tx into the mempool to make sure it
+  // Flash notes: a flash quorum member adds an incoming flash tx into the mempool to make sure it
   // can be accepted, but sets it as do_not_relay initially.  If it gets added, the quorum member
   // sends a signature to other quorum members.  Once enough signatures are received it updates it
   // to set `do_not_relay` to false and starts relaying it (other quorum members do the same).
 
   //---------------------------------------------------------------------------------
   bool tx_memory_pool::add_tx(transaction &tx, const crypto::hash &id, const cryptonote::blobdata &blob, size_t tx_weight, tx_verification_context& tvc, const tx_pool_options &opts, uint8_t hf_version,
-      uint64_t *blink_rollback_height)
+      uint64_t *flash_rollback_height)
   {
     // this should already be called with that lock, but let's make it explicit for clarity
     std::unique_lock lock{m_transactions_lock};
@@ -305,27 +305,27 @@ namespace cryptonote
         {
           // The tx came from a block popped from the chain; we keep it around even if the key
           // images are spent so that we notice the double spend *unless* the tx is conflicting with
-          // one or more blink txs, in which case we drop it because it can never be accepted.
-          auto blink_lock = blink_shared_lock();
+          // one or more flash txs, in which case we drop it because it can never be accepted.
+          auto flash_lock = flash_shared_lock();
           double_spend = false;
           for (const auto &tx_hash : conflict_txs)
           {
-            if (tx_hash != id && m_blinks.count(tx_hash))
+            if (tx_hash != id && m_flashes.count(tx_hash))
             {
               // Warn on this because it almost certainly indicates something malicious
-              MWARNING("Not re-adding popped/incoming tx " << id << " to the mempool: it conflicts with blink tx " << tx_hash);
+              MWARNING("Not re-adding popped/incoming tx " << id << " to the mempool: it conflicts with flash tx " << tx_hash);
               double_spend = true;
               break;
             }
           }
         }
-        else if (opts.approved_blink)
+        else if (opts.approved_flash)
         {
-          MDEBUG("Incoming blink tx is approved, but has " << conflict_txs.size() << " conflicting local tx(es); dropping conflicts");
-          if (remove_blink_conflicts(id, conflict_txs, blink_rollback_height))
+          MDEBUG("Incoming flash tx is approved, but has " << conflict_txs.size() << " conflicting local tx(es); dropping conflicts");
+          if (remove_flash_conflicts(id, conflict_txs, flash_rollback_height))
             double_spend = false;
           else
-            MERROR("Blink error: incoming blink tx cannot be accepted as it conflicts with checkpointed txs");
+            MERROR("Flash error: incoming flash tx cannot be accepted as it conflicts with checkpointed txs");
         }
 
         if (double_spend)
@@ -364,7 +364,7 @@ namespace cryptonote
     uint64_t max_used_block_height = 0;
     cryptonote::txpool_tx_meta_t meta;
     bool inputs_okay = check_tx_inputs([&tx]()->cryptonote::transaction&{ return tx; }, id, max_used_block_height, max_used_block_id, tvc, opts.kept_by_block,
-        opts.approved_blink ? blink_rollback_height : nullptr);
+        opts.approved_flash ? flash_rollback_height : nullptr);
     const bool non_standard_tx = !tx.is_transfer();
     if (!inputs_okay)
     {
@@ -481,99 +481,99 @@ namespace cryptonote
     return add_tx(tx, h, bl, get_transaction_weight(tx, bl.size()), tvc, opts, version);
   }
   //---------------------------------------------------------------------------------
-  bool tx_memory_pool::add_new_blink(const std::shared_ptr<blink_tx> &blink_ptr, tx_verification_context &tvc, bool &blink_exists)
+  bool tx_memory_pool::add_new_flash(const std::shared_ptr<flash_tx> &flash_ptr, tx_verification_context &tvc, bool &flash_exists)
   {
-    assert((bool) blink_ptr);
+    assert((bool) flash_ptr);
     std::unique_lock lock{m_transactions_lock};
-    auto &blink = *blink_ptr;
-    auto &tx = var::get<transaction>(blink.tx); // will throw if just a hash w/o a transaction
+    auto &flash = *flash_ptr;
+    auto &tx = var::get<transaction>(flash.tx); // will throw if just a hash w/o a transaction
     auto txhash = get_transaction_hash(tx);
 
     {
-      auto lock = blink_shared_lock();
-      blink_exists = m_blinks.count(txhash);
-      if (blink_exists)
+      auto lock = flash_shared_lock();
+      flash_exists = m_flashes.count(txhash);
+      if (flash_exists)
         return false;
     }
 
-    bool approved = blink.approved();
-    auto hf_version = m_blockchain.get_network_version(blink.height);
-    bool result = add_tx(tx, tvc, tx_pool_options::new_blink(approved, hf_version), hf_version);
+    bool approved = flash.approved();
+    auto hf_version = m_blockchain.get_network_version(flash.height);
+    bool result = add_tx(tx, tvc, tx_pool_options::new_flash(approved, hf_version), hf_version);
     if (result && approved)
     {
-      auto lock = blink_unique_lock();
-      m_blinks[txhash] = blink_ptr;
+      auto lock = flash_unique_lock();
+      m_flashes[txhash] = flash_ptr;
     }
     else if (!result)
     {
       // Adding failed, but might have failed because another thread inserted it, so check again for
-      // existence of the blink
-      auto lock = blink_shared_lock();
-      blink_exists = m_blinks.count(txhash);
+      // existence of the flash
+      auto lock = flash_shared_lock();
+      flash_exists = m_flashes.count(txhash);
     }
     return result;
   }
   //---------------------------------------------------------------------------------
-  bool tx_memory_pool::add_existing_blink(std::shared_ptr<blink_tx> blink_ptr)
+  bool tx_memory_pool::add_existing_flash(std::shared_ptr<flash_tx> flash_ptr)
   {
-    assert(blink_ptr && blink_ptr->approved());
-    auto &ptr = m_blinks[blink_ptr->get_txhash()];
+    assert(flash_ptr && flash_ptr->approved());
+    auto &ptr = m_flashes[flash_ptr->get_txhash()];
     if (ptr)
       return false;
 
-    ptr = blink_ptr;
+    ptr = flash_ptr;
     return true;
   }
   //---------------------------------------------------------------------------------
-  std::shared_ptr<blink_tx> tx_memory_pool::get_blink(const crypto::hash &tx_hash) const
+  std::shared_ptr<flash_tx> tx_memory_pool::get_flash(const crypto::hash &tx_hash) const
   {
-    auto it = m_blinks.find(tx_hash);
-    if (it != m_blinks.end())
+    auto it = m_flashes.find(tx_hash);
+    if (it != m_flashes.end())
         return it->second;
     return {};
   }
   //---------------------------------------------------------------------------------
-  bool tx_memory_pool::has_blink(const crypto::hash &tx_hash) const
+  bool tx_memory_pool::has_flash(const crypto::hash &tx_hash) const
   {
-    return m_blinks.find(tx_hash) != m_blinks.end();
+    return m_flashes.find(tx_hash) != m_flashes.end();
   }
 
-  void tx_memory_pool::keep_missing_blinks(std::vector<crypto::hash> &tx_hashes) const
+  void tx_memory_pool::keep_missing_flashes(std::vector<crypto::hash> &tx_hashes) const
   {
-    auto lock = blink_shared_lock();
+    auto lock = flash_shared_lock();
     tx_hashes.erase(
         std::remove_if(tx_hashes.begin(), tx_hashes.end(),
-          [this](const crypto::hash &tx_hash) { return m_blinks.count(tx_hash) > 0; }),
+          [this](const crypto::hash &tx_hash) { return m_flashes.count(tx_hash) > 0; }),
         tx_hashes.end());
   }
 
-  std::pair<std::vector<crypto::hash>, std::vector<uint64_t>> tx_memory_pool::get_blink_hashes_and_mined_heights() const
+  std::pair<std::vector<crypto::hash>, std::vector<uint64_t>> tx_memory_pool::get_flash_hashes_and_mined_heights() const
   {
     std::pair<std::vector<crypto::hash>, std::vector<uint64_t>> hnh;
     auto &hashes = hnh.first;
     auto &heights = hnh.second;
     {
-      auto lock = blink_shared_lock();
-      if (!m_blinks.empty())
+      auto lock = flash_shared_lock();
+      if (!m_flashes.empty())
       {
-        hashes.reserve(m_blinks.size());
-        for (auto &b : m_blinks)
+        hashes.reserve(m_flashes.size());
+        for (auto &b : m_flashes)
           hashes.push_back(b.first);
       }
     }
 
     heights = m_blockchain.get_transactions_heights(hashes);
 
-    // Filter out (and delete from the blink pool) any blinks that are in immutable blocks
+    // Filter out (and delete from the flash pool) any flashes that are in immutable blocks
     const uint64_t immutable_height = m_blockchain.get_immutable_height();
     size_t next_good = 0;
     for (size_t i = 0; i < hashes.size(); i++)
     {
-      if (heights[i] > immutable_height || heights[i] == 0 /* unmined mempool blink */)
+      if (heights[i] > immutable_height || heights[i] == 0 /* unmined mempool flash */)
       {
         // Swap elements into the "good" part of the list so that when we're we'll have divided the
         // vector into [0, ..., next_good-1] elements containing the parts we want to return, and
-        // [next_good, ...] containing the elements to remove from blink storage.
+        // [next_good, ...] containing the elements to remove from flash storage.
         if (i != next_good)
         {
           using std::swap;
@@ -586,9 +586,9 @@ namespace cryptonote
 
     if (next_good < hashes.size())
     {
-      auto lock = blink_unique_lock();
+      auto lock = flash_unique_lock();
       for (size_t i = next_good; i < hashes.size(); i++)
-        m_blinks.erase(hashes[i]);
+        m_flashes.erase(hashes[i]);
     }
     hashes.resize(next_good);
     heights.resize(next_good);
@@ -596,11 +596,11 @@ namespace cryptonote
     return hnh;
   }
 
-  std::map<uint64_t, crypto::hash> tx_memory_pool::get_blink_checksums() const
+  std::map<uint64_t, crypto::hash> tx_memory_pool::get_flash_checksums() const
   {
     std::map<uint64_t, crypto::hash> result;
 
-    auto hnh = get_blink_hashes_and_mined_heights();
+    auto hnh = get_flash_hashes_and_mined_heights();
     auto &hashes = hnh.first;
     auto &heights = hnh.second;
 
@@ -616,11 +616,11 @@ namespace cryptonote
   }
 
   //---------------------------------------------------------------------------------
-  std::vector<crypto::hash> tx_memory_pool::get_mined_blinks(const std::set<uint64_t> &want_heights) const
+  std::vector<crypto::hash> tx_memory_pool::get_mined_flashes(const std::set<uint64_t> &want_heights) const
   {
     std::vector<crypto::hash> result;
 
-    auto hnh = get_blink_hashes_and_mined_heights();
+    auto hnh = get_flash_hashes_and_mined_heights();
     auto &hashes = hnh.first;
     auto &heights = hnh.second;
     for (size_t i = 0; i < heights.size(); i++)
@@ -632,27 +632,27 @@ namespace cryptonote
   }
 
   //---------------------------------------------------------------------------------
-  bool tx_memory_pool::remove_blink_conflicts(const crypto::hash &id, const std::vector<crypto::hash> &conflict_txs, uint64_t *blink_rollback_height)
+  bool tx_memory_pool::remove_flash_conflicts(const crypto::hash &id, const std::vector<crypto::hash> &conflict_txs, uint64_t *flash_rollback_height)
   {
-    auto bl_lock = blink_shared_lock(std::defer_lock);
+    auto bl_lock = flash_shared_lock(std::defer_lock);
     std::unique_lock bc_lock{m_blockchain, std::defer_lock};
     std::lock(bl_lock, bc_lock);
 
-    // Since this is a signed blink tx, we want to see if we can eject any existing mempool
+    // Since this is a signed flash tx, we want to see if we can eject any existing mempool
     // txes to make room.
 
-    // First check to see if any of the conflicting txes is itself an approved blink as a
+    // First check to see if any of the conflicting txes is itself an approved flash as a
     // safety check (it shouldn't be possible if the network is functioning properly).
     for (const auto &tx_hash : conflict_txs)
     {
-      if (m_blinks.count(tx_hash))
+      if (m_flashes.count(tx_hash))
       {
-        MERROR("Blink error: incoming blink tx " << id << " conflicts with another blink tx " << tx_hash);
+        MERROR("Flash error: incoming flash tx " << id << " conflicts with another flash tx " << tx_hash);
         return false;
       }
     }
 
-    uint64_t rollback_height_needed = blink_rollback_height ? *blink_rollback_height : 0;
+    uint64_t rollback_height_needed = flash_rollback_height ? *flash_rollback_height : 0;
     std::vector<crypto::hash> mempool_txs;
 
     // Next make sure none of the conflicting txes are mined in immutable blocks
@@ -665,7 +665,7 @@ namespace cryptonote
       {
         mempool_txs.push_back(conflict_txs[i]);
       }
-      else if (heights[i] > immutable_height && blink_rollback_height)
+      else if (heights[i] > immutable_height && flash_rollback_height)
       {
         if (rollback_height_needed == 0 || rollback_height_needed > heights[i])
           rollback_height_needed = heights[i];
@@ -680,20 +680,20 @@ namespace cryptonote
       LockedTXN txnlock(m_blockchain);
       for (auto &tx : mempool_txs)
       {
-        MWARNING("Removing conflicting tx " << tx << " from mempool for incoming blink tx " << id);
+        MWARNING("Removing conflicting tx " << tx << " from mempool for incoming flash tx " << id);
         if (!remove_tx(tx))
         {
-          MERROR("Internal error: Unable to clear conflicting tx " << tx << " from mempool for incoming blink tx " << id);
+          MERROR("Internal error: Unable to clear conflicting tx " << tx << " from mempool for incoming flash tx " << id);
           return false;
         }
       }
       txnlock.commit();
     }
 
-    if (blink_rollback_height && rollback_height_needed < *blink_rollback_height)
+    if (flash_rollback_height && rollback_height_needed < *flash_rollback_height)
     {
-      MINFO("Incoming blink tx requires a rollback to the " << rollback_height_needed << " to un-mine conflicting transactions");
-      *blink_rollback_height = rollback_height_needed;
+      MINFO("Incoming flash tx requires a rollback to the " << rollback_height_needed << " to un-mine conflicting transactions");
+      *flash_rollback_height = rollback_height_needed;
     }
 
     return true;
@@ -754,10 +754,10 @@ namespace cryptonote
   //---------------------------------------------------------------------------------
   void tx_memory_pool::prune(const crypto::hash &skip)
   {
-    auto blink_lock = blink_shared_lock(std::defer_lock);
+    auto flash_lock = flash_shared_lock(std::defer_lock);
     std::unique_lock tx_lock{*this, std::defer_lock};
     std::unique_lock bc_lock{m_blockchain, std::defer_lock};
-    std::lock(blink_lock, tx_lock, bc_lock);
+    std::lock(flash_lock, tx_lock, bc_lock);
     LockedTXN lock(m_blockchain);
     bool changed = false;
 
@@ -776,9 +776,9 @@ namespace cryptonote
         auto del_it = forward ? it++ : it--;
 
         // don't prune the kept_by_block ones, they're likely added because we're adding a block with those
-        // don't prune blink txes
+        // don't prune flash txes
         // don't prune the one we just added
-        if (meta.kept_by_block || this->has_blink(txid) || txid == skip)
+        if (meta.kept_by_block || this->has_flash(txid) || txid == skip)
           return true;
 
         if (this->remove_tx(txid, &meta, &del_it))
@@ -1141,16 +1141,16 @@ namespace cryptonote
     }, true, include_unrelayed_txes);
   }
   //------------------------------------------------------------------
-  void tx_memory_pool::get_transaction_hashes(std::vector<crypto::hash>& txs, bool include_unrelayed_txes, bool include_only_blinked) const
+  void tx_memory_pool::get_transaction_hashes(std::vector<crypto::hash>& txs, bool include_unrelayed_txes, bool include_only_flashed) const
   {
     LOG_PRINT_L2("get_transaction_hashes start");
     auto locks = tools::unique_locks(m_transactions_lock, m_blockchain);
     LOG_PRINT_L2("get_transaction_hashes get_txpool_tx_count");
     txs.reserve(m_blockchain.get_txpool_tx_count(include_unrelayed_txes));
     LOG_PRINT_L2("get_transaction_hashes for_all_txpool_txes");
-    m_blockchain.for_all_txpool_txes([&txs, include_only_blinked, this](const crypto::hash &txid, const txpool_tx_meta_t &meta, const cryptonote::blobdata *bd){
+    m_blockchain.for_all_txpool_txes([&txs, include_only_flashed, this](const crypto::hash &txid, const txpool_tx_meta_t &meta, const cryptonote::blobdata *bd){
       bool include_tx = true;
-      if (include_only_blinked) include_tx = has_blink(txid);
+      if (include_only_flashed) include_tx = has_flash(txid);
       if (include_tx) txs.push_back(txid);
       return true;
     }, false, include_unrelayed_txes);
@@ -1258,8 +1258,8 @@ namespace cryptonote
   {
     std::unique_lock tx_lock{m_transactions_lock, std::defer_lock};
     std::unique_lock bc_lock{m_blockchain, std::defer_lock};
-    auto blink_lock = blink_shared_lock(std::defer_lock);
-    std::lock(tx_lock, bc_lock, blink_lock);
+    auto flash_lock = flash_shared_lock(std::defer_lock);
+    std::lock(tx_lock, bc_lock, flash_lock);
 
     tx_infos.reserve(m_blockchain.get_txpool_tx_count());
     key_image_infos.reserve(m_blockchain.get_txpool_tx_count());
@@ -1293,7 +1293,7 @@ namespace cryptonote
       txi.last_relayed_time = include_sensitive_data ? meta.last_relayed_time : 0;
       txi.do_not_relay = meta.do_not_relay;
       txi.double_spend_seen = meta.double_spend_seen;
-      txi.blink = has_blink(txid);
+      txi.flash = has_flash(txid);
       if (post_process)
         post_process(tx, txi);
       return true;
@@ -1512,7 +1512,7 @@ namespace cryptonote
   }
   //---------------------------------------------------------------------------------
   bool tx_memory_pool::check_tx_inputs(const std::function<cryptonote::transaction&()> &get_tx, const crypto::hash &txid, uint64_t &max_used_block_height,
-      crypto::hash &max_used_block_id, tx_verification_context &tvc, bool kept_by_block, uint64_t* blink_rollback_height) const
+      crypto::hash &max_used_block_id, tx_verification_context &tvc, bool kept_by_block, uint64_t* flash_rollback_height) const
   {
     if (!kept_by_block)
     {
@@ -1526,12 +1526,12 @@ namespace cryptonote
       }
     }
     std::unordered_set<crypto::key_image> key_image_conflicts;
-    bool ret = m_blockchain.check_tx_inputs(get_tx(), max_used_block_height, max_used_block_id, tvc, kept_by_block, blink_rollback_height ? &key_image_conflicts : nullptr);
+    bool ret = m_blockchain.check_tx_inputs(get_tx(), max_used_block_height, max_used_block_id, tvc, kept_by_block, flash_rollback_height ? &key_image_conflicts : nullptr);
 
     if (ret && !key_image_conflicts.empty())
     {
-      // There are some key image conflicts, but since we have blink_rollback_height this is an
-      // approved blink tx that we want to accept via rollback, if possible.
+      // There are some key image conflicts, but since we have flash_rollback_height this is an
+      // approved flash tx that we want to accept via rollback, if possible.
 
       auto locks = tools::unique_locks(m_transactions_lock, m_blockchain);
       uint64_t immutable = m_blockchain.get_immutable_height();
@@ -1539,23 +1539,23 @@ namespace cryptonote
       bool can_fix_with_a_rollback = false;
       if (height - immutable > 100)
       {
-        // Sanity check; if this happens checkpoints are failing and we can't guarantee blinks
-        // anyway (because the blink quorums are not immutable).
+        // Sanity check; if this happens checkpoints are failing and we can't guarantee flashes
+        // anyway (because the flash quorums are not immutable).
         MERROR("Unable to scan for conflicts: blockchain checkpoints are too far back");
       }
       else
       {
-        MDEBUG("Found " << key_image_conflicts.size() << " conflicting key images for blink tx " << txid << "; checking to see if we can roll back");
+        MDEBUG("Found " << key_image_conflicts.size() << " conflicting key images for flash tx " << txid << "; checking to see if we can roll back");
         // Check all the key images of all the blockchain transactions in blocks since the immutable
         // height, and remove any conflicts from the set of conflicts, updating the rollback height
-        // as we go.  If we remove all then rolling back will work, and we can accept the blink,
-        // otherwise we have to refuse it (because immutable blocks have to trump a blink tx).
+        // as we go.  If we remove all then rolling back will work, and we can accept the flash,
+        // otherwise we have to refuse it (because immutable blocks have to trump a flash tx).
         //
         // This sounds expensive, but in reality the blocks since the immutable checkpoint is
         // usually only around 8-12, we do this in reverse order (conflicts are most likely to be in
         // the last block or two), and there is little incentive to actively exploit this since this
         // code is here, and even if someone did want to they'd have to also be 51% attacking the
-        // network to wipe out recently mined blinks -- but that can't work anyway.
+        // network to wipe out recently mined flashes -- but that can't work anyway.
         //
         std::vector<cryptonote::block> blocks;
         if (m_blockchain.get_blocks_only(immutable + 1, height, blocks))
@@ -1589,18 +1589,18 @@ namespace cryptonote
 end:
           if (key_image_conflicts.empty() && earliest < height && earliest > immutable)
           {
-            MDEBUG("Blink admission requires rolling back to height " << earliest);
+            MDEBUG("Flash admission requires rolling back to height " << earliest);
             can_fix_with_a_rollback = true;
-            if (*blink_rollback_height == 0 || *blink_rollback_height > earliest)
-              *blink_rollback_height = earliest;
+            if (*flash_rollback_height == 0 || *flash_rollback_height > earliest)
+              *flash_rollback_height = earliest;
           }
         }
         else
-          MERROR("Failed to retrieve blocks for trying a blink rollback!");
+          MERROR("Failed to retrieve blocks for trying a flash rollback!");
       }
       if (!can_fix_with_a_rollback)
       {
-        MWARNING("Blink admission of " << txid << " is not possible even with a rollback: found " << key_image_conflicts.size() << " key image conflicts in immutable blocks");
+        MWARNING("Flash admission of " << txid << " is not possible even with a rollback: found " << key_image_conflicts.size() << " key image conflicts in immutable blocks");
         ret = false;
         tvc.m_double_spend = true;
       }
@@ -1781,7 +1781,7 @@ end:
         return false;
       }
 
-      best_reward = version >= cryptonote::network_version_17_pulse ? 0 /*Empty block, starts with 0 fee*/ : reward_parts.base_miner;
+      best_reward = version >= cryptonote::network_version_17_POS ? 0 /*Empty block, starts with 0 fee*/ : reward_parts.base_miner;
     }
 
     size_t const max_total_weight = 2 * median_weight - CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE;
@@ -1826,7 +1826,7 @@ end:
       // NOTE: Use the net fee for comparison (after penalty is applied).
       // After HF16, penalty is applied on the miner fee. Before, penalty is
       // applied on the base reward.
-      if (version >= cryptonote::network_version_17_pulse)
+      if (version >= cryptonote::network_version_17_POS)
       {
         next_reward = next_reward_parts.miner_fee;
       }

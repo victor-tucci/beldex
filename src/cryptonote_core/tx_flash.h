@@ -41,15 +41,15 @@ class master_node_list;
 
 namespace cryptonote {
 
-// FIXME TODO XXX - rename this file to blink_tx.h
+// FIXME TODO XXX - rename this file to flash_tx.h
 
-class blink_tx {
+class flash_tx {
 public:
     enum class subquorum : uint8_t { base, future, _count };
 
     enum class signature_status : uint8_t { none, rejected, approved };
 
-    /// The blink authorization height of this blink tx, i.e. the block height at the time the
+    /// The flash authorization height of this flash tx, i.e. the block height at the time the
     /// transaction was created.
     const uint64_t height;
 
@@ -59,8 +59,8 @@ public:
         crypto::hash operator()(const transaction &tx) const;
     };
 
-    /// The blink transaction *or* hash.  The transaction is present when building a blink tx for
-    /// blink quorum signing; for regular blink txes received via p2p this will contain the hash
+    /// The flash transaction *or* hash.  The transaction is present when building a flash tx for
+    /// flash quorum signing; for regular flash txes received via p2p this will contain the hash
     /// instead.
     std::variant<transaction, crypto::hash> tx;
 
@@ -72,24 +72,24 @@ public:
     };
 
     // Not default constructible
-    blink_tx() = delete;
+    flash_tx() = delete;
 
-    /// Construct a new blink_tx from just a height; constructs a default transaction.
-    explicit blink_tx(uint64_t height) : height{height} {
+    /// Construct a new flash_tx from just a height; constructs a default transaction.
+    explicit flash_tx(uint64_t height) : height{height} {
         initialize();
     }
 
-    /// Construct a new blink_tx from a height and a hash
-    explicit blink_tx(uint64_t height, const crypto::hash &txhash) : height{height}, tx{txhash} {
+    /// Construct a new flash_tx from a height and a hash
+    explicit flash_tx(uint64_t height, const crypto::hash &txhash) : height{height}, tx{txhash} {
         initialize();
     }
 
-    /// Obtains a unique lock on this blink tx; required for any signature-mutating method unless
+    /// Obtains a unique lock on this flash tx; required for any signature-mutating method unless
     /// otherwise noted
     template <typename... Args>
     auto unique_lock(Args &&...args) { return std::unique_lock{mutex_, std::forward<Args>(args)...}; }
 
-    /// Obtains a shared lock on this blink tx; required for any signature-dependent method unless
+    /// Obtains a shared lock on this flash tx; required for any signature-dependent method unless
     /// otherwise noted
     template <typename... Args>
     auto shared_lock(Args &&...args) { return std::shared_lock{mutex_, std::forward<Args>(args)...}; }
@@ -108,17 +108,17 @@ public:
     void limit_signatures(subquorum q, size_t max_size);
 
     /**
-     * Adds a signature for the given quorum and position given an already-obtained blink subquorum
+     * Adds a signature for the given quorum and position given an already-obtained flash subquorum
      * validator pubkey.  Returns true if the signature was accepted and stored, false if a
      * signature was already present for the given quorum and position.  Throws a
-     * `blink_tx::signature_verification_error` if the signature fails validation.
+     * `flash_tx::signature_verification_error` if the signature fails validation.
      */
     bool add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const crypto::public_key &pubkey);
 
     /**
      * Adds a signature for the given quorum and position.  Returns false if a signature was already
      * present; true if the signature was accepted and stored; and throws a
-     * `blink_tx::signature_verification_error` if the signature fails validation.
+     * `flash_tx::signature_verification_error` if the signature fails validation.
      */
     bool add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_nodes::master_node_list &snl);
 
@@ -135,36 +135,36 @@ public:
     signature_status get_signature_status(subquorum q, int position) const;
 
     /**
-     * Returns true if this blink tx is valid for inclusion in the blockchain, that is, has the
-     * required number of approval signatures in each quorum.  (Note that it is possible for a blink
+     * Returns true if this flash tx is valid for inclusion in the blockchain, that is, has the
+     * required number of approval signatures in each quorum.  (Note that it is possible for a flash
      * tx to be neither approved() nor rejected()).
      */
     bool approved() const;
 
     /**
-     * Returns true if this blink tx has been definitively rejected, that is, has enough rejection
+     * Returns true if this flash tx has been definitively rejected, that is, has enough rejection
      * signatures in at least one of the quorums that it is impossible for it to become approved().
-     * (Note that it is possible for a blink tx to be neither approved() nor rejected()).
+     * (Note that it is possible for a flash tx to be neither approved() nor rejected()).
      */
     bool rejected() const;
 
     /// Returns the quorum height for the given height and quorum (base or future); returns 0 at the
-    /// beginning of the chain (before there are enough blocks for a blink quorum).
+    /// beginning of the chain (before there are enough blocks for a flash quorum).
     static uint64_t quorum_height(uint64_t h, subquorum q) {
-        uint64_t bh = h - (h % master_nodes::BLINK_QUORUM_INTERVAL) - master_nodes::BLINK_QUORUM_LAG
-            + static_cast<uint8_t>(q) * master_nodes::BLINK_QUORUM_INTERVAL;
+        uint64_t bh = h - (h % master_nodes::FLASH_QUORUM_INTERVAL) - master_nodes::FLASH_QUORUM_LAG
+            + static_cast<uint8_t>(q) * master_nodes::FLASH_QUORUM_INTERVAL;
         return bh > h /*overflow*/ ? 0 : bh;
     }
 
-    /// Returns the height of the given subquorum (base or future) for this blink tx; returns 0 at
-    /// the beginning of the chain (before there are enough blocks for a blink quorum).  Lock not
+    /// Returns the height of the given subquorum (base or future) for this flash tx; returns 0 at
+    /// the beginning of the chain (before there are enough blocks for a flash quorum).  Lock not
     /// required.
     uint64_t quorum_height(subquorum q) const { return quorum_height(height, q); }
 
     /// Returns the pubkey of the referenced master node, or null if there is no such master node.
     crypto::public_key get_mn_pubkey(subquorum q, int position, const master_nodes::master_node_list &snl) const;
 
-    /// Returns the hashed signing value for this blink TX for a tx with status `approved`.  The
+    /// Returns the hashed signing value for this flash TX for a tx with status `approved`.  The
     /// result is a fast hash of the height + tx hash + approval value.  Lock not required.
     crypto::hash hash(bool approved) const;
 
@@ -174,15 +174,15 @@ public:
     };
 
     /**
-     * Fills the given blink serialization struct with the signature data.  This is designed to work
-     * directly with the components of a serializable_blink_metadata (but we don't want to have to
+     * Fills the given flash serialization struct with the signature data.  This is designed to work
+     * directly with the components of a serializable_flash_metadata (but we don't want to have to
      * link to cryptonote_protocol where that is defined).
      *
      * A shared lock should be held by the caller.
      */
     void fill_serialization_data(crypto::hash &tx_hash, uint64_t &height, std::vector<uint8_t> &quorum, std::vector<uint8_t> &position, std::vector<crypto::signature> &signature) const;
 
-    /// Wrapper around the above that can be called with a serializable_blink_metadata
+    /// Wrapper around the above that can be called with a serializable_flash_metadata
     template <typename T>
     void fill_serialization_data(T &data) const { fill_serialization_data(data.tx_hash, data.height, data.quorum, data.position, data.signature); }
 
@@ -194,7 +194,7 @@ private:
                 s.status = signature_status::none;
     }
 
-    std::array<std::array<quorum_signature, master_nodes::BLINK_SUBQUORUM_SIZE>, tools::enum_count<subquorum>> signatures_;
+    std::array<std::array<quorum_signature, master_nodes::FLASH_SUBQUORUM_SIZE>, tools::enum_count<subquorum>> signatures_;
     std::shared_mutex mutex_;
 };
 

@@ -32,8 +32,8 @@ KV_SERIALIZE_MAP_CODE_BEGIN(transfer_view)
   KV_SERIALIZE_OPT(confirmations, (uint64_t)0)
   KV_SERIALIZE_OPT(suggested_confirmations_threshold, (uint64_t)0)
   KV_SERIALIZE(checkpointed)
-  KV_SERIALIZE(blink_mempool)
-  KV_SERIALIZE(was_blink)
+  KV_SERIALIZE(flash_mempool)
+  KV_SERIALIZE(was_flash)
 KV_SERIALIZE_MAP_CODE_END()
 
 }

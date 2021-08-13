@@ -55,7 +55,7 @@ extern "C" {
 #include "blockchain.h"
 #include "master_node_quorum_cop.h"
 
-#include "pulse.h"
+#include "pos.h"
 #include "master_node_list.h"
 #include "uptime_proof.h"
 #include "master_node_rules.h"
@@ -765,7 +765,7 @@ namespace master_nodes
           auto &proof = mn_list->proofs[key];
           proof.effective_timestamp = block.timestamp;
           proof.checkpoint_participation.reset();
-          proof.pulse_participation.reset();
+          proof.POS_participation.reset();
           proof.timestamp_participation.reset();
           proof.timesync_status.reset();
         }
@@ -899,7 +899,7 @@ namespace master_nodes
       return false;
     }
 
-    if (hf_version >= cryptonote::network_version_17_pulse)
+    if (hf_version >= cryptonote::network_version_17_POS)
     {
       // In HF16 we start enforcing three things that were always done but weren't actually enforced:
       // 1. the staked amount in the tx must be a single output.
@@ -984,7 +984,7 @@ namespace master_nodes
     // In HF16 we require that the amount staked in the registration tx be at least the amount
     // reserved for the operator.  Before HF16 it only had to be >= 25%, even if the operator
     // reserved amount was higher (though wallets would never actually do this).
-    if (hf_version >= cryptonote::network_version_17_pulse && stake.transferred < info.contributors[0].reserved)
+    if (hf_version >= cryptonote::network_version_17_POS && stake.transferred < info.contributors[0].reserved)
     {
       LOG_PRINT_L1("Register TX rejected: TX does not have sufficient operator stake");
       return false;
@@ -1130,7 +1130,7 @@ namespace master_nodes
         other_reservations++;
     }
 
-    if (hf_version >= cryptonote::network_version_17_pulse && stake.locked_contributions.size() != 1)
+    if (hf_version >= cryptonote::network_version_17_POS && stake.locked_contributions.size() != 1)
     {
       // Nothing has ever created stake txes with multiple stake outputs, but we start enforcing
       // that in HF16.
@@ -1141,7 +1141,7 @@ namespace master_nodes
     // Check node contributor counts
     {
       bool too_many_contributions = false;
-      if (hf_version >= cryptonote::network_version_17_pulse)
+      if (hf_version >= cryptonote::network_version_17_POS)
         // Before HF16 we didn't properly take into account unfilled reservation spots
         too_many_contributions = existing_contributions + other_reservations + 1 > MAX_NUMBER_OF_CONTRIBUTORS;
       else if (hf_version >= cryptonote::network_version_11_infinite_staking)
@@ -1167,7 +1167,7 @@ namespace master_nodes
     { // Follow-up contributions from an existing contributor could be any size before HF11
       min_contribution = 1;
     }
-    else if (hf_version < cryptonote::network_version_17_pulse)
+    else if (hf_version < cryptonote::network_version_17_POS)
     {
       // The implementation before HF16 was a bit broken w.r.t. properly handling reserved amounts
       min_contribution = get_min_node_contribution(hf_version, curinfo.staking_requirement, curinfo.total_reserved, existing_contributions);
@@ -1240,15 +1240,15 @@ namespace master_nodes
     return false;
   }
 
-  static std::string dump_pulse_block_data(cryptonote::block const &block, master_nodes::quorum const *quorum)
+  static std::string dump_POS_block_data(cryptonote::block const &block, master_nodes::quorum const *quorum)
   {
     std::stringstream stream;
-    std::bitset<8 * sizeof(block.pulse.validator_bitset)> const validator_bitset = block.pulse.validator_bitset;
+    std::bitset<8 * sizeof(block.POS.validator_bitset)> const validator_bitset = block.POS.validator_bitset;
     stream << "Block(" << cryptonote::get_block_height(block) << "): " << cryptonote::get_block_hash(block) << "\n";
     stream << "Leader: ";
     if (quorum) stream << (quorum->workers.empty() ? "(invalid leader)" : oxenmq::to_hex(tools::view_guts(quorum->workers[0]))) << "\n";
     else        stream << "(invalid quorum)\n";
-    stream << "Round: " << +block.pulse.round << "\n";
+    stream << "Round: " << +block.POS.round << "\n";
     stream << "Validator Bitset: " << validator_bitset << "\n";
 
     stream << "Signatures: ";
@@ -1274,9 +1274,9 @@ namespace master_nodes
                                       bool miner_block,
                                       bool alt_block,
                                       bool log_errors,
-                                      pulse::timings &timings,
-                                      std::shared_ptr<const quorum> pulse_quorum,
-                                      std::vector<std::shared_ptr<const quorum>> &alt_pulse_quorums)
+                                      POS::timings &timings,
+                                      std::shared_ptr<const quorum> POS_quorum,
+                                      std::vector<std::shared_ptr<const quorum>> &alt_POS_quorums)
   {
     std::string_view block_type = alt_block ? "alt block "sv : "block "sv;
     uint64_t height             = cryptonote::get_block_height(block);
@@ -1284,21 +1284,21 @@ namespace master_nodes
 
     if (miner_block)
     {
-      if (cryptonote::block_has_pulse_components(block))
+      if (cryptonote::block_has_POS_components(block))
       {
-        if (log_errors) MGINFO("Pulse " << block_type << "received but only miner blocks are permitted\n" << dump_pulse_block_data(block, pulse_quorum.get()));
+        if (log_errors) MGINFO("POS " << block_type << "received but only miner blocks are permitted\n" << dump_POS_block_data(block, POS_quorum.get()));
         return false;
       }
 
-      if (block.pulse.round != 0)
+      if (block.POS.round != 0)
       {
-        if (log_errors) MGINFO("Miner " << block_type << "given but unexpectedly set round " << block.pulse.round <<  " on height " << height);
+        if (log_errors) MGINFO("Miner " << block_type << "given but unexpectedly set round " << block.POS.round <<  " on height " << height);
         return false;
       }
 
-      if (block.pulse.validator_bitset != 0)
+      if (block.POS.validator_bitset != 0)
       {
-        std::bitset<8 * sizeof(block.pulse.validator_bitset)> const bitset = block.pulse.validator_bitset;
+        std::bitset<8 * sizeof(block.POS.validator_bitset)> const bitset = block.POS.validator_bitset;
         if (log_errors) MGINFO("Miner " << block_type << "block given but unexpectedly set validator bitset " << bitset <<  " on height " << height);
         return false;
       }
@@ -1313,18 +1313,18 @@ namespace master_nodes
     }
     else
     {
-      if (!cryptonote::block_has_pulse_components(block))
+      if (!cryptonote::block_has_POS_components(block))
       {
-        if (log_errors) MGINFO("Miner " << block_type << "received but only pulse blocks are permitted\n" << dump_pulse_block_data(block, pulse_quorum.get()));
+        if (log_errors) MGINFO("Miner " << block_type << "received but only POS blocks are permitted\n" << dump_POS_block_data(block, POS_quorum.get()));
         return false;
       }
 
       // TODO(doyle): Core tests need to generate coherent timestamps with
-      // Pulse. So we relax the rules here for now.
+      // POS. So we relax the rules here for now.
       if (nettype != cryptonote::FAKECHAIN)
       {
-        auto round_begin_timestamp = timings.r0_timestamp + (block.pulse.round * PULSE_ROUND_TIME);
-        auto round_end_timestamp   = round_begin_timestamp + PULSE_ROUND_TIME;
+        auto round_begin_timestamp = timings.r0_timestamp + (block.POS.round * POS_ROUND_TIME);
+        auto round_end_timestamp   = round_begin_timestamp + POS_ROUND_TIME;
 
         uint64_t begin_time = tools::to_seconds(round_begin_timestamp.time_since_epoch());
         uint64_t end_time   = tools::to_seconds(round_end_timestamp.time_since_epoch());
@@ -1333,28 +1333,28 @@ namespace master_nodes
           std::string time  = tools::get_human_readable_timestamp(block.timestamp);
           std::string begin = tools::get_human_readable_timestamp(begin_time);
           std::string end   = tools::get_human_readable_timestamp(end_time);
-          if (log_errors) MGINFO("Pulse " << block_type << "with round " << +block.pulse.round << " specifies timestamp " << time << " is not within an acceptable range of time [" << begin << ", " << end << "]");
+          if (log_errors) MGINFO("POS " << block_type << "with round " << +block.POS.round << " specifies timestamp " << time << " is not within an acceptable range of time [" << begin << ", " << end << "]");
           return false;
         }
       }
 
       if (block.nonce != 0)
       {
-        if (log_errors) MGINFO("Pulse " << block_type << "specified a nonce when quorum block generation is available, nonce: " << block.nonce);
+        if (log_errors) MGINFO("POS " << block_type << "specified a nonce when quorum block generation is available, nonce: " << block.nonce);
         return false;
       }
 
       bool quorum_verified = false;
       if (alt_block)
       {
-        // NOTE: Check main pulse quorum. It might not necessarily exist because
+        // NOTE: Check main POS quorum. It might not necessarily exist because
         // the alt-block's chain could be in any arbitrary state.
         bool failed_quorum_verify = true;
-        if (pulse_quorum)
+        if (POS_quorum)
         {
           LOG_PRINT_L1("Verifying alt-block " << height << ":" << hash << " against main chain quorum");
-          failed_quorum_verify = master_nodes::verify_quorum_signatures(*pulse_quorum,
-                                                                         quorum_type::pulse,
+          failed_quorum_verify = master_nodes::verify_quorum_signatures(*POS_quorum,
+                                                                         quorum_type::POS,
                                                                          block.major_version,
                                                                          height,
                                                                          hash,
@@ -1362,14 +1362,14 @@ namespace master_nodes
                                                                          &block) == false;
         }
 
-        // NOTE: Check alt pulse quorums
+        // NOTE: Check alt POS quorums
         if (failed_quorum_verify)
         {
           LOG_PRINT_L1("Verifying alt-block " << height << ":" << hash << " against alt chain quorum(s)");
-          for (auto const &alt_quorum : alt_pulse_quorums)
+          for (auto const &alt_quorum : alt_POS_quorums)
           {
             if (master_nodes::verify_quorum_signatures(*alt_quorum,
-                                                        quorum_type::pulse,
+                                                        quorum_type::POS,
                                                         block.major_version,
                                                         height,
                                                         hash,
@@ -1386,18 +1386,18 @@ namespace master_nodes
       }
       else
       {
-        // NOTE: We only accept insufficient node for Pulse if we're on an alt
+        // NOTE: We only accept insufficient node for POS if we're on an alt
         // block (that chain would be in any arbitrary state, we could be
         // completely isolated from the correct network for example).
-        bool insufficient_nodes_for_pulse = pulse_quorum == nullptr;
-        if (insufficient_nodes_for_pulse)
+        bool insufficient_nodes_for_POS = POS_quorum == nullptr;
+        if (insufficient_nodes_for_POS)
         {
-          if (log_errors) MGINFO("Pulse " << block_type << "specified but no quorum available " << dump_pulse_block_data(block, pulse_quorum.get()));
+          if (log_errors) MGINFO("POS " << block_type << "specified but no quorum available " << dump_POS_block_data(block, POS_quorum.get()));
           return false;
         }
 
-        quorum_verified = master_nodes::verify_quorum_signatures(*pulse_quorum,
-                                                                  quorum_type::pulse,
+        quorum_verified = master_nodes::verify_quorum_signatures(*POS_quorum,
+                                                                  quorum_type::POS,
                                                                   block.major_version,
                                                                   cryptonote::get_block_height(block),
                                                                   cryptonote::get_block_hash(block),
@@ -1410,14 +1410,14 @@ namespace master_nodes
         // NOTE: These invariants are already checked in verify_quorum_signatures
         if (alt_block)
           LOG_PRINT_L1("Alt-block " << height << ":" << hash << " verified successfully");
-        assert(block.pulse.validator_bitset != 0);
-        assert(block.pulse.validator_bitset < (1 << PULSE_QUORUM_NUM_VALIDATORS));
-        assert(block.signatures.size() == master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES);
+        assert(block.POS.validator_bitset != 0);
+        assert(block.POS.validator_bitset < (1 << POS_QUORUM_NUM_VALIDATORS));
+        assert(block.signatures.size() == master_nodes::POS_BLOCK_REQUIRED_SIGNATURES);
       }
       else
       {
         if (log_errors)
-          MGINFO("Pulse " << block_type << "failed quorum verification\n" << dump_pulse_block_data(block, pulse_quorum.get()));
+          MGINFO("POS " << block_type << "failed quorum verification\n" << dump_POS_block_data(block, POS_quorum.get()));
       }
 
       return quorum_verified;
@@ -1495,11 +1495,11 @@ namespace master_nodes
     }
 
     //
-    // NOTE: Get Pulse Block Timing Information
+    // NOTE: Get POS Block Timing Information
     //
-    pulse::timings timings = {};
+    POS::timings timings = {};
     uint64_t height        = cryptonote::get_block_height(block);
-    if (block.major_version >= cryptonote::network_version_17_pulse)
+    if (block.major_version >= cryptonote::network_version_17_POS)
     {
       uint64_t prev_timestamp = 0;
       if (alt_block)
@@ -1519,36 +1519,36 @@ namespace master_nodes
         prev_timestamp       = m_blockchain.get_db().get_block_timestamp(prev_height);
       }
 
-      if (!pulse::get_round_timings(m_blockchain, height, prev_timestamp, timings))
+      if (!POS::get_round_timings(m_blockchain, height, prev_timestamp, timings))
       {
-        MGINFO("Failed to query the block data for Pulse timings to validate incoming " << block_type << "at height " << height);
+        MGINFO("Failed to query the block data for POS timings to validate incoming " << block_type << "at height " << height);
         return false;
       }
     }
 
     //
-    // NOTE: Load Pulse Quorums
+    // NOTE: Load POS Quorums
     //
-    std::shared_ptr<const quorum>              pulse_quorum;
-    std::vector<std::shared_ptr<const quorum>> alt_pulse_quorums;
-    bool pulse_hf = block.major_version >= cryptonote::network_version_17_pulse;
+    std::shared_ptr<const quorum>              POS_quorum;
+    std::vector<std::shared_ptr<const quorum>> alt_POS_quorums;
+    bool POS_hf = block.major_version >= cryptonote::network_version_17_POS;
 
-    if (pulse_hf)
+    if (POS_hf)
     {
-      pulse_quorum = get_quorum(quorum_type::pulse,
+      POS_quorum = get_quorum(quorum_type::POS,
                                 height,
                                 false /*include historical quorums*/,
-                                alt_block ? &alt_pulse_quorums : nullptr);
+                                alt_block ? &alt_POS_quorums : nullptr);
     }
 
     if (m_blockchain.nettype() != cryptonote::FAKECHAIN)
     {
       // TODO(doyle): Core tests don't generate proper timestamps for detecting
       // timeout yet. So we don't do a timeout check and assume all blocks
-      // incoming from Pulse are valid if they have the correct signatures
+      // incoming from POS are valid if they have the correct signatures
       // (despite timestamp being potentially wrong).
-      if (pulse::time_point(std::chrono::seconds(block.timestamp)) >= timings.miner_fallback_timestamp)
-        pulse_quorum = nullptr;
+      if (POS::time_point(std::chrono::seconds(block.timestamp)) >= timings.miner_fallback_timestamp)
+        POS_quorum = nullptr;
     }
 
     //
@@ -1557,19 +1557,19 @@ namespace master_nodes
     bool result = false;
     if (alt_block)
     {
-      // NOTE: Verify as a pulse block first if possible, then as a miner block.
+      // NOTE: Verify as a POS block first if possible, then as a miner block.
       // This alt block could belong to a chain that is in an arbitrary state.
-      if (pulse_hf)
-        result = verify_block_components(m_blockchain.nettype(), block, false /*miner_block*/, true /*alt_block*/, false /*log_errors*/, timings, pulse_quorum, alt_pulse_quorums);
+      if (POS_hf)
+        result = verify_block_components(m_blockchain.nettype(), block, false /*miner_block*/, true /*alt_block*/, false /*log_errors*/, timings, POS_quorum, alt_POS_quorums);
 
       if (!result)
-        result = verify_block_components(m_blockchain.nettype(), block, true /*miner_block*/, true /*alt_block*/, false /*log_errors*/, timings, pulse_quorum, alt_pulse_quorums);
+        result = verify_block_components(m_blockchain.nettype(), block, true /*miner_block*/, true /*alt_block*/, false /*log_errors*/, timings, POS_quorum, alt_POS_quorums);
     }
     else
     {
-      // NOTE: No pulse quorums are generated when the network has insufficient nodes to generate quorums
+      // NOTE: No POS quorums are generated when the network has insufficient nodes to generate quorums
       //       Or, block specifies time after all the rounds have timed out
-      bool miner_block = !pulse_hf || !pulse_quorum;
+      bool miner_block = !POS_hf || !POS_quorum;
 
       result = verify_block_components(m_blockchain.nettype(),
                                        block,
@@ -1577,8 +1577,8 @@ namespace master_nodes
                                        false /*alt_block*/,
                                        true /*log_errors*/,
                                        timings,
-                                       pulse_quorum,
-                                       alt_pulse_quorums);
+                                       POS_quorum,
+                                       alt_POS_quorums);
     }
 
     return result;
@@ -1592,7 +1592,7 @@ namespace master_nodes
     std::lock_guard lock(m_mn_mutex);
     process_block(block, txs);
     bool result = verify_block(block, false /*alt_block*/, checkpoint);
-    if (result && cryptonote::block_has_pulse_components(block))
+    if (result && cryptonote::block_has_POS_components(block))
     {
       // NOTE: Only record participation if its a block we recently received.
       // Otherwise processing blocks in retrospect/re-loading on restart seeds
@@ -1600,24 +1600,24 @@ namespace master_nodes
       uint64_t const block_height = cryptonote::get_block_height(block);
       bool newest_block           = m_blockchain.get_current_blockchain_height() == (block_height + 1);
 
-      auto now                    = pulse::clock::now().time_since_epoch();
-      auto earliest_time          = std::chrono::seconds(block.timestamp) - (block.major_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
-      auto latest_time            = std::chrono::seconds(block.timestamp) + (block.major_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
+      auto now                    = POS::clock::now().time_since_epoch();
+      auto earliest_time          = std::chrono::seconds(block.timestamp) - (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
+      auto latest_time            = std::chrono::seconds(block.timestamp) + (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
 
       if (newest_block && (now >= earliest_time && now <= latest_time))
       {
-        std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::pulse, block_height, false, nullptr);
+        std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::POS, block_height, false, nullptr);
         if (!quorum || quorum->validators.empty())
         {
-          MFATAL("Unexpected Pulse error " << (quorum ? " quorum was not generated" : " quorum was empty"));
+          MFATAL("Unexpected POS error " << (quorum ? " quorum was not generated" : " quorum was empty"));
           return false;
         }
 
-        for (size_t validator_index = 0; validator_index < master_nodes::PULSE_QUORUM_NUM_VALIDATORS; validator_index++)
+        for (size_t validator_index = 0; validator_index < master_nodes::POS_QUORUM_NUM_VALIDATORS; validator_index++)
         {
           uint16_t bit      = 1 << validator_index;
-          bool participated = block.pulse.validator_bitset & bit;
-          record_pulse_participation(quorum->validators[validator_index], block_height, block.pulse.round, participated);
+          bool participated = block.POS.validator_bitset & bit;
+          record_POS_participation(quorum->validators[validator_index], block_height, block.POS.round, participated);
         }
       }
     }
@@ -1627,7 +1627,7 @@ namespace master_nodes
   static std::mt19937_64 quorum_rng(uint8_t hf_version, crypto::hash const &hash, quorum_type type)
   {
     std::mt19937_64 result;
-    if (hf_version >= cryptonote::network_version_17_pulse)
+    if (hf_version >= cryptonote::network_version_17_POS)
     {
       std::array<uint32_t, (sizeof(hash) / sizeof(uint32_t)) + 1> src = {static_cast<uint32_t>(type)};
       std::memcpy(&src[1], &hash, sizeof(hash));
@@ -1687,7 +1687,7 @@ namespace master_nodes
   }
 
   template <typename It>
-  static std::vector<crypto::hash> make_pulse_entropy_from_blocks(It begin, It end, uint8_t pulse_round)
+  static std::vector<crypto::hash> make_POS_entropy_from_blocks(It begin, It end, uint8_t POS_round)
   {
     std::vector<crypto::hash> result;
     result.reserve(std::distance(begin, end));
@@ -1696,17 +1696,17 @@ namespace master_nodes
     {
       cryptonote::block const &block = *it;
       crypto::hash hash              = {};
-      if (block.major_version >= cryptonote::network_version_17_pulse &&
-          cryptonote::block_has_pulse_components(block))
+      if (block.major_version >= cryptonote::network_version_17_POS &&
+          cryptonote::block_has_POS_components(block))
       {
-        std::array<uint8_t, 1 + sizeof(block.pulse.random_value)> src = {pulse_round};
-        std::copy(std::begin(block.pulse.random_value.data), std::end(block.pulse.random_value.data), src.begin() + 1);
+        std::array<uint8_t, 1 + sizeof(block.POS.random_value)> src = {POS_round};
+        std::copy(std::begin(block.POS.random_value.data), std::end(block.POS.random_value.data), src.begin() + 1);
         crypto::cn_fast_hash(src.data(), src.size(), hash.data);
       }
       else
       {
         crypto::hash block_hash = cryptonote::get_block_hash(block);
-        std::array<uint8_t, 1 + sizeof(hash)> src = {pulse_round};
+        std::array<uint8_t, 1 + sizeof(hash)> src = {POS_round};
         std::copy(std::begin(block_hash.data), std::end(block_hash.data), src.begin() + 1);
         crypto::cn_fast_hash(src.data(), src.size(), hash.data);
       }
@@ -1718,22 +1718,22 @@ namespace master_nodes
     return result;
   }
 
-  std::vector<crypto::hash> get_pulse_entropy_for_next_block(cryptonote::BlockchainDB const &db,
+  std::vector<crypto::hash> get_POS_entropy_for_next_block(cryptonote::BlockchainDB const &db,
                                                              cryptonote::block const &top_block,
-                                                             uint8_t pulse_round)
+                                                             uint8_t POS_round)
   {
     uint64_t const top_height = cryptonote::get_block_height(top_block);
-    if (top_height < PULSE_QUORUM_ENTROPY_LAG)
+    if (top_height < POS_QUORUM_ENTROPY_LAG)
     {
-      MERROR("Insufficient blocks to get quorum entropy for Pulse, height is " << top_height << ", we need " << PULSE_QUORUM_ENTROPY_LAG << " blocks.");
+      MERROR("Insufficient blocks to get quorum entropy for POS, height is " << top_height << ", we need " << POS_QUORUM_ENTROPY_LAG << " blocks.");
       return {};
     }
 
-    uint64_t const start_height = top_height - PULSE_QUORUM_ENTROPY_LAG;
-    uint64_t const end_height   = start_height + PULSE_QUORUM_SIZE;
+    uint64_t const start_height = top_height - POS_QUORUM_ENTROPY_LAG;
+    uint64_t const end_height   = start_height + POS_QUORUM_SIZE;
 
     std::vector<cryptonote::block> blocks;
-    blocks.reserve(PULSE_QUORUM_SIZE);
+    blocks.reserve(POS_QUORUM_SIZE);
 
     // NOTE: Go backwards from the block and retrieve the blocks for entropy.
     // We search by block so that this function handles alternatives blocks as
@@ -1745,7 +1745,7 @@ namespace master_nodes
       cryptonote::block block;
       if (!find_block_in_db(db, prev_hash, block))
       {
-        MERROR("Failed to get quorum entropy for Pulse, block at " << prev_height << prev_hash);
+        MERROR("Failed to get quorum entropy for POS, block at " << prev_height << prev_hash);
         return {};
       }
 
@@ -1756,94 +1756,94 @@ namespace master_nodes
       prev_height--;
     }
 
-    return make_pulse_entropy_from_blocks(blocks.rbegin(), blocks.rend(), pulse_round);
+    return make_POS_entropy_from_blocks(blocks.rbegin(), blocks.rend(), POS_round);
   }
 
-  std::vector<crypto::hash> get_pulse_entropy_for_next_block(cryptonote::BlockchainDB const &db,
+  std::vector<crypto::hash> get_POS_entropy_for_next_block(cryptonote::BlockchainDB const &db,
                                                              crypto::hash const &top_hash,
-                                                             uint8_t pulse_round)
+                                                             uint8_t POS_round)
   {
     cryptonote::block top_block;
     if (!find_block_in_db(db, top_hash, top_block))
     {
-      MERROR("Failed to get quorum entropy for Pulse, next block parent " << top_hash);
+      MERROR("Failed to get quorum entropy for POS, next block parent " << top_hash);
       return {};
     }
 
-    return get_pulse_entropy_for_next_block(db, top_block, pulse_round);
+    return get_POS_entropy_for_next_block(db, top_block, POS_round);
   }
 
-  std::vector<crypto::hash> get_pulse_entropy_for_next_block(cryptonote::BlockchainDB const &db,
-                                                             uint8_t pulse_round)
+  std::vector<crypto::hash> get_POS_entropy_for_next_block(cryptonote::BlockchainDB const &db,
+                                                             uint8_t POS_round)
   {
-    return get_pulse_entropy_for_next_block(db, db.get_top_block(), pulse_round);
+    return get_POS_entropy_for_next_block(db, db.get_top_block(), POS_round);
   }
 
-  master_nodes::quorum generate_pulse_quorum(cryptonote::network_type nettype,
+  master_nodes::quorum generate_POS_quorum(cryptonote::network_type nettype,
                                               crypto::public_key const &block_leader,
                                               uint8_t hf_version,
                                               std::vector<pubkey_and_mninfo> const &active_mnode_list,
-                                              std::vector<crypto::hash> const &pulse_entropy,
-                                              uint8_t pulse_round)
+                                              std::vector<crypto::hash> const &POS_entropy,
+                                              uint8_t POS_round)
   {
     master_nodes::quorum result = {};
-    if (active_mnode_list.size() < pulse_min_master_nodes(nettype))
+    if (active_mnode_list.size() < POS_min_master_nodes(nettype))
     {
-      LOG_PRINT_L2("Insufficient active Master Nodes for Pulse: " << active_mnode_list.size());
+      LOG_PRINT_L2("Insufficient active Master Nodes for POS: " << active_mnode_list.size());
       return result;
     }
 
-    if (pulse_entropy.size() != PULSE_QUORUM_SIZE)
+    if (POS_entropy.size() != POS_QUORUM_SIZE)
     {
-      LOG_PRINT_L2("Blockchain has insufficient blocks to generate Pulse data");
+      LOG_PRINT_L2("Blockchain has insufficient blocks to generate POS data");
       return result;
     }
 
-    std::vector<pubkey_and_mninfo const *> pulse_candidates;
-    pulse_candidates.reserve(active_mnode_list.size());
+    std::vector<pubkey_and_mninfo const *> POS_candidates;
+    POS_candidates.reserve(active_mnode_list.size());
     for (auto &node : active_mnode_list)
     {
-      if (node.first != block_leader || pulse_round > 0)
-        pulse_candidates.push_back(&node);
+      if (node.first != block_leader || POS_round > 0)
+        POS_candidates.push_back(&node);
     }
 
-    // NOTE: Sort ascending in height i.e. sort preferring the longest time since the validator was in a Pulse quorum.
+    // NOTE: Sort ascending in height i.e. sort preferring the longest time since the validator was in a POS quorum.
     std::sort(
-        pulse_candidates.begin(), pulse_candidates.end(), [](pubkey_and_mninfo const *a, pubkey_and_mninfo const *b) {
-          if (a->second->pulse_sorter == b->second->pulse_sorter)
+        POS_candidates.begin(), POS_candidates.end(), [](pubkey_and_mninfo const *a, pubkey_and_mninfo const *b) {
+          if (a->second->POS_sorter == b->second->POS_sorter)
             return memcmp(reinterpret_cast<const void *>(&a->first), reinterpret_cast<const void *>(&b->first), sizeof(a->first)) < 0;
-          return a->second->pulse_sorter < b->second->pulse_sorter;
+          return a->second->POS_sorter < b->second->POS_sorter;
         });
 
     crypto::public_key block_producer;
-    if (pulse_round == 0)
+    if (POS_round == 0)
     {
       block_producer = block_leader;
     }
     else
     {
-      std::mt19937_64 rng   = quorum_rng(hf_version, pulse_entropy[0], quorum_type::pulse);
-      size_t producer_index = tools::uniform_distribution_portable(rng, pulse_candidates.size());
-      block_producer        = pulse_candidates[producer_index]->first;
-      pulse_candidates.erase(pulse_candidates.begin() + producer_index);
+      std::mt19937_64 rng   = quorum_rng(hf_version, POS_entropy[0], quorum_type::POS);
+      size_t producer_index = tools::uniform_distribution_portable(rng, POS_candidates.size());
+      block_producer        = POS_candidates[producer_index]->first;
+      POS_candidates.erase(POS_candidates.begin() + producer_index);
     }
 
     // NOTE: Order the candidates so the first half nodes in the list is the validators for this round.
     // - Divide the list in half, select validators from the first half of the list.
     // - Swap the chosen validator into the moving first half of the list.
-    auto running_it              = pulse_candidates.begin();
-    size_t const partition_index = (pulse_candidates.size() - 1) / 2;
+    auto running_it              = POS_candidates.begin();
+    size_t const partition_index = (POS_candidates.size() - 1) / 2;
     if (partition_index == 0)
     {
-      running_it += master_nodes::PULSE_QUORUM_NUM_VALIDATORS;
+      running_it += master_nodes::POS_QUORUM_NUM_VALIDATORS;
     }
     else
     {
-      for (size_t i = 0; i < master_nodes::PULSE_QUORUM_NUM_VALIDATORS; i++)
+      for (size_t i = 0; i < master_nodes::POS_QUORUM_NUM_VALIDATORS; i++)
       {
-        crypto::hash const &entropy = pulse_entropy[i + 1];
-        std::mt19937_64 rng         = quorum_rng(hf_version, entropy, quorum_type::pulse);
-        size_t validators_available = std::distance(running_it, pulse_candidates.end());
+        crypto::hash const &entropy = POS_entropy[i + 1];
+        std::mt19937_64 rng         = quorum_rng(hf_version, entropy, quorum_type::POS);
+        size_t validators_available = std::distance(running_it, POS_candidates.end());
         size_t swap_index = tools::uniform_distribution_portable(rng, std::min(partition_index, validators_available));
         std::swap(*running_it, *(running_it + swap_index));
         running_it++;
@@ -1851,8 +1851,8 @@ namespace master_nodes
     }
 
     result.workers.push_back(block_producer);
-    result.validators.reserve(PULSE_QUORUM_NUM_VALIDATORS);
-    for (auto it = pulse_candidates.begin(); it != running_it; it++)
+    result.validators.reserve(POS_QUORUM_NUM_VALIDATORS);
+    for (auto it = POS_candidates.begin(); it != running_it; it++)
     {
       crypto::public_key const &node_key = (*it)->first;
       result.validators.push_back(node_key);
@@ -1919,16 +1919,16 @@ namespace master_nodes
         }
         break;
 
-        case quorum_type::blink:
+        case quorum_type::flash:
         {
-          if (state.height % BLINK_QUORUM_INTERVAL != 0)
+          if (state.height % FLASH_QUORUM_INTERVAL != 0)
             continue;
 
-          // Further filter the active MN list for the blink quorum to only include MNs that are not
+          // Further filter the active MN list for the flash quorum to only include MNs that are not
           // scheduled to finish unlocking between the quorum height and a few blocks after the
-          // associated blink height.
+          // associated flash height.
           pub_keys_indexes.reserve(active_mnode_list.size());
-          uint64_t const active_until = state.height + BLINK_EXPIRY_BUFFER;
+          uint64_t const active_until = state.height + FLASH_EXPIRY_BUFFER;
           for (size_t index = 0; index < active_mnode_list.size(); index++)
           {
             pubkey_and_mninfo const &entry = active_mnode_list[index];
@@ -1937,21 +1937,21 @@ namespace master_nodes
               pub_keys_indexes.push_back(index);
           }
 
-          if (pub_keys_indexes.size() >= BLINK_MIN_VOTES)
+          if (pub_keys_indexes.size() >= FLASH_MIN_VOTES)
           {
             std::mt19937_64 rng = quorum_rng(hf_version, state.block_hash, type);
             tools::shuffle_portable(pub_keys_indexes.begin(), pub_keys_indexes.end(), rng);
-            num_validators = std::min<size_t>(pub_keys_indexes.size(), BLINK_SUBQUORUM_SIZE);
+            num_validators = std::min<size_t>(pub_keys_indexes.size(), FLASH_SUBQUORUM_SIZE);
           }
           // Otherwise leave empty to signal that there aren't enough MNs to form a usable quorum (to
           // distinguish it from an invalid height, which gets left as a nullptr)
-          state.quorums.blink = quorum;
+          state.quorums.flash = quorum;
 
         }
         break;
 
-        // NOTE: NOP. Pulse quorums are generated pre-Master Node List changes for the block
-        case quorum_type::pulse: continue;
+        // NOTE: NOP. POS quorums are generated pre-Master Node List changes for the block
+        case quorum_type::POS: continue;
         default: MERROR("Unhandled quorum type enum with value: " << type_int); continue;
       }
 
@@ -1993,29 +1993,29 @@ namespace master_nodes
     uint8_t const hf_version = block.major_version;
 
     //
-    // Generate Pulse Quorum before any MN changes are applied to the list because,
-    // the Leader and Validators for this block generated Pulse Data before any
+    // Generate POS Quorum before any MN changes are applied to the list because,
+    // the Leader and Validators for this block generated POS Data before any
     // TX's included in the block were applied
     //   i.e. before any deregistrations, registrations, decommissions, recommissions.
     //
     crypto::public_key winner_pubkey = cryptonote::get_master_node_winner_from_tx_extra(block.miner_tx.extra);
-    if (hf_version >= cryptonote::network_version_17_pulse)
+    if (hf_version >= cryptonote::network_version_17_POS)
     {
-      std::vector<crypto::hash> entropy = get_pulse_entropy_for_next_block(db, block.prev_id, block.pulse.round);
-      quorum pulse_quorum = generate_pulse_quorum(nettype, winner_pubkey, hf_version, active_master_nodes_infos(), entropy, block.pulse.round);
-      if (verify_pulse_quorum_sizes(pulse_quorum))
+      std::vector<crypto::hash> entropy = get_POS_entropy_for_next_block(db, block.prev_id, block.POS.round);
+      quorum POS_quorum = generate_POS_quorum(nettype, winner_pubkey, hf_version, active_master_nodes_infos(), entropy, block.POS.round);
+      if (verify_POS_quorum_sizes(POS_quorum))
       {
         // NOTE: Send candidate to the back of the list
-        for (size_t quorum_index = 0 ; quorum_index < pulse_quorum.validators.size(); quorum_index++)
+        for (size_t quorum_index = 0 ; quorum_index < POS_quorum.validators.size(); quorum_index++)
         {
-          crypto::public_key const &key                          = pulse_quorum.validators[quorum_index];
+          crypto::public_key const &key                          = POS_quorum.validators[quorum_index];
           auto &info_ptr                                         = master_nodes_infos[key];
           master_node_info &new_info                            = duplicate_info(info_ptr);
-          new_info.pulse_sorter.last_height_validating_in_quorum = height;
-          new_info.pulse_sorter.quorum_index                     = quorum_index;
+          new_info.POS_sorter.last_height_validating_in_quorum = height;
+          new_info.POS_sorter.quorum_index                     = quorum_index;
         }
 
-        quorums.pulse = std::make_shared<master_nodes::quorum>(std::move(pulse_quorum));
+        quorums.POS = std::make_shared<master_nodes::quorum>(std::move(POS_quorum));
       }
     }
 
@@ -2318,7 +2318,7 @@ namespace master_nodes
       return (a > b ? a - b : b - a) <= T{1};
   }
 
-  // NOTE: Verify queued master node coinbase or pulse block producer rewards
+  // NOTE: Verify queued master node coinbase or POS block producer rewards
   static bool verify_coinbase_tx_output(cryptonote::transaction const &miner_tx,
                                         uint64_t height,
                                         size_t output_index,
@@ -2350,7 +2350,7 @@ namespace master_nodes
     }
 
     // NOTE: Beldex uses the governance key in the one-time ephemeral key
-    // derivation for both Pulse Block Producer/Queued Master Node Winner rewards
+    // derivation for both POS Block Producer/Queued Master Node Winner rewards
     crypto::key_derivation derivation{};
     crypto::public_key out_eph_public_key{};
     cryptonote::keypair gov_key = cryptonote::get_deterministic_keypair_from_height(height);
@@ -2397,8 +2397,8 @@ namespace master_nodes
     enum struct verify_mode
     {
       miner,
-      pulse_block_leader_is_producer,
-      pulse_different_block_producer,
+      POS_block_leader_is_producer,
+      POS_different_block_producer,
     };
 
     verify_mode mode                      = verify_mode::miner;
@@ -2407,23 +2407,23 @@ namespace master_nodes
     //
     // NOTE: Determine if block leader/producer are different or the same.
     //
-    if (cryptonote::block_has_pulse_components(block))
+    if (cryptonote::block_has_POS_components(block))
     {
-      std::vector<crypto::hash> entropy = get_pulse_entropy_for_next_block(m_blockchain.get_db(), block.prev_id, block.pulse.round);
-      quorum pulse_quorum = generate_pulse_quorum(m_blockchain.nettype(), block_leader.key, hf_version, m_state.active_master_nodes_infos(), entropy, block.pulse.round);
-      if (!verify_pulse_quorum_sizes(pulse_quorum))
+      std::vector<crypto::hash> entropy = get_POS_entropy_for_next_block(m_blockchain.get_db(), block.prev_id, block.POS.round);
+      quorum POS_quorum = generate_POS_quorum(m_blockchain.nettype(), block_leader.key, hf_version, m_state.active_master_nodes_infos(), entropy, block.POS.round);
+      if (!verify_POS_quorum_sizes(POS_quorum))
       {
-        MGINFO_RED("Pulse block received but Pulse has insufficient nodes for quorum, block hash " << cryptonote::get_block_hash(block) << ", height " << height);
+        MGINFO_RED("POS block received but POS has insufficient nodes for quorum, block hash " << cryptonote::get_block_hash(block) << ", height " << height);
         return false;
       }
 
-      block_producer_key = pulse_quorum.workers[0];
-      mode               = (block_producer_key == block_leader.key) ? verify_mode::pulse_block_leader_is_producer
-                                                                    : verify_mode::pulse_different_block_producer;
+      block_producer_key = POS_quorum.workers[0];
+      mode               = (block_producer_key == block_leader.key) ? verify_mode::POS_block_leader_is_producer
+                                                                    : verify_mode::POS_different_block_producer;
 
-      if (block.pulse.round == 0 && (mode == verify_mode::pulse_different_block_producer))
+      if (block.POS.round == 0 && (mode == verify_mode::POS_different_block_producer))
       {
-        MGINFO_RED("The block producer in pulse round 0 should be the same node as the block leader: " << block_leader.key << ", actual producer: " << block_producer_key);
+        MGINFO_RED("The block producer in POS round 0 should be the same node as the block leader: " << block_leader.key << ", actual producer: " << block_producer_key);
         return false;
       }
     }
@@ -2435,7 +2435,7 @@ namespace master_nodes
     // Up To 4 | Queued Master Node
     // Up To 1 | Governance
     //
-    // Pulse Block
+    // POS Block
     // Up to 4 | Block Producer (0-3 for Pooled Master Node)
     // Up To 4 | Queued Master Node
     // Up To 1 | Governance
@@ -2445,17 +2445,17 @@ namespace master_nodes
 
     std::shared_ptr<const master_node_info> block_producer = nullptr;
     size_t expected_vouts_size                        = 0;
-    if (mode == verify_mode::pulse_block_leader_is_producer || mode == verify_mode::pulse_different_block_producer)
+    if (mode == verify_mode::POS_block_leader_is_producer || mode == verify_mode::POS_different_block_producer)
     {
       auto info_it = m_state.master_nodes_infos.find(block_producer_key);
       if (info_it == m_state.master_nodes_infos.end())
       {
-        MGINFO_RED("The pulse block producer for round: " << +block.pulse.round << " is not currently a Master Node: " << block_producer_key);
+        MGINFO_RED("The POS block producer for round: " << +block.POS.round << " is not currently a Master Node: " << block_producer_key);
         return false;
       }
 
       block_producer = info_it->second;
-      if (mode == verify_mode::pulse_different_block_producer && reward_parts.miner_fee > 0)
+      if (mode == verify_mode::POS_different_block_producer && reward_parts.miner_fee > 0)
         expected_vouts_size += block_producer->contributors.size();
     }
     else
@@ -2471,12 +2471,12 @@ namespace master_nodes
     {
       char const *type = mode == verify_mode::miner
                              ? "miner"
-                             : mode == verify_mode::pulse_block_leader_is_producer ? "pulse" : "pulse alt round";
+                             : mode == verify_mode::POS_block_leader_is_producer ? "POS" : "POS alt round";
       MGINFO_RED("Expected " << type << " block, the miner TX specifies a different amount of outputs vs the expected: " << expected_vouts_size << ", miner tx outputs: " << miner_tx.vout.size());
       return false;
     }
 
-    if (hf_version >= cryptonote::network_version_17_pulse)
+    if (hf_version >= cryptonote::network_version_17_POS)
     {
       if (reward_parts.base_miner != 0)
       {
@@ -2499,7 +2499,7 @@ namespace master_nodes
 
         std::vector<uint64_t> split_rewards = cryptonote::distribute_reward_by_portions(block_leader.payouts,
                                                                                         reward_parts.master_node_total,
-                                                                                        hf_version >= cryptonote::network_version_17_pulse /*distribute_remainder*/);
+                                                                                        hf_version >= cryptonote::network_version_17_POS /*distribute_remainder*/);
 
         for (size_t i = 0; i < block_leader.payouts.size(); i++)
         {
@@ -2514,7 +2514,7 @@ namespace master_nodes
       }
       break;
 
-      case verify_mode::pulse_block_leader_is_producer:
+      case verify_mode::POS_block_leader_is_producer:
       {
         uint64_t total_reward = reward_parts.master_node_total + reward_parts.miner_fee;
         std::vector<uint64_t> split_rewards = cryptonote::distribute_reward_by_portions(block_leader.payouts, total_reward, true /*distribute_remainder*/);
@@ -2534,7 +2534,7 @@ namespace master_nodes
       }
       break;
 
-      case verify_mode::pulse_different_block_producer:
+      case verify_mode::POS_different_block_producer:
       {
         size_t vout_index = 0;
         {
@@ -2909,7 +2909,7 @@ namespace master_nodes
   bool master_node_list::handle_uptime_proof(cryptonote::NOTIFY_UPTIME_PROOF::request const &proof, bool &my_uptime_proof_confirmation, crypto::x25519_public_key &x25519_pkey)
   {
     auto vers = get_network_version_revision(m_blockchain.nettype(), m_blockchain.get_current_blockchain_height());
-    if (vers >= std::pair<uint8_t, uint8_t>{cryptonote::network_version_17_pulse, 1})
+    if (vers >= std::pair<uint8_t, uint8_t>{cryptonote::network_version_17_POS, 1})
       REJECT_PROOF("Old format (non-bt) proofs are not acceptable from v18+1 onwards");
 
     auto& netconf = get_config(m_blockchain.nettype());
@@ -3202,20 +3202,20 @@ namespace master_nodes
     info.checkpoint_participation.add(entry);
   }
 
-  void master_node_list::record_pulse_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated)
+  void master_node_list::record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
     if (!m_state.master_nodes_infos.count(pubkey))
       return;
 
     participation_entry entry  = {};
-    entry.is_pulse             = true;
+    entry.is_POS             = true;
     entry.height               = height;
     entry.voted                = participated;
-    entry.pulse.round          = round;
+    entry.POS.round          = round;
 
     auto &info = proofs[pubkey];
-    info.pulse_participation.add(entry);
+    info.POS_participation.add(entry);
   }
 
   void master_node_list::record_timestamp_participation(crypto::public_key const &pubkey, bool participated)
@@ -3340,7 +3340,7 @@ namespace master_nodes
         // Nothing to do here (the missing data will be generated in the new proofs db via uptime proofs).
         info.version = version_t::v4_noproofs;
       }
-      if (info.version < version_t::v5_pulse_recomm_credit)
+      if (info.version < version_t::v5_POS_recomm_credit)
       {
         // If it's an old record then assume it's from before beldex 8, in which case there were only
         // two valid values here: initial for a node that has never been recommissioned, or 0 for a recommission.
@@ -3353,12 +3353,12 @@ namespace master_nodes
         else
           info.recommission_credit = 0;
 
-        info.pulse_sorter.last_height_validating_in_quorum = info.last_reward_block_height;
-        info.version = version_t::v5_pulse_recomm_credit;
+        info.POS_sorter.last_height_validating_in_quorum = info.last_reward_block_height;
+        info.version = version_t::v5_POS_recomm_credit;
       }
       if (info.version < version_t::v6_reassign_sort_keys)
       {
-        info.pulse_sorter = {};
+        info.POS_sorter = {};
         info.version      = version_t::v6_reassign_sort_keys;
       }
       if (info.version < version_t::v7_decommission_reason)

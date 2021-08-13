@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <iterator>
@@ -80,8 +80,8 @@ beldex_generate_hard_fork_table(uint8_t hf_version, uint64_t pos_delay)
   uint64_t version_height = 1;
   // HF15 reduces and HF16+ eliminates miner block rewards, so we need to ensure we have enough
   // HF14 blocks to generate enough BELDEX for tests:
-  if (hf_version > cryptonote::network_version_15_blink) {
-      result.push_back({cryptonote::network_version_15_blink,0, version_height});
+  if (hf_version > cryptonote::network_version_15_flash) {
+      result.push_back({cryptonote::network_version_15_flash,0, version_height});
       version_height += pos_delay;
   }
 
@@ -319,7 +319,7 @@ void beldex_chain_generator::add_mined_money_unlock_blocks()
 
 void beldex_chain_generator::add_transfer_unlock_blocks(uint8_t hf_version)
 {
-  add_n_blocks((hf_version>=cryptonote::network_version_17_pulse?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE));
+  add_n_blocks((hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE));
 }
 
 void beldex_chain_generator::add_tx(cryptonote::transaction const &tx, bool can_be_added_to_blockchain, std::string const &fail_msg, bool kept_by_block)
@@ -911,41 +911,41 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
 
   // NOTE: Calculate governance
   cryptonote::beldex_miner_tx_context miner_tx_context;
-  master_nodes::quorum pulse_quorum;
+  master_nodes::quorum POS_quorum;
   std::vector<master_nodes::pubkey_and_mninfo> active_snode_list =
       params.prev.master_node_state.active_master_nodes_infos();
 
-  bool pulse_block_is_possible = blk.major_version >= cryptonote::network_version_17_pulse && active_snode_list.size() >= master_nodes::pulse_min_master_nodes(cryptonote::FAKECHAIN);
-  bool make_pulse_block        = (params.type == beldex_create_block_type::automatic && pulse_block_is_possible) || params.type == beldex_create_block_type::pulse;
+  bool POS_block_is_possible = blk.major_version >= cryptonote::network_version_17_POS && active_snode_list.size() >= master_nodes::POS_min_master_nodes(cryptonote::FAKECHAIN);
+  bool make_POS_block        = (params.type == beldex_create_block_type::automatic && POS_block_is_possible) || params.type == beldex_create_block_type::POS;
 
-  if (make_pulse_block)
+  if (make_POS_block)
   {
-    // NOTE: Set up Pulse Header
-    blk.pulse.validator_bitset = master_nodes::pulse_validator_bit_mask(); // NOTE: Everyone participates
-    blk.pulse.round = params.pulse_round;
-    for (size_t i = 0; i < sizeof(blk.pulse.random_value.data); i++)
-      blk.pulse.random_value.data[i] = static_cast<char>(tools::uniform_distribution_portable(tools::rng, 256));
+    // NOTE: Set up POS Header
+    blk.POS.validator_bitset = master_nodes::POS_validator_bit_mask(); // NOTE: Everyone participates
+    blk.POS.round = params.POS_round;
+    for (size_t i = 0; i < sizeof(blk.POS.random_value.data); i++)
+      blk.POS.random_value.data[i] = static_cast<char>(tools::uniform_distribution_portable(tools::rng, 256));
 
-    // NOTE: Get Pulse Quorum necessary for this block
-    std::vector<crypto::hash> entropy = master_nodes::get_pulse_entropy_for_next_block(db_, params.prev.block, blk.pulse.round);
-    pulse_quorum = master_nodes::generate_pulse_quorum(cryptonote::FAKECHAIN, params.block_leader.key, blk.major_version, active_snode_list, entropy, blk.pulse.round);
-    assert(pulse_quorum.validators.size() == master_nodes::PULSE_QUORUM_NUM_VALIDATORS);
-    assert(pulse_quorum.workers.size() == 1);
+    // NOTE: Get POS Quorum necessary for this block
+    std::vector<crypto::hash> entropy = master_nodes::get_POS_entropy_for_next_block(db_, params.prev.block, blk.POS.round);
+    POS_quorum = master_nodes::generate_POS_quorum(cryptonote::FAKECHAIN, params.block_leader.key, blk.major_version, active_snode_list, entropy, blk.POS.round);
+    assert(POS_quorum.validators.size() == master_nodes::POS_QUORUM_NUM_VALIDATORS);
+    assert(POS_quorum.workers.size() == 1);
 
     master_nodes::payout block_producer = {};
-    if (pulse_quorum.workers[0] == params.block_leader.key)
+    if (POS_quorum.workers[0] == params.block_leader.key)
     {
       block_producer = params.block_leader;
     }
     else
     {
-      crypto::public_key block_producer_key = pulse_quorum.workers[0];
+      crypto::public_key block_producer_key = POS_quorum.workers[0];
       auto it = params.prev.master_node_state.master_nodes_infos.find(block_producer_key);
       assert(it != params.prev.master_node_state.master_nodes_infos.end());
       block_producer = master_nodes::master_node_info_to_payout(block_producer_key, *(it->second));
     }
 
-    miner_tx_context = cryptonote::beldex_miner_tx_context::pulse_block(cryptonote::FAKECHAIN, block_producer, params.block_leader);
+    miner_tx_context = cryptonote::beldex_miner_tx_context::POS_block(cryptonote::FAKECHAIN, block_producer, params.block_leader);
   }
   else
   {
@@ -962,7 +962,7 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
             "The code below needs to be updated to support higher hard fork versions");
     if (blk.major_version <= cryptonote::network_version_16_bns)
       miner_tx_context.batched_governance = 0;
-    else if (blk.major_version >= cryptonote::network_version_17_pulse)
+    else if (blk.major_version >= cryptonote::network_version_17_POS)
       miner_tx_context.batched_governance = (FOUNDATION_REWARD_HF17) * num_blocks;
     else
     {
@@ -1036,16 +1036,16 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
   entry.already_generated_coins = block_reward + params.prev.already_generated_coins;
 
   // NOTE: This relies on the block hash, so must be done after
-  if (make_pulse_block)
+  if (make_POS_block)
   {
     crypto::hash block_hash = cryptonote::get_block_hash(blk);
     assert(blk.signatures.empty());
 
-    // NOTE: Fill Pulse Signature Data
-    for (size_t i = 0; i < master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES; i++)
+    // NOTE: Fill POS Signature Data
+    for (size_t i = 0; i < master_nodes::POS_BLOCK_REQUIRED_SIGNATURES; i++)
     {
-      master_nodes::master_node_keys validator_keys = get_cached_keys(pulse_quorum.validators[i]);
-      assert(validator_keys.pub == pulse_quorum.validators[i]);
+      master_nodes::master_node_keys validator_keys = get_cached_keys(POS_quorum.validators[i]);
+      assert(validator_keys.pub == POS_quorum.validators[i]);
 
       master_nodes::quorum_signature signature = {};
       signature.voter_index                     = i;
@@ -1087,7 +1087,7 @@ beldex_create_block_params beldex_chain_generator::next_block_params() const
   result.miner_acc                = first_miner_;
   result.block_weights            = last_n_block_weights(height(), CRYPTONOTE_REWARD_BLOCKS_WINDOW);
   result.hf_version               = get_hf_version_at(next_height);
-  result.timestamp                = prev.block.timestamp + tools::to_seconds((result.hf_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
+  result.timestamp                = prev.block.timestamp + tools::to_seconds((result.hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
   result.block_leader             = prev.master_node_state.get_block_leader();
   result.total_fee                = 0; // Request chain generator to calculate the fee
   return result;
@@ -1369,7 +1369,7 @@ bool test_generator::construct_block(cryptonote::block &blk,
   uint64_t height = var::get<cryptonote::txin_gen>(blk_prev.miner_tx.vin.front()).height + 1;
   crypto::hash prev_id = get_block_hash(blk_prev);
   // Keep difficulty unchanged
-  uint64_t timestamp = blk_prev.timestamp + tools::to_seconds((blk_prev.major_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
+  uint64_t timestamp = blk_prev.timestamp + tools::to_seconds((blk_prev.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
   uint64_t already_generated_coins = get_already_generated_coins(prev_id);
   std::vector<uint64_t> block_weights;
   get_last_n_block_weights(block_weights, prev_id, CRYPTONOTE_REWARD_BLOCKS_WINDOW);
@@ -1394,7 +1394,7 @@ bool test_generator::construct_block_manually(
 {
   blk.major_version = actual_params & bf_major_ver ? major_ver : static_cast<uint8_t>(cryptonote::network_version_7);
   blk.minor_version = actual_params & bf_minor_ver ? minor_ver : static_cast<uint8_t>(cryptonote::network_version_7);
-  blk.timestamp     = actual_params & bf_timestamp ? timestamp : prev_block.timestamp + tools::to_seconds(blk.major_version>=cryptonote::network_version_17_pulse?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)); // Keep difficulty unchanged
+  blk.timestamp     = actual_params & bf_timestamp ? timestamp : prev_block.timestamp + tools::to_seconds(blk.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)); // Keep difficulty unchanged
   blk.prev_id       = actual_params & bf_prev_id   ? prev_id   : get_block_hash(prev_block);
   blk.tx_hashes     = actual_params & bf_tx_hashes ? tx_hashes : std::vector<crypto::hash>();
 

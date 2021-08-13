@@ -3,23 +3,23 @@
 /// @brief This is the original cryptonote protocol network-events handler, modified by us
 
 // Copyright (c) 2014-2019, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -29,7 +29,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -82,8 +82,8 @@ namespace cryptonote
       HANDLE_NOTIFY_T2(NOTIFY_UPTIME_PROOF, handle_uptime_proof)
       HANDLE_NOTIFY_T2(NOTIFY_BTENCODED_UPTIME_PROOF, handle_btencoded_uptime_proof)
       HANDLE_NOTIFY_T2(NOTIFY_NEW_MASTER_NODE_VOTE, handle_notify_new_master_node_vote)
-      HANDLE_NOTIFY_T2(NOTIFY_REQUEST_BLOCK_BLINKS, handle_request_block_blinks)
-      HANDLE_NOTIFY_T2(NOTIFY_RESPONSE_BLOCK_BLINKS, handle_response_block_blinks)
+      HANDLE_NOTIFY_T2(NOTIFY_REQUEST_BLOCK_FLASHES, handle_request_block_flashes)
+      HANDLE_NOTIFY_T2(NOTIFY_RESPONSE_BLOCK_FLASHES, handle_response_block_flashes)
     END_INVOKE_MAP2()
 
     bool on_idle();
@@ -121,8 +121,8 @@ namespace cryptonote
     int handle_uptime_proof(int command, NOTIFY_UPTIME_PROOF::request& arg, cryptonote_connection_context& context);
     int handle_btencoded_uptime_proof(int command, NOTIFY_BTENCODED_UPTIME_PROOF::request& arg, cryptonote_connection_context& context);
     int handle_notify_new_master_node_vote(int command, NOTIFY_NEW_MASTER_NODE_VOTE::request& arg, cryptonote_connection_context& context);
-    int handle_request_block_blinks(int command, NOTIFY_REQUEST_BLOCK_BLINKS::request& arg, cryptonote_connection_context& context);
-    int handle_response_block_blinks(int command, NOTIFY_RESPONSE_BLOCK_BLINKS::request& arg, cryptonote_connection_context& context);
+    int handle_request_block_flashes(int command, NOTIFY_REQUEST_BLOCK_FLASHES::request& arg, cryptonote_connection_context& context);
+    int handle_response_block_flashes(int command, NOTIFY_RESPONSE_BLOCK_FLASHES::request& arg, cryptonote_connection_context& context);
 
     //----------------- i_bc_protocol_layout ---------------------------------------
     template<class T>

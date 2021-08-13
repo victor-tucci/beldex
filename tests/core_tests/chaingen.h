@@ -1405,7 +1405,7 @@ struct beldex_master_node_contribution
 enum struct beldex_create_block_type
 {
   automatic,
-  pulse,
+  POS,
   miner,
 };
 
@@ -1420,7 +1420,7 @@ struct beldex_create_block_params
   std::vector<cryptonote::transaction> tx_list;
   master_nodes::payout                block_leader;
   uint64_t                             total_fee;
-  uint8_t                              pulse_round;
+  uint8_t                              POS_round;
 };
 
 struct beldex_chain_generator
@@ -1504,7 +1504,7 @@ struct beldex_chain_generator
   bool                                                 create_block(beldex_blockchain_entry &entry, beldex_create_block_params &params, const std::vector<cryptonote::transaction> &tx_list) const;
 
   bool                                                 block_begin(beldex_blockchain_entry &entry, beldex_create_block_params &params, const std::vector<cryptonote::transaction> &tx_list) const;
-  void                                                 block_fill_pulse_data(beldex_blockchain_entry &entry, beldex_create_block_params const &params, uint8_t round) const;
+  void                                                 block_fill_POS_data(beldex_blockchain_entry &entry, beldex_create_block_params const &params, uint8_t round) const;
   void                                                 block_end(beldex_blockchain_entry &entry, beldex_create_block_params const &params) const;
 
   uint8_t                                              get_hf_version_at(uint64_t height) const;

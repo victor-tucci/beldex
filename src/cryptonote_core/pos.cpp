@@ -19,10 +19,10 @@ extern "C"
 };
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "pulse"
+#define BELDEX_DEFAULT_LOG_CATEGORY "POS"
 
-// Deliberately makes pulse communications flakey for testing purposes:
-//#define PULSE_TEST_CODE
+// Deliberately makes POS communications flakey for testing purposes:
+//#define POS_TEST_CODE
 
 enum struct round_state
 {
@@ -86,7 +86,7 @@ enum struct queueing_state
 };
 
 template <typename T>
-using quorum_array = std::array<T, master_nodes::PULSE_QUORUM_NUM_VALIDATORS>;
+using quorum_array = std::array<T, master_nodes::POS_QUORUM_NUM_VALIDATORS>;
 
 // Stores message for quorumnet per stage. Some validators may reach later
 // stages before we arrive at that stage. To properly validate messages we also
@@ -94,20 +94,20 @@ using quorum_array = std::array<T, master_nodes::PULSE_QUORUM_NUM_VALIDATORS>;
 // the necessary information to do so on Quorumnet.
 struct message_queue
 {
-  quorum_array<std::pair<pulse::message, queueing_state>> buffer;
+  quorum_array<std::pair<POS::message, queueing_state>> buffer;
   size_t count;
 };
 
-struct pulse_wait_stage
+struct POS_wait_stage
 {
   message_queue     queue;         // For messages from later stages that arrived before we reached that stage
   uint16_t          bitset;        // Bitset of validators that we received a message from for this stage
   uint16_t          msgs_received; // Number of unique messages received in the stage
-  pulse::time_point end_time;      // Time at which the stage ends
+  POS::time_point end_time;      // Time at which the stage ends
 };
 
 template <typename T>
-struct pulse_send_stage
+struct POS_send_stage
 {
   T    data; // Data that must be sent to Nodes via Quorumnet
   bool sent; // When true, data has been sent via Quorumnet once already.
@@ -138,20 +138,20 @@ struct round_context
 
   struct
   {
-    uint64_t          height;              // Current blockchain height that Pulse wants to generate a block for
+    uint64_t          height;              // Current blockchain height that POS wants to generate a block for
     crypto::hash      top_hash;            // Latest block hash included in signatures for rejecting out of date nodes
-    pulse::time_point round_0_start_time;  // When round 0 should start and subsequent round timings are derived from.
+    POS::time_point round_0_start_time;  // When round 0 should start and subsequent round timings are derived from.
   } wait_for_next_block;
 
   struct
   {
     bool                  queue_for_next_round; // When set to true, invoking prepare_for_round(...) will wait for (round + 1)
-    uint8_t               round;                // The next round the Pulse ceremony will generate a block for
+    uint8_t               round;                // The next round the POS ceremony will generate a block for
     master_nodes::quorum quorum;               // The block producer/validator participating in the next round
     mn_type               participant;          // Is this daemon a block producer, validator or non participant.
-    size_t                my_quorum_position;   // Position in the quorum, 0 if producer or neither, or [0, PULSE_QUORUM_NUM_VALIDATORS) if a validator
+    size_t                my_quorum_position;   // Position in the quorum, 0 if producer or neither, or [0, POS_QUORUM_NUM_VALIDATORS) if a validator
     std::string           node_name;            // Short-hand string for describing the node in logs, i.e. V[0] for validator 0 or W[0] for the producer.
-    pulse::time_point     start_time;           // When the round starts
+    POS::time_point     start_time;           // When the round starts
   } prepare_for_round;
 
   struct
@@ -160,13 +160,13 @@ struct round_context
     {
       bool sent;               // When true, handshake sent and waiting for other handshakes
       quorum_array<bool> data; // Received data from messages from Quorumnet
-      pulse_wait_stage stage;
+      POS_wait_stage stage;
     } send_and_wait_for_handshakes;
 
     struct
     {
       quorum_array<std::optional<uint16_t>> data;
-      pulse_wait_stage stage;
+      POS_wait_stage stage;
 
       uint16_t best_bitset; // The most agreed upon validators for participating in rounds. Value is set when all handshake bitsets are received.
       uint16_t best_count;  // How many validators agreed upon the best bitset.
@@ -174,40 +174,40 @@ struct round_context
 
     struct
     {
-      cryptonote::block block; // The block template with the best validator bitset and Pulse round applied to it.
-      pulse_wait_stage stage;
+      cryptonote::block block; // The block template with the best validator bitset and POS round applied to it.
+      POS_wait_stage stage;
     } wait_for_block_template;
 
     struct
     {
-      pulse_send_stage<crypto::hash> send;
+      POS_send_stage<crypto::hash> send;
       struct
       {
         quorum_array<std::optional<crypto::hash>> data;
-        pulse_wait_stage stage;
+        POS_wait_stage stage;
       } wait;
     } random_value_hashes;
 
     struct
     {
-      pulse_send_stage<cryptonote::pulse_random_value> send;
+      POS_send_stage<cryptonote::POS_random_value> send;
 
       struct
       {
-        quorum_array<std::optional<cryptonote::pulse_random_value>> data;
-        pulse_wait_stage stage;
+        quorum_array<std::optional<cryptonote::POS_random_value>> data;
+        POS_wait_stage stage;
       } wait;
     } random_value;
 
     struct
     {
-      pulse_send_stage<crypto::signature> send;
+      POS_send_stage<crypto::signature> send;
       cryptonote::block                   final_block;
 
       struct
       {
         quorum_array<std::optional<crypto::signature>> data;
-        pulse_wait_stage stage;
+        POS_wait_stage stage;
       } wait;
     } signed_block;
   } transient;
@@ -230,7 +230,7 @@ crypto::hash blake2b_hash(void const *data, size_t size)
 std::string log_prefix(round_context const &context)
 {
   std::stringstream result;
-  result << "Pulse B" << context.wait_for_next_block.height << " R";
+  result << "POS B" << context.wait_for_next_block.height << " R";
   if (context.state >= round_state::prepare_for_round)
     result << +context.prepare_for_round.round;
   else
@@ -249,11 +249,11 @@ std::bitset<sizeof(uint16_t) * 8> bitset_view16(uint16_t val)
 }
 
 //
-// NOTE: pulse::message Utiliities
+// NOTE: POS::message Utiliities
 //
-pulse::message msg_init_from_context(round_context const &context)
+POS::message msg_init_from_context(round_context const &context)
 {
-  pulse::message result  = {};
+  POS::message result  = {};
   result.quorum_position = context.prepare_for_round.my_quorum_position;
   result.round           = context.prepare_for_round.round;
   return result;
@@ -262,30 +262,30 @@ pulse::message msg_init_from_context(round_context const &context)
 // Generate the hash necessary for signing a message. All fields of the 'msg'
 // must have been set for the type of the message except the signature for the
 // hash to be generated correctly.
-crypto::hash msg_signature_hash(crypto::hash const &top_block_hash, pulse::message const &msg)
+crypto::hash msg_signature_hash(crypto::hash const &top_block_hash, POS::message const &msg)
 {
   crypto::hash result = {};
   switch(msg.type)
   {
-    case pulse::message_type::invalid:
+    case POS::message_type::invalid:
       assert("Invalid Code Path" == nullptr);
     break;
 
-    case pulse::message_type::handshake:
+    case POS::message_type::handshake:
     {
       auto buf = tools::memcpy_le(top_block_hash.data, msg.quorum_position, msg.round);
       result   = blake2b_hash(buf.data(), buf.size());
     }
     break;
 
-    case pulse::message_type::handshake_bitset:
+    case POS::message_type::handshake_bitset:
     {
       auto buf = tools::memcpy_le(msg.handshakes.validator_bitset, top_block_hash.data, msg.quorum_position, msg.round);
       result   = blake2b_hash(buf.data(), buf.size());
     }
     break;
 
-    case pulse::message_type::block_template:
+    case POS::message_type::block_template:
     {
       crypto::hash block_hash = blake2b_hash(msg.block_template.blob.data(), msg.block_template.blob.size());
       auto buf                = tools::memcpy_le(msg.round, block_hash.data);
@@ -293,21 +293,21 @@ crypto::hash msg_signature_hash(crypto::hash const &top_block_hash, pulse::messa
     }
     break;
 
-    case pulse::message_type::random_value_hash:
+    case POS::message_type::random_value_hash:
     {
       auto buf = tools::memcpy_le(top_block_hash.data, msg.quorum_position, msg.round, msg.random_value_hash.hash.data);
       result   = blake2b_hash(buf.data(), buf.size());
     }
     break;
 
-    case pulse::message_type::random_value:
+    case POS::message_type::random_value:
     {
       auto buf = tools::memcpy_le(top_block_hash.data, msg.quorum_position, msg.round, msg.random_value.value.data);
       result   = blake2b_hash(buf.data(), buf.size());
     }
     break;
 
-    case pulse::message_type::signed_block:
+    case POS::message_type::signed_block:
     {
       crypto::signature const &final_signature = msg.signed_block.signature_of_final_block_hash;
       auto buf = tools::memcpy_le(top_block_hash.data, msg.quorum_position, msg.round, final_signature.c.data, final_signature.r.data);
@@ -323,7 +323,7 @@ crypto::hash msg_signature_hash(crypto::hash const &top_block_hash, pulse::messa
 // 'Signed Block' at round 2 from 6:f9337ffc8bc30baf3fca92a13fa5a3a7ab7c93e69acb7136906e7feae9d3e769
 //   or
 // <Message Type> at round <Round> from <Validator Index>:<Validator Public Key>
-std::string msg_source_string(round_context const &context, pulse::message const &msg)
+std::string msg_source_string(round_context const &context, POS::message const &msg)
 {
   if (msg.quorum_position >= context.prepare_for_round.quorum.validators.size()) return "XX";
 
@@ -341,7 +341,7 @@ std::string msg_source_string(round_context const &context, pulse::message const
   return stream.str();
 }
 
-bool msg_signature_check(pulse::message const &msg, crypto::hash const &top_block_hash, master_nodes::quorum const &quorum, std::string *error)
+bool msg_signature_check(POS::message const &msg, crypto::hash const &top_block_hash, master_nodes::quorum const &quorum, std::string *error)
 {
   std::stringstream stream;
   BELDEX_DEFER {
@@ -352,23 +352,23 @@ bool msg_signature_check(pulse::message const &msg, crypto::hash const &top_bloc
   crypto::public_key const *key = nullptr;
   switch (msg.type)
   {
-    case pulse::message_type::invalid:
+    case POS::message_type::invalid:
     {
       assert("Invalid Code Path" == nullptr);
-      if (error) stream << log_prefix(context) << "Unhandled message type '" << pulse::message_type_string(msg.type) << "' can not verify signature.";
+      if (error) stream << log_prefix(context) << "Unhandled message type '" << POS::message_type_string(msg.type) << "' can not verify signature.";
       return false;
     }
     break;
 
-    case pulse::message_type::handshake: [[fallthrough]];
-    case pulse::message_type::handshake_bitset: [[fallthrough]];
-    case pulse::message_type::random_value_hash: [[fallthrough]];
-    case pulse::message_type::random_value: [[fallthrough]];
-    case pulse::message_type::signed_block:
+    case POS::message_type::handshake: [[fallthrough]];
+    case POS::message_type::handshake_bitset: [[fallthrough]];
+    case POS::message_type::random_value_hash: [[fallthrough]];
+    case POS::message_type::random_value: [[fallthrough]];
+    case POS::message_type::signed_block:
     {
       if (msg.quorum_position >= static_cast<int>(quorum.validators.size()))
       {
-        if (error) stream << log_prefix(context) << "Quorum position " << msg.quorum_position << " in Pulse message indexes oob";
+        if (error) stream << log_prefix(context) << "Quorum position " << msg.quorum_position << " in POS message indexes oob";
         return false;
       }
 
@@ -376,11 +376,11 @@ bool msg_signature_check(pulse::message const &msg, crypto::hash const &top_bloc
     }
     break;
 
-    case pulse::message_type::block_template:
+    case POS::message_type::block_template:
     {
       if (msg.quorum_position != 0)
       {
-        if (error) stream << log_prefix(context) << "Quorum position " << msg.quorum_position << " in Pulse message indexes oob";
+        if (error) stream << log_prefix(context) << "Quorum position " << msg.quorum_position << " in POS message indexes oob";
         return false;
       }
 
@@ -401,16 +401,16 @@ bool msg_signature_check(pulse::message const &msg, crypto::hash const &top_bloc
 //
 // NOTE: round_context Utilities
 //
-// Construct a pulse::message for sending the handshake bit or bitset.
+// Construct a POS::message for sending the handshake bit or bitset.
 void relay_validator_handshake_bit_or_bitset(round_context const &context, void *quorumnet_state, master_nodes::master_node_keys const &key, bool sending_bitset)
 {
   assert(context.prepare_for_round.participant == mn_type::validator);
 
   // Message
-  pulse::message msg = msg_init_from_context(context);
+  POS::message msg = msg_init_from_context(context);
   if (sending_bitset)
   {
-    msg.type = pulse::message_type::handshake_bitset;
+    msg.type = POS::message_type::handshake_bitset;
 
     // Generate the bitset from our received handshakes.
     auto const &quorum = context.transient.send_and_wait_for_handshakes.data;
@@ -420,7 +420,7 @@ void relay_validator_handshake_bit_or_bitset(round_context const &context, void 
   }
   else
   {
-    msg.type = pulse::message_type::handshake;
+    msg.type = POS::message_type::handshake;
   }
   crypto::generate_signature(msg_signature_hash(context.wait_for_next_block.top_hash, msg), key.pub, key.key, msg.signature);
   handle_message(quorumnet_state, msg); // Add our own. We receive our own msg for the first time which also triggers us to relay.
@@ -429,7 +429,7 @@ void relay_validator_handshake_bit_or_bitset(round_context const &context, void 
 // Check the stage's queue for any messages that we received early and process
 // them if any. Any messages in the queue that we haven't received yet will also
 // be relayed to the quorum.
-void handle_messages_received_early_for(pulse_wait_stage &stage, void *quorumnet_state)
+void handle_messages_received_early_for(POS_wait_stage &stage, void *quorumnet_state)
 {
   if (!stage.queue.count)
     return;
@@ -438,16 +438,16 @@ void handle_messages_received_early_for(pulse_wait_stage &stage, void *quorumnet
   {
     if (queued == queueing_state::received)
     {
-      pulse::handle_message(quorumnet_state, msg);
+      POS::handle_message(quorumnet_state, msg);
       queued = queueing_state::processed;
     }
   }
 }
 
-// In Pulse, after the block template and validators are locked in, enforce that
+// In POS, after the block template and validators are locked in, enforce that
 // all participating validators are doing their job in the stage.
 bool enforce_validator_participation_and_timeouts(round_context const &context,
-                                                  pulse_wait_stage const &stage,
+                                                  POS_wait_stage const &stage,
                                                   master_nodes::master_node_list &node_list,
                                                   bool timed_out,
                                                   bool all_received)
@@ -478,7 +478,7 @@ bool enforce_validator_participation_and_timeouts(round_context const &context,
 
 } // anonymous namespace
 
-void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
+void POS::handle_message(void *quorumnet_state, POS::message const &msg)
 {
   if (context.state < round_state::wait_for_round)
   {
@@ -534,33 +534,33 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     return;
   }
 
-  pulse_wait_stage *stage = nullptr;
+  POS_wait_stage *stage = nullptr;
   switch(msg.type)
   {
-    case pulse::message_type::invalid:
+    case POS::message_type::invalid:
     {
       MTRACE(log_prefix(context) << "Received invalid message type, dropped");
       return;
     }
 
-    case pulse::message_type::handshake:         stage = &context.transient.send_and_wait_for_handshakes.stage; break;
-    case pulse::message_type::handshake_bitset:  stage = &context.transient.wait_for_handshake_bitsets.stage;   break;
-    case pulse::message_type::block_template:    stage = &context.transient.wait_for_block_template.stage;      break;
-    case pulse::message_type::random_value_hash: stage = &context.transient.random_value_hashes.wait.stage;     break;
-    case pulse::message_type::random_value:      stage = &context.transient.random_value.wait.stage;            break;
-    case pulse::message_type::signed_block:      stage = &context.transient.signed_block.wait.stage;            break;
+    case POS::message_type::handshake:         stage = &context.transient.send_and_wait_for_handshakes.stage; break;
+    case POS::message_type::handshake_bitset:  stage = &context.transient.wait_for_handshake_bitsets.stage;   break;
+    case POS::message_type::block_template:    stage = &context.transient.wait_for_block_template.stage;      break;
+    case POS::message_type::random_value_hash: stage = &context.transient.random_value_hashes.wait.stage;     break;
+    case POS::message_type::random_value:      stage = &context.transient.random_value.wait.stage;            break;
+    case POS::message_type::signed_block:      stage = &context.transient.signed_block.wait.stage;            break;
   }
 
   bool msg_received_early = false;
   switch(msg.type)
   {
-    case pulse::message_type::invalid:           assert("Invalid Code Path" != nullptr); return;
-    case pulse::message_type::handshake:         msg_received_early = (context.state < round_state::send_and_wait_for_handshakes);          break;
-    case pulse::message_type::handshake_bitset:  msg_received_early = (context.state < round_state::wait_for_handshake_bitsets);            break;
-    case pulse::message_type::block_template:    msg_received_early = (context.state < round_state::wait_for_block_template);               break;
-    case pulse::message_type::random_value_hash: msg_received_early = (context.state < round_state::send_and_wait_for_random_value_hashes); break;
-    case pulse::message_type::random_value:      msg_received_early = (context.state < round_state::send_and_wait_for_random_value);        break;
-    case pulse::message_type::signed_block:      msg_received_early = (context.state < round_state::send_and_wait_for_signed_blocks);       break;
+    case POS::message_type::invalid:           assert("Invalid Code Path" != nullptr); return;
+    case POS::message_type::handshake:         msg_received_early = (context.state < round_state::send_and_wait_for_handshakes);          break;
+    case POS::message_type::handshake_bitset:  msg_received_early = (context.state < round_state::wait_for_handshake_bitsets);            break;
+    case POS::message_type::block_template:    msg_received_early = (context.state < round_state::wait_for_block_template);               break;
+    case POS::message_type::random_value_hash: msg_received_early = (context.state < round_state::send_and_wait_for_random_value_hashes); break;
+    case POS::message_type::random_value:      msg_received_early = (context.state < round_state::send_and_wait_for_random_value);        break;
+    case POS::message_type::signed_block:      msg_received_early = (context.state < round_state::send_and_wait_for_signed_blocks);       break;
   }
 
   if (msg_received_early) // Enqueue the message until we're ready to process it
@@ -579,7 +579,7 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
 
   uint16_t const validator_bit = (1 << msg.quorum_position);
   if (context.state > round_state::wait_for_handshake_bitsets &&
-      msg.type > pulse::message_type::handshake_bitset)
+      msg.type > POS::message_type::handshake_bitset)
   {
     // After the validator bitset has been set, the participating validators are
     // locked in. Any stray messages from other validators are rejected.
@@ -591,22 +591,22 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     }
   }
 
-  if (msg.quorum_position >= master_nodes::PULSE_QUORUM_NUM_VALIDATORS)
+  if (msg.quorum_position >= master_nodes::POS_QUORUM_NUM_VALIDATORS)
   {
     MTRACE(log_prefix(context) << "Dropping " << msg_source_string(context, msg) << ". Message quorum position indexes oob");
     return;
   }
 
   //
-  // Add Message Data to Pulse Stage
+  // Add Message Data to POS Stage
   //
   switch(msg.type)
   {
-    case pulse::message_type::invalid:
+    case POS::message_type::invalid:
       assert("Invalid Code Path" != nullptr);
       return;
 
-    case pulse::message_type::handshake:
+    case POS::message_type::handshake:
     {
       auto &quorum = context.transient.send_and_wait_for_handshakes.data;
       if (quorum[msg.quorum_position]) return;
@@ -617,7 +617,7 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     }
     break;
 
-    case pulse::message_type::handshake_bitset:
+    case POS::message_type::handshake_bitset:
     {
       auto &quorum = context.transient.wait_for_handshake_bitsets.data;
       auto &bitset = quorum[msg.quorum_position];
@@ -626,7 +626,7 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     }
     break;
 
-    case pulse::message_type::block_template:
+    case POS::message_type::block_template:
     {
       if (stage->msgs_received == 1)
         return;
@@ -634,22 +634,22 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
       cryptonote::block block = {};
       if (!cryptonote::t_serializable_object_from_blob(block, msg.block_template.blob))
       {
-        MTRACE(log_prefix(context) << "Received unparsable pulse block template blob");
+        MTRACE(log_prefix(context) << "Received unparsable POS block template blob");
         return;
       }
 
-      if (block.pulse.round != context.prepare_for_round.round)
+      if (block.POS.round != context.prepare_for_round.round)
       {
-        MTRACE(log_prefix(context) << "Received pulse block template specifying different round " << +block.pulse.round
+        MTRACE(log_prefix(context) << "Received POS block template specifying different round " << +block.POS.round
                                    << ", expected " << +context.prepare_for_round.round);
         return;
       }
 
-      if (block.pulse.validator_bitset != context.transient.wait_for_handshake_bitsets.best_bitset)
+      if (block.POS.validator_bitset != context.transient.wait_for_handshake_bitsets.best_bitset)
       {
-        auto block_bitset = bitset_view16(block.pulse.validator_bitset);
+        auto block_bitset = bitset_view16(block.POS.validator_bitset);
         auto our_bitset   = bitset_view16(context.transient.wait_for_handshake_bitsets.best_bitset);
-        MTRACE(log_prefix(context) << "Received pulse block template specifying different validator handshake bitsets " << block_bitset << ", expected " << our_bitset);
+        MTRACE(log_prefix(context) << "Received POS block template specifying different validator handshake bitsets " << block_bitset << ", expected " << our_bitset);
         return;
       }
 
@@ -657,7 +657,7 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     }
     break;
 
-    case pulse::message_type::random_value_hash:
+    case POS::message_type::random_value_hash:
     {
       auto &quorum = context.transient.random_value_hashes.wait.data;
       auto &value  = quorum[msg.quorum_position];
@@ -666,7 +666,7 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     }
     break;
 
-    case pulse::message_type::random_value:
+    case POS::message_type::random_value:
     {
       auto &quorum = context.transient.random_value.wait.data;
       auto &value  = quorum[msg.quorum_position];
@@ -688,7 +688,7 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
     }
     break;
 
-    case pulse::message_type::signed_block:
+    case POS::message_type::signed_block:
     {
       // NOTE: The block template with the final random value inserted but no
       // Master Node signatures. (Master Node signatures are added in one shot
@@ -719,57 +719,57 @@ void pulse::handle_message(void *quorumnet_state, pulse::message const &msg)
   stage->msgs_received++;
 
   if (quorumnet_state)
-    cryptonote::quorumnet_pulse_relay_message_to_quorum(quorumnet_state, msg, context.prepare_for_round.quorum, context.prepare_for_round.participant == mn_type::producer);
+    cryptonote::quorumnet_POS_relay_message_to_quorum(quorumnet_state, msg, context.prepare_for_round.quorum, context.prepare_for_round.participant == mn_type::producer);
 }
 
-// TODO(doyle): Update pulse::perpare_for_round with this function after the hard fork and sanity check it on testnet.
-bool pulse::convert_time_to_round(pulse::time_point const &time, pulse::time_point const &r0_timestamp, uint8_t *round)
+// TODO(doyle): Update POS::perpare_for_round with this function after the hard fork and sanity check it on testnet.
+bool POS::convert_time_to_round(POS::time_point const &time, POS::time_point const &r0_timestamp, uint8_t *round)
 {
   auto const time_since_round_started = time <= r0_timestamp ? std::chrono::seconds(0) : (time - r0_timestamp);
-  size_t result_usize                 = time_since_round_started / master_nodes::PULSE_ROUND_TIME;
+  size_t result_usize                 = time_since_round_started / master_nodes::POS_ROUND_TIME;
   if (round) *round = static_cast<uint8_t>(result_usize);
   return result_usize <= 255;
 }
 
-bool pulse::get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t block_height, uint64_t prev_timestamp, pulse::timings &times)
+bool POS::get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t block_height, uint64_t prev_timestamp, POS::timings &times)
 {
   times = {};
-  auto hf17 = hard_fork_begins(blockchain.nettype(), cryptonote::network_version_17_pulse);
+  auto hf17 = hard_fork_begins(blockchain.nettype(), cryptonote::network_version_17_POS);
   if (!hf17 || blockchain.get_current_blockchain_height() < *hf17)
     return false;
 
-  cryptonote::block pulse_genesis_block;
-  if (!blockchain.get_block_by_height(*hf17 - 1, pulse_genesis_block))
+  cryptonote::block POS_genesis_block;
+  if (!blockchain.get_block_by_height(*hf17 - 1, POS_genesis_block))
     return false;
 
-  uint64_t const delta_height = block_height - cryptonote::get_block_height(pulse_genesis_block);
-  times.genesis_timestamp     = pulse::time_point(std::chrono::seconds(pulse_genesis_block.timestamp));
-  times.prev_timestamp  = pulse::time_point(std::chrono::seconds(prev_timestamp));
-  times.ideal_timestamp  = pulse::time_point(times.genesis_timestamp + (TARGET_BLOCK_TIME_V17 * delta_height)); //only for pulse
+  uint64_t const delta_height = block_height - cryptonote::get_block_height(POS_genesis_block);
+  times.genesis_timestamp     = POS::time_point(std::chrono::seconds(POS_genesis_block.timestamp));
+  times.prev_timestamp  = POS::time_point(std::chrono::seconds(prev_timestamp));
+  times.ideal_timestamp  = POS::time_point(times.genesis_timestamp + (TARGET_BLOCK_TIME_V17 * delta_height)); //only for POS
 
 
 #if 1
   times.r0_timestamp    = std::clamp(times.ideal_timestamp,
-                                  times.prev_timestamp + master_nodes::PULSE_MIN_TARGET_BLOCK_TIME,
-                                  times.prev_timestamp + master_nodes::PULSE_MAX_TARGET_BLOCK_TIME);
+                                  times.prev_timestamp + master_nodes::POS_MIN_TARGET_BLOCK_TIME,
+                                  times.prev_timestamp + master_nodes::POS_MAX_TARGET_BLOCK_TIME);
 #else // NOTE: Debug, make next block start relatively soon
-  times.r0_timestamp = times.prev_timestamp + master_nodes::PULSE_ROUND_TIME;
+  times.r0_timestamp = times.prev_timestamp + master_nodes::POS_ROUND_TIME;
 #endif
 
-  times.miner_fallback_timestamp = times.r0_timestamp + (master_nodes::PULSE_ROUND_TIME * 255);
+  times.miner_fallback_timestamp = times.r0_timestamp + (master_nodes::POS_ROUND_TIME * 255);
   return true;
 }
 
 /*
-  Pulse progresses via a state-machine that is iterated through job submissions
-  to 1 dedicated Pulse thread, started by LMQ.
+  POS progresses via a state-machine that is iterated through job submissions
+  to 1 dedicated POS thread, started by LMQ.
 
   Iterating the state-machine is done by a periodic invocation of
-  pulse::main(...) and messages received via Quorumnet for Pulse, which are
+  POS::main(...) and messages received via Quorumnet for POS, which are
   queued in the thread's job queue.
 
   Using 1 dedicated thread via LMQ avoids any synchronization required in the
-  user code when implementing Pulse.
+  user code when implementing POS.
 
   Skip control flow graph for textual description of stages.
 
@@ -785,7 +785,7 @@ bool pulse::get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t
     +---->| Prepare For Round   |         |       |
     |     +---------------------+         |       |
     |      |                              |       |
-    |     [Enough MN's for Pulse]---------+ No    |
+    |     [Enough MN's for POS]---------+ No    |
     |      |                                      |
     |     Yes                                     |
     |      |                                      |
@@ -878,11 +878,11 @@ Yes +-----[Block can not be added to blockchain]
   Wait For Next Block:
     - Waits for the next block in the blockchain to arrive
 
-    - Retrieves the blockchain metadata for starting a Pulse Round including the
-      Genesis Pulse Block for the base timestamp and the top block hash and
+    - Retrieves the blockchain metadata for starting a POS Round including the
+      Genesis POS Block for the base timestamp and the top block hash and
       height for signatures.
 
-    - // TODO(beldex): After the Genesis Pulse Block is checkpointed, we can
+    - // TODO(beldex): After the Genesis POS Block is checkpointed, we can
       // remove it from the event loop. Right now we recheck every block incase
       // of (the very unlikely event) reorgs that might change the block at the
       // hardfork.
@@ -891,8 +891,8 @@ Yes +-----[Block can not be added to blockchain]
 
       G.Timestamp + (height * TARGET_BLOCK_TIME_v17)
 
-      Where 'G' is the base Pulse genesis block, i.e. the hardforking block
-      activating Pulse (HF17).
+      Where 'G' is the base POS genesis block, i.e. the hardforking block
+      activating POS (HF17).
 
       The actual next block timestamp is determined by
 
@@ -903,20 +903,20 @@ Yes +-----[Block can not be added to blockchain]
 
   Prepare For Round:
     - Generate data for executing the round such as the Quorum and stage
-      durations depending on the round Pulse is at by comparing the clock with
+      durations depending on the round POS is at by comparing the clock with
       the ideal block timestamp.
 
     - The state machine *always* reverts to 'Prepare For Round' when any
-      subsequent stage fails, except in the cases where Pulse can not proceed
+      subsequent stage fails, except in the cases where POS can not proceed
       because of an insufficient Master Node network.
 
-    - If the next round to prepare for is >255, we disable Pulse and re-allow
-      PoW blocks to be added to the chain, the Pulse state machine resets and
-      waits for the next block to arrive and re-evaluates if Pulse is possible
+    - If the next round to prepare for is >255, we disable POS and re-allow
+      PoW blocks to be added to the chain, the POS state machine resets and
+      waits for the next block to arrive and re-evaluates if POS is possible
       again.
 
   Wait For Round (Block Producer & Validator)
-    - Checks clock against the next expected Pulse timestamps has arrived,
+    - Checks clock against the next expected POS timestamps has arrived,
       otherwise continues sleeping.
 
     - If we are a validator we 'Submit Handshakes' with other Validators
@@ -943,7 +943,7 @@ Yes +-----[Block can not be added to blockchain]
 
   Submit Block Template (Block Producer)
     - Block producer signs the block template with the validator bitset and
-      pulse round applied to the block and sends it to the round validators
+      POS round applied to the block and sends it to the round validators
 
     - The block producer is finished for the round and awaits the next
       round (if any subsequent stage fails) or block.
@@ -996,7 +996,7 @@ round_state goto_preparing_for_next_round(round_context &context)
 
 void clear_round_data(round_context &context)
 {
-  if (master_nodes::verify_pulse_quorum_sizes(context.prepare_for_round.quorum))
+  if (master_nodes::verify_POS_quorum_sizes(context.prepare_for_round.quorum))
   {
     // NOTE: Store the quorum into history before deleting it from memory.
     // This way we can verify late arriving messages when we may have progressed
@@ -1031,7 +1031,7 @@ void clear_round_data(round_context &context)
   }
 
   context.transient = {};
-  cryptonote::pulse_random_value &old_random_value = context.transient.random_value.send.data;
+  cryptonote::POS_random_value &old_random_value = context.transient.random_value.send.data;
   auto &old_random_values_array                    = context.transient.random_value.wait.data;
   memwipe(old_random_value.data, sizeof(old_random_value));
   memwipe(old_random_values_array.data(), old_random_values_array.size() * sizeof(old_random_values_array[0]));
@@ -1047,7 +1047,7 @@ round_state goto_wait_for_next_block_and_clear_round_data(round_context &context
 round_state wait_for_next_block(uint64_t hf17_height, round_context &context, cryptonote::Blockchain const &blockchain)
 {
   //
-  // NOTE: If already processing pulse for height, wait for next height
+  // NOTE: If already processing POS for height, wait for next height
   //
   uint64_t chain_height = blockchain.get_current_blockchain_height(true /*lock*/);
   if (context.wait_for_next_block.height == chain_height)
@@ -1077,11 +1077,11 @@ round_state wait_for_next_block(uint64_t hf17_height, round_context &context, cr
     return round_state::wait_for_next_block;
   }
 
-  pulse::timings times = {};
+  POS::timings times = {};
   if (!get_round_timings(blockchain, chain_height, prev_timestamp, times))
   {
     for (static uint64_t last_height = 0; last_height != chain_height; last_height = chain_height)
-      MERROR(log_prefix(context) << "Failed to query the block data for Pulse timings");
+      MERROR(log_prefix(context) << "Failed to query the block data for POS timings");
     return round_state::wait_for_next_block;
   }
 
@@ -1120,11 +1120,11 @@ round_state prepare_for_round(round_context &context, master_nodes::master_node_
     }
 
     // Also check if the blockchain has changed, in which case we stop and
-    // restart Pulse stages.
+    // restart POS stages.
     if (context.wait_for_next_block.height != blockchain.get_current_blockchain_height(true /*lock*/))
       return goto_wait_for_next_block_and_clear_round_data(context);
 
-    // 'queue_for_next_round' is set when an intermediate Pulse stage has failed
+    // 'queue_for_next_round' is set when an intermediate POS stage has failed
     // and the caller requests us to wait until the next round to occur.
     context.prepare_for_round.queue_for_next_round = false;
     context.prepare_for_round.round++;
@@ -1134,13 +1134,13 @@ round_state prepare_for_round(round_context &context, master_nodes::master_node_
   // NOTE: Check Current Round
   //
   {
-    auto now                     = pulse::clock::now();
+    auto now                     = POS::clock::now();
     auto const time_since_block  = now <= context.wait_for_next_block.round_0_start_time ? std::chrono::seconds(0) : (now - context.wait_for_next_block.round_0_start_time);
-    size_t round_usize           = time_since_block / master_nodes::PULSE_ROUND_TIME;
+    size_t round_usize           = time_since_block / master_nodes::POS_ROUND_TIME;
 
     if (round_usize > 255) // Network stalled
     {
-      MINFO(log_prefix(context) << "Pulse has timed out, reverting to accepting miner blocks only.");
+      MINFO(log_prefix(context) << "POS has timed out, reverting to accepting miner blocks only.");
       return goto_wait_for_next_block_and_clear_round_data(context);
     }
 
@@ -1151,35 +1151,35 @@ round_state prepare_for_round(round_context &context, master_nodes::master_node_
 
   {
     using namespace master_nodes;
-    context.prepare_for_round.start_time                          = context.wait_for_next_block.round_0_start_time                + (context.prepare_for_round.round * PULSE_ROUND_TIME);
-    context.transient.send_and_wait_for_handshakes.stage.end_time = context.prepare_for_round.start_time                          + PULSE_WAIT_FOR_HANDSHAKES_DURATION;
-    context.transient.wait_for_handshake_bitsets.stage.end_time   = context.transient.send_and_wait_for_handshakes.stage.end_time + PULSE_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION;
-    context.transient.wait_for_block_template.stage.end_time      = context.transient.wait_for_handshake_bitsets.stage.end_time   + PULSE_WAIT_FOR_BLOCK_TEMPLATE_DURATION;
-    context.transient.random_value_hashes.wait.stage.end_time     = context.transient.wait_for_block_template.stage.end_time      + PULSE_WAIT_FOR_RANDOM_VALUE_HASH_DURATION;
-    context.transient.random_value.wait.stage.end_time            = context.transient.random_value_hashes.wait.stage.end_time     + PULSE_WAIT_FOR_RANDOM_VALUE_DURATION;
-    context.transient.signed_block.wait.stage.end_time            = context.transient.random_value.wait.stage.end_time            + PULSE_WAIT_FOR_SIGNED_BLOCK_DURATION;
+    context.prepare_for_round.start_time                          = context.wait_for_next_block.round_0_start_time                + (context.prepare_for_round.round * POS_ROUND_TIME);
+    context.transient.send_and_wait_for_handshakes.stage.end_time = context.prepare_for_round.start_time                          + POS_WAIT_FOR_HANDSHAKES_DURATION;
+    context.transient.wait_for_handshake_bitsets.stage.end_time   = context.transient.send_and_wait_for_handshakes.stage.end_time + POS_WAIT_FOR_OTHER_VALIDATOR_HANDSHAKES_DURATION;
+    context.transient.wait_for_block_template.stage.end_time      = context.transient.wait_for_handshake_bitsets.stage.end_time   + POS_WAIT_FOR_BLOCK_TEMPLATE_DURATION;
+    context.transient.random_value_hashes.wait.stage.end_time     = context.transient.wait_for_block_template.stage.end_time      + POS_WAIT_FOR_RANDOM_VALUE_HASH_DURATION;
+    context.transient.random_value.wait.stage.end_time            = context.transient.random_value_hashes.wait.stage.end_time     + POS_WAIT_FOR_RANDOM_VALUE_DURATION;
+    context.transient.signed_block.wait.stage.end_time            = context.transient.random_value.wait.stage.end_time            + POS_WAIT_FOR_SIGNED_BLOCK_DURATION;
   }
 
-  std::vector<crypto::hash> const entropy = master_nodes::get_pulse_entropy_for_next_block(blockchain.get_db(), context.wait_for_next_block.top_hash, context.prepare_for_round.round);
+  std::vector<crypto::hash> const entropy = master_nodes::get_POS_entropy_for_next_block(blockchain.get_db(), context.wait_for_next_block.top_hash, context.prepare_for_round.round);
   auto const active_node_list             = blockchain.get_master_node_list().active_master_nodes_infos();
   uint8_t const hf_version                = blockchain.get_network_version();
   crypto::public_key const &block_leader  = blockchain.get_master_node_list().get_block_leader().key;
 
   context.prepare_for_round.quorum =
-      master_nodes::generate_pulse_quorum(blockchain.nettype(),
+      master_nodes::generate_POS_quorum(blockchain.nettype(),
                                            block_leader,
                                            hf_version,
                                            active_node_list,
                                            entropy,
                                            context.prepare_for_round.round);
 
-  if (!master_nodes::verify_pulse_quorum_sizes(context.prepare_for_round.quorum))
+  if (!master_nodes::verify_POS_quorum_sizes(context.prepare_for_round.quorum))
   {
-    MINFO(log_prefix(context) << "Insufficient Master Nodes to execute Pulse on height " << context.wait_for_next_block.height << ", we require a PoW miner block. Sleeping until next block.");
+    MINFO(log_prefix(context) << "Insufficient Master Nodes to execute POS on height " << context.wait_for_next_block.height << ", we require a PoW miner block. Sleeping until next block.");
     return goto_wait_for_next_block_and_clear_round_data(context);
   }
 
-  MDEBUG(log_prefix(context) << "Generate Pulse quorum: " << context.prepare_for_round.quorum);
+  MDEBUG(log_prefix(context) << "Generate POS quorum: " << context.prepare_for_round.quorum);
 
   //
   // NOTE: Quorum participation
@@ -1215,19 +1215,19 @@ round_state wait_for_round(round_context &context, cryptonote::Blockchain const 
   const auto curr_height = blockchain.get_current_blockchain_height(true /*lock*/);
   if (context.wait_for_next_block.height != curr_height)
   {
-    MDEBUG(log_prefix(context) << "Block height changed whilst waiting for round " << +context.prepare_for_round.round << ", restarting Pulse stages");
+    MDEBUG(log_prefix(context) << "Block height changed whilst waiting for round " << +context.prepare_for_round.round << ", restarting POS stages");
     return goto_wait_for_next_block_and_clear_round_data(context);
   }
 
   auto start_time = context.prepare_for_round.start_time;
-  if (auto now = pulse::clock::now(); now < start_time)
+  if (auto now = POS::clock::now(); now < start_time)
   {
     for (static uint64_t last_height = 0; last_height != context.wait_for_next_block.height; last_height = context.wait_for_next_block.height)
       MINFO(log_prefix(context) << "Waiting for round " << +context.prepare_for_round.round << " to start in " << tools::friendly_duration(start_time - now));
     return round_state::wait_for_round;
   }
 
-#ifdef PULSE_TEST_CODE
+#ifdef POS_TEST_CODE
   // For testing purposes: we apply possible random non-response and random delays to half of all
   // blocks; we go in batches of 10: 10 maybe-faulty blocks followed by 10 well-behaved blocks.
   // (Faulty blocks have an odd second-last height digit).
@@ -1252,7 +1252,7 @@ round_state wait_for_round(round_context &context, cryptonote::Blockchain const 
 
   if (context.prepare_for_round.participant == mn_type::validator)
   {
-    MINFO(log_prefix(context) << "We are a pulse validator, sending handshake bit and collecting other handshakes.");
+    MINFO(log_prefix(context) << "We are a POS validator, sending handshake bit and collecting other handshakes.");
     return round_state::send_and_wait_for_handshakes;
   }
   else if (context.prepare_for_round.participant == mn_type::producer)
@@ -1282,7 +1282,7 @@ round_state send_and_wait_for_handshakes(round_context &context, void *quorumnet
     }
     catch (std::exception const &e)
     {
-      MERROR(log_prefix(context) << "Attempting to invoke and send a Pulse participation handshake unexpectedly failed. " << e.what());
+      MERROR(log_prefix(context) << "Attempting to invoke and send a POS participation handshake unexpectedly failed. " << e.what());
       return goto_preparing_for_next_round(context);
     }
   }
@@ -1291,10 +1291,10 @@ round_state send_and_wait_for_handshakes(round_context &context, void *quorumnet
   // NOTE: Wait
   //
   handle_messages_received_early_for(context.transient.send_and_wait_for_handshakes.stage, quorumnet_state);
-  pulse_wait_stage const &stage = context.transient.send_and_wait_for_handshakes.stage;
+  POS_wait_stage const &stage = context.transient.send_and_wait_for_handshakes.stage;
 
   auto const &quorum            = context.transient.send_and_wait_for_handshakes.data;
-  bool const timed_out          = pulse::clock::now() >= stage.end_time;
+  bool const timed_out          = POS::clock::now() >= stage.end_time;
   bool const all_handshakes     = stage.msgs_received == quorum.size();
 
   assert(context.prepare_for_round.participant == mn_type::validator);
@@ -1321,7 +1321,7 @@ round_state send_handshake_bitsets(round_context &context, void *quorumnet_state
   }
   catch(std::exception const &e)
   {
-    MERROR(log_prefix(context) << "Attempting to invoke and send a Pulse validator bitset unexpectedly failed. " << e.what());
+    MERROR(log_prefix(context) << "Attempting to invoke and send a POS validator bitset unexpectedly failed. " << e.what());
     return goto_preparing_for_next_round(context);
   }
 }
@@ -1329,10 +1329,10 @@ round_state send_handshake_bitsets(round_context &context, void *quorumnet_state
 round_state wait_for_handshake_bitsets(round_context &context, master_nodes::master_node_list &node_list, void *quorumnet_state, master_nodes::master_node_keys const &key)
 {
   handle_messages_received_early_for(context.transient.wait_for_handshake_bitsets.stage, quorumnet_state);
-  pulse_wait_stage const &stage = context.transient.wait_for_handshake_bitsets.stage;
+  POS_wait_stage const &stage = context.transient.wait_for_handshake_bitsets.stage;
 
   auto const &quorum     = context.transient.wait_for_handshake_bitsets.data;
-  bool const timed_out   = pulse::clock::now() >= stage.end_time;
+  bool const timed_out   = POS::clock::now() >= stage.end_time;
   bool const all_bitsets = stage.msgs_received == quorum.size();
 
   if (timed_out || all_bitsets)
@@ -1359,7 +1359,7 @@ round_state wait_for_handshake_bitsets(round_context &context, master_nodes::mas
     if (best_bitset != 0 && context.prepare_for_round.participant == mn_type::validator)
       i_am_not_participating = ((best_bitset & (1 << context.prepare_for_round.my_quorum_position)) == 0);
 
-    if (count < master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES || best_bitset == 0 || i_am_not_participating)
+    if (count < master_nodes::POS_BLOCK_REQUIRED_SIGNATURES || best_bitset == 0 || i_am_not_participating)
     {
       if (best_bitset == 0)
       {
@@ -1377,7 +1377,7 @@ round_state wait_for_handshake_bitsets(round_context &context, master_nodes::mas
       else
       {
         // Can't come to agreement, see threshold comment above
-        MDEBUG(log_prefix(context) << "We heard back from less than " << master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES << " of the validators ("
+        MDEBUG(log_prefix(context) << "We heard back from less than " << master_nodes::POS_BLOCK_REQUIRED_SIGNATURES << " of the validators ("
                                    << count << "/" << quorum.size() << "). Waiting until next round.");
       }
 
@@ -1425,7 +1425,7 @@ round_state send_block_template(round_context &context, void *quorumnet_state, m
   {
     uint64_t height                              = 0;
     master_nodes::payout block_producer_payouts = master_nodes::master_node_info_to_payout(key.pub, *info);
-    if (!blockchain.create_next_pulse_block_template(block,
+    if (!blockchain.create_next_POS_block_template(block,
                                                      block_producer_payouts,
                                                      context.prepare_for_round.round,
                                                      context.transient.wait_for_handshake_bitsets.best_bitset,
@@ -1437,30 +1437,30 @@ round_state send_block_template(round_context &context, void *quorumnet_state, m
 
     if (context.wait_for_next_block.height != height)
     {
-      MDEBUG(log_prefix(context) << "Block height changed whilst preparing block template for round " << +context.prepare_for_round.round << ", restarting Pulse stages");
+      MDEBUG(log_prefix(context) << "Block height changed whilst preparing block template for round " << +context.prepare_for_round.round << ", restarting POS stages");
       return goto_wait_for_next_block_and_clear_round_data(context);
     }
   }
 
   // Message
-  pulse::message msg      = msg_init_from_context(context);
-  msg.type                = pulse::message_type::block_template;
+  POS::message msg      = msg_init_from_context(context);
+  msg.type                = POS::message_type::block_template;
   msg.block_template.blob = cryptonote::t_serializable_object_to_blob(block);
   crypto::generate_signature(msg_signature_hash(context.wait_for_next_block.top_hash, msg), key.pub, key.key, msg.signature);
 
   // Send
   MINFO(log_prefix(context) << "Validators are handshaken and ready, sending block template from producer (us) to validators.\n" << cryptonote::obj_to_json_str(block));
-  cryptonote::quorumnet_pulse_relay_message_to_quorum(quorumnet_state, msg, context.prepare_for_round.quorum, true /*block_producer*/);
+  cryptonote::quorumnet_POS_relay_message_to_quorum(quorumnet_state, msg, context.prepare_for_round.quorum, true /*block_producer*/);
   return goto_preparing_for_next_round(context);
 }
 
 round_state wait_for_block_template(round_context &context, master_nodes::master_node_list &node_list, void *quorumnet_state, master_nodes::master_node_keys const &key, cryptonote::Blockchain &blockchain)
 {
   handle_messages_received_early_for(context.transient.wait_for_block_template.stage, quorumnet_state);
-  pulse_wait_stage const &stage = context.transient.wait_for_block_template.stage;
+  POS_wait_stage const &stage = context.transient.wait_for_block_template.stage;
 
   assert(context.prepare_for_round.participant == mn_type::validator);
-  bool timed_out = pulse::clock::now() >= context.transient.wait_for_block_template.stage.end_time;
+  bool timed_out = POS::clock::now() >= context.transient.wait_for_block_template.stage.end_time;
   bool received = context.transient.wait_for_block_template.stage.msgs_received == 1;
   if (timed_out || received)
   {
@@ -1494,8 +1494,8 @@ round_state send_and_wait_for_random_value_hashes(round_context &context, master
   if (context.transient.random_value_hashes.send.one_time_only())
   {
     // Message
-    pulse::message msg         = msg_init_from_context(context);
-    msg.type                   = pulse::message_type::random_value_hash;
+    POS::message msg         = msg_init_from_context(context);
+    msg.type                   = POS::message_type::random_value_hash;
     msg.random_value_hash.hash = context.transient.random_value_hashes.send.data;
     crypto::generate_signature(msg_signature_hash(context.wait_for_next_block.top_hash, msg), key.pub, key.key, msg.signature);
     handle_message(quorumnet_state, msg); // Add our own. We receive our own msg for the first time which also triggers us to relay.
@@ -1505,10 +1505,10 @@ round_state send_and_wait_for_random_value_hashes(round_context &context, master
   // NOTE: Wait
   //
   handle_messages_received_early_for(context.transient.random_value_hashes.wait.stage, quorumnet_state);
-  pulse_wait_stage const &stage = context.transient.random_value_hashes.wait.stage;
+  POS_wait_stage const &stage = context.transient.random_value_hashes.wait.stage;
 
   auto const &quorum    = context.transient.random_value_hashes.wait.data;
-  bool const timed_out  = pulse::clock::now() >= stage.end_time;
+  bool const timed_out  = POS::clock::now() >= stage.end_time;
   bool const all_hashes = stage.bitset == context.transient.wait_for_handshake_bitsets.best_bitset;
 
   if (timed_out || all_hashes)
@@ -1532,8 +1532,8 @@ round_state send_and_wait_for_random_value(round_context &context, master_nodes:
   if (context.transient.random_value.send.one_time_only())
   {
     // Message
-    pulse::message msg     = msg_init_from_context(context);
-    msg.type               = pulse::message_type::random_value;
+    POS::message msg     = msg_init_from_context(context);
+    msg.type               = POS::message_type::random_value;
     msg.random_value.value = context.transient.random_value.send.data;
     crypto::generate_signature(msg_signature_hash(context.wait_for_next_block.top_hash, msg), key.pub, key.key, msg.signature);
     handle_message(quorumnet_state, msg); // Add our own. We receive our own msg for the first time which also triggers us to relay.
@@ -1543,10 +1543,10 @@ round_state send_and_wait_for_random_value(round_context &context, master_nodes:
   // NOTE: Wait
   //
   handle_messages_received_early_for(context.transient.random_value.wait.stage, quorumnet_state);
-  pulse_wait_stage const &stage = context.transient.random_value.wait.stage;
+  POS_wait_stage const &stage = context.transient.random_value.wait.stage;
 
   auto const &quorum    = context.transient.random_value.wait.data;
-  bool const timed_out  = pulse::clock::now() >= stage.end_time;
+  bool const timed_out  = POS::clock::now() >= stage.end_time;
   bool const all_values = stage.bitset == context.transient.wait_for_handshake_bitsets.best_bitset;
 
   if (timed_out || all_values)
@@ -1585,18 +1585,18 @@ round_state send_and_wait_for_random_value(round_context &context, master_nodes:
     // Add final random value to the block
     context.transient.signed_block.final_block = std::move(context.transient.wait_for_block_template.block);
     cryptonote::block &final_block             = context.transient.signed_block.final_block;
-    static_assert(sizeof(final_hash) >= sizeof(final_block.pulse.random_value.data));
-    std::memcpy(final_block.pulse.random_value.data, final_hash.data, sizeof(final_block.pulse.random_value.data));
+    static_assert(sizeof(final_hash) >= sizeof(final_block.POS.random_value.data));
+    std::memcpy(final_block.POS.random_value.data, final_hash.data, sizeof(final_block.POS.random_value.data));
 
     // Generate the signature of the final block (without any of the other
     // Master Node signatures because we allow the first
-    // 'PULSE_BLOCK_REQUIRED_SIGNATURES' that arrive to be added. These can be
+    // 'POS_BLOCK_REQUIRED_SIGNATURES' that arrive to be added. These can be
     // inconsistent between syncing clients, as long as the signature itself is
     // valid against the quorum Master Nodes).
     crypto::hash const &final_block_hash = cryptonote::get_block_hash(final_block);
     crypto::generate_signature(final_block_hash, key.pub, key.key, context.transient.signed_block.send.data);
 
-    MINFO(log_prefix(context) << "Block final random value " << oxenmq::to_hex(tools::view_guts(final_block.pulse.random_value.data)) << " generated from validators " << bitset_view16(stage.bitset));
+    MINFO(log_prefix(context) << "Block final random value " << oxenmq::to_hex(tools::view_guts(final_block.POS.random_value.data)) << " generated from validators " << bitset_view16(stage.bitset));
     return round_state::send_and_wait_for_signed_blocks;
   }
 
@@ -1613,8 +1613,8 @@ round_state send_and_wait_for_signed_blocks(round_context &context, master_nodes
   if (context.transient.signed_block.send.one_time_only())
   {
     // Message
-    pulse::message msg                             = msg_init_from_context(context);
-    msg.type                                       = pulse::message_type::signed_block;
+    POS::message msg                             = msg_init_from_context(context);
+    msg.type                                       = POS::message_type::signed_block;
     msg.signed_block.signature_of_final_block_hash = context.transient.signed_block.send.data;
     crypto::generate_signature(msg_signature_hash(context.wait_for_next_block.top_hash, msg), key.pub, key.key, msg.signature);
     handle_message(quorumnet_state, msg); // Add our own. We receive our own msg for the first time which also triggers us to relay.
@@ -1624,10 +1624,10 @@ round_state send_and_wait_for_signed_blocks(round_context &context, master_nodes
   // NOTE: Wait
   //
   handle_messages_received_early_for(context.transient.signed_block.wait.stage, quorumnet_state);
-  pulse_wait_stage const &stage = context.transient.signed_block.wait.stage;
+  POS_wait_stage const &stage = context.transient.signed_block.wait.stage;
 
   auto const &quorum   = context.transient.signed_block.wait.data;
-  bool const timed_out = pulse::clock::now() >= stage.end_time;
+  bool const timed_out = POS::clock::now() >= stage.end_time;
   bool const enough    = stage.bitset >= context.transient.wait_for_handshake_bitsets.best_bitset;
 
   if (timed_out || enough)
@@ -1638,7 +1638,7 @@ round_state send_and_wait_for_signed_blocks(round_context &context, master_nodes
     // Select signatures randomly so we don't always just take the first N required signatures.
     // Then sort just the first N required signatures, so signatures are added
     // to the block in sorted order, but were chosen randomly.
-    std::array<size_t, master_nodes::PULSE_QUORUM_NUM_VALIDATORS> indices = {};
+    std::array<size_t, master_nodes::POS_QUORUM_NUM_VALIDATORS> indices = {};
     size_t indices_count = 0;
 
     // Pull out indices where we've received a signature
@@ -1646,14 +1646,14 @@ round_state send_and_wait_for_signed_blocks(round_context &context, master_nodes
       if (quorum[index])
         indices[indices_count++] = index;
 
-    // Random select from first 'N' PULSE_BLOCK_REQUIRED_SIGNATURES from indices_count entries.
-    assert(indices_count >= master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES);
-    std::array<size_t, master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES> selected = {};
+    // Random select from first 'N' POS_BLOCK_REQUIRED_SIGNATURES from indices_count entries.
+    assert(indices_count >= master_nodes::POS_BLOCK_REQUIRED_SIGNATURES);
+    std::array<size_t, master_nodes::POS_BLOCK_REQUIRED_SIGNATURES> selected = {};
     std::sample(indices.begin(), indices.begin() + indices_count, selected.begin(), selected.size(), tools::rng);
 
     // Add Signatures
     cryptonote::block &final_block = context.transient.signed_block.final_block;
-    for (size_t index = 0; index < master_nodes::PULSE_BLOCK_REQUIRED_SIGNATURES; index++)
+    for (size_t index = 0; index < master_nodes::POS_BLOCK_REQUIRED_SIGNATURES; index++)
     {
       uint16_t validator_index = indices[index];
       auto const &signature    = quorum[validator_index];
@@ -1674,7 +1674,7 @@ round_state send_and_wait_for_signed_blocks(round_context &context, master_nodes
   return round_state::send_and_wait_for_signed_blocks;
 }
 
-void pulse::main(void *quorumnet_state, cryptonote::core &core)
+void POS::main(void *quorumnet_state, cryptonote::core &core)
 {
   cryptonote::Blockchain &blockchain          = core.get_blockchain_storage();
   master_nodes::master_node_keys const &key = core.get_master_keys();
@@ -1682,18 +1682,18 @@ void pulse::main(void *quorumnet_state, cryptonote::core &core)
   //
   // NOTE: Early exit if too early
   //
-  auto hf17 = hard_fork_begins(core.get_nettype(), cryptonote::network_version_17_pulse);
+  auto hf17 = hard_fork_begins(core.get_nettype(), cryptonote::network_version_17_POS);
   if (!hf17)
   {
     for (static bool once = true; once; once = !once)
-      MERROR("Pulse: HF17 is not defined, pulse worker waiting");
+      MERROR("POS: HF17 is not defined, POS worker waiting");
     return;
   }
 
   if (uint64_t height = blockchain.get_current_blockchain_height(true /*lock*/); height < *hf17)
   {
     for (static bool once = true; once; once = !once)
-      MDEBUG("Pulse: Network at block " << height << " is not ready for Pulse until block " << *hf17 << ", waiting");
+      MDEBUG("POS: Network at block " << height << " is not ready for POS until block " << *hf17 << ", waiting");
     return;
   }
 

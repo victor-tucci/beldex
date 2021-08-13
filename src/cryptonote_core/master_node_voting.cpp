@@ -233,7 +233,7 @@ namespace master_nodes
   bool verify_quorum_signatures(master_nodes::quorum const &quorum, master_nodes::quorum_type type, uint8_t hf_version, uint64_t height, crypto::hash const &hash, std::vector<quorum_signature> const &signatures, const cryptonote::block* block)
   {
     bool enforce_vote_ordering                          = true;
-    constexpr size_t MAX_QUORUM_SIZE                    = std::max(CHECKPOINT_QUORUM_SIZE, PULSE_QUORUM_NUM_VALIDATORS);
+    constexpr size_t MAX_QUORUM_SIZE                    = std::max(CHECKPOINT_QUORUM_SIZE, POS_QUORUM_NUM_VALIDATORS);
     std::array<size_t, MAX_QUORUM_SIZE> unique_vote_set = {};
 
     switch(type)
@@ -262,11 +262,11 @@ namespace master_nodes
       }
       break;
 
-      case quorum_type::pulse:
+      case quorum_type::POS:
       {
-        if (signatures.size() != PULSE_BLOCK_REQUIRED_SIGNATURES)
+        if (signatures.size() != POS_BLOCK_REQUIRED_SIGNATURES)
         {
-          MGINFO("Pulse block has " << signatures.size() << " signatures but requires " << PULSE_BLOCK_REQUIRED_SIGNATURES);
+          MGINFO("POS block has " << signatures.size() << " signatures but requires " << POS_BLOCK_REQUIRED_SIGNATURES);
           return false;
         }
 
@@ -276,11 +276,11 @@ namespace master_nodes
           return false;
         }
 
-        if (block->pulse.validator_bitset >= (1 << PULSE_QUORUM_NUM_VALIDATORS))
+        if (block->POS.validator_bitset >= (1 << POS_QUORUM_NUM_VALIDATORS))
         {
-          auto mask  = std::bitset<sizeof(pulse_validator_bit_mask()) * 8>(pulse_validator_bit_mask());
-          auto other = std::bitset<sizeof(pulse_validator_bit_mask()) * 8>(block->pulse.validator_bitset);
-          MGINFO("Pulse block specifies validator participation bits out of bounds. Expected the bit mask: " << mask << ", block: " << other);
+          auto mask  = std::bitset<sizeof(POS_validator_bit_mask()) * 8>(POS_validator_bit_mask());
+          auto other = std::bitset<sizeof(POS_validator_bit_mask()) * 8>(block->POS.validator_bitset);
+          MGINFO("POS block specifies validator participation bits out of bounds. Expected the bit mask: " << mask << ", block: " << other);
           return false;
         }
       }
@@ -305,7 +305,7 @@ namespace master_nodes
       if (!bounds_check_validator_index(quorum, quorum_signature.voter_index, nullptr))
        return false;
 
-      if (type == quorum_type::pulse)
+      if (type == quorum_type::POS)
       {
         if (!block)
         {
@@ -314,9 +314,9 @@ namespace master_nodes
         }
 
         uint16_t bit = 1 << quorum_signature.voter_index;
-        if ((block->pulse.validator_bitset & bit) == 0)
+        if ((block->POS.validator_bitset & bit) == 0)
         {
-          MGINFO("Received pulse signature from validator " << static_cast<int>(quorum_signature.voter_index) << " that is not participating in round " << static_cast<int>(block->pulse.round));
+          MGINFO("Received POS signature from validator " << static_cast<int>(quorum_signature.voter_index) << " that is not participating in round " << static_cast<int>(block->POS.round));
           return false;
         }
       }
@@ -344,9 +344,9 @@ namespace master_nodes
     return true;
   }
 
-  bool verify_pulse_quorum_sizes(master_nodes::quorum const &quorum)
+  bool verify_POS_quorum_sizes(master_nodes::quorum const &quorum)
   {
-    bool result = quorum.workers.size() == 1 && quorum.validators.size() == PULSE_QUORUM_NUM_VALIDATORS;
+    bool result = quorum.workers.size() == 1 && quorum.validators.size() == POS_QUORUM_NUM_VALIDATORS;
     return result;
   }
 
@@ -603,13 +603,13 @@ namespace master_nodes
 
     std::vector<quorum_vote_t> result;
 
-    if (quorum_relay && hf_version < cryptonote::network_version_15_blink)
+    if (quorum_relay && hf_version < cryptonote::network_version_15_flash)
       return result; // no quorum relaying before HF14
 
-    if (hf_version < cryptonote::network_version_15_blink || quorum_relay)
+    if (hf_version < cryptonote::network_version_15_flash || quorum_relay)
       append_relayable_votes(result, m_obligations_pool, max_last_sent, min_height);
 
-    if (hf_version < cryptonote::network_version_15_blink || !quorum_relay)
+    if (hf_version < cryptonote::network_version_15_flash || !quorum_relay)
       append_relayable_votes(result, m_checkpoint_pool,  max_last_sent, min_height);
 
     return result;

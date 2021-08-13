@@ -432,7 +432,7 @@ void BlockchainDB::fill_timestamps_and_difficulties_for_pow(cryptonote::network_
     return;
 
   uint64_t const top_block_height   = chain_height - 1;
-  bool const before_hf16            = !is_hard_fork_at_least(nettype, network_version_17_pulse, chain_height);
+  bool const before_hf16            = !is_hard_fork_at_least(nettype, network_version_17_POS, chain_height);
   uint64_t const block_count        = DIFFICULTY_BLOCKS_COUNT(before_hf16);
 
   timestamps.reserve(block_count);

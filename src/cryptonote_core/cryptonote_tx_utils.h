@@ -64,22 +64,22 @@ namespace cryptonote
         return result;
     }
 
-    static beldex_miner_tx_context pulse_block(network_type nettype,
+    static beldex_miner_tx_context POS_block(network_type nettype,
                                              master_nodes::payout const &block_producer,
                                              master_nodes::payout const &block_leader = master_nodes::null_payout)
     {
       beldex_miner_tx_context result = {};
-      result.pulse                 = true;
+      result.POS                 = true;
       result.nettype               = nettype;
-      result.pulse_block_producer  = block_producer;
+      result.POS_block_producer  = block_producer;
       result.block_leader          = block_leader;
       return result;
     }
 
     network_type           nettype = MAINNET;
 
-    bool                   pulse;                // If true, pulse_.* varables are set, otherwise miner_block_producer is set, determining who should get the coinbase reward.
-    master_nodes::payout  pulse_block_producer; // Can be different from the leader in Pulse if the original leader fails to complete the round, the block producer changes.
+    bool                   POS;                // If true, POS_.* varables are set, otherwise miner_block_producer is set, determining who should get the coinbase reward.
+    master_nodes::payout  POS_block_producer; // Can be different from the leader in POS if the original leader fails to complete the round, the block producer changes.
 
     account_public_address miner_block_producer;
     master_nodes::payout  block_leader;         // Winner from the Master Node queuing in the Master Node List.

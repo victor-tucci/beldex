@@ -70,15 +70,15 @@ namespace master_nodes
     // TODO(doyle): Workers aren't used, but I kept this as a quorum
     // to avoid drastic changes for now to a lot of the master node API
     std::shared_ptr<const quorum> checkpointing;
-    std::shared_ptr<const quorum> blink;
-    std::shared_ptr<const quorum> pulse;
+    std::shared_ptr<const quorum> flash;
+    std::shared_ptr<const quorum> POS;
 
     std::shared_ptr<const quorum> get(quorum_type type) const
     {
       if (type == quorum_type::obligations) return obligations;
       else if (type == quorum_type::checkpointing) return checkpointing;
-      else if (type == quorum_type::blink) return blink;
-      else if (type == quorum_type::pulse) return pulse;
+      else if (type == quorum_type::flash) return flash;
+      else if (type == quorum_type::POS) return POS;
       MERROR("Developer error: Unhandled quorum enum with value: " << (size_t)type);
       assert(!"Developer error: Unhandled quorum enum with value: ");
       return nullptr;
@@ -89,7 +89,7 @@ namespace master_nodes
     bool uptime_proved            = true;
     bool single_ip                = true;
     bool checkpoint_participation = true;
-    bool pulse_participation      = true;
+    bool POS_participation      = true;
     bool timestamp_participation  = true;
     bool timesync_status          = true;
     bool storage_server_reachable = true;
@@ -101,7 +101,7 @@ namespace master_nodes
         return uptime_proved &&
             //single_ip -- deliberately excluded (it only gives ip-change penalties, not deregs)
             checkpoint_participation &&
-            pulse_participation &&
+            POS_participation &&
             timestamp_participation &&
             timesync_status &&
             storage_server_reachable &&

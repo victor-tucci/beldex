@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -36,7 +36,7 @@
 #include "cryptonote_basic/verification_context.h"
 #include "cryptonote_core/master_node_voting.h"
 #include "cryptonote_core/cryptonote_core.h"
-#include "cryptonote_core/tx_blink.h"
+#include "cryptonote_core/tx_flash.h"
 #include <unordered_map>
 
 namespace tests
@@ -65,7 +65,7 @@ namespace tests
 
       bool add_block(const crypto::hash &_id, const crypto::hash &_longhash, const cryptonote::block &_blk, const cryptonote::blobdata &_blob, const cryptonote::checkpoint_t *);
       void build_short_history(std::list<crypto::hash> &m_history, const crypto::hash &m_start);
-      
+
 
   public:
     void on_synchronized(){}
@@ -79,10 +79,10 @@ namespace tests
     void get_blockchain_top(uint64_t& height, crypto::hash& top_id);
     bool handle_incoming_tx(const cryptonote::blobdata& tx_blob, cryptonote::tx_verification_context& tvc, const cryptonote::tx_pool_options &opts);
     std::vector<cryptonote::core::tx_verification_batch_info> parse_incoming_txs(const std::vector<cryptonote::blobdata>& tx_blobs, const cryptonote::tx_pool_options &opts);
-    bool handle_parsed_txs(std::vector<cryptonote::core::tx_verification_batch_info> &parsed_txs, const cryptonote::tx_pool_options &opts, uint64_t *blink_rollback_height = nullptr);
+    bool handle_parsed_txs(std::vector<cryptonote::core::tx_verification_batch_info> &parsed_txs, const cryptonote::tx_pool_options &opts, uint64_t *flash_rollback_height = nullptr);
     std::vector<cryptonote::core::tx_verification_batch_info> handle_incoming_txs(const std::vector<cryptonote::blobdata>& tx_blobs, const cryptonote::tx_pool_options &opts);
-    std::pair<std::vector<std::shared_ptr<cryptonote::blink_tx>>, std::unordered_set<crypto::hash>> parse_incoming_blinks(const std::vector<cryptonote::serializable_blink_metadata> &blinks);
-    int add_blinks(const std::vector<std::shared_ptr<cryptonote::blink_tx>> &blinks) { return 0; }
+    std::pair<std::vector<std::shared_ptr<cryptonote::flash_tx>>, std::unordered_set<crypto::hash>> parse_incoming_flashes(const std::vector<cryptonote::serializable_flash_metadata> &flashes);
+    int add_flashes(const std::vector<std::shared_ptr<cryptonote::flash_tx>> &flashes) { return 0; }
     bool handle_incoming_block(const cryptonote::blobdata& block_blob, const cryptonote::block *block, cryptonote::block_verification_context& bvc, cryptonote::checkpoint_t *checkpoint, bool update_miner_blocktemplate = true);
     bool handle_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation);
     bool handle_btencoded_uptime_proof(const cryptonote::NOTIFY_BTENCODED_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation);
@@ -117,25 +117,25 @@ namespace tests
     uint32_t get_blockchain_pruning_seed() const { return 0; }
     bool prune_blockchain(uint32_t pruning_seed) const { return true; }
 
-    bool handle_incoming_blinks(const std::vector<cryptonote::serializable_blink_metadata> &blinks, std::vector<crypto::hash> *bad_blinks = nullptr, std::vector<crypto::hash> *missing_txs = nullptr) { return true; }
+    bool handle_incoming_flashes(const std::vector<cryptonote::serializable_flash_metadata> &flashes, std::vector<crypto::hash> *bad_flashes = nullptr, std::vector<crypto::hash> *missing_txs = nullptr) { return true; }
 
     struct fake_lock { ~fake_lock() { /* avoid unused variable warning by having a destructor */ } };
     fake_lock incoming_tx_lock() { return {}; }
 
     class fake_pool {
     public:
-      void add_missing_blink_hashes(const std::map<uint64_t, std::vector<crypto::hash>> &potential) {}
+      void add_missing_flash_hashes(const std::map<uint64_t, std::vector<crypto::hash>> &potential) {}
       template <typename... Args>
-      int blink_shared_lock(Args &&...args) { return 42; }
+      int flash_shared_lock(Args &&...args) { return 42; }
       void lock() {}
       void unlock() {}
       bool try_lock() { return true; }
-      std::shared_ptr<cryptonote::blink_tx> get_blink(crypto::hash &) { return nullptr; }
+      std::shared_ptr<cryptonote::flash_tx> get_flash(crypto::hash &) { return nullptr; }
       bool get_transaction(const crypto::hash& id, cryptonote::blobdata& tx_blob) const { return false; }
       bool have_tx(const crypto::hash &txid) const { return false; }
-      std::map<uint64_t, crypto::hash> get_blink_checksums() const { return {}; }
-      std::vector<crypto::hash> get_mined_blinks(const std::set<uint64_t> &) const { return {}; }
-      void keep_missing_blinks(std::vector<crypto::hash> &tx_hashes) const {}
+      std::map<uint64_t, crypto::hash> get_flash_checksums() const { return {}; }
+      std::vector<crypto::hash> get_mined_flashes(const std::set<uint64_t> &) const { return {}; }
+      void keep_missing_flashes(std::vector<crypto::hash> &tx_hashes) const {}
     };
     fake_pool &get_pool() { return m_pool; }
 

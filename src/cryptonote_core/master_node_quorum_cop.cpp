@@ -54,7 +54,7 @@ namespace master_nodes
     std::vector<std::string_view> results{{"Master Node is currently failing the following tests:"sv}};
     if (!uptime_proved) results.push_back("Uptime proof missing."sv);
     if (!checkpoint_participation) results.push_back("Skipped voting in too many checkpoints."sv);
-    if (!pulse_participation) results.push_back("Skipped voting in too many pulse quorums."sv);
+    if (!POS_participation) results.push_back("Skipped voting in too many POS quorums."sv);
     // These ones are not likely to be useful when we are reporting on ourself:
     if (!timestamp_participation) results.push_back("Too many out-of-sync timesync replies."sv);
     if (!timesync_status) results.push_back("Too many missed timesync replies."sv);
@@ -86,7 +86,7 @@ namespace master_nodes
     decltype(std::declval<proof_info>().public_ips) ips{};
 
     master_nodes::participation_history<master_nodes::participation_entry> checkpoint_participation{};
-    master_nodes::participation_history<master_nodes::participation_entry> pulse_participation{};
+    master_nodes::participation_history<master_nodes::participation_entry> POS_participation{};
     master_nodes::participation_history<master_nodes::timestamp_participation_entry> timestamp_participation{};
     master_nodes::participation_history<master_nodes::timesync_entry> timesync_status{};
 
@@ -100,7 +100,7 @@ namespace master_nodes
       timestamp                = std::max(proof.timestamp, proof.effective_timestamp);
       ips                      = proof.public_ips;
       checkpoint_participation = proof.checkpoint_participation;
-      pulse_participation      = proof.pulse_participation;
+      POS_participation      = proof.POS_participation;
 
       timestamp_participation  = proof.timestamp_participation;
       timesync_status          = proof.timesync_status;
@@ -160,10 +160,10 @@ namespace master_nodes
         result.checkpoint_participation = false;
       }
 
-      if (!pulse_participation.check_participation(PULSE_MAX_MISSABLE_VOTES) )
+      if (!POS_participation.check_participation(POS_MAX_MISSABLE_VOTES) )
       {
-        LOG_PRINT_L1("Master Node: " << pubkey << ", failed pulse obligation check");
-        result.pulse_participation = false;
+        LOG_PRINT_L1("Master Node: " << pubkey << ", failed POS obligation check");
+        result.POS_participation = false;
       }
 
       if (!timestamp_participation.check_participation(TIMESTAMP_MAX_MISSABLE_VOTES) )
@@ -381,7 +381,7 @@ namespace master_nodes
                 else {
                   if (!test_results.uptime_proved) reason |= cryptonote::Decommission_Reason::missed_uptime_proof;
                   if (!test_results.checkpoint_participation) reason |= cryptonote::Decommission_Reason::missed_checkpoints;
-                  if (!test_results.pulse_participation) reason |= cryptonote::Decommission_Reason::missed_pulse_participations;
+                  if (!test_results.POS_participation) reason |= cryptonote::Decommission_Reason::missed_POS_participations;
                   if (!test_results.storage_server_reachable) reason |= cryptonote::Decommission_Reason::storage_server_unreachable;
                   if (!test_results.beldexnet_reachable) reason |= cryptonote::Decommission_Reason::beldexnet_unreachable;
                   if (!test_results.timestamp_participation) reason |= cryptonote::Decommission_Reason::timestamp_response_unreachable;
@@ -510,8 +510,8 @@ namespace master_nodes
         }
         break;
 
-        case quorum_type::pulse:
-        case quorum_type::blink:
+        case quorum_type::POS:
+        case quorum_type::flash:
         break;
       }
     }
