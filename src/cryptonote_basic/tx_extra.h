@@ -301,7 +301,7 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
-  struct tx_extra_security_signature 
+  struct tx_extra_security_signature
   {
     crypto::signature m_security_signature;
 
@@ -431,7 +431,7 @@ namespace cryptonote
     storage_server_unreachable = 1 << 3,
     timestamp_response_unreachable = 1 << 4,
     timesync_status_out_of_sync = 1 << 5,
-    beldexnet_unreachable = 1 << 6,
+    belnet_unreachable = 1 << 6,
   };
 
   // Returns human-readable reason strings (e.g. "Missed Uptime Proofs") for the given reason bits
@@ -559,9 +559,9 @@ namespace cryptonote
     bool is_updating() const { return field_is_set(bns::extra_field::signature) && field_any_set(bns::extra_field::updatable_fields); }
     // True if this is buying a new BNS record
     bool is_buying()   const { return (fields == bns::extra_field::buy || fields == bns::extra_field::buy_no_backup); }
-    // True if this is renewing an existing BNS: has no fields at all, is a renewal registration (i.e. beldexnet),
+    // True if this is renewing an existing BNS: has no fields at all, is a renewal registration (i.e. belnet),
     // and has a non-null txid set (which should point to the most recent registration or update).
-    bool is_renewing() const { return fields == bns::extra_field::none && prev_txid && is_beldexnet_type(type); }
+    bool is_renewing() const { return fields == bns::extra_field::none && prev_txid && is_belnet_type(type); }
 
     static tx_extra_beldex_name_system make_buy(
         bns::generic_owner const& owner,

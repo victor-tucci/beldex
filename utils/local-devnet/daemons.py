@@ -219,12 +219,12 @@ class Daemon(RPCDaemon):
         return [x['id_hash'] for x in self.rpc("/get_transaction_pool").json()['transactions']]
 
 
-    def ping(self, *, storage=True, beldexnet=True):
-        """Sends fake storage server and beldexnet pings to the running beldexd"""
+    def ping(self, *, storage=True, belnet=True):
+        """Sends fake storage server and belnet pings to the running beldexd"""
         if storage:
             self.json_rpc("storage_server_ping", { "version_major": 2, "version_minor": 1, "version_patch": 0 })
-        if beldexnet:
-            self.json_rpc("beldexnet_ping", { "version": [9,9,9] })
+        if belnet:
+            self.json_rpc("belnet_ping", { "version": [9,9,9] })
 
     def send_uptime_proof(self):
         """Triggerst test uptime proof"""

@@ -30,9 +30,9 @@ namespace bns
 constexpr size_t WALLET_NAME_MAX                  = 64;
 constexpr size_t WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID     = 73;  // Wallet will encrypt an identifier (1 byte) a public spend and view key (2x 32 bytes) = 65 bytes plus an additional item for payment id (8 bytes) if necessary. The identifier 0 -> No Subaddress or Payment ID, 1 -> Has Subaddress, 2-> Has Payment ID
 constexpr size_t WALLET_ACCOUNT_BINARY_LENGTH_NO_PAYMENT_ID     = 65;
-constexpr size_t BELDEXNET_DOMAIN_NAME_MAX          = 63 + 5; // DNS components name must be at most 63 (+ 5 for .beldex); this limit applies if there is at least one hyphen (and thus includes punycode)
-constexpr size_t BELDEXNET_DOMAIN_NAME_MAX_NOHYPHEN = 32 + 5; // If the name does not contain a - then we restrict it to 32 characters so that it cannot be (and is obviously not) an encoded .beldex address (52 characters)
-constexpr size_t BELDEXNET_ADDRESS_BINARY_LENGTH    = sizeof(crypto::ed25519_public_key);
+constexpr size_t BELNET_DOMAIN_NAME_MAX          = 63 + 5; // DNS components name must be at most 63 (+ 5 for .beldex); this limit applies if there is at least one hyphen (and thus includes punycode)
+constexpr size_t BELNET_DOMAIN_NAME_MAX_NOHYPHEN = 32 + 5; // If the name does not contain a - then we restrict it to 32 characters so that it cannot be (and is obviously not) an encoded .beldex address (52 characters)
+constexpr size_t BELNET_ADDRESS_BINARY_LENGTH    = sizeof(crypto::ed25519_public_key);
 constexpr size_t SESSION_DISPLAY_NAME_MAX         = 64;
 constexpr size_t SESSION_PUBLIC_KEY_BINARY_LENGTH = 1 + sizeof(crypto::ed25519_public_key); // Session keys at prefixed with 0x05 + ed25519 key
 
@@ -48,7 +48,7 @@ constexpr char BNS_WALLET_TYPE_INTEGRATED = 0x02;
 
 struct mapping_value
 {
-  static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELDEXNET_ADDRESS_BINARY_LENGTH, SESSION_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
+  static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, SESSION_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
   std::array<uint8_t, BUFFER_SIZE> buffer;
   bool encrypted;
   size_t len;
@@ -121,10 +121,10 @@ inline std::string_view mapping_type_str(mapping_type type)
 {
   switch(type)
   {
-    case mapping_type::beldexnet:         return "beldexnet"sv; // general type stored in the database; 1 year when in a purchase tx
-    case mapping_type::beldexnet_2years:  return "beldexnet_2years"sv;  // Only used in a buy tx, not in the DB
-    case mapping_type::beldexnet_5years:  return "beldexnet_5years"sv;  // "
-    case mapping_type::beldexnet_10years: return "beldexnet_10years"sv; // "
+    case mapping_type::belnet:         return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
+    case mapping_type::belnet_2years:  return "belnet_2years"sv;  // Only used in a buy tx, not in the DB
+    case mapping_type::belnet_5years:  return "belnet_5years"sv;  // "
+    case mapping_type::belnet_10years: return "belnet_10years"sv; // "
     case mapping_type::session:         return "session"sv;
     case mapping_type::wallet:          return "wallet"sv;
     default: assert(false);             return "xx_unhandled_type"sv;
@@ -134,22 +134,22 @@ inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os
 
 constexpr bool mapping_type_allowed(uint8_t hf_version, mapping_type type) {
   return (type == mapping_type::session && hf_version >= cryptonote::network_version_16_bns)
-      || (is_beldexnet_type(type) && hf_version >= cryptonote::network_version_17_pulse);
+      || (is_belnet_type(type) && hf_version >= cryptonote::network_version_17_pulse);
 }
 
 // Returns all mapping types supported for lookup as of the given hardfork.  (Note that this does
-// not return the dedicated length types such as mapping_type::beldexnet_5years as those are only
+// not return the dedicated length types such as mapping_type::belnet_5years as those are only
 // relevant within a BNS buy tx).
 std::vector<mapping_type> all_mapping_types(uint8_t hf_version);
 
 sqlite3 *init_beldex_name_system(const fs::path& file_path, bool read_only);
 
 /// Returns the integer value used in the database and in RPC lookup calls for the given mapping
-/// type.  In particularly this maps all mapping_type::beldexnet_Xyears values to the underlying value
-/// of mapping_type::beldexnet.
+/// type.  In particularly this maps all mapping_type::belnet_Xyears values to the underlying value
+/// of mapping_type::belnet.
 constexpr uint16_t db_mapping_type(bns::mapping_type type) {
-  if (is_beldexnet_type(type))
-    return static_cast<uint16_t>(mapping_type::beldexnet);
+  if (is_belnet_type(type))
+    return static_cast<uint16_t>(mapping_type::belnet);
   return static_cast<uint16_t>(type);
 }
 
@@ -183,7 +183,7 @@ std::string        tx_extra_signature(std::string_view value, generic_owner cons
 
 enum struct bns_tx_type { lookup, buy, update, renew };
 // Converts a human readable case-insensitive string denoting the mapping type into a value suitable for storing into the BNS DB.
-// Currently accepts "session" or "beldexnet" for lookups, buys, updates, and renewals; for buys and renewals also accepts "beldexnet_Ny[ear]" for N=2,5,10
+// Currently accepts "session" or "belnet" for lookups, buys, updates, and renewals; for buys and renewals also accepts "belnet_Ny[ear]" for N=2,5,10
 // Lookups are implied by none of buy/update/renew.
 // mapping_type: (optional) if function returns true, the uint16_t value of the 'type' will be set
 bool         validate_mapping_type(std::string_view type, uint8_t hf_version, bns_tx_type txtype, mapping_type *mapping_type, std::string *reason);

@@ -148,7 +148,7 @@ class MNNetwork:
 
         self.print_wallet_balances()
 
-        vprint("Sending fake beldexnet/ss pings")
+        vprint("Sending fake belnet/ss pings")
         for mn in self.mns:
             mn.ping()
 

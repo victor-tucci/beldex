@@ -255,14 +255,14 @@ namespace
   const char* USAGE_REQUEST_STAKE_UNLOCK("request_stake_unlock <master_node_pubkey>");
   const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes");
 
-  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=session|beldexnet|beldexnet_2y|beldexnet_5y|beldexnet_10y] [owner=<value>] [backup_owner=<value>] <name> <value>");
-  const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=beldexnet|beldexnet_2y|beldexnet_5y|beldexnet_10y] <name>");
-  const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=session|beldexnet] [owner=<value>] [backup_owner=<value>] [value=<bns_value>] [signature=<hex_signature>] <name>");
+  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=session|belnet|belnet_2y|belnet_5y|belnet_10y] [owner=<value>] [backup_owner=<value>] <name> <value>");
+  const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=belnet|belnet_2y|belnet_5y|belnet_10y] <name>");
+  const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=session|belnet] [owner=<value>] [backup_owner=<value>] [value=<bns_value>] [signature=<hex_signature>] <name>");
 
-  const char* USAGE_BNS_ENCRYPT("bns_encrypt [type=session|beldexnet] <name> <value>");
-  const char* USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE("bns_make_update_mapping_signature [type=session|beldexnet] [owner=<value>] [backup_owner=<value>] [value=<encrypted_bns_value>] <name>");
+  const char* USAGE_BNS_ENCRYPT("bns_encrypt [type=session|belnet] <name> <value>");
+  const char* USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE("bns_make_update_mapping_signature [type=session|belnet] [owner=<value>] [backup_owner=<value>] [value=<encrypted_bns_value>] <name>");
   const char* USAGE_BNS_BY_OWNER("bns_by_owner [<owner> ...]");
-  const char* USAGE_BNS_LOOKUP("bns_lookup [type=session|wallet|beldexnet] <name> [<name> ...]");
+  const char* USAGE_BNS_LOOKUP("bns_lookup [type=session|wallet|belnet] <name> [<name> ...]");
 
 #if defined (BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
   std::string input_line(const std::string &prompt, bool yesno = false)
@@ -6452,7 +6452,7 @@ static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, s
   if (typestr.empty())
   {
     if (tools::ends_with(name, ".beldex") && (tools::ends_with(value, ".beldex") || value.empty()))
-      return bns::mapping_type::beldexnet;
+      return bns::mapping_type::belnet;
     if (!tools::ends_with(name, ".beldex") && tools::starts_with(value, "05") && value.length() == 2*bns::SESSION_PUBLIC_KEY_BINARY_LENGTH)
       return bns::mapping_type::session;
     if (cryptonote::is_valid_address(std::string{value}, wallet.nettype()))
@@ -6539,13 +6539,13 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
       std::cout << boost::format(tr("Session Name: %s")) % name << std::endl;
     else if (*type == bns::mapping_type::wallet)
       std::cout << boost::format(tr("Wallet Name:  %s")) % name << std::endl;
-    else if (bns::is_beldexnet_type(*type))
+    else if (bns::is_belnet_type(*type))
     {
-      std::cout << boost::format(tr("Beldexnet Name: %s")) % name << std::endl;
+      std::cout << boost::format(tr("Belnet Name: %s")) % name << std::endl;
       int years =
-          *type == bns::mapping_type::beldexnet_10years ? 10 :
-          *type == bns::mapping_type::beldexnet_5years ? 5 :
-          *type == bns::mapping_type::beldexnet_2years ? 2 :
+          *type == bns::mapping_type::belnet_10years ? 10 :
+          *type == bns::mapping_type::belnet_5years ? 5 :
+          *type == bns::mapping_type::belnet_2years ? 2 :
           1;
       int blocks = BLOCKS_EXPECTED_IN_DAYS(years * bns::REGISTRATION_YEAR_DAYS);
       std::cout << boost::format(tr("Registration: %d years (%d blocks)")) % years % blocks << "\n";
@@ -6633,15 +6633,15 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
     dsts.push_back(info);
 
     std::cout << "\n" << tr("Renew Beldex Name System Record") << "\n\n";
-    if (bns::is_beldexnet_type(type))
-      std::cout << boost::format(tr("Beldexnet Name:  %s")) % name << "\n";
+    if (bns::is_belnet_type(type))
+      std::cout << boost::format(tr("Belnet Name:  %s")) % name << "\n";
     else
       std::cout << boost::format(tr("Name:          %s")) % name << "\n";
 
     int years = 1;
-    if (type == bns::mapping_type::beldexnet_2years) years = 2;
-    else if (type == bns::mapping_type::beldexnet_5years) years = 5;
-    else if (type == bns::mapping_type::beldexnet_10years) years = 10;
+    if (type == bns::mapping_type::belnet_2years) years = 2;
+    else if (type == bns::mapping_type::belnet_5years) years = 5;
+    else if (type == bns::mapping_type::belnet_10years) years = 10;
     int blocks = BLOCKS_EXPECTED_IN_DAYS(years * bns::REGISTRATION_YEAR_DAYS);
     std::cout << boost::format(tr("Renewal years: %d (%d blocks)")) % years % blocks << "\n";
     std::cout << boost::format(tr("New expiry:    Block %d")) % (*response[0].expiration_height + blocks) << "\n";
@@ -6739,8 +6739,8 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     std::cout << std::endl << tr("Updating Beldex Name System Record") << std::endl << std::endl;
     if (type == bns::mapping_type::session)
       std::cout << boost::format(tr("Session Name:     %s")) % name << std::endl;
-    else if (bns::is_beldexnet_type(type))
-      std::cout << boost::format(tr("Beldexnet Name:     %s")) % name << std::endl;
+    else if (bns::is_belnet_type(type))
+      std::cout << boost::format(tr("Belnet Name:     %s")) % name << std::endl;
     else if (type == bns::mapping_type::wallet)
       std::cout << boost::format(tr("Wallet Name:     %s")) % name << std::endl;
     else

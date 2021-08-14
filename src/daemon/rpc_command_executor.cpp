@@ -566,11 +566,11 @@ bool rpc_command_executor::show_status() {
         str << "NOT RECEIVED";
     str << " (storage), ";
 
-    if (*ires.last_beldexnet_ping > 0)
-        str << get_human_time_ago(*ires.last_beldexnet_ping, now, true /*abbreviate*/);
+    if (*ires.last_belnet_ping > 0)
+        str << get_human_time_ago(*ires.last_belnet_ping, now, true /*abbreviate*/);
     else
         str << "NOT RECEIVED";
-    str << " (beldexnet)";
+    str << " (belnet)";
 
     tools::success_msg_writer() << str.str();
 
@@ -1663,7 +1663,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     if (detailed_view)
       stream << indent2 << "Auxiliary Public Keys:\n"
              << indent3 << (entry.pubkey_ed25519.empty() ? "(not yet received)" : entry.pubkey_ed25519) << " (Ed25519)\n"
-             << indent3 << (entry.pubkey_ed25519.empty() ? "(not yet received)" : oxenmq::to_base32z(oxenmq::from_hex(entry.pubkey_ed25519)) + ".mnode") << " (Beldexnet)\n"
+             << indent3 << (entry.pubkey_ed25519.empty() ? "(not yet received)" : oxenmq::to_base32z(oxenmq::from_hex(entry.pubkey_ed25519)) + ".mnode") << " (Belnet)\n"
              << indent3 << (entry.pubkey_x25519.empty()  ? "(not yet received)" : entry.pubkey_x25519)  << " (X25519)\n";
 
     //
@@ -1693,14 +1693,14 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     };
     stream << indent2 << "Storage Server Reachable: ";
     print_reachable(entry.storage_server_reachable, entry.storage_server_first_unreachable, entry.storage_server_last_unreachable, entry.storage_server_last_reachable);
-    stream << indent2 << "Beldexnet Reachable: ";
-    print_reachable(entry.beldexnet_reachable, entry.beldexnet_first_unreachable, entry.beldexnet_last_unreachable, entry.beldexnet_last_reachable);
+    stream << indent2 << "Belnet Reachable: ";
+    print_reachable(entry.belnet_reachable, entry.belnet_first_unreachable, entry.belnet_last_unreachable, entry.belnet_last_reachable);
 
     //
     // NOTE: Component Versions
     //
-    stream << indent2 << "Storage Server / Beldexnet Router versions: "
-        << ((entry.storage_server_version[0] == 0 && entry.storage_server_version[1] == 0 && entry.storage_server_version[2] == 0) ? "(Storage server ping not yet received) " : tools::join(".", entry.storage_server_version)) << " / " << ((entry.beldexnet_version[0] == 0 && entry.beldexnet_version[1] == 0 && entry.beldexnet_version[2] == 0) ? "(Beldexnet ping not yet received)" : tools::join(".", entry.beldexnet_version)) << "\n";
+    stream << indent2 << "Storage Server / Belnet Router versions: "
+        << ((entry.storage_server_version[0] == 0 && entry.storage_server_version[1] == 0 && entry.storage_server_version[2] == 0) ? "(Storage server ping not yet received) " : tools::join(".", entry.storage_server_version)) << " / " << ((entry.belnet_version[0] == 0 && entry.belnet_version[1] == 0 && entry.belnet_version[2] == 0) ? "(Belnet ping not yet received)" : tools::join(".", entry.belnet_version)) << "\n";
 
 
 
@@ -1979,11 +1979,11 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
     tools::fail_msg_writer() << "Unable to prepare registration: this daemon is not running in --master-node mode";
     return false;
   }
-  else if (auto last_beldexnet_ping = static_cast<std::time_t>(res.last_beldexnet_ping.value_or(0));
-      last_beldexnet_ping < (time(nullptr) - 60) && !force_registration)
+  else if (auto last_belnet_ping = static_cast<std::time_t>(res.last_belnet_ping.value_or(0));
+      last_belnet_ping < (time(nullptr) - 60) && !force_registration)
   {
-    tools::fail_msg_writer() << "Unable to prepare registration: this daemon has not received a ping from beldexnet "
-                             << (res.last_beldexnet_ping == 0 ? "yet" : "since " + get_human_time_ago(last_beldexnet_ping, std::time(nullptr)));
+    tools::fail_msg_writer() << "Unable to prepare registration: this daemon has not received a ping from belnet "
+                             << (res.last_belnet_ping == 0 ? "yet" : "since " + get_human_time_ago(last_belnet_ping, std::time(nullptr)));
     return false;
   }
   else if (auto last_storage_server_ping = static_cast<std::time_t>(res.last_storage_server_ping.value_or(0));

@@ -286,10 +286,10 @@ namespace cryptonote
   , m_last_json_checkpoints_update(0)
   , m_nettype(UNDEFINED)
   , m_last_storage_server_ping(0)
-  , m_last_beldexnet_ping(0)
+  , m_last_belnet_ping(0)
   , m_pad_transactions(false)
   , ss_version{0}
-  , beldexnet_version{0}
+  , belnet_version{0}
   {
     m_checkpoints_updating.clear();
   }
@@ -523,7 +523,7 @@ namespace cryptonote
   }
 
   // Returns a string for systemd status notifications such as:
-  // Height: 1234567, MN: active, proof: 55m12s, storage: 4m48s, beldexnet: 47s
+  // Height: 1234567, MN: active, proof: 55m12s, storage: 4m48s, belnet: 47s
   std::string core::get_status_string() const
   {
     std::string s;
@@ -558,8 +558,8 @@ namespace cryptonote
         s += time_ago_str(now, last_proof);
         s += ", storage: ";
         s += time_ago_str(now, m_last_storage_server_ping);
-        s += ", beldexnet: ";
-        s += time_ago_str(now, m_last_beldexnet_ping);
+        s += ", belnet: ";
+        s += time_ago_str(now, m_last_belnet_ping);
       }
     }
     return s;
@@ -980,7 +980,7 @@ namespace cryptonote
       MGINFO_YELLOW("- primary: " << tools::type_to_hex(keys.pub));
       MGINFO_YELLOW("- ed25519: " << tools::type_to_hex(keys.pub_ed25519));
       // .mnode address is the ed25519 pubkey, encoded with base32z and with .mnode appended:
-      MGINFO_YELLOW("- beldexnet: " << oxenmq::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
+      MGINFO_YELLOW("- belnet: " << oxenmq::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
@@ -1931,7 +1931,7 @@ namespace cryptonote
     bool relayed;
     auto height = get_current_blockchain_height();
 
-    auto proof = m_master_node_list.generate_uptime_proof(m_mn_public_ip, storage_https_port(), storage_omq_port(), ss_version, m_quorumnet_port, beldexnet_version);
+    auto proof = m_master_node_list.generate_uptime_proof(m_mn_public_ip, storage_https_port(), storage_omq_port(), ss_version, m_quorumnet_port, belnet_version);
     NOTIFY_BTENCODED_UPTIME_PROOF::request req = proof.generate_request();
     relayed = get_protocol()->relay_btencoded_uptime_proof(req, fake_context);
 
@@ -2239,7 +2239,7 @@ namespace cryptonote
 
   void core::update_omq_mns()
   {
-    // TODO: let callers (e.g. beldexnet, ss) subscribe to callbacks when this fires
+    // TODO: let callers (e.g. belnet, ss) subscribe to callbacks when this fires
     oxenmq::pubkey_set active_sns;
     m_master_node_list.copy_active_x25519_pubkeys(std::inserter(active_sns, active_sns.end()));
     m_omq->set_active_sns(std::move(active_sns));
@@ -2349,10 +2349,10 @@ namespace cryptonote
                 "is running! It is required to run alongside the Beldex daemon");
             return;
           }
-          if (!check_external_ping(m_last_beldexnet_ping, get_net_config().UPTIME_PROOF_FREQUENCY, "Beldexnet"))
+          if (!check_external_ping(m_last_belnet_ping, get_net_config().UPTIME_PROOF_FREQUENCY, "Belnet"))
           {
             MGINFO_RED(
-                "Failed to submit uptime proof: have not heard from beldexnet recently. Make sure that it "
+                "Failed to submit uptime proof: have not heard from belnet recently. Make sure that it "
                 "is running! It is required to run alongside the Beldex daemon");
             return;
           }

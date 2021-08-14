@@ -6242,7 +6242,7 @@ struct master_node_proof_serialized_old
     info.proof->qnet_port = little_to_native(quorumnet_port);
     info.proof->version = little_to_native_container(version);
     info.proof->storage_server_version = {0, 0, 0};
-    info.proof->beldexnet_version = {0, 0, 0};
+    info.proof->belnet_version = {0, 0, 0};
     info.update_pubkey(pubkey_ed25519);
   }
 
@@ -6268,17 +6268,17 @@ struct master_node_proof_serialized : master_node_proof_serialized_old {
   master_node_proof_serialized(const master_nodes::proof_info &info)
     : master_node_proof_serialized_old{info},
       storage_server_version{native_to_little_container(info.proof->storage_server_version)},
-      beldexnet_version{native_to_little_container(info.proof->beldexnet_version)}
+      belnet_version{native_to_little_container(info.proof->belnet_version)}
   {}
   std::array<uint16_t, 3> storage_server_version;
-  std::array<uint16_t, 3> beldexnet_version;
+  std::array<uint16_t, 3> belnet_version;
   char _padding[4];
 
   void update(master_nodes::proof_info& info) const {
     if (!info.proof) info.proof = std::unique_ptr<uptime_proof::Proof>(new uptime_proof::Proof());
     master_node_proof_serialized_old::update(info);
     info.proof->storage_server_version = little_to_native_container(storage_server_version);
-    info.proof->beldexnet_version = little_to_native_container(beldexnet_version);
+    info.proof->belnet_version = little_to_native_container(belnet_version);
   }
 
   operator master_nodes::proof_info() const

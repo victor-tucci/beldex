@@ -80,10 +80,10 @@ struct extra_printer {
     std::cout << "BNS " << (x.is_buying() ? "registration" : x.is_updating() ? "update" : "(unknown)");
     switch (x.type)
     {
-      case bns::mapping_type::beldexnet: std::cout << " - beldexnet (1y)"; break;
-      case bns::mapping_type::beldexnet_2years: std::cout << " - beldexnet (2y)"; break;
-      case bns::mapping_type::beldexnet_5years: std::cout << " - beldexnet (5y)"; break;
-      case bns::mapping_type::beldexnet_10years: std::cout << " - Beldexnet (10y)"; break;
+      case bns::mapping_type::belnet: std::cout << " - belnet (1y)"; break;
+      case bns::mapping_type::belnet_2years: std::cout << " - belnet (2y)"; break;
+      case bns::mapping_type::belnet_5years: std::cout << " - belnet (5y)"; break;
+      case bns::mapping_type::belnet_10years: std::cout << " - Belnet (10y)"; break;
       case bns::mapping_type::session: std::cout << " - Session address"; break;
       case bns::mapping_type::wallet: std::cout << " - Wallet address"; break;
       case bns::mapping_type::update_record_internal:

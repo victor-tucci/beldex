@@ -12,7 +12,7 @@ TEST(beldex_name_system, name_tests)
     bool allowed;
   };
 
-  name_test const beldexnet_names[] = {
+  name_test const belnet_names[] = {
       {"a.beldex", true},
       {"domain.beldex", true},
       {"xn--tda.beldex", true}, // ü
@@ -72,8 +72,8 @@ TEST(beldex_name_system, name_tests)
   {
     auto type = static_cast<bns::mapping_type>(type16);
     if (type == bns::mapping_type::wallet) continue; // Not yet supported
-    name_test const *names = bns::is_beldexnet_type(type) ? beldexnet_names : session_wallet_names;
-    size_t names_count     = bns::is_beldexnet_type(type) ? beldex::char_count(beldexnet_names) : beldex::char_count(session_wallet_names);
+    name_test const *names = bns::is_belnet_type(type) ? belnet_names : session_wallet_names;
+    size_t names_count     = bns::is_belnet_type(type) ? beldex::char_count(belnet_names) : beldex::char_count(session_wallet_names);
 
     for (size_t i = 0; i < names_count; i++)
     {
@@ -90,9 +90,9 @@ TEST(beldex_name_system, value_encrypt_and_decrypt)
   value.len                = 32;
   memset(&value.buffer[0], 'a', value.len);
 
-  // The type here is not hugely important for decryption except that beldexnet (as opposed to
+  // The type here is not hugely important for decryption except that belnet (as opposed to
   // session) doesn't fall back to argon2 decryption if decryption fails.
-  constexpr auto type = bns::mapping_type::beldexnet;
+  constexpr auto type = bns::mapping_type::belnet;
 
   // Encryption and Decryption success
   {

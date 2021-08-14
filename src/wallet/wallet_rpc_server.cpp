@@ -3285,8 +3285,8 @@ namespace {
     {
       auto& entry = res.known_names.emplace_back();
       auto& type = entry_types.emplace_back(details.type);
-      if (type > bns::mapping_type::beldexnet && type <= bns::mapping_type::beldexnet_10years)
-        type = bns::mapping_type::beldexnet;
+      if (type > bns::mapping_type::belnet && type <= bns::mapping_type::belnet_10years)
+        type = bns::mapping_type::belnet;
       entry.type = bns::mapping_type_str(type);
       entry.hashed = details.hashed_name;
       entry.name = details.name;

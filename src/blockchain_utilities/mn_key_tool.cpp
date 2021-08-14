@@ -158,7 +158,7 @@ int generate(bool ed25519, std::list<std::string_view> args) {
         std::cout <<
               "Public key:      " << oxenmq::to_hex(pubkey.begin(), pubkey.end()) <<
             "\nX25519 pubkey:   " << oxenmq::to_hex(x_pubkey.begin(), x_pubkey.end()) <<
-            "\nBeldexnet address: " << oxenmq::to_base32z(pubkey.begin(), pubkey.end()) << ".mnode\n";
+            "\nBelnet address: " << oxenmq::to_base32z(pubkey.begin(), pubkey.end()) << ".mnode\n";
     } else {
         std::cout << "Public key: " << oxenmq::to_hex(pubkey.begin(), pubkey.end()) << "\n";
     }
@@ -243,7 +243,7 @@ int show(std::list<std::string_view> args) {
         "\nSecret key:      " << oxenmq::to_hex(seckey.begin(), seckey.begin() + 32) <<
         "\nPublic key:      " << oxenmq::to_hex(pubkey.begin(), pubkey.end()) <<
         "\nX25519 pubkey:   " << oxenmq::to_hex(x_pubkey.begin(), x_pubkey.end()) <<
-        "\nBeldexnet address: " << oxenmq::to_base32z(pubkey.begin(), pubkey.end()) << ".mnode\n\n";
+        "\nBelnet address: " << oxenmq::to_base32z(pubkey.begin(), pubkey.end()) << ".mnode\n\n";
     return 0;
 }
 
@@ -300,7 +300,7 @@ int restore(bool ed25519, std::list<std::string_view> args) {
         if (0 != crypto_sign_ed25519_pk_to_curve25519(x_pubkey.data(), pubkey.data()))
             return error(14, "Unable to convert Ed25519 pubkey to X25519 pubkey; is this a really valid secret key?");
         std::cout << "X25519 pubkey:   " << oxenmq::to_hex(x_pubkey.begin(), x_pubkey.end()) <<
-            "\nBeldexnet address: " << oxenmq::to_base32z(pubkey.begin(), pubkey.end()) << ".mnode";
+            "\nBelnet address: " << oxenmq::to_base32z(pubkey.begin(), pubkey.end()) << ".mnode";
     }
 
     if (pubkey_expected) {

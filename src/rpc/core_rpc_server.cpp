@@ -423,14 +423,14 @@ namespace cryptonote { namespace rpc {
     res.bns_counts = {
       bns_counts[bns::mapping_type::session],
       bns_counts[bns::mapping_type::wallet],
-      bns_counts[bns::mapping_type::beldexnet]};
+      bns_counts[bns::mapping_type::belnet]};
 
     if (context.admin)
     {
       res.master_node = m_core.master_node();
       res.start_time = (uint64_t)m_core.get_start_time();
       res.last_storage_server_ping = (uint64_t)m_core.m_last_storage_server_ping;
-      res.last_beldexnet_ping = (uint64_t)m_core.m_last_beldexnet_ping;
+      res.last_belnet_ping = (uint64_t)m_core.m_last_belnet_ping;
       res.free_space = m_core.get_free_space();
       res.height_without_bootstrap = res.height;
       std::shared_lock lock{m_bootstrap_daemon_mutex};
@@ -795,10 +795,10 @@ namespace cryptonote { namespace rpc {
         bns.blocks = bns::expiry_blocks(nettype, x.type);
         switch (x.type)
         {
-          case bns::mapping_type::beldexnet: [[fallthrough]];
-          case bns::mapping_type::beldexnet_2years: [[fallthrough]];
-          case bns::mapping_type::beldexnet_5years: [[fallthrough]];
-          case bns::mapping_type::beldexnet_10years: bns.type = "beldexnet"; break;
+          case bns::mapping_type::belnet: [[fallthrough]];
+          case bns::mapping_type::belnet_2years: [[fallthrough]];
+          case bns::mapping_type::belnet_5years: [[fallthrough]];
+          case bns::mapping_type::belnet_10years: bns.type = "belnet"; break;
 
           case bns::mapping_type::session: bns.type = "session"; break;
           case bns::mapping_type::wallet:  bns.type = "wallet"; break;
@@ -3074,7 +3074,7 @@ namespace cryptonote { namespace rpc {
     auto& netconf = m_core.get_net_config();
     m_core.get_master_node_list().access_proof(mn_info.pubkey, [&entry, &netconf](const auto &proof) {
         entry.master_node_version     = proof.proof->version;
-        entry.beldexnet_version          = proof.proof->beldexnet_version;
+        entry.belnet_version          = proof.proof->belnet_version;
         entry.storage_server_version   = proof.proof->storage_server_version;
         entry.public_ip                = epee::string_tools::get_ip_string_from_int32(proof.proof->public_ip);
         entry.storage_port             = proof.proof->storage_https_port;
@@ -3091,10 +3091,10 @@ namespace cryptonote { namespace rpc {
         entry.storage_server_first_unreachable = reachable_to_time_t(proof.ss_reachable.first_unreachable, system_now, steady_now);
         entry.storage_server_last_unreachable = reachable_to_time_t(proof.ss_reachable.last_unreachable, system_now, steady_now);
         entry.storage_server_last_reachable = reachable_to_time_t(proof.ss_reachable.last_reachable, system_now, steady_now);
-        entry.beldexnet_reachable = !proof.beldexnet_reachable.unreachable_for(netconf.UPTIME_PROOF_VALIDITY - netconf.UPTIME_PROOF_FREQUENCY, steady_now);
-        entry.beldexnet_first_unreachable = reachable_to_time_t(proof.beldexnet_reachable.first_unreachable, system_now, steady_now);
-        entry.beldexnet_last_unreachable = reachable_to_time_t(proof.beldexnet_reachable.last_unreachable, system_now, steady_now);
-        entry.beldexnet_last_reachable = reachable_to_time_t(proof.beldexnet_reachable.last_reachable, system_now, steady_now);
+        entry.belnet_reachable = !proof.belnet_reachable.unreachable_for(netconf.UPTIME_PROOF_VALIDITY - netconf.UPTIME_PROOF_FREQUENCY, steady_now);
+        entry.belnet_first_unreachable = reachable_to_time_t(proof.belnet_reachable.first_unreachable, system_now, steady_now);
+        entry.belnet_last_unreachable = reachable_to_time_t(proof.belnet_reachable.last_unreachable, system_now, steady_now);
+        entry.belnet_last_reachable = reachable_to_time_t(proof.belnet_reachable.last_reachable, system_now, steady_now);
 
         master_nodes::participation_history<master_nodes::participation_entry> const &checkpoint_participation = proof.checkpoint_participation;
         master_nodes::participation_history<master_nodes::participation_entry> const &pulse_participation      = proof.pulse_participation;
@@ -3276,12 +3276,12 @@ namespace cryptonote { namespace rpc {
       });
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  BELDEXNET_PING::response core_rpc_server::invoke(BELDEXNET_PING::request&& req, rpc_context context)
+  BELNET_PING::response core_rpc_server::invoke(BELNET_PING::request&& req, rpc_context context)
   {
-    m_core.beldexnet_version = req.version;
-    return handle_ping<BELDEXNET_PING>(
-        req.version, master_nodes::MIN_BELDEXNET_VERSION,
-        "Beldexnet", m_core.m_last_beldexnet_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
+    m_core.belnet_version = req.version;
+    return handle_ping<BELNET_PING>(
+        req.version, master_nodes::MIN_BELNET_VERSION,
+        "Belnet", m_core.m_last_belnet_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
         [this](bool significant) { if (significant) m_core.reset_proof_interval(); });
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -3451,8 +3451,8 @@ namespace cryptonote { namespace rpc {
     }
 
     bool success = false;
-    if (req.type == "beldexnet")
-      success = m_core.get_master_node_list().set_beldexnet_peer_reachable(pubkey, req.passed);
+    if (req.type == "belnet")
+      success = m_core.get_master_node_list().set_belnet_peer_reachable(pubkey, req.passed);
     else if (req.type == "storage" || req.type == "reachability" /* TODO: old name, can be removed once SS no longer uses it */)
       success = m_core.get_master_node_list().set_storage_server_peer_reachable(pubkey, req.passed);
     else
@@ -3510,7 +3510,7 @@ namespace cryptonote { namespace rpc {
       {
         types.push_back(static_cast<bns::mapping_type>(type));
         if (!bns::mapping_type_allowed(hf_version, types.back()))
-          throw rpc_error{ERROR_WRONG_PARAM, "Invalid beldexnet type '" + std::to_string(type) + "'"};
+          throw rpc_error{ERROR_WRONG_PARAM, "Invalid belnet type '" + std::to_string(type) + "'"};
       }
 
       // This also takes 32 raw bytes, but that is undocumented (because it is painful to pass
@@ -3616,7 +3616,7 @@ namespace cryptonote { namespace rpc {
     uint8_t hf_version = m_core.get_blockchain_storage().get_network_version();
     auto type = static_cast<bns::mapping_type>(req.type);
     if (!bns::mapping_type_allowed(hf_version, type))
-      throw rpc_error{ERROR_WRONG_PARAM, "Invalid beldexnet type '" + std::to_string(req.type) + "'"};
+      throw rpc_error{ERROR_WRONG_PARAM, "Invalid belnet type '" + std::to_string(req.type) + "'"};
 
     if (auto mapping = m_core.get_blockchain_storage().name_system_db().resolve(
         type, *name_hash, m_core.get_current_blockchain_height()))

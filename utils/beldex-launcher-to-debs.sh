@@ -121,7 +121,7 @@ Extra options (for typical beldex-launcher installs these are not needed):
     --overwrite             -- run the script even if /var/lib/beldex already
                                exists.  ${RED}Use caution!$RESET
     --no-process-checks     -- allow the migration to run even if beldexd/ss/
-                               beldexnet processes are still running after
+                               belnet processes are still running after
                                stopping beldex-launcher.
     --distro=<dist>         -- allows overriding the detected Ubuntu/Debian
                                distribution (default: $(lsb_release -sc))
@@ -192,8 +192,8 @@ START
 read
 
 existing=
-if systemctl is-active -q beldex-node beldexnet-router beldex-storage-server; then
-    existing="systemd services ${BOLD}beldex-node$RESET, ${BOLD}beldexnet-router$RESET, and/or ${BOLD}beldex-storage-server$RESET are
+if systemctl is-active -q beldex-node belnet-router beldex-storage-server; then
+    existing="systemd services ${BOLD}beldex-node$RESET, ${BOLD}belnet-router$RESET, and/or ${BOLD}beldex-storage-server$RESET are
 already running!'"
 elif [ -d /var/lib/beldex ] && [ -z "$overwrite" ]; then
     existing="$BOLD/var/lib/beldex$RESET already exists!"
@@ -205,7 +205,7 @@ if [ -n "$existing" ]; then
 If you intend to overwrite an existing deb installation then you must stop them
 using:
 
-    sudo systemctl disable --now beldex-node beldexnet-router beldex-storage-server
+    sudo systemctl disable --now beldex-node belnet-router beldex-storage-server
 
 and then must rerun this script adding the ${BOLD}--overwrite$RESET option.  Be
 careful: this will overwrite any existing configuration and data (including
@@ -304,16 +304,16 @@ ss_data=$(jq -r .runningConfig.storage.data_dir <<<"$lljson")
 ss_http=$(jq -r .runningConfig.storage.port <<<"$lljson")
 ss_lmq=$(jq -r .runningConfig.storage.lmq_port <<<"$lljson")
 ss_listen=$(jq -r .runningConfig.storage.ip <<<"$lljson")
-beldexnet_data=$(jq -r .runningConfig.network.data_dir <<<"$lljson")
-beldexnet_ip=${ip_public} # Currently beldex-launcher doesn't support specifying this separately
-beldexnet_port=$(jq -r .runningConfig.network.public_port <<<"$lljson")
-beldexnet_simple=
+belnet_data=$(jq -r .runningConfig.network.data_dir <<<"$lljson")
+belnet_ip=${ip_public} # Currently beldex-launcher doesn't support specifying this separately
+belnet_port=$(jq -r .runningConfig.network.public_port <<<"$lljson")
+belnet_simple=
 
-if [ "$beldexnet_ip" != "$ip_public" ]; then
-    die "Unsupported configuration anamoly detected: publicIPv4 ($ip_public) is not the same as beldexnet's public IP ($beldexnet_ip)"
+if [ "$belnet_ip" != "$ip_public" ]; then
+    die "Unsupported configuration anamoly detected: publicIPv4 ($ip_public) is not the same as belnet's public IP ($belnet_ip)"
 fi
 
-# Beldexnet configuration: if the public IP is a local system IP then we can just produce:
+# Belnet configuration: if the public IP is a local system IP then we can just produce:
 #
 # [bind]
 # IP=port
@@ -328,11 +328,11 @@ fi
 #
 # which will listen on all interfaces, and use the public-ip value to advertise itself to the network.
 if [[ "$(ip -o route get ${ip_public})" =~ \ dev\ lo\  ]]; then
-    beldexnet_simple=1
+    belnet_simple=1
 fi
 
 if [ "$ss_listen" != "0.0.0.0" ]; then
-    # Not listening on 0.0.0.0 is a bug (because it means SS isn't accessible over beldexnet), unless you have
+    # Not listening on 0.0.0.0 is a bug (because it means SS isn't accessible over belnet), unless you have
     # some exotic packet forwarding set up locally.
     warn "WARNING: storage server listening IP will be changed from $ss_listen to 0.0.0.0 (all addresses)" >&2
 fi
@@ -365,16 +365,16 @@ beldex-storage-server:
 - public IP: $BOLD$ip_public$RESET
 - HTTP/LokiMQ ports: $BOLD$ss_http/$ss_lmq$RESET
 
-beldexnet:
-- data directory: $BOLD$beldexnet_data$RESET (=> $BOLD/var/lib/beldexnet$RESET)
+belnet:
+- data directory: $BOLD$belnet_data$RESET (=> $BOLD/var/lib/belnet$RESET)
 - public IP: $BOLD$ip_public$RESET
-- port: $BOLD$beldexnet_port$RESET
+- port: $BOLD$belnet_port$RESET
 
 $custom_ll_warning
 After migration you can change configuration settings through the files:
     $BOLD/etc/beldex/beldex.conf$RESET
     $BOLD/etc/beldex/storage.conf$RESET
-    $BOLD/etc/beldex/beldexnet-router.conf$RESET
+    $BOLD/etc/beldex/belnet-router.conf$RESET
 
 DETAILS
 
@@ -394,17 +394,17 @@ if systemctl -q is-active "${service}"; then
     die "beldex-launcher is still running!"
 fi
 
-if [ -z "$no_proc_check" ] && pidof -q beldexd beldex-storage beldexnet; then
-    die $'Stopped storage server, but one or more of beldexd/beldex-storage/beldexnet is still running.
+if [ -z "$no_proc_check" ] && pidof -q beldexd beldex-storage belnet; then
+    die $'Stopped storage server, but one or more of beldexd/beldex-storage/belnet is still running.
 
-(If you know that you have other beldexd/ss/beldexnets running on this machine then rerun this script with the --no-process-checks option)'
+(If you know that you have other beldexd/ss/belnets running on this machine then rerun this script with the --no-process-checks option)'
 fi
 
 systemctl_verbose 'Disabling beldex-launcher automatic startup' \
     systemctl disable "${service}"
 
 systemctl_verbose 'Temporarily masking beldex services from startup until we are done migrating' \
-    systemctl mask beldex-node.service beldexnet-router.service beldex-storage-server.service
+    systemctl mask beldex-node.service belnet-router.service beldex-storage-server.service
 
 if ! [ -f /etc/apt/sources.list.d/beldex.list ]; then
     echo 'Adding deb repository to /etc/apt/sources.list.d/beldex.list'
@@ -420,7 +420,7 @@ apt-get update
 
 echo 'Installing beldex packages'
 
-apt-get -y install beldexd beldex-storage-server beldexnet-router
+apt-get -y install beldexd beldex-storage-server belnet-router
 
 echo "${GREEN}Moving beldexd data files to /var/lib/beldex$RESET"
 echo "${GREEN}========================================$RESET"
@@ -461,55 +461,55 @@ echo -e "ip=0.0.0.0\nport=$ss_http\nlmq-port=$ss_lmq\ndata-dir=/var/lib/beldex/s
 
 
 
-echo "${GREEN}Moving beldexnet files to /var/lib/beldexnet/router${RESET}"
+echo "${GREEN}Moving belnet files to /var/lib/belnet/router${RESET}"
 echo "${GREEN}===============================================${RESET}"
-mv -vf "$beldexnet_data"/{*.private,*.signed,netdb,profiles.dat} /var/lib/beldexnet/router
-chown -v _beldexnet:_beldex /var/lib/beldexnet/router/{*.private,*.signed,profiles.dat}
-chown -R _beldexnet:_beldex /var/lib/beldexnet/router/netdb  # too much for -v
+mv -vf "$belnet_data"/{*.private,*.signed,netdb,profiles.dat} /var/lib/belnet/router
+chown -v _belnet:_beldex /var/lib/belnet/router/{*.private,*.signed,profiles.dat}
+chown -R _belnet:_beldex /var/lib/belnet/router/netdb  # too much for -v
 echo "${GREEN}Updating beldexd configuration in /etc/beldex/beldex.conf${RESET}"
 echo "${GREEN}===================================================${RESET}"
-if [ -n "$beldexnet_simple" ]; then
+if [ -n "$belnet_simple" ]; then
     perl -pi -e "
         if (/^\[beldexd/ ... /^\[/) {
             s/jsonrpc=127\.0\.0\.1:22023/jsonrpc=127.0.0.1:${beldexd_rpc}/;
         }
         if (/^\[bind/ ... /^\[/) {
-            s/^#?[\w:.{}-]+=\d+/$beldexnet_ip=$beldexnet_port/;
-        }" /etc/beldex/beldexnet-router.ini
+            s/^#?[\w:.{}-]+=\d+/$belnet_ip=$belnet_port/;
+        }" /etc/beldex/belnet-router.ini
 else
     perl -pi -e "
         if (/^\[beldexd/ ... /^\[/) {
             s/jsonrpc=127\.0\.0\.1:22023/jsonrpc=127.0.0.1:${beldexd_rpc}/;
         }
         if (/^\[router\]/) {
-            \$_ .= qq{public-ip=$beldexnet_ip\npublic-port=$beldexnet_port\n};
+            \$_ .= qq{public-ip=$belnet_ip\npublic-port=$belnet_port\n};
         }
         if (/^\[router/ ... /^\[/) {
             s/^public-(?:ip|port)=.*//;
         }
 
         if (/^\[bind/ ... /^\[/) {
-            s/^#?[\w:.{}-]+=\d+/0.0.0.0=$beldexnet_port/;
-        }" /etc/beldex/beldexnet-router.ini
+            s/^#?[\w:.{}-]+=\d+/0.0.0.0=$belnet_port/;
+        }" /etc/beldex/belnet-router.ini
 fi
 
 
 echo "${GREEN}Done moving/copying files.  Starting beldex services...${RESET}"
 systemctl_verbose 'Unmasking services' \
-    systemctl unmask beldex-node.service beldexnet-router.service beldex-storage-server.service
+    systemctl unmask beldex-node.service belnet-router.service beldex-storage-server.service
 systemctl_verbose 'Enabling automatic startup of beldex services' \
-    systemctl enable beldex-node.service beldexnet-router.service beldex-storage-server.service
+    systemctl enable beldex-node.service belnet-router.service beldex-storage-server.service
 
-# Try to start a few times because beldexnet deliberately dies (expecting to be restarted) if it can't
+# Try to start a few times because belnet deliberately dies (expecting to be restarted) if it can't
 # reach beldexd on startup to get keys.
 for ((i = 0; i < 10; i++)); do
-    if systemctl start beldex-node.service beldexnet-router.service beldex-storage-server.service 2>/dev/null; then
+    if systemctl start beldex-node.service belnet-router.service beldex-storage-server.service 2>/dev/null; then
         break
     fi
     sleep 1
 done
 
-for s in beldex-node beldexnet-router beldex-storage-server; do
+for s in beldex-node belnet-router beldex-storage-server; do
     if ! systemctl is-active -q $s.service; then
         echo -e "${BYELLOW}$s.service failed to start.${RESET} Check its status using the commands below.\n"
     fi
@@ -522,7 +522,7 @@ You can check on and control your service using these commands:
     # Show general status of the process:
     sudo systemctl status beldex-node
     sudo systemctl status beldex-storage-server
-    sudo systemctl status beldexnet-router
+    sudo systemctl status belnet-router
 
     # Start/stop/restart a service:
     sudo systemctl start beldex-node

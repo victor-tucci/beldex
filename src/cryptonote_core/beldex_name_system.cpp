@@ -107,7 +107,7 @@ std::pair<std::basic_string_view<unsigned char>, std::basic_string_view<unsigned
 std::string bns::mapping_value::to_readable_value(cryptonote::network_type nettype, bns::mapping_type type) const
 {
   std::string result;
-  if (is_beldexnet_type(type))
+  if (is_belnet_type(type))
   {
     result = oxenmq::to_base32z(to_view()) + ".beldex";
   } else if (type == bns::mapping_type::wallet) {
@@ -615,7 +615,7 @@ std::vector<mapping_type> all_mapping_types(uint8_t hf_version) {
   if (hf_version >= cryptonote::network_version_16_bns)
     result.push_back(mapping_type::session);
   if (hf_version >= cryptonote::network_version_17_pulse)
-    result.push_back(mapping_type::beldexnet);
+    result.push_back(mapping_type::belnet);
   if (hf_version >= cryptonote::network_version_18)
     result.push_back(mapping_type::wallet);
   return result;
@@ -624,16 +624,16 @@ std::vector<mapping_type> all_mapping_types(uint8_t hf_version) {
 std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_type type)
 {
   std::optional<uint64_t> result;
-  if (is_beldexnet_type(type))
+  if (is_belnet_type(type))
   {
     // For testnet we shorten 1-, 2-, and 5-year renewals to 1/2/5 days with 1-day renewal, but
     // leave 10 years alone to allow long-term registrations on testnet.
-    const bool testnet_short = nettype == cryptonote::TESTNET && type != mapping_type::beldexnet_10years;
+    const bool testnet_short = nettype == cryptonote::TESTNET && type != mapping_type::belnet_10years;
 
-    if (type == mapping_type::beldexnet)              result = BLOCKS_EXPECTED_IN_DAYS(1 * REGISTRATION_YEAR_DAYS);
-    else if (type == mapping_type::beldexnet_2years)  result = BLOCKS_EXPECTED_IN_DAYS(2 * REGISTRATION_YEAR_DAYS);
-    else if (type == mapping_type::beldexnet_5years)  result = BLOCKS_EXPECTED_IN_DAYS(5 * REGISTRATION_YEAR_DAYS);
-    else if (type == mapping_type::beldexnet_10years) result = BLOCKS_EXPECTED_IN_DAYS(10 * REGISTRATION_YEAR_DAYS);
+    if (type == mapping_type::belnet)              result = BLOCKS_EXPECTED_IN_DAYS(1 * REGISTRATION_YEAR_DAYS);
+    else if (type == mapping_type::belnet_2years)  result = BLOCKS_EXPECTED_IN_DAYS(2 * REGISTRATION_YEAR_DAYS);
+    else if (type == mapping_type::belnet_5years)  result = BLOCKS_EXPECTED_IN_DAYS(5 * REGISTRATION_YEAR_DAYS);
+    else if (type == mapping_type::belnet_10years) result = BLOCKS_EXPECTED_IN_DAYS(10 * REGISTRATION_YEAR_DAYS);
     assert(result);
 
     if (testnet_short)
@@ -750,13 +750,13 @@ static bool check_condition(bool condition, std::string* reason, T&&... args) {
 
 bool validate_bns_name(mapping_type type, std::string name, std::string *reason)
 {
-  bool const is_beldexnet = is_beldexnet_type(type);
+  bool const is_belnet = is_belnet_type(type);
   size_t max_name_len   = 0;
 
-  if (is_beldexnet)
+  if (is_belnet)
     max_name_len = name.find('-') != std::string::npos
-      ? BELDEXNET_DOMAIN_NAME_MAX
-      : BELDEXNET_DOMAIN_NAME_MAX_NOHYPHEN;
+      ? BELNET_DOMAIN_NAME_MAX
+      : BELNET_DOMAIN_NAME_MAX_NOHYPHEN;
   else if (type == mapping_type::session) max_name_len = bns::SESSION_DISPLAY_NAME_MAX;
   else if (type == mapping_type::wallet)  max_name_len = bns::WALLET_NAME_MAX;
   else
@@ -778,15 +778,15 @@ bool validate_bns_name(mapping_type type, std::string name, std::string *reason)
   std::string_view name_view{name}; // Will chop this down as we validate each part
 
   // NOTE: Validate domain specific requirements
-  if (is_beldexnet)
+  if (is_belnet)
   {
-    // BELDEXNET
+    // BELNET
     // Domain has to start with an alphanumeric, and can have (alphanumeric or hyphens) in between, the character before the suffix <char>'.beldex' must be alphanumeric followed by the suffix '.beldex'
     // It's *approximately* this regex, but there are some extra restrictions below
     // ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.beldex$
 
     // Reserved names:
-    // - localhost.beldex has special meaning within beldexnet (it is always a CNAME to the local
+    // - localhost.beldex has special meaning within belnet (it is always a CNAME to the local
     //   address)
     // - beldex.beldex and mnode.beldex are prohibited in case someone added .beldex or .mnode as search
     //   domains (in which case the user looking up "foo.beldex" would try end up trying to resolve
@@ -945,13 +945,13 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
       blob->len = counter;
     }
   }
-  else if (is_beldexnet_type(type))
+  else if (is_belnet_type(type))
   {
     // We need a 52 char base32z string that decodes to a 32-byte value, which really means we need
     // 51 base32z chars (=255 bits) followed by a 1-bit value ('y'=0, or 'o'=0b10000); anything else
-    // in the last spot isn't a valid beldexnet address.
+    // in the last spot isn't a valid belnet address.
     if (check_condition(value.size() != 57 || !tools::ends_with(value, ".beldex") || !oxenmq::is_base32z(value.substr(0, 52)) || !(value[51] == 'y' || value[51] == 'o'),
-                reason, "'", value, "' is not a valid beldexnet address"))
+                reason, "'", value, "' is not a valid belnet address"))
       return false;
 
     if (blob)
@@ -995,8 +995,8 @@ bool mapping_value::validate_encrypted(mapping_type type, std::string_view value
 
   int value_len = crypto_aead_xchacha20poly1305_ietf_ABYTES + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
 
-  if (is_beldexnet_type(type))
-    value_len += BELDEXNET_ADDRESS_BINARY_LENGTH;
+  if (is_belnet_type(type))
+    value_len += BELNET_ADDRESS_BINARY_LENGTH;
   else if (type == mapping_type::wallet)
   {
     value_len = crypto_aead_xchacha20poly1305_ietf_ABYTES + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES; //Add the length in check_length
@@ -1290,18 +1290,18 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
     mapping_type_ = bns::mapping_type::session;
   else if (hf_version >= cryptonote::network_version_17_pulse)
   {
-    if (tools::string_iequal(mapping, "beldexnet"))
-      mapping_type_ = bns::mapping_type::beldexnet;
+    if (tools::string_iequal(mapping, "belnet"))
+      mapping_type_ = bns::mapping_type::belnet;
     else if (txtype == bns_tx_type::buy || txtype == bns_tx_type::renew)
     {
-      if (tools::string_iequal_any(mapping, "beldexnet_1y", "beldexnet_1years")) // Can also specify "beldexnet"
-        mapping_type_ = bns::mapping_type::beldexnet;
-      else if (tools::string_iequal_any(mapping, "beldexnet_2y", "beldexnet_2years"))
-        mapping_type_ = bns::mapping_type::beldexnet_2years;
-      else if (tools::string_iequal_any(mapping, "beldexnet_5y", "beldexnet_5years"))
-        mapping_type_ = bns::mapping_type::beldexnet_5years;
-      else if (tools::string_iequal_any(mapping, "beldexnet_10y", "beldexnet_10years"))
-        mapping_type_ = bns::mapping_type::beldexnet_10years;
+      if (tools::string_iequal_any(mapping, "belnet_1y", "belnet_1years")) // Can also specify "belnet"
+        mapping_type_ = bns::mapping_type::belnet;
+      else if (tools::string_iequal_any(mapping, "belnet_2y", "belnet_2years"))
+        mapping_type_ = bns::mapping_type::belnet_2years;
+      else if (tools::string_iequal_any(mapping, "belnet_5y", "belnet_5years"))
+        mapping_type_ = bns::mapping_type::belnet_5years;
+      else if (tools::string_iequal_any(mapping, "belnet_10y", "belnet_10years"))
+        mapping_type_ = bns::mapping_type::belnet_10years;
     }
   }
   if (hf_version >= cryptonote::network_version_18)
@@ -1313,10 +1313,10 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
   if (!mapping_type_)
   {
     if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported " + (
-        txtype == bns_tx_type::update ? "update types are: session, beldexnet, wallet" :
-        txtype == bns_tx_type::renew  ? "renew types are: beldexnet_1y, beldexnet_2y, beldexnet_5y, beldexnet_10y" :
-        txtype == bns_tx_type::buy    ? "buy types are session, beldexnet_1y, beldexnet_2y, beldexnet_5y, beldexnet_10y"
-                                      : "lookup types are session, beldexnet, wallet");
+        txtype == bns_tx_type::update ? "update types are: session, belnet, wallet" :
+        txtype == bns_tx_type::renew  ? "renew types are: belnet_1y, belnet_2y, belnet_5y, belnet_10y" :
+        txtype == bns_tx_type::buy    ? "buy types are session, belnet_1y, belnet_2y, belnet_5y, belnet_10y"
+                                      : "lookup types are session, belnet, wallet");
     return false;
   }
 
@@ -1472,7 +1472,7 @@ bool mapping_value::decrypt(std::string_view name, mapping_type type, const cryp
   {
     switch(type) {
       case mapping_type::session: dec_length = SESSION_PUBLIC_KEY_BINARY_LENGTH; break;
-      case mapping_type::beldexnet: dec_length = BELDEXNET_ADDRESS_BINARY_LENGTH; break;
+      case mapping_type::belnet: dec_length = BELNET_ADDRESS_BINARY_LENGTH; break;
       case mapping_type::wallet: //Wallet type has variable type, check performed in check_length
         if (auto plain_len = len - crypto_aead_xchacha20poly1305_ietf_ABYTES - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
             plain_len == WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID || plain_len == WALLET_ACCOUNT_BINARY_LENGTH_NO_PAYMENT_ID) {

@@ -29,7 +29,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
 tx_extra_beldex_name_system tx_extra_beldex_name_system::make_renew(
     bns::mapping_type type, crypto::hash const &name_hash, crypto::hash const &prev_txid)
 {
-  assert(is_beldexnet_type(type) && prev_txid);
+  assert(is_belnet_type(type) && prev_txid);
 
   tx_extra_beldex_name_system result{};
   result.fields = bns::extra_field::none;
@@ -84,7 +84,7 @@ std::vector<std::string> readable_reasons(uint16_t decomm_reason) {
   if (decomm_reason & storage_server_unreachable) results.push_back("Storage Server Unreachable");
   if (decomm_reason & timestamp_response_unreachable) results.push_back("Unreachable for Timestamp Check");
   if (decomm_reason & timesync_status_out_of_sync) results.push_back("Time out of sync");
-  if (decomm_reason & beldexnet_unreachable) results.push_back("Beldexnet Unreachable");
+  if (decomm_reason & belnet_unreachable) results.push_back("Belnet Unreachable");
   return results;
 }
 
@@ -96,7 +96,7 @@ std::vector<std::string> coded_reasons(uint16_t decomm_reason) {
   if (decomm_reason & storage_server_unreachable) results.push_back("storage");
   if (decomm_reason & timestamp_response_unreachable) results.push_back("timecheck");
   if (decomm_reason & timesync_status_out_of_sync) results.push_back("timesync");
-  if (decomm_reason & beldexnet_unreachable) results.push_back("beldexnet");
+  if (decomm_reason & belnet_unreachable) results.push_back("belnet");
   return results;
 }
 

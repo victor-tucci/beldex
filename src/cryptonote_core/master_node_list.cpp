@@ -2780,10 +2780,10 @@ namespace master_nodes
     return result;
   }
 
-  uptime_proof::Proof master_node_list::generate_uptime_proof(uint32_t public_ip, uint16_t storage_https_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> beldexnet_version) const
+  uptime_proof::Proof master_node_list::generate_uptime_proof(uint32_t public_ip, uint16_t storage_https_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> belnet_version) const
   {
     const auto& keys = *m_master_node_keys;
-    return uptime_proof::Proof(public_ip, storage_https_port, storage_omq_port, ss_version, quorumnet_port, beldexnet_version, keys);
+    return uptime_proof::Proof(public_ip, storage_https_port, storage_omq_port, ss_version, quorumnet_port, belnet_version, keys);
   }
 
 #ifdef __cpp_lib_erase_if // # (C++20)
@@ -3016,8 +3016,8 @@ namespace master_nodes
       if (vers >= min.hardfork_revision) {
         if (proof->version < min.beldexd)
           REJECT_PROOF("v" << tools::join(".", min.beldexd) << "+ beldexd version is required for v" << +vers.first << "." << +vers.second << "+ network proofs");
-        if (proof->beldexnet_version < min.beldexnet)
-          REJECT_PROOF("v" << tools::join(".", min.beldexnet) << "+ beldexnet version is required for v" << +vers.first << "." << +vers.second << "+ network proofs");
+        if (proof->belnet_version < min.belnet)
+          REJECT_PROOF("v" << tools::join(".", min.belnet) << "+ belnet version is required for v" << +vers.first << "." << +vers.second << "+ network proofs");
         if (proof->storage_server_version < min.storage_server)
           REJECT_PROOF("v" << tools::join(".", min.storage_server) << "+ storage server version is required for v" << +vers.first << "." << +vers.second << "+ network proofs");
       }
@@ -3267,7 +3267,7 @@ namespace master_nodes
 
     std::lock_guard lock(m_mn_mutex);
 
-    const auto type = storage_server ? "storage server"sv : "beldexnet"sv;
+    const auto type = storage_server ? "storage server"sv : "belnet"sv;
 
     if (!m_state.master_nodes_infos.count(pubkey)) {
       MDEBUG("Dropping " << type << " reachable report: " << pubkey << " is not a registered MN pubkey");
@@ -3278,7 +3278,7 @@ namespace master_nodes
 
     const auto now = std::chrono::steady_clock::now();
 
-    auto& reach = storage_server ? proofs[pubkey].ss_reachable : proofs[pubkey].beldexnet_reachable;
+    auto& reach = storage_server ? proofs[pubkey].ss_reachable : proofs[pubkey].belnet_reachable;
     if (reachable) {
       reach.last_reachable = now;
       reach.first_unreachable = NEVER;
@@ -3296,7 +3296,7 @@ namespace master_nodes
       return set_peer_reachable(true, pubkey, reachable);
   }
 
-  bool master_node_list::set_beldexnet_peer_reachable(crypto::public_key const &pubkey, bool reachable)
+  bool master_node_list::set_belnet_peer_reachable(crypto::public_key const &pubkey, bool reachable)
   {
       return set_peer_reachable(false, pubkey, reachable);
   }

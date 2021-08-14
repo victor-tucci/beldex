@@ -13,14 +13,14 @@ extern "C"
 namespace uptime_proof
 {
 
-//Constructor for the uptime proof, will take the master node keys as a param and sign 
+//Constructor for the uptime proof, will take the master node keys as a param and sign
 Proof::Proof(
         uint32_t mn_public_ip,
         uint16_t mn_storage_https_port,
         uint16_t mn_storage_omq_port,
         const std::array<uint16_t, 3> ss_version,
         uint16_t quorumnet_port,
-        const std::array<uint16_t, 3> beldexnet_version,
+        const std::array<uint16_t, 3> belnet_version,
         const master_nodes::master_node_keys& keys) :
     version{BELDEX_VERSION},
     pubkey{keys.pub},
@@ -31,7 +31,7 @@ Proof::Proof(
     storage_https_port{mn_storage_https_port},
     storage_omq_port{mn_storage_omq_port},
     storage_server_version{ss_version},
-    beldexnet_version{beldexnet_version}
+    belnet_version{belnet_version}
 {
   crypto::hash hash = hash_uptime_proof();
 
@@ -75,11 +75,11 @@ Proof::Proof(const std::string& serialized_proof)
     for (bt_value const &i: bt_storage_version){
       storage_server_version[k++] = static_cast<uint16_t>(get_int<unsigned>(i));
     }
-    //beldexnet_version
-    const bt_list& bt_beldexnet_version = var::get<bt_list>(bt_proof.at("lv"));
+    //belnet_version
+    const bt_list& bt_belnet_version = var::get<bt_list>(bt_proof.at("lv"));
     k = 0;
-    for (bt_value const &i: bt_beldexnet_version){
-      beldexnet_version[k++] = static_cast<uint16_t>(get_int<unsigned>(i));
+    for (bt_value const &i: bt_belnet_version){
+      belnet_version[k++] = static_cast<uint16_t>(get_int<unsigned>(i));
     }
   } catch (const std::exception& e) {
     MWARNING("deserialization failed: " <<  e.what());
@@ -117,8 +117,8 @@ oxenmq::bt_dict Proof::bt_encode_uptime_proof() const
     {"sop", storage_omq_port},
     //storage_version
     {"sv", oxenmq::bt_list{{storage_server_version[0], storage_server_version[1], storage_server_version[2]}}},
-    //beldexnet_version
-    {"lv", oxenmq::bt_list{{beldexnet_version[0], beldexnet_version[1], beldexnet_version[2]}}},
+    //belnet_version
+    {"lv", oxenmq::bt_list{{belnet_version[0], belnet_version[1], belnet_version[2]}}},
   };
 
   if (tools::view_guts(pubkey) != tools::view_guts(pubkey_ed25519)) {
@@ -155,7 +155,7 @@ bool operator==(const uptime_proof::Proof& lhs, const uptime_proof::Proof& rhs)
         (lhs.qnet_port != rhs.qnet_port) ||
         (lhs.version != rhs.version) ||
         (lhs.storage_server_version != rhs.storage_server_version) ||
-        (lhs.beldexnet_version != rhs.beldexnet_version))
+        (lhs.belnet_version != rhs.belnet_version))
        result = false;
 
    return result;

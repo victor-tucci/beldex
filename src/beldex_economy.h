@@ -63,17 +63,17 @@ enum struct mapping_type : uint16_t
 {
   session = 0,
   wallet = 1,
-  beldexnet = 2, // the type value stored in the database; counts as 1-year when used in a buy tx.
-  beldexnet_2years,
-  beldexnet_5years,
-  beldexnet_10years,
+  belnet = 2, // the type value stored in the database; counts as 1-year when used in a buy tx.
+  belnet_2years,
+  belnet_5years,
+  belnet_10years,
   _count,
   update_record_internal,
 };
 
-constexpr bool is_beldexnet_type(mapping_type t) { return t >= mapping_type::beldexnet && t <= mapping_type::beldexnet_10years; }
+constexpr bool is_belnet_type(mapping_type t) { return t >= mapping_type::belnet && t <= mapping_type::belnet_10years; }
 
-// How many days we add per "year" of BNS beldexnet registration.  We slightly extend this to the 368
+// How many days we add per "year" of BNS belnet registration.  We slightly extend this to the 368
 // days per registration "year" to allow for some blockchain time drift + leap years.
 constexpr uint64_t REGISTRATION_YEAR_DAYS = 368;
 
@@ -81,7 +81,7 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_type type)
 {
   uint64_t result = 0;
 
-  // The base amount for session/wallet/beldexnet-1year:
+  // The base amount for session/wallet/belnet-1year:
   const uint64_t basic_fee = (
       hf_version >= 16 ? 15*COIN :  // cryptonote::network_version_16_pulse -- but don't want to add cryptonote_config.h include
       20*COIN                       // cryptonote::network_version_15_bns
@@ -92,16 +92,16 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_type type)
       result = 0;
       break;
 
-    case mapping_type::beldexnet: /* FALLTHRU */
+    case mapping_type::belnet: /* FALLTHRU */
     case mapping_type::session: /* FALLTHRU */
     case mapping_type::wallet: /* FALLTHRU */
     default:
       result = basic_fee;
       break;
 
-    case mapping_type::beldexnet_2years: result = 2 * basic_fee; break;
-    case mapping_type::beldexnet_5years: result = 4 * basic_fee; break;
-    case mapping_type::beldexnet_10years: result = 6 * basic_fee; break;
+    case mapping_type::belnet_2years: result = 2 * basic_fee; break;
+    case mapping_type::belnet_5years: result = 4 * basic_fee; break;
+    case mapping_type::belnet_10years: result = 6 * basic_fee; break;
   }
   return result;
 }
