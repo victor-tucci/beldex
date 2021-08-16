@@ -104,7 +104,7 @@ struct mapping_value
 
   // Validate a human readable mapping value representation in 'value' and write the binary form into 'blob'.
   // value: if type is session, 66 character hex string of an ed25519 public key (with 05 prefix)
-  //                   BELDEXnet, 52 character base32z string of an ed25519 public key
+  //                   BELnet, 52 character base32z string of an ed25519 public key
   //                   wallet,  the wallet public address string
   // blob: (optional) if function returns true, validate will load the binary data into blob (ready for encryption via encrypt())
   static bool validate(cryptonote::network_type nettype, mapping_type type, std::string_view value, mapping_value *blob = nullptr, std::string *reason = nullptr);
