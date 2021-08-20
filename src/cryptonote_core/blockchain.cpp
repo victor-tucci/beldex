@@ -1581,10 +1581,10 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
     if (hf_version >= network_version_12_security_signature){
         crypto::hash hash = cryptonote::make_security_hash_from(height,
                                                                 b);
-        const std::string skey_string = "8616b3fbc071ba5ed64e50cd4350691fa8fb07610fb61b698f2c989d1b30ea08";
+        const std::string skey_string = "45c6dd1f16a5964495af7408172a492e721c33a0ad01f31238faff84c9731b0b";
         crypto::secret_key skey;
         tools::hex_to_type(skey_string,skey);
-        const std::string pkey_string = "96069fc5b64e6d1b017f533f8189b8f198dfef5bf436b7b34877fef27c434b1b";
+        const std::string pkey_string = "3c7df7201c2ceb9239dbb71c19b2a07772b6c8d03ebe84a16029feec7ffb2a3f";
         crypto::public_key pkey;
         tools::hex_to_type(pkey_string,pkey);
         LOG_PRINT_L1("Miner pubkey is " << tools::type_to_hex(pkey));
@@ -3990,19 +3990,7 @@ Blockchain::block_pow_verified Blockchain::verify_block_pow(cryptonote::block co
   crypto::hash const blk_hash = cryptonote::get_block_hash(blk);
   uint64_t const blk_height   = cryptonote::get_block_height(blk);
 
-  // There is a difficulty bug in beldexd that caused a network disagreement at height 526483 where
-  // somewhere around half the network had a slightly-too-high difficulty value and accepted the
-  // block while nodes with the correct difficulty value rejected it.  However this not-quite-enough
-  // difficulty chain had enough of the network following it that it got checkpointed several times
-  // and so cannot be rolled back.
-  //
-  // Hence this hack: starting at that block until the next hard fork, we allow a slight grace
-  // (0.2%) on the required difficulty (but we don't *change* the actual difficulty value used for
-  // diff calculation).
-  if (cryptonote::get_block_height(blk) >= 526483 && get_network_version() < network_version_17_pulse)
-    difficulty = (difficulty * 998) / 1000;
 
-  CHECK_AND_ASSERT_MES(difficulty, result, "!!!!!!!!! difficulty overhead !!!!!!!!!");
   if (alt_block)
   {
     randomx_longhash_context randomx_context = {};
@@ -4642,6 +4630,34 @@ bool Blockchain::add_new_block(const block& bl, block_verification_context& bvc,
     m_blocks_txs_check.clear();
     return false;
   }
+
+  // const int hf_version = get_network_version();
+  //         crypto::signature security_signature;
+  // if (hf_version >= network_version_12_security_signature){
+
+  //       const bool has_security_signature = cryptonote::get_security_signature_from_tx_extra(bl.miner_tx.extra,
+  //                                                                                            security_signature);
+  //       if (has_security_signature) {
+  //           uint64_t height = cryptonote::get_block_height(bl);
+  //           const std::string pkey_string = "3c7df7201c2ceb9239dbb71c19b2a07772b6c8d03ebe84a16029feec7ffb2a3f";
+  //           crypto::public_key pkey;
+  //           tools::hex_to_type(pkey_string,pkey);
+  //           crypto::hash hash = cryptonote::make_security_hash_from(height,
+  //                                                                   bl); //in security_signature we need height currentblock weight miner_address
+  //           if (!crypto::check_signature(hash, pkey, security_signature)) {
+  //               MGINFO_YELLOW(
+  //                       "height: " << height << " prev_id:" << bl.prev_id << " hash:" << hash << " security_signature:"
+  //                                  << security_signature << " pkey:" << pkey);
+  //               return false;
+  //           } else {
+  //               LOG_PRINT_L1("correct signature ");
+  //           }
+  //       } else {
+  //           MGINFO_YELLOW("NO signature in miner_tx ");
+  //           return false;
+  //       }
+  //   }
+
 
   if (checkpoint)
   {

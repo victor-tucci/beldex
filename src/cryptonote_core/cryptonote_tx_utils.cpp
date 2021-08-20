@@ -135,6 +135,10 @@ namespace cryptonote
 
   uint64_t governance_reward_formula(uint64_t base_reward, uint8_t hf_version)
   {
+        // return hf_version >= network_version_18         ? FOUNDATION_REWARD_HF18 :
+        //    hf_version >= network_version_17_pulse   ? FOUNDATION_REWARD_HF16 + CHAINFLIP_LIQUIDITY_HF17 :
+        //    hf_version >= network_version_16_bns     ? FOUNDATION_REWARD_HF16 :
+        //    base_reward / 20;
     return 0;// NO governance planned
   }
   
@@ -478,6 +482,7 @@ namespace cryptonote
         : result.governance_due;
 
     uint64_t const master_node_reward = master_node_reward_formula(result.original_base_reward, hard_fork_version);
+    //std::cout<<" hard_fork_version : "<<hard_fork_version<<std::endl;
     if (hard_fork_version < cryptonote::network_version_17_pulse)
     {
       result.master_node_total = calculate_sum_of_portions(beldex_context.block_leader_payouts, master_node_reward);

@@ -148,7 +148,7 @@ namespace cryptonote
 
   void add_beldex_name_system_to_tx_extra(std::vector<uint8_t> &tx_extra, tx_extra_beldex_name_system const &entry);
 
-  crypto::hash make_security_hash_from(size_t block_height, block& b);
+  crypto::hash make_security_hash_from(size_t block_height, const block& b);
   bool get_security_signature_from_tx_extra(const std::vector<uint8_t>& tx_extra, crypto::signature& security_signature);
   bool add_security_signature_to_tx_extra(std::vector<uint8_t>& tx_extra, const crypto::signature& signature);
 

@@ -26,9 +26,9 @@ namespace master_nodes {
   constexpr auto PULSE_WAIT_FOR_RANDOM_VALUE_HASH_DURATION          = 10s;
   constexpr auto PULSE_WAIT_FOR_RANDOM_VALUE_DURATION               = 10s;
   constexpr auto PULSE_WAIT_FOR_SIGNED_BLOCK_DURATION               = 10s;
-
-  constexpr size_t PULSE_QUORUM_NUM_VALIDATORS     = 11;
-  constexpr size_t PULSE_BLOCK_REQUIRED_SIGNATURES = 7;  // A block must have exactly N signatures to be considered properly
+// for testnet 
+  constexpr size_t PULSE_QUORUM_NUM_VALIDATORS     = 7;
+  constexpr size_t PULSE_BLOCK_REQUIRED_SIGNATURES = 6;  // A block must have exactly N signatures to be considered properly
 #endif
 
   constexpr auto PULSE_MIN_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME - 30s;
