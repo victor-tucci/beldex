@@ -283,6 +283,8 @@ namespace cryptonote
   , m_last_storage_server_ping(0)
   , m_last_beldexnet_ping(0)
   , m_pad_transactions(false)
+  , ss_version{0}
+  , beldexnet_version{0}
   {
     m_checkpoints_updating.clear();
   }
@@ -1850,7 +1852,7 @@ namespace cryptonote
     if (!m_master_node)
       return true;
 
-    NOTIFY_UPTIME_PROOF::request req = m_master_node_list.generate_uptime_proof(m_mn_public_ip, m_storage_port, m_storage_lmq_port, m_quorumnet_port);
+    NOTIFY_UPTIME_PROOF::request req = m_master_node_list.generate_uptime_proof(m_mn_public_ip, m_storage_port, m_storage_lmq_port, ss_version, m_quorumnet_port, beldexnet_version);
 
     cryptonote_connection_context fake_context{};
     bool relayed = get_protocol()->relay_uptime_proof(req, fake_context);
@@ -2439,11 +2441,7 @@ namespace cryptonote
 
     return true;
   }
-  //-----------------------------------------------------------------------------------------------
-  bool core::set_storage_server_peer_reachable(crypto::public_key const &pubkey, bool value)
-  {
-    return m_master_node_list.set_storage_server_peer_reachable(pubkey, value);
-  }
+  
   //-----------------------------------------------------------------------------------------------
   void core::flush_bad_txs_cache()
   {

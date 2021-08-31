@@ -999,10 +999,6 @@ namespace cryptonote
       */
      void flush_invalid_blocks();
 
-     /**
-      * @brief Record the reachability status of node's storage server
-      */
-     bool set_storage_server_peer_reachable(crypto::public_key const &pubkey, bool value);
 
      /// Time point at which the storage server and beldexnet last pinged us
      std::atomic<time_t> m_last_storage_server_ping, m_last_beldexnet_ping;
@@ -1157,6 +1153,10 @@ namespace cryptonote
       */
      std::unordered_map<crypto::x25519_public_key, oxenmq::AuthLevel>& _lmq_auth_level_map() { return m_lmq_auth; }
      oxenmq::TaggedThreadID const &pulse_thread_id() const { return *m_pulse_thread_id; }
+
+     /// Master Node's storage server and beldexnet version
+     std::array<uint16_t, 3> ss_version;
+     std::array<uint16_t, 3> beldexnet_version
 
  private:
 

@@ -3314,11 +3314,13 @@ namespace cryptonote { namespace rpc {
   //------------------------------------------------------------------------------------------------------------------------------
   STORAGE_SERVER_PING::response core_rpc_server::invoke(STORAGE_SERVER_PING::request&& req, rpc_context context)
   {
+    m_core.ss_version = req.version;
     return handle_ping<STORAGE_SERVER_PING>(
       {2,0,7}, master_nodes::MIN_STORAGE_SERVER_VERSION,
-      "Storage Server", m_core.m_last_storage_server_ping, STORAGE_SERVER_PING_LIFETIME,
+      "Storage Server", m_core.m_last_storage_server_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
       [this, &req](bool significant) {
-        m_core.m_storage_lmq_port = req.storage_lmq_port;
+        m_core.m_storage_https_port = req.https_port;
+        m_core.m_storage_omq_port = req.omq_port;
         if (significant)
           m_core.reset_proof_interval();
       });
@@ -3500,9 +3502,11 @@ namespace cryptonote { namespace rpc {
     bool success = false;
     if (req.type == "beldexnet")
       success = m_core.get_master_node_list().set_beldexnet_peer_reachable(pubkey, req.passed);
-    else if (req.type != "reachability")
-      throw rpc_error{ERROR_WRONG_PARAM, "Unknown status type"};
-    if (!m_core.set_storage_server_peer_reachable(pubkey, req.passed))
+    else if (req.type == "storage" || req.type == "reachability" /* TODO: old name, can be removed once SS no longer uses it */)
+      success = m_core.get_master_node_list().set_storage_server_peer_reachable(pubkey, req.passed);
+    else
+      throw rpc_error{ERROR_WRONG_PARAM, "Unknown status type"};   
+    if (!success)
       throw rpc_error{ERROR_WRONG_PARAM, "Pubkey not found"};
 
     res.status = STATUS_OK;
