@@ -104,6 +104,37 @@ namespace rct {
     }
 
     //Borromean (c.f. gmax/andytoshi's paper)
+    boroSig genBorromean(const key64 x, const key64 P1, const key64 P2, const bits indices) {
+        key64 L[2], alpha;
+        key c;
+        int naught = 0, prime = 0, ii = 0, jj=0;
+        boroSig bb;
+        for (ii = 0 ; ii < 64 ; ii++) {
+            naught = indices[ii]; prime = (indices[ii] + 1) % 2;
+            skGen(alpha[ii]);
+            scalarmultBase(L[naught][ii], alpha[ii]);
+            if (naught == 0) {
+                skGen(bb.s1[ii]);
+                c = hash_to_scalar(L[naught][ii]);
+                addKeys2(L[prime][ii], bb.s1[ii], c, P2[ii]);
+            }
+        }
+        bb.ee = hash_to_scalar(L[1]); //or L[1]..
+        key LL, cc;
+        for (jj = 0 ; jj < 64 ; jj++) {
+            if (!indices[jj]) {
+                sc_mulsub(bb.s0[jj].bytes, x[jj].bytes, bb.ee.bytes, alpha[jj].bytes);
+            } else {
+                skGen(bb.s0[jj]);
+                addKeys2(LL, bb.s0[jj], bb.ee, P1[jj]); //different L0
+                cc = hash_to_scalar(LL);
+                sc_mulsub(bb.s1[jj].bytes, x[jj].bytes, cc.bytes, alpha[jj].bytes);
+            }
+        }
+        return bb;
+    }
+
+    //Borromean (c.f. gmax/andytoshi's paper)
     bool verifyBorromean(const boroSig &bb, const ge_p3 P1[64], const ge_p3 P2[64]) {
         key64 Lv1; key chash, LL;
         int ii = 0;
@@ -359,8 +390,137 @@ namespace rct {
         sc_sub(c.bytes, c_old.bytes, rv.cc.bytes);
         return sc_isnonzero(c.bytes) == 0;  
     }
-    
 
+// MLSAG signatures
+    // See paper by Noether (https://eprint.iacr.org/2015/1098)
+    // This generalization allows for some dimensions not to require linkability;
+    //   this is used in practice for commitment data within signatures
+    // Note that using more than one linkable dimension is not recommended.
+    mgSig MLSAG_Gen(const key &message, const keyM & pk, const keyV & xx, const multisig_kLRki *kLRki, key *mscout, const unsigned int index, size_t dsRows, hw::device &hwdev) {
+        mgSig rv;
+        size_t cols = pk.size();
+        CHECK_AND_ASSERT_THROW_MES(cols >= 2, "Error! What is c if cols = 1!");
+        CHECK_AND_ASSERT_THROW_MES(index < cols, "Index out of range");
+        size_t rows = pk[0].size();
+        CHECK_AND_ASSERT_THROW_MES(rows >= 1, "Empty pk");
+        for (size_t i = 1; i < cols; ++i) {
+            CHECK_AND_ASSERT_THROW_MES(pk[i].size() == rows, "pk is not rectangular");
+        }
+        CHECK_AND_ASSERT_THROW_MES(xx.size() == rows, "Bad xx size");
+        CHECK_AND_ASSERT_THROW_MES(dsRows <= rows, "Bad dsRows size");
+        CHECK_AND_ASSERT_THROW_MES((kLRki && mscout) || (!kLRki && !mscout), "Only one of kLRki/mscout is present");
+        CHECK_AND_ASSERT_THROW_MES(!kLRki || dsRows == 1, "Multisig requires exactly 1 dsRows");
+
+        size_t i = 0, j = 0, ii = 0;
+        key c, c_old, L, R, Hi;
+        ge_p3 Hi_p3;
+        sc_0(c_old.bytes);
+        std::vector<geDsmp> Ip(dsRows);
+        rv.II = keyV(dsRows);
+        keyV alpha(rows);
+        keyV aG(rows);
+        rv.ss = keyM(cols, aG);
+        keyV aHP(dsRows);
+        keyV toHash(1 + 3 * dsRows + 2 * (rows - dsRows));
+        toHash[0] = message;
+        DP("here1");
+        for (i = 0; i < dsRows; i++) {
+            toHash[3 * i + 1] = pk[index][i];
+            if (kLRki) {
+                // multisig
+                alpha[i] = kLRki->k;
+                toHash[3 * i + 2] = kLRki->L;
+                toHash[3 * i + 3] = kLRki->R;
+                rv.II[i] = kLRki->ki;
+            }
+            else {
+                hash_to_p3(Hi_p3, pk[index][i]);
+                ge_p3_tobytes(Hi.bytes, &Hi_p3);
+                hwdev.mlsag_prepare(Hi, xx[i], alpha[i] , aG[i] , aHP[i] , rv.II[i]);
+                toHash[3 * i + 2] = aG[i];
+                toHash[3 * i + 3] = aHP[i];
+            }
+            precomp(Ip[i].k, rv.II[i]);
+        }
+        size_t ndsRows = 3 * dsRows; //non Double Spendable Rows (see identity chains paper)
+        for (i = dsRows, ii = 0 ; i < rows ; i++, ii++) {
+            skpkGen(alpha[i], aG[i]); //need to save alphas for later..
+            toHash[ndsRows + 2 * ii + 1] = pk[index][i];
+            toHash[ndsRows + 2 * ii + 2] = aG[i];
+        }
+
+        hwdev.mlsag_hash(toHash, c_old);
+
+
+        i = (index + 1) % cols;
+        if (i == 0) {
+            copy(rv.cc, c_old);
+        }
+        while (i != index) {
+
+            rv.ss[i] = skvGen(rows);
+            sc_0(c.bytes);
+            for (j = 0; j < dsRows; j++) {
+                addKeys2(L, rv.ss[i][j], c_old, pk[i][j]);
+                hash_to_p3(Hi_p3, pk[i][j]);
+                ge_p3_tobytes(Hi.bytes, &Hi_p3);
+                addKeys3(R, rv.ss[i][j], Hi, c_old, Ip[j].k);
+                toHash[3 * j + 1] = pk[i][j];
+                toHash[3 * j + 2] = L;
+                toHash[3 * j + 3] = R;
+            }
+            for (j = dsRows, ii = 0; j < rows; j++, ii++) {
+                addKeys2(L, rv.ss[i][j], c_old, pk[i][j]);
+                toHash[ndsRows + 2 * ii + 1] = pk[i][j];
+                toHash[ndsRows + 2 * ii + 2] = L;
+            }
+            hwdev.mlsag_hash(toHash, c);
+            copy(c_old, c);
+            i = (i + 1) % cols;
+
+            if (i == 0) {
+                copy(rv.cc, c_old);
+            }
+        }
+        hwdev.mlsag_sign(c, xx, alpha, rows, dsRows, rv.ss[index]);
+        if (mscout)
+            *mscout = c;
+        return rv;
+    }
+
+
+
+    //proveRange and verRange
+    //proveRange gives C, and mask such that \sumCi = C
+    //   c.f. https://eprint.iacr.org/2015/1098 section 5.1
+    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
+    //   thus this proves that "amount" is in [0, 2^64]
+    //   mask is a such that C = aG + bH, and b = amount
+    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
+    rangeSig proveRange(key & C, key & mask, const xmr_amount & amount) {
+        sc_0(mask.bytes);
+        identity(C);
+        bits b;
+        d2b(b, amount);
+        rangeSig sig;
+        key64 ai;
+        key64 CiH;
+        int i = 0;
+        for (i = 0; i < ATOMS; i++) {
+            skGen(ai[i]);
+            if (b[i] == 0) {
+                scalarmultBase(sig.Ci[i], ai[i]);
+            }
+            if (b[i] == 1) {
+                addKeys1(sig.Ci[i], ai[i], H2[i]);
+            }
+            subKeys(CiH[i], sig.Ci[i], H2[i]);
+            sc_add(mask.bytes, mask.bytes, ai[i].bytes);
+            addKeys(C, C, sig.Ci[i]);
+        }
+        sig.asig = genBorromean(ai, sig.Ci, CiH, b);
+        return sig;
+    }
 
     //proveRange and verRange
     //proveRange gives C, and mask such that \sumCi = C
@@ -402,6 +562,155 @@ namespace rct {
       }
       // we can get deep throws from ge_frombytes_vartime if input isn't valid
       catch (...) { return false; }
+    }
+
+    key get_pre_mlsag_hash(const rctSig &rv, hw::device &hwdev)
+    {
+        keyV hashes;
+        hashes.reserve(3);
+        hashes.push_back(rv.message);
+        crypto::hash h;
+
+        CHECK_AND_ASSERT_THROW_MES(!rv.mixRing.empty(), "Empty mixRing");
+        const size_t inputs = is_rct_simple(rv.type) ? rv.mixRing.size() : rv.mixRing[0].size();
+        const size_t outputs = rv.ecdhInfo.size();
+        key prehash;
+        std::string blob;
+        {
+            serialization::binary_string_archiver ba;
+            const_cast<rctSig&>(rv).serialize_rctsig_base(ba, inputs, outputs);
+            blob = ba.str();
+        }
+        cryptonote::get_blob_hash(blob, h);
+        hashes.push_back(hash2rct(h));
+
+        keyV kv;
+        if (rct::is_rct_bulletproof(rv.type))
+        {
+            kv.reserve((6*2+9) * rv.p.bulletproofs.size());
+            for (const auto &p: rv.p.bulletproofs)
+            {
+                // V are not hashed as they're expanded from outPk.mask
+                // (and thus hashed as part of rctSigBase above)
+                kv.push_back(p.A);
+                kv.push_back(p.S);
+                kv.push_back(p.T1);
+                kv.push_back(p.T2);
+                kv.push_back(p.taux);
+                kv.push_back(p.mu);
+                for (size_t n = 0; n < p.L.size(); ++n)
+                    kv.push_back(p.L[n]);
+                for (size_t n = 0; n < p.R.size(); ++n)
+                    kv.push_back(p.R[n]);
+                kv.push_back(p.a);
+                kv.push_back(p.b);
+                kv.push_back(p.t);
+            }
+        }
+        else
+        {
+            kv.reserve((64*3+1) * rv.p.rangeSigs.size());
+            for (const auto &r: rv.p.rangeSigs)
+            {
+                for (size_t n = 0; n < 64; ++n)
+                    kv.push_back(r.asig.s0[n]);
+                for (size_t n = 0; n < 64; ++n)
+                    kv.push_back(r.asig.s1[n]);
+                kv.push_back(r.asig.ee);
+                for (size_t n = 0; n < 64; ++n)
+                    kv.push_back(r.Ci[n]);
+            }
+        }
+        hashes.push_back(cn_fast_hash(kv));
+        hwdev.mlsag_prehash(blob, inputs, outputs, hashes, rv.outPk, prehash);
+        return  prehash;
+    }
+
+    //Ring-ct MG sigs
+    //Prove:
+    //   c.f. https://eprint.iacr.org/2015/1098 section 4. definition 10.
+    //   This does the MG sig on the "dest" part of the given key matrix, and
+    //   the last row is the sum of input commitments from that column - sum output commitments
+    //   this shows that sum inputs = sum outputs
+    //Ver:
+    //   verifies the above sig is created corretly
+    mgSig proveRctMG(const key &message, const ctkeyM & pubs, const ctkeyV & inSk, const ctkeyV &outSk, const ctkeyV & outPk, const multisig_kLRki *kLRki, key *mscout, unsigned int index, const key &txnFeeKey, hw::device &hwdev) {
+        //setup vars
+        size_t cols = pubs.size();
+        CHECK_AND_ASSERT_THROW_MES(cols >= 1, "Empty pubs");
+        size_t rows = pubs[0].size();
+        CHECK_AND_ASSERT_THROW_MES(rows >= 1, "Empty pubs");
+        for (size_t i = 1; i < cols; ++i) {
+            CHECK_AND_ASSERT_THROW_MES(pubs[i].size() == rows, "pubs is not rectangular");
+        }
+        CHECK_AND_ASSERT_THROW_MES(inSk.size() == rows, "Bad inSk size");
+        CHECK_AND_ASSERT_THROW_MES(outSk.size() == outPk.size(), "Bad outSk/outPk size");
+        CHECK_AND_ASSERT_THROW_MES((kLRki && mscout) || (!kLRki && !mscout), "Only one of kLRki/mscout is present");
+
+        keyV sk(rows + 1);
+        keyV tmp(rows + 1);
+        size_t i = 0, j = 0;
+        for (i = 0; i < rows + 1; i++) {
+            sc_0(sk[i].bytes);
+            identity(tmp[i]);
+        }
+        keyM M(cols, tmp);
+        //create the matrix to mg sig
+        for (i = 0; i < cols; i++) {
+            M[i][rows] = identity();
+            for (j = 0; j < rows; j++) {
+                M[i][j] = pubs[i][j].dest;
+                addKeys(M[i][rows], M[i][rows], pubs[i][j].mask); //add input commitments in last row
+            }
+        }
+        sc_0(sk[rows].bytes);
+        for (j = 0; j < rows; j++) {
+            sk[j] = copy(inSk[j].dest);
+            sc_add(sk[rows].bytes, sk[rows].bytes, inSk[j].mask.bytes); //add masks in last row
+        }
+        for (i = 0; i < cols; i++) {
+            for (size_t j = 0; j < outPk.size(); j++) {
+                subKeys(M[i][rows], M[i][rows], outPk[j].mask); //subtract output Ci's in last row
+            }
+            //subtract txn fee output in last row
+            subKeys(M[i][rows], M[i][rows], txnFeeKey);
+        }
+        for (size_t j = 0; j < outPk.size(); j++) {
+            sc_sub(sk[rows].bytes, sk[rows].bytes, outSk[j].mask.bytes); //subtract output masks in last row..
+        }
+        mgSig result = MLSAG_Gen(message, M, sk, kLRki, mscout, index, rows, hwdev);
+        memwipe(sk.data(), sk.size() * sizeof(key));
+        return result;
+    }
+
+
+    //Ring-ct MG sigs Simple
+    //   Simple version for when we assume only
+    //       post rct inputs
+    //       here pubs is a vector of (P, C) length mixin
+    //   inSk is x, a_in corresponding to signing index
+    //       a_out, Cout is for the output commitment
+    //       index is the signing index..
+    mgSig proveRctMGSimple(const key &message, const ctkeyV & pubs, const ctkey & inSk, const key &a , const key &Cout, const multisig_kLRki *kLRki, key *mscout, unsigned int index, hw::device &hwdev) {
+        //setup vars
+        size_t rows = 1;
+        size_t cols = pubs.size();
+        CHECK_AND_ASSERT_THROW_MES(cols >= 1, "Empty pubs");
+        CHECK_AND_ASSERT_THROW_MES((kLRki && mscout) || (!kLRki && !mscout), "Only one of kLRki/mscout is present");
+        keyV tmp(rows + 1);
+        keyV sk(rows + 1);
+        size_t i;
+        keyM M(cols, tmp);
+
+        sk[0] = copy(inSk.dest);
+        sc_sub(sk[1].bytes, inSk.mask.bytes, a.bytes);
+        for (i = 0; i < cols; i++) {
+            M[i][0] = pubs[i].dest;
+            subKeys(M[i][1], pubs[i].mask, Cout);
+        }
+        mgSig result = MLSAG_Gen(message, M, sk, kLRki, mscout, index, rows, hwdev);
+        memwipe(&sk[0], sizeof(key));
+        return result;
     }
 
     key get_pre_clsag_hash(const rctSig &rv, hw::device &hwdev)
@@ -739,6 +1048,77 @@ namespace rct {
         return index;
     }
 
+    //RingCT protocol
+    //genRct:
+    //   creates an rctSig with all data necessary to verify the rangeProofs and that the signer owns one of the
+    //   columns that are claimed as inputs, and that the sum of inputs  = sum of outputs.
+    //   Also contains masked "amount" and "mask" so the receiver can see how much they received
+    //verRct:
+    //   verifies that all signatures (rangeProogs, MG sig, sum inputs = outputs) are correct
+    //decodeRct: (c.f. https://eprint.iacr.org/2015/1098 section 5.1.1)
+    //   uses the attached ecdh info to find the amounts represented by each output commitment
+    //   must know the destination private key to find the correct amount, else will return a random number
+    //   Note: For txn fees, the last index in the amounts vector should contain that
+    //   Thus the amounts vector will be "one" longer than the destinations vectort
+    rctSig genRct(const key &message, const ctkeyV & inSk, const keyV & destinations, const std::vector<xmr_amount> & amounts, const ctkeyM &mixRing, const keyV &amount_keys, const multisig_kLRki *kLRki, multisig_out *msout, unsigned int index, ctkeyV &outSk, const RCTConfig &rct_config, hw::device &hwdev) {
+        CHECK_AND_ASSERT_THROW_MES(amounts.size() == destinations.size() || amounts.size() == destinations.size() + 1, "Different number of amounts/destinations");
+        CHECK_AND_ASSERT_THROW_MES(amount_keys.size() == destinations.size(), "Different number of amount_keys/destinations");
+        CHECK_AND_ASSERT_THROW_MES(index < mixRing.size(), "Bad index into mixRing");
+        for (size_t n = 0; n < mixRing.size(); ++n) {
+            CHECK_AND_ASSERT_THROW_MES(mixRing[n].size() == inSk.size(), "Bad mixRing size");
+        }
+        CHECK_AND_ASSERT_THROW_MES((kLRki && msout) || (!kLRki && !msout), "Only one of kLRki/msout is present");
+        CHECK_AND_ASSERT_THROW_MES(inSk.size() < 2, "genRct is not suitable for 2+ rings");
+
+        rctSig rv;
+        rv.type = RCTType::Full;
+        rv.message = message;
+        rv.outPk.resize(destinations.size());
+        rv.p.rangeSigs.resize(destinations.size());
+        rv.ecdhInfo.resize(destinations.size());
+
+        size_t i = 0;
+        keyV masks(destinations.size()); //sk mask..
+        outSk.resize(destinations.size());
+        for (i = 0; i < destinations.size(); i++) {
+            //add destination to sig
+            rv.outPk[i].dest = copy(destinations[i]);
+            //compute range proof
+            rv.p.rangeSigs[i] = proveRange(rv.outPk[i].mask, outSk[i].mask, amounts[i]);
+#ifdef DBG
+            CHECK_AND_ASSERT_THROW_MES(verRange(rv.outPk[i].mask, rv.p.rangeSigs[i]), "verRange failed on newly created proof");
+#endif
+            //mask amount and mask
+            rv.ecdhInfo[i].mask = copy(outSk[i].mask);
+            rv.ecdhInfo[i].amount = d2h(amounts[i]);
+            hwdev.ecdhEncode(rv.ecdhInfo[i], amount_keys[i], rv.type ==  RCTType::Bulletproof2 || rv.type == RCTType::CLSAG);
+        }
+
+        //set txn fee
+        if (amounts.size() > destinations.size())
+        {
+            rv.txnFee = amounts[destinations.size()];
+        }
+        else
+        {
+            rv.txnFee = 0;
+        }
+        key txnFeeKey = scalarmultH(d2h(rv.txnFee));
+
+        rv.mixRing = mixRing;
+        if (msout)
+            msout->c.resize(1);
+        rv.p.MGs.push_back(proveRctMG(get_pre_mlsag_hash(rv, hwdev), rv.mixRing, inSk, outSk, rv.outPk, kLRki, msout ? &msout->c[0] : NULL, index, txnFeeKey,hwdev));
+        return rv;
+    }
+
+    rctSig genRct(const key &message, const ctkeyV & inSk, const ctkeyV  & inPk, const keyV & destinations, const std::vector<xmr_amount> & amounts, const keyV &amount_keys, const multisig_kLRki *kLRki, multisig_out *msout, const int mixin, const RCTConfig &rct_config, hw::device &hwdev) {
+        unsigned int index;
+        ctkeyM mixRing;
+        ctkeyV outSk;
+        tie(mixRing, index) = populateFromBlockchain(inPk, mixin);
+        return genRct(message, inSk, destinations, amounts, mixRing, amount_keys, kLRki, msout, index, outSk, rct_config, hwdev);
+    }
     //RCT simple    
     //for post-rct only
     rctSig genRctSimple(const key &message, const ctkeyV & inSk, const keyV & destinations, const std::vector<xmr_amount> &inamounts, const std::vector<xmr_amount> &outamounts, xmr_amount txnFee, const ctkeyM & mixRing, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, const std::vector<unsigned int> & index, ctkeyV &outSk, const RCTConfig &rct_config, hw::device &hwdev) {

@@ -372,21 +372,28 @@ namespace cryptonote::rpc {
 
   // HTTP-only long-polling support for the transaction pool hashes command
   void invoke_txpool_hashes_bin(std::shared_ptr<call_data> data) {
+    MTRACE("invoke_txpool_hashes_bin...");
     GET_TRANSACTION_POOL_HASHES_BIN::request req{};
     std::string_view body;
+
     if (auto body_sv = data->request.body_view())
       body = *body_sv;
     else
       throw parse_error{"Internal error: got unexpected request body type"};
 
+    LOG_PRINT_L2("invoke_txpool_hashes_bin load_t_from_binary");
+    LOG_PRINT_L2("invoke_txpool_hashes_bin body:" << body);
+
     if (!epee::serialization::load_t_from_binary(req, body))
-      throw parse_error{"Failed to parse binary data parameters"};
+      throw parse_error{"Failed to parse binary data parameterZ"};
 
     std::vector<crypto::hash> pool_hashes;
+    MTRACE("invoke_txpool_hashes_bin get_transaction_hashes...");
     data->core_rpc.get_core().get_pool().get_transaction_hashes(pool_hashes, data->request.context.admin, req.blinked_txs_only /*include_only_blinked*/);
 
     if (req.long_poll)
     {
+        MTRACE("invoke_txpool_hashes_bin long_poll...");
       crypto::hash checksum{};
       for (const auto& h : pool_hashes) checksum ^= h;
 
@@ -402,6 +409,7 @@ namespace cryptonote::rpc {
     }
 
     // Either not a long poll request or checksum didn't match
+    MTRACE("invoke_txpool_hashes_bin queue_response...");
     queue_response(std::move(data), pool_hashes_response(std::move(pool_hashes)));
   }
 

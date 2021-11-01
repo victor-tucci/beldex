@@ -132,14 +132,21 @@ namespace cryptonote { namespace rpc {
     struct reg_helper<RPC, std::enable_if_t<std::is_base_of<BINARY, RPC>::value>> {
       using Request = typename RPC::request;
       Request load(rpc_request& request) {
+        LOG_PRINT_L2("reg_helper load" << __func__);
         Request req{};
         std::string_view data;
         if (auto body = request.body_view())
           data = *body;
         else
           throw std::runtime_error{"Internal error: can't load binary a RPC command with non-string body"};
-        if (!epee::serialization::load_t_from_binary(req, data))
-          throw parse_error{"Failed to parse binary data parameters"};
+        if (sizeof(data)>0){
+            if (!epee::serialization::load_t_from_binary(req, data))
+                throw parse_error{"Failed to parse binary data parameterS"};
+        }
+        else{
+
+        }
+
         return req;
       }
 

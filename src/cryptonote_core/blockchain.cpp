@@ -5425,6 +5425,7 @@ cryptonote::blobdata Blockchain::get_txpool_tx_blob(const crypto::hash& txid) co
 
 bool Blockchain::for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const cryptonote::blobdata*)> f, bool include_blob, bool include_unrelayed_txes) const
 {
+  LOG_PRINT_L3("Blockchain::" << __func__);
   return m_db->for_all_txpool_txes(f, include_blob, include_unrelayed_txes);
 }
 
