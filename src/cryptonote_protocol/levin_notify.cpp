@@ -542,14 +542,19 @@ namespace levin
 
   bool notify::send_txs(std::vector<blobdata> txs, const boost::uuids::uuid& source, const bool pad_txs)
   {
-    if (!zone_)
-      return false;
+
+
+    if (!zone_) {
+        MINFO("send_txs no zone_");
+        return false;
+    }
 
     if (zone_->is_public)
         std::sort(txs.begin(), txs.end()); // don't leak receive order
 
     if (!zone_->noise.view.empty() && !zone_->channels.empty())
     {
+        MINFO("send_txs covert send in \"noise\" channel");
       // covert send in "noise" channel
       static_assert(
         CRYPTONOTE_MAX_FRAGMENTS * CRYPTONOTE_NOISE_BYTES <= LEVIN_DEFAULT_MAX_PACKET_SIZE, "most nodes will reject this fragment setting"
@@ -575,6 +580,7 @@ namespace levin
     }
     else
     {
+      MINFO("send_txs make_tx_payload ");
       const std::string payload = make_tx_payload(std::move(txs), pad_txs);
       epee::shared_sv message{
         epee::levin::make_notify(NOTIFY_NEW_TRANSACTIONS::ID, epee::strspan<std::uint8_t>(payload))};

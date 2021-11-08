@@ -213,7 +213,7 @@ namespace cryptonote
   {
     serialization::binary_string_unarchiver ba{tx_blob};
     try {
-      tx.serialize_base(ba);
+        tx.serialize_base(ba);
     } catch (const std::exception& e) {
       LOG_ERROR("Failed to parse transaction base from blob: " << e.what());
       return false;

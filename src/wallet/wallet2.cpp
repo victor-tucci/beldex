@@ -2990,14 +2990,15 @@ bool wallet2::long_poll_pool_state()
   const auto error_sleep = m_long_poll_local ? 500ms : 3s;
   // How long we wait for a long poll response before timing out; we add a 5s buffer to the usual
   // timeout to allow for network latency and beldexd response time.
-  m_long_poll_client.set_timeout(cryptonote::rpc::GET_TRANSACTION_POOL_HASHES_BIN::long_poll_timeout + 5s);
+  MINFO("long_poll_pool_state");
+
 
   using namespace cryptonote::rpc;
 
   GET_TRANSACTION_POOL_HASHES_BIN::request req  = {};
   req.long_poll        = true;
   req.tx_pool_checksum = get_long_poll_tx_pool_checksum();
-
+  m_long_poll_client.set_timeout(cryptonote::rpc::GET_TRANSACTION_POOL_HASHES_BIN::long_poll_timeout + 5s);
   GET_TRANSACTION_POOL_HASHES_BIN::response res;
   try {
     res = m_long_poll_client.binary<GET_TRANSACTION_POOL_HASHES_BIN>(GET_TRANSACTION_POOL_HASHES_BIN::names()[0], req);
@@ -7770,18 +7771,18 @@ uint64_t wallet2::get_fee_percent(uint32_t priority, txtype type) const
   static constexpr std::array<uint64_t, 4> percents{{100, 500, 2500, 12500}};
 
   const bool blinkable = type == txtype::standard;
-
+  LOG_PRINT_L2("get_fee_percent:" << priority);
   if (priority == 0) // 0 means no explicit priority was given, so use the wallet default
   {
     priority = m_default_priority > 0 ? m_default_priority : (uint32_t) tx_priority_blink;
     if (priority == tx_priority_blink && !blinkable)
       priority = tx_priority_unimportant; // The blink default is unusable for this tx, so fall back to unimportant
   }
-
+  LOG_PRINT_L2("get_fee_percent after:" << priority);
   // If it's a blinkable tx then we blink it for everything priority other than unimportant.
   if (blinkable && priority != tx_priority_unimportant)
     priority = tx_priority_blink;
-
+  LOG_PRINT_L2("get_fee_percent after2:" << priority);
   if (priority == tx_priority_blink)
   {
     if (!blinkable)
@@ -7805,6 +7806,7 @@ uint64_t wallet2::get_fee_percent(uint32_t priority, txtype type) const
 byte_and_output_fees wallet2::get_dynamic_base_fee_estimate() const
 {
   byte_and_output_fees fees;
+  LOG_PRINT_L2("get_dynamic_base_fee_estimate");
   if (m_node_rpc_proxy.get_dynamic_base_fee_estimate(FEE_ESTIMATE_GRACE_BLOCKS, fees))
     return fees;
 
@@ -10844,11 +10846,15 @@ bool wallet2::light_wallet_key_image_is_ours(const crypto::key_image& key_image,
 std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, beldex_construct_tx_params &tx_params)
 {
   //ensure device is let in NONE mode in any case
+    LOG_PRINT_L0("create_transactions_2 get_device prio:" << priority);
   hw::device &hwdev = m_account.get_device();
   std::unique_lock hwdev_lock{hwdev};
   hw::mode_resetter rst{hwdev};
 
+
+
   bool const is_bns_tx = (tx_params.tx_type == txtype::beldex_name_system);
+    LOG_PRINT_L0("is_bns_tx:" << is_bns_tx);
   auto original_dsts = dsts;
   if (is_bns_tx)
   {
@@ -10858,12 +10864,15 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
 
   if(m_light_wallet) {
     // Populate m_transfers
+      LOG_PRINT_L0("m_light_wallet" );
     light_wallet_get_unspent_outs();
   }
   std::vector<std::pair<uint32_t, std::vector<size_t>>> unused_transfers_indices_per_subaddr;
   std::vector<std::pair<uint32_t, std::vector<size_t>>> unused_dust_indices_per_subaddr;
   uint64_t needed_money;
   uint64_t accumulated_fee, accumulated_outputs, accumulated_change;
+
+    LOG_PRINT_L0("creating struct TX" );
   struct TX {
     std::vector<size_t> selected_transfers;
     std::vector<cryptonote::tx_destination_entry> dsts;
@@ -10873,9 +10882,12 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     uint64_t needed_fee;
     std::vector<std::vector<tools::wallet2::get_outs_entry>> outs;
 
-    TX() : weight(0), needed_fee(0) {}
+    TX() : weight(0), needed_fee(0) {
+        LOG_PRINT_L0("TX struct initiated" );
+    }
 
     void add(const cryptonote::tx_destination_entry &de, uint64_t amount, unsigned int original_output_index, bool merge_destinations) {
+        LOG_PRINT_L0("struct ADD" );
       if (merge_destinations)
       {
         std::vector<cryptonote::tx_destination_entry>::iterator i;
@@ -10902,16 +10914,22 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
       }
     }
   };
+  LOG_PRINT_L0("creating the TX vector" );
   std::vector<TX> txes;
+
   bool adding_fee; // true if new outputs go towards fee, rather than destinations
   uint64_t needed_fee, available_for_fee = 0;
+    LOG_PRINT_L0("get_upper_transaction_weight_limit" );
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   const bool clsag = use_fork_rules(HF_VERSION_CLSAG, 0);
+  LOG_PRINT_L0("clsag: << clsag");
   const rct::RCTConfig rct_config{rct::RangeProofType::PaddedBulletproof, clsag ? 3 : 2};
-
+    LOG_PRINT_L0("get_base_fees" );
   const auto base_fee = get_base_fees();
+    LOG_PRINT_L0("get_fee_percent" );
   const uint64_t fee_percent = get_fee_percent(priority, tx_params.tx_type);
   uint64_t fixed_fee = 0;
+    LOG_PRINT_L0("get_fee_quantization_mask" );
   const uint64_t fee_quantization_mask = get_fee_quantization_mask();
 
   uint64_t burn_fixed = 0, burn_percent = 0;
@@ -10942,7 +10960,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   {
     THROW_WALLET_EXCEPTION_IF(0 == dt.amount && !is_bns_tx, error::zero_destination);
     needed_money += dt.amount;
-    LOG_PRINT_L2("transfer: adding " << print_money(dt.amount) << ", for a total of " << print_money (needed_money));
+    LOG_PRINT_L0("transfer: adding " << print_money(dt.amount) << ", for a total of " << print_money (needed_money));
     THROW_WALLET_EXCEPTION_IF(needed_money < dt.amount, error::tx_sum_overflow, dsts, 0, m_nettype);
   }
 
@@ -11003,7 +11021,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     {
       if (td.amount() > m_ignore_outputs_above || td.amount() < m_ignore_outputs_below)
       {
-        MDEBUG("Ignoring output " << i << " of amount " << print_money(td.amount()) << " which is outside prescribed range [" << print_money(m_ignore_outputs_below) << ", " << print_money(m_ignore_outputs_above) << "]");
+        LOG_PRINT_L0("Ignoring output " << i << " of amount " << print_money(td.amount()) << " which is outside prescribed range [" << print_money(m_ignore_outputs_below) << ", " << print_money(m_ignore_outputs_above) << "]");
         continue;
       }
       const uint32_t index_minor = td.m_subaddr_index.minor;
@@ -11072,7 +11090,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   // this prevents linking to another by provenance analysis, but two is ok if we
   // try to pick outputs not from the same block. We will get two outputs, one for
   // the destination, and one for change.
-  LOG_PRINT_L2("checking preferred");
+  LOG_PRINT_L0("checking preferred");
   std::vector<size_t> preferred_inputs;
   uint64_t rct_outs_needed = 2 * (fake_outs_count + 1);
   rct_outs_needed += 100; // some fudge factor since we don't know how many are locked
@@ -11854,18 +11872,24 @@ void wallet2::get_hard_fork_info(uint8_t version, uint64_t &earliest_height) con
 bool wallet2::use_fork_rules(uint8_t version, uint64_t early_blocks) const
 {
   // TODO: How to get fork rule info from light wallet node?
-  if(m_light_wallet)
+  LOG_PRINT_L2("use_fork_rules");
+    if(m_light_wallet)
     return true;
   uint64_t height, earliest_height{0};
+  LOG_PRINT_L2("get_height:" << height);
   if (!m_node_rpc_proxy.get_height(height))
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
+
+    LOG_PRINT_L2("get_earliest_height requesting for version :" << version);
+    LOG_PRINT_L2("get_earliest_height:" << earliest_height);
+
   if (!m_node_rpc_proxy.get_earliest_height(version, earliest_height))
     THROW_WALLET_EXCEPTION(tools::error::no_connection_to_daemon, __func__);
 
   bool close_enough = height >= earliest_height - early_blocks; // start using the rules that many blocks beforehand
   if (early_blocks > earliest_height) // Start using rules early if early_blocks would underflow earliest_height, in prev calc
     close_enough = true;
-
+  LOG_PRINT_L2("close_enough:" << close_enough);
   if (close_enough)
     LOG_PRINT_L2("Using v" << (unsigned)version << " rules");
   else

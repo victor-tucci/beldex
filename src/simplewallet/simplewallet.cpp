@@ -5711,9 +5711,11 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
   if (ptx_vector.empty())
     return false;
 
+  LOG_PRINT_L0("confirm_and_send_tx");
   // if more than one tx necessary, prompt user to confirm
   if (m_wallet->always_confirm_transfers() || ptx_vector.size() > 1)
   {
+      LOG_PRINT_L0("confirm_and_send_tx 2");
       uint64_t total_sent = 0;
       uint64_t total_fee = 0;
       uint64_t dust_not_in_fee = 0;
@@ -5761,7 +5763,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
       if (dust_in_fee != 0) prompt << boost::format(tr(", of which %s is dust from change")) % print_money(dust_in_fee);
       if (dust_not_in_fee != 0)  prompt << tr(".") << "\n" << boost::format(tr("A total of %s from dust change will be sent to dust address"))
                                                  % print_money(dust_not_in_fee);
-
+      LOG_PRINT_L0("confirm_and_send_tx 3");
       if (lock_time_in_blocks > 0)
       {
           std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
@@ -5868,6 +5870,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
   }
   else
   {
+    LOG_PRINT_L0("confirm_and_send_tx commit_or_save");
     commit_or_save(ptx_vector, m_do_not_relay, blink);
   }
 
@@ -5877,9 +5880,10 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
 //  "transfer [index=<N1>[,<N2>,...]] [<priority>] <address> <amount> [<payment_id>]"
 bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std::string> &args_, bool called_by_mms)
 {
+  LOG_PRINT_L0("transfer_main");
   if (!try_connect_to_daemon())
     return false;
-
+  LOG_PRINT_L0("connected to daemon");
   std::vector<std::string> local_args = args_;
 
   static constexpr auto BURN_PREFIX = "burn="sv;
@@ -5892,10 +5896,13 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
 
   uint32_t priority = 0;
   std::set<uint32_t> subaddr_indices  = {};
+  LOG_PRINT_L0("parse_subaddr_indices_and_priority..");
   if (!parse_subaddr_indices_and_priority(*m_wallet, local_args, subaddr_indices, priority, m_current_subaddress_account)) return false;
+
 
   if (priority == 0)
   {
+    LOG_PRINT_L0("priority == 0");
     priority = m_wallet->get_default_priority();
     if (priority == 0)
       priority = transfer_type == Transfer::Locked ? tools::tx_priority_unimportant : tools::tx_priority_blink;
@@ -5933,7 +5940,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     }
     local_args.pop_back();
   }
-
+  LOG_PRINT_L0("payment_id_seen");
   bool payment_id_seen = false;
   std::vector<cryptonote::address_parse_info> dsts_info;
   std::vector<cryptonote::tx_destination_entry> dsts;
@@ -5949,7 +5956,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     std::vector<std::string> unknown_parameters;
     uint64_t amount = 0;
     bool has_uri = m_wallet->parse_uri(local_args[i], addr, payment_id_uri, amount, tx_description, recipient_name, unknown_parameters, error);
-
+    LOG_PRINT_L0("has_uri" << has_uri);
     if (i + 1 < local_args.size())
     {
       r = cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), local_args[i], oa_prompter);
@@ -5989,7 +5996,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     de.is_subaddress = info.is_subaddress;
     de.is_integrated = info.has_payment_id;
     num_subaddresses += info.is_subaddress;
-
+    LOG_PRINT_L0("check has_payment_id" );
     if (info.has_payment_id || !payment_id_uri.empty())
     {
       if (payment_id_seen)
@@ -6024,7 +6031,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
 
     dsts.push_back(de);
   }
-
+  LOG_PRINT_L0("before try step" );
   SCOPED_WALLET_UNLOCK_ON_BAD_PASSWORD(return false;);
 
   try
@@ -6035,6 +6042,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     std::string err;
     if (transfer_type == Transfer::Locked)
     {
+        LOG_PRINT_L0("Locked type" );
       bc_height = get_daemon_blockchain_height(err);
       if (!err.empty())
       {
@@ -6050,8 +6058,12 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
       fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
       return false;
     }
+    LOG_PRINT_L0("get_hard_fork_version" << *hf_version );
 
+    LOG_PRINT_L0("construct_params" );
     beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, priority, burn_amount);
+    LOG_PRINT_L0("construct_params:" );
+      LOG_PRINT_L0("create_transactions_2:" );
     ptx_vector = m_wallet->create_transactions_2(dsts, CRYPTONOTE_DEFAULT_TX_MIXIN, unlock_block, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
 
     if (ptx_vector.empty())
@@ -6059,7 +6071,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
       fail_msg_writer() << tr("No outputs found, or daemon is not ready");
       return false;
     }
-
+      LOG_PRINT_L0("confirm_and_send_tx:" );
     if (!confirm_and_send_tx(dsts_info, ptx_vector, priority == tools::tx_priority_blink, locked_blocks, unlock_block, called_by_mms))
       return false;
   }

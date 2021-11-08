@@ -287,45 +287,45 @@ namespace rct {
         template <typename Archive>
         void serialize_rctsig_base(Archive &ar, size_t inputs, size_t outputs)
         {
-          field_varint(ar, "type", type, [](const RCTType& x) { return x <= RCTType::CLSAG; });
-          if (type == RCTType::Null)
-            return;
-          if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
-            throw std::invalid_argument{"invalid ringct type"};
+            field_varint(ar, "type", type);
+            if (type == RCTType::Null)
+                return;
+            if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
+                throw std::invalid_argument{"invalid ringct type"};
 
-          field_varint(ar, "txnFee", txnFee);
+            field_varint(ar, "txnFee", txnFee);
 
-          // inputs/outputs not saved, only here for serialization help
-          // FIELD(message) - not serialized, it can be reconstructed
-          // FIELD(mixRing) - not serialized, it can be reconstructed
-          if (type == RCTType::Simple) // moved to prunable with bulletproofs
-          {
-            auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
-            for (auto& e : pseudoOuts)
-              value(arr.element(), e);
-          }
-
-          {
-            auto arr = start_array(ar, "ecdhInfo", ecdhInfo, outputs);
-            if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
+            // inputs/outputs not saved, only here for serialization help
+            // FIELD(message) - not serialized, it can be reconstructed
+            // FIELD(mixRing) - not serialized, it can be reconstructed
+            if (type == RCTType::Simple) // moved to prunable with bulletproofs
             {
-              for (auto& e : ecdhInfo) {
-                auto obj = arr.element().begin_object();
-                if (Archive::is_deserializer)
-                  memset(e.amount.bytes, 0, sizeof(e.amount.bytes));
-                field(ar, "amount", reinterpret_cast<crypto::hash8&>(e.amount));
-              }
-            } else {
-              for (auto& e : ecdhInfo)
-                value(arr.element(), e);
+                auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
+                for (auto& e : pseudoOuts)
+                    value(arr.element(), e);
             }
-          }
 
-          {
-            auto arr = start_array(ar, "outPk", outPk, outputs);
-            for (auto& e : outPk)
-              value(arr.element(), e.mask);
-          }
+            {
+                auto arr = start_array(ar, "ecdhInfo", ecdhInfo, outputs);
+                if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
+                {
+                    for (auto& e : ecdhInfo) {
+                        auto obj = arr.element().begin_object();
+                        if (Archive::is_deserializer)
+                            memset(e.amount.bytes, 0, sizeof(e.amount.bytes));
+                        field(ar, "amount", reinterpret_cast<crypto::hash8&>(e.amount));
+                    }
+                } else {
+                    for (auto& e : ecdhInfo)
+                        value(arr.element(), e);
+                }
+            }
+
+            {
+                auto arr = start_array(ar, "outPk", outPk, outputs);
+                for (auto& e : outPk)
+                    value(arr.element(), e.mask);
+            }
         }
     };
     struct rctSigPrunable {
@@ -339,98 +339,98 @@ namespace rct {
         template<typename Archive>
         void serialize_rctsig_prunable(Archive &ar, RCTType type, size_t inputs, size_t outputs, size_t mixin)
         {
-          if (type == RCTType::Null)
-            return;
-          if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
-            throw std::invalid_argument{"invalid ringct type"};
-          if (rct::is_rct_bulletproof(type))
-          {
-            uint32_t nbp = bulletproofs.size();
-            if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
-              field_varint(ar, "nbp", nbp);
+            if (type == RCTType::Null)
+                return;
+            if (!tools::equals_any(type, RCTType::Full, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
+                throw std::invalid_argument{"invalid ringct type"};
+            if (rct::is_rct_bulletproof(type))
+            {
+                uint32_t nbp = bulletproofs.size();
+                if (tools::equals_any(type, RCTType::Bulletproof2, RCTType::CLSAG))
+                    field_varint(ar, "nbp", nbp);
+                else
+                    field(ar, "nbp", nbp);
+                if (nbp > outputs)
+                    throw std::invalid_argument{"too many bulletproofs"};
+
+                auto arr = start_array(ar, "bp", bulletproofs, nbp);
+                for (auto& b : bulletproofs)
+                    value(arr.element(), b);
+
+                if (auto n_max = n_bulletproof_max_amounts(bulletproofs); n_max < outputs)
+                    throw std::invalid_argument{"invalid bulletproofs: n_max (" + std::to_string(n_max) + ") < outputs (" + std::to_string(outputs) + ")"};
+            }
             else
-              field(ar, "nbp", nbp);
-            if (nbp > outputs)
-              throw std::invalid_argument{"too many bulletproofs"};
-
-            auto arr = start_array(ar, "bp", bulletproofs, nbp);
-            for (auto& b : bulletproofs)
-              value(arr.element(), b);
-
-            if (auto n_max = n_bulletproof_max_amounts(bulletproofs); n_max < outputs)
-              throw std::invalid_argument{"invalid bulletproofs: n_max (" + std::to_string(n_max) + ") < outputs (" + std::to_string(outputs) + ")"};
-          }
-          else
-          {
-            auto arr = start_array(ar, "rangeSigs", rangeSigs, outputs);
-            for (auto& s : rangeSigs)
-              value(arr.element(), s);
-          }
-
-          if (type == RCTType::CLSAG)
-          {
-            auto arr = start_array(ar, "CLSAGs", CLSAGs, inputs);
-
-            for (auto& clsag : CLSAGs)
             {
-              // we save the CLSAGs contents directly, because we want it to save its
-              // arrays without the size prefixes, and the load can't know what size
-              // to expect if it's not in the data
-              auto obj = arr.element().begin_object();
-              {
-                auto arr_s = start_array(ar, "s", clsag.s, mixin + 1);
-                for (auto& x : clsag.s)
-                  value(arr_s.element(), x);
-              }
-              field(ar, "c1", clsag.c1);
-              field(ar, "D", clsag.D);
-            }
-          }
-          else
-          {
-            // we keep a byte for size of MGs, because we don't know whether this is
-            // a simple or full rct signature, and it's starting to annoy the hell out of me
-
-            size_t mg_elements = 1, mg_ss2_elements = inputs + 1;
-            if (tools::equals_any(type, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2)) {
-              mg_elements = inputs;
-              mg_ss2_elements = 2;
+                auto arr = start_array(ar, "rangeSigs", rangeSigs, outputs);
+                for (auto& s : rangeSigs)
+                    value(arr.element(), s);
             }
 
+            if (type == RCTType::CLSAG)
             {
-              auto arr = start_array(ar, "MGs", MGs, mg_elements);
-              for (auto& mg : MGs)
-              {
-                auto obj = arr.element().begin_object();
+                auto arr = start_array(ar, "CLSAGs", CLSAGs, inputs);
 
-                // we save the MGs contents directly, because we want it to save its
-                // arrays and matrices without the size prefixes, and the load can't
-                // know what size to expect if it's not in the data
+                for (auto& clsag : CLSAGs)
                 {
-                  auto arr_ss = start_array(ar, "ss", mg.ss, mixin + 1);
-                  for (auto& ss : mg.ss)
-                  {
-                    auto arr_ss2 = arr_ss.element().begin_array();
-                    if constexpr (Archive::is_deserializer)
-                      ss.resize(mg_ss2_elements);
-                    else if (ss.size() != mg_ss2_elements)
-                      throw std::invalid_argument{"invalid mg_ss2 size: have " + std::to_string(ss.size()) + ", expected " + std::to_string(mg_ss2_elements)};
-
-                    for (auto& x : ss)
-                      value(arr_ss2.element(), x);
-                  }
+                    // we save the CLSAGs contents directly, because we want it to save its
+                    // arrays without the size prefixes, and the load can't know what size
+                    // to expect if it's not in the data
+                    auto obj = arr.element().begin_object();
+                    {
+                        auto arr_s = start_array(ar, "s", clsag.s, mixin + 1);
+                        for (auto& x : clsag.s)
+                            value(arr_s.element(), x);
+                    }
+                    field(ar, "c1", clsag.c1);
+                    field(ar, "D", clsag.D);
                 }
-                field(ar, "cc", mg.cc);
-                // MGs[i].II not saved, it can be reconstructed
-              }
             }
-          }
-          if (tools::equals_any(type, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
-          {
-            auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
-            for (auto& o : pseudoOuts)
-              value(arr.element(), o);
-          }
+            else
+            {
+                // we keep a byte for size of MGs, because we don't know whether this is
+                // a simple or full rct signature, and it's starting to annoy the hell out of me
+
+                size_t mg_elements = 1, mg_ss2_elements = inputs + 1;
+                if (tools::equals_any(type, RCTType::Simple, RCTType::Bulletproof, RCTType::Bulletproof2)) {
+                    mg_elements = inputs;
+                    mg_ss2_elements = 2;
+                }
+
+                {
+                    auto arr = start_array(ar, "MGs", MGs, mg_elements);
+                    for (auto& mg : MGs)
+                    {
+                        auto obj = arr.element().begin_object();
+
+                        // we save the MGs contents directly, because we want it to save its
+                        // arrays and matrices without the size prefixes, and the load can't
+                        // know what size to expect if it's not in the data
+                        {
+                            auto arr_ss = start_array(ar, "ss", mg.ss, mixin + 1);
+                            for (auto& ss : mg.ss)
+                            {
+                                auto arr_ss2 = arr_ss.element().begin_array();
+                                if constexpr (Archive::is_deserializer)
+                                    ss.resize(mg_ss2_elements);
+                                else if (ss.size() != mg_ss2_elements)
+                                    throw std::invalid_argument{"invalid mg_ss2 size: have " + std::to_string(ss.size()) + ", expected " + std::to_string(mg_ss2_elements)};
+
+                                for (auto& x : ss)
+                                    value(arr_ss2.element(), x);
+                            }
+                        }
+                        field(ar, "cc", mg.cc);
+                        // MGs[i].II not saved, it can be reconstructed
+                    }
+                }
+            }
+            if (tools::equals_any(type, RCTType::Bulletproof, RCTType::Bulletproof2, RCTType::CLSAG))
+            {
+                auto arr = start_array(ar, "pseudoOuts", pseudoOuts, inputs);
+                for (auto& o : pseudoOuts)
+                    value(arr.element(), o);
+            }
         }
 
     };

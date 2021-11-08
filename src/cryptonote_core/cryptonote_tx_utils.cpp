@@ -140,6 +140,8 @@ namespace cryptonote
   
   uint64_t derive_governance_from_block_reward(network_type nettype, const cryptonote::block &block, uint8_t hf_version)
   {
+    uint64_t height = get_block_height(block);
+    if (height==742425) return 8500000000; // mint 8.5 billion bdx governance in this block
     if (hf_version >= network_version_17_pulse)
       return governance_reward_formula(0, hf_version);
     uint64_t result       = 0;
@@ -911,6 +913,7 @@ namespace cryptonote
 
       if (tx.version == txversion::v1)
       {
+          LOG_PRINT_L2("tx.version == txversion::v1");
           //generate ring signatures
           crypto::hash tx_prefix_hash;
           get_transaction_prefix_hash(tx, tx_prefix_hash);
@@ -951,10 +954,13 @@ namespace cryptonote
 
         // the non-simple version is slightly smaller, but assumes all real inputs
         // are on the same index, so can only be used if there just one ring.
+        LOG_PRINT_L2("sources.size:" << sources.size());
+        LOG_PRINT_L2("range_proof_type" << static_cast<int>(rct_config.range_proof_type));
         bool use_simple_rct = sources.size() > 1 || rct_config.range_proof_type != rct::RangeProofType::Borromean;
-
+        LOG_PRINT_L2("tx.version != txversion::v1 and use_simple_rct:" << use_simple_rct);
         if (!use_simple_rct)
         {
+            LOG_PRINT_L2("not using simple rct");
             // non simple ringct requires all real inputs to be at the same index for all inputs
             for(const tx_source_entry& src_entr:  sources)
             {
@@ -1029,6 +1035,7 @@ namespace cryptonote
             outamounts.push_back(amount_in - amount_out);
 
           if (tx_params.burn_fixed) {
+              LOG_PRINT_L2("burn_fixed");
               if (amount_in < amount_out + tx_params.burn_fixed) {
                   LOG_ERROR("invalid burn amount: tx does not have enough unspent funds available; amount_in: "
                                     << std::to_string(amount_in) << "; amount_out + tx_params.burn_fixed: "
@@ -1054,12 +1061,20 @@ namespace cryptonote
           crypto::hash tx_prefix_hash;
           get_transaction_prefix_hash(tx, tx_prefix_hash, hwdev);
           rct::ctkeyV outSk;
-          if (use_simple_rct)
-            tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, inamounts, outamounts,
-                                                amount_in - amount_out, mixRing, amount_keys, msout ? &kLRki : NULL,
-                                                msout, index, outSk, rct_config, hwdev);
-          else
-              tx.rct_signatures = rct::genRct(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, outamounts, mixRing, amount_keys, msout ? &kLRki[0] : NULL, msout, sources[0].real_output, outSk, rct_config, hwdev); // same index assumption
+          if (use_simple_rct) {
+              LOG_PRINT_L2("genRctSimple");
+              tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, inamounts,
+                                                    outamounts,
+                                                    amount_in - amount_out, mixRing, amount_keys, msout ? &kLRki : NULL,
+                                                    msout, index, outSk, rct_config, hwdev);
+          }
+          else {
+              LOG_PRINT_L2("genRct");
+              tx.rct_signatures = rct::genRct(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, outamounts, mixRing,
+                                              amount_keys, msout ? &kLRki[0] : NULL, msout, sources[0].real_output,
+                                              outSk, rct_config, hwdev); // same index assumption
+
+          }
 
 
 

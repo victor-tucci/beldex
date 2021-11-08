@@ -291,8 +291,11 @@ namespace cryptonote::rpc {
     if (data.aborted) return;
 
     // Replace the default tx pool hashes callback with our own (which adds long poll support):
-    if (std::string_view{data.uri}.substr(1) == rpc::GET_TRANSACTION_POOL_HASHES_BIN::names()[0])
-      return invoke_txpool_hashes_bin(std::move(dataptr));
+    if (std::string_view{data.uri}.substr(1) == rpc::GET_TRANSACTION_POOL_HASHES_BIN::names()[0]) {
+        MINFO("HTTP RPC request '" << data.uri);
+
+       return invoke_txpool_hashes_bin(std::move(dataptr));
+    }
 
     const bool time_logging = LOG_ENABLED(Debug);
     std::chrono::steady_clock::time_point start;
@@ -376,16 +379,25 @@ namespace cryptonote::rpc {
     GET_TRANSACTION_POOL_HASHES_BIN::request req{};
     std::string_view body;
 
-    if (auto body_sv = data->request.body_view())
-      body = *body_sv;
+    if (auto body_sv = data->request.body_view()) {
+        body = *body_sv;
+        LOG_PRINT_L2("invoke_txpool_hashes_bin body length:" << body.length());
+    }
+
     else
       throw parse_error{"Internal error: got unexpected request body type"};
 
     LOG_PRINT_L2("invoke_txpool_hashes_bin load_t_from_binary");
     LOG_PRINT_L2("invoke_txpool_hashes_bin body:" << body);
 
-    if (!epee::serialization::load_t_from_binary(req, body))
-      throw parse_error{"Failed to parse binary data parameterZ"};
+    //if (body.length()>0)
+   // {
+          if (!epee::serialization::load_t_from_binary(req, body))
+              throw parse_error{"Failed to parse binary data parameterZ"};
+   // }
+   // else {
+   //     req.blinked_txs_only = false;
+    //}
 
     std::vector<crypto::hash> pool_hashes;
     MTRACE("invoke_txpool_hashes_bin get_transaction_hashes...");

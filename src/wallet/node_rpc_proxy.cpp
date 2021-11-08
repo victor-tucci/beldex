@@ -99,30 +99,34 @@ void NodeRPCProxy::set_height(uint64_t h)
 bool NodeRPCProxy::get_info() const
 {
   if (m_offline) return false;
+  LOG_PRINT_L0("get_info");
   auto now = std::chrono::steady_clock::now();
   if (now >= m_get_info_time + 30s) // re-cache every 30 seconds
   {
     try {
       auto resp_t = invoke_json_rpc<rpc::GET_INFO>({});
-
       m_height = resp_t.height;
+      LOG_PRINT_L0("GET_INFO success" << m_height);
       m_target_height = resp_t.target_height;
       m_block_weight_limit = resp_t.block_weight_limit ? resp_t.block_weight_limit : resp_t.block_size_limit;
       m_immutable_height = resp_t.immutable_height;
       m_get_info_time = now;
       m_height_time = now;
-    } catch (...) { return false; }
+    } catch (...) {
+        LOG_PRINT_L0("GET_INFO failed");
+        return false; }
   }
   return true;
 }
 
 bool NodeRPCProxy::get_height(uint64_t &height) const
 {
+  LOG_PRINT_L0("NodeRPCProxy::get_height");
   auto now = std::chrono::steady_clock::now();
   if (now >= m_height_time + 30s) // re-cache every 30 seconds
     if (!get_info())
       return false;
-
+  LOG_PRINT_L0("NodeRPCProxy::get_height:" << m_height);
   height = m_height;
   return true;
 }
@@ -155,27 +159,35 @@ bool NodeRPCProxy::get_earliest_height(uint8_t version, uint64_t &earliest_heigh
 {
   if (m_offline)
     return false;
+  LOG_PRINT_L0("get_earliest_height");
   if (m_earliest_height[version] == 0)
   {
     rpc::HARD_FORK_INFO::request req_t{};
     req_t.version = version;
     try {
+      LOG_PRINT_L0("get_earliest_height invoke json HARD_FORK_INFO");
       auto resp_t = invoke_json_rpc<rpc::HARD_FORK_INFO>(req_t);
-      if (!resp_t.earliest_height)
-        return false;
+
+      if (!resp_t.earliest_height) {
+          LOG_PRINT_L0("resp_t get_earliest_height earliest_height is NULL" );
+          return false;
+      }
+      LOG_PRINT_L0("resp_t get_earliest_height invoke json HARD_FORK_INFO" << *resp_t.earliest_height);
       m_earliest_height[version] = *resp_t.earliest_height;
     } catch (...) { return false; }
   }
-
+    LOG_PRINT_L0("resp_t get_earliest_height version" << version );
   earliest_height = m_earliest_height[version];
+  LOG_PRINT_L0("resp_t get_earliest_height earliest_height" << earliest_height );
   return true;
 }
 
 std::optional<uint8_t> NodeRPCProxy::get_hardfork_version() const
 {
-  if (m_offline)
-    return std::nullopt;
-
+    LOG_PRINT_L0("get_hardfork_version");
+    if (m_offline)
+       return std::nullopt;
+    LOG_PRINT_L0("invoke HARD_FORK_INFO");
   try {
     return invoke_json_rpc<rpc::HARD_FORK_INFO>({}).version;
   } catch (...) {}
