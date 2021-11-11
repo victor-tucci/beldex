@@ -52,11 +52,8 @@ static constexpr std::array testnet_hard_forks =
   hard_fork{8,  0,    40000, 1559474448 },
   hard_fork{11, 0,    54288, 1628224369 },
   hard_fork{12, 0,   104832, 1629012232 }, // Sunday, August 15, 2021 7:23:52 AM
-  hard_fork{13, 0,   107503, 1629281718 }, // Wednesday, August 18, 2021 10:15:18 AM
-  hard_fork{14, 0,   109288, 1629505810 }, // Saturday, August 21, 2021 12:30:10 AM
-  hard_fork{15, 0,   110664, 1629889876 }, // Wednesday, August 25, 2021 11:11:16 AM
-  hard_fork{16, 0,   169800, 1630200774 }, // Sunday, August 29, 2021 1:32:54 AM
-  hard_fork{17, 0,   172120, 1631086495 }, // Wednesday, September 8, 2021 7:34:55 AM
+  hard_fork{15, 0,   169950, 1636391396 }, //  Monday, November 8, 2021 5:09:56 PM
+  hard_fork{17, 0,   169960, 1636391696 }, // Monday, November 8, 2021 5:14:56 PM
 };
 
 static constexpr std::array devnet_hard_forks =

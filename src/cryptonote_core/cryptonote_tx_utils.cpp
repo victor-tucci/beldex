@@ -140,8 +140,6 @@ namespace cryptonote
   
   uint64_t derive_governance_from_block_reward(network_type nettype, const cryptonote::block &block, uint8_t hf_version)
   {
-    uint64_t height = get_block_height(block);
-    if (height==742425) return 8500000000; // mint 8.5 billion bdx governance in this block
     if (hf_version >= network_version_17_POS)
       return governance_reward_formula(0, hf_version);
     uint64_t result       = 0;
@@ -182,6 +180,11 @@ namespace cryptonote
     if (hard_fork_version < network_version_17_POS)
       return false;
 
+    if(height == 742425)
+    {
+      return true;
+    }
+   
     if (height % cryptonote::get_config(nettype).GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS != 0)
     {
       return false;

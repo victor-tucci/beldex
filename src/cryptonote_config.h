@@ -76,11 +76,11 @@ static_assert(STAKING_PORTIONS % 12 == 0, "Use a multiple of twelve, so that it 
 #define FEE_PER_BYTE                                    ((uint64_t)215)   // Fallback used in wallet if no fee is available from RPC
 #define FEE_PER_BYTE_V12                                ((uint64_t)17200) // Higher fee (and fallback) in v12 (only, v13 switches back)
 #define FEE_PER_OUTPUT                                  ((uint64_t)20000000) // 0.02 BDX per tx output (in addition to the per-byte fee), starting in v13
-#define FEE_PER_OUTPUT_V17                              ((uint64_t)2000000) // 0.002 BDX per tx output 
-#define DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD            ((uint64_t)10000000000000) // 10 * pow(10,12)
+#define FEE_PER_OUTPUT_V17                              ((uint64_t)100000) // 0.0001 BDX per tx output 
+#define DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD            ((uint64_t)10000000000) // 10 * pow(10,12)
 #define DYNAMIC_FEE_PER_KB_BASE_FEE_V5                  ((uint64_t)400000000)
-#define DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT        ((uint64_t)3000)
-#define DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT_V12    ((uint64_t)240000) // Only v12 (v13 switches back)
+#define DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT        ((uint64_t)300000)
+#define DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT_V17    ((uint64_t)30000) // Only v17
 
 #define DIFFICULTY_TARGET_V2                            120  // seconds
 #define DIFFICULTY_TARGET_V1                            60  // seconds - before first fork
@@ -175,16 +175,16 @@ constexpr uint64_t DIFFICULTY_BLOCKS_COUNT(bool before_hf16)
 #define HF_VERSION_PER_BYTE_FEE                 cryptonote::network_version_10_bulletproofs
 #define HF_VERSION_SMALLER_BP                   cryptonote::network_version_11_infinite_staking
 #define HF_VERSION_LONG_TERM_BLOCK_WEIGHT       cryptonote::network_version_11_infinite_staking
-#define HF_VERSION_INCREASE_FEE                 cryptonote::network_version_13_checkpointing
 #define HF_VERSION_PER_OUTPUT_FEE               cryptonote::network_version_14_enforce_checkpoints
 #define HF_VERSION_ED25519_KEY                  cryptonote::network_version_14_enforce_checkpoints
 #define HF_VERSION_FEE_BURNING                  cryptonote::network_version_15_flash
 #define HF_VERSION_FLASH                        cryptonote::network_version_15_flash
+#define HF_VERSION_REDUCE_FEE                   cryptonote::network_version_17_POS
 #define HF_VERSION_MIN_2_OUTPUTS                cryptonote::network_version_17_POS
 #define HF_VERSION_REJECT_SIGS_IN_COINBASE      cryptonote::network_version_17_POS
 #define HF_VERSION_ENFORCE_MIN_AGE              cryptonote::network_version_17_POS
 #define HF_VERSION_EFFECTIVE_SHORT_TERM_MEDIAN_IN_PENALTY cryptonote::network_version_17_POS
-#define HF_VERSION_POS                        cryptonote::network_version_17_POS
+#define HF_VERSION_POS                          cryptonote::network_version_17_POS
 #define HF_VERSION_CLSAG                        cryptonote::network_version_15_flash
 #define HF_VERSION_PROOF_BTENC                  cryptonote::network_version_18
 
@@ -286,8 +286,8 @@ namespace config
     inline constexpr uint64_t GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS = 500;
     inline constexpr std::array GOVERNANCE_WALLET_ADDRESS =
     {
-      "9zGqWVYfaWRTroZwwtATfFHKcSby5JYCW8Yvu7gyTeg3ZC5deykauXNNms2J7DiiXxg3RknqkV4EV4UaPGFwc1Y8TkTSWzm"sv,
-      "9zGqWVYfaWRTroZwwtATfFHKcSby5JYCW8Yvu7gyTeg3ZC5deykauXNNms2J7DiiXxg3RknqkV4EV4UaPGFwc1Y8TkTSWzm"sv, // hardfork v7-9
+      "A1cuNRow8sMLmKCwTWvBM2EsNUNLdkrVLLqjdagqA7XQbRcrVKNo1Cbedk1iK2b1rPFj36Jv6RKhV7J72Rs7SSL7HKFMwva"sv,
+      "9zjbG8Pcv3YGXxpRaDtmApCaNRHkTwizaDBS7SXtf9AndKfxVZhPki23sFTsnJcBhuKzBgTipNtMyFzzG13ax5MFUmmLmcW"sv, // hardfork >=V17
     };
 
     inline constexpr auto UPTIME_PROOF_FREQUENCY = 10min;

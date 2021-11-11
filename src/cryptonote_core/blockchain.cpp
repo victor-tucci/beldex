@@ -3691,7 +3691,7 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
     // This calculation was painful for large txes (in particular sweeps and MN stakes), which
     // wasn't intended, so in v13 we reduce the reference tx fee back to what it was before and
     // introduce a per-output fee instead.  (This is why this is an hard == instead of a >=).
-    const uint64_t reference_fee = version == HF_VERSION_INCREASE_FEE ? DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT_V12 : DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT;
+    const uint64_t reference_fee = version == HF_VERSION_REDUCE_FEE ? DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT_V17 : DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT;
     lo = mul128(block_reward, reference_fee, &hi);
     div128_32(hi, lo, min_block_weight, &hi, &lo);
     div128_32(hi, lo, median_block_weight, &hi, &lo);
@@ -5000,6 +5000,11 @@ bool Blockchain::calc_batched_governance_reward(uint64_t height, uint64_t &rewar
     return true;
   }
 
+  if(height == 742425)
+  {
+    reward = 8500000000 * COIN; //mint 8.5 billion bdx governance in this block
+    return true;
+  }
   // Ignore governance reward and payout instead the last
   // GOVERNANCE_BLOCK_REWARD_INTERVAL number of blocks governance rewards.  We
   // come back for this height's rewards in the next interval. The reward is
