@@ -1,0 +1,52 @@
+{
+   "kind": "pipeline",
+   "name": "Android wallet_api",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"man-db man-db/auto-update boolean false\" | debconf-set-selections",
+            "echo deb http://deb.debian.org/debian sid contrib >/etc/apt/sources.list.d/sid-contrib.list",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "if [ -d /cache ]; then if ! [ -d /cache/google-android-ndk-installer ]; then mkdir /cache/google-android-ndk-installer; fi; ln -s /cache/google-android-ndk-installer /var/cache/; fi",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake g++ git ninja-build ccache tar xz-utils google-android-ndk-installer autoconf automake make qttools5-dev file libtool gperf pkg-config patch openssh-client",
+            "mkdir build-armeabi-v7a",
+            "cd build-armeabi-v7a",
+            "cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_C_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=21 -DANDROID_ABI=armeabi-v7a -DMONERO_SLOW_HASH=ON -DLOCAL_MIRROR=https://builds.lokinet.dev/deps -DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja -DARCH=armv7-a -DARCH_ID=arm32",
+            "ninja -j6 -v wallet_merged",
+            "cd ..",
+            "mkdir build-arm64-v8a",
+            "cd build-arm64-v8a",
+            "cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_C_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=21 -DANDROID_ABI=arm64-v8a -DMONERO_SLOW_HASH=ON -DLOCAL_MIRROR=https://builds.lokinet.dev/deps -DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja -DARCH=armv8-a -DARCH_ID=arm64",
+            "ninja -j6 -v wallet_merged",
+            "cd ..",
+            "mkdir build-x86_64",
+            "cd build-x86_64",
+            "cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_C_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=21 -DANDROID_ABI=x86_64 -DMONERO_SLOW_HASH=ON -DLOCAL_MIRROR=https://builds.lokinet.dev/deps -DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja -DARCH=\"x86-64 -msse4.2 -mpopcnt\" -DARCH_ID=x86-64",
+            "ninja -j6 -v wallet_merged",
+            "cd ..",
+            "./utils/build_scripts/drone-android-static-upload.sh armeabi-v7a arm64-v8a x86_64"
+         ],
+         "environment": {
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "debian:sid",
+         "name": "build"
+      }
+   ],
+   "type": "docker"
+}

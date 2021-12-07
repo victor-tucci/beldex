@@ -1064,7 +1064,9 @@ uint64_t WalletImpl::balance(uint32_t accountIndex) const
 EXPORT
 uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 {
-    return m_wallet->unlocked_balance(accountIndex, false);
+ uint64_t blocks_to_unlock, time_to_unlock;
+ std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+ return m_wallet->unlocked_balance(accountIndex, false ,&blocks_to_unlock,&time_to_unlock,*hf_version);
 }
 
 EXPORT
@@ -1582,21 +1584,21 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
                 }
             }
         }
-        if (error) {
-            break;
-        }
-        if (!extra_nonce.empty() && !add_extra_nonce_to_tx_extra(extra, extra_nonce)) {
-            setStatusError(tr("failed to set up payment id, though it was decoded correctly"));
-            break;
-        }
-        try {
-            std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-            if (!hf_version)
-            {
-              setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
-              return transaction;
-            }
-        }
+        // if (error) {
+        //     break;
+        // }
+        // if (!extra_nonce.empty() && !add_extra_nonce_to_tx_extra(extra, extra_nonce)) {
+        //     setStatusError(tr("failed to set up payment id, though it was decoded correctly"));
+        //     break;
+        // }
+        // try {
+        //     std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+        //     if (!hf_version)
+        //     {
+        //       setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
+        //       return transaction;
+        //     }
+        // }
         if (error) {
             break;
         }
