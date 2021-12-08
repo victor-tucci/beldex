@@ -57,7 +57,7 @@ Wallet* WalletManagerImpl::createWallet(std::string_view path, const std::string
 EXPORT
 Wallet* WalletManagerImpl::openWallet(std::string_view path, const std::string &password, NetworkType nettype, uint64_t kdf_rounds, WalletListener * listener)
 {
-    WalletImpl* wallet;
+    WalletImpl* wallet ;
     wallet->setListener(listener);
     if (listener){
         listener->onSetWallet(wallet);
