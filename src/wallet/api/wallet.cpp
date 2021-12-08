@@ -91,9 +91,9 @@ namespace {
         if (!ready)
             throw std::runtime_error("Multisig wallet is not finalized yet");
     }
-    void checkMultisigWalletReady(const std::unique_ptr<tools::wallet2> &wallet) {
-        return checkMultisigWalletReady(wallet.get());
-    }
+    // void checkMultisigWalletReady(const std::unique_ptr<tools::wallet2> &wallet) {
+    //     return checkMultisigWalletReady(wallet.get());
+    // }
 
     void checkMultisigWalletNotReady(LockedWallet& wallet) {
         if (!wallet.wallet)
@@ -1070,7 +1070,7 @@ EXPORT
 uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 {
      uint64_t blocks_to_unlock, time_to_unlock;
- std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+ std::optional<uint8_t> hf_version = w->get_hard_fork_version();
     return wallet()->unlocked_balance(accountIndex, false ,&blocks_to_unlock,&time_to_unlock,*hf_version);
 }
 
@@ -1802,18 +1802,18 @@ PendingTransaction *WalletImpl::createSweepUnmixableTransaction()
         }
     }
 
-    transaction->m_status = status();
+    transaction.m_status = status();
     return transaction;
 }
 
 EXPORT
-void WalletImpl::disposeTransaction(PendingTransaction *t)
+void Wallet::WalletImpl::disposeTransaction(PendingTransaction *t)
 {
     delete t;
 }
 
 EXPORT
-uint64_t WalletImpl::estimateTransactionFee(uint32_t priority, uint32_t recipients) const
+uint64_t Wallet::WalletImpl::estimateTransactionFee(uint32_t priority, uint32_t recipients) const
 {
     constexpr uint32_t typical_size = 2000;
   auto w = wallet();

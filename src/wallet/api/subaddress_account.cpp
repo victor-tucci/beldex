@@ -64,7 +64,7 @@ void SubaddressAccountImpl::refresh()
   
   clearRows();
     uint64_t blocks_to_unlock, time_to_unlock;
-  std::optional<uint8_t> hf_version = m_wallet->m_wallet->get_hard_fork_version();
+  std::optional<uint8_t> hf_version = w->get_hard_fork_version();
   auto w = m_wallet->wallet();
   for (uint32_t i = 0; i < w->get_num_subaddress_accounts(); ++i)
   {
