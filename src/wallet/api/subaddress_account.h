@@ -31,7 +31,7 @@
 
 namespace Wallet {
 
-class Wallet::WalletImpl;
+class WalletImpl;
 
 class SubaddressAccountImpl : public SubaddressAccount
 {
