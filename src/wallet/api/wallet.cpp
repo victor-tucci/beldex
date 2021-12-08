@@ -1070,8 +1070,8 @@ EXPORT
 uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 {
      uint64_t blocks_to_unlock, time_to_unlock;
- std::optional<uint8_t> hf_version = w->get_hard_fork_version();
-    return wallet()->unlocked_balance(accountIndex, false ,&blocks_to_unlock,&time_to_unlock,*hf_version);
+// std::optional<uint8_t> hf_version = w->get_hard_fork_version();
+    return wallet()->unlocked_balance(accountIndex, false ,&blocks_to_unlock,&time_to_unlock, 0);
 }
 
 EXPORT
@@ -1802,7 +1802,7 @@ PendingTransaction *WalletImpl::createSweepUnmixableTransaction()
         }
     }
 
-    transaction.m_status = status();
+    transaction->m_status = status();
     return transaction;
 }
 
@@ -1823,45 +1823,45 @@ uint64_t Wallet::WalletImpl::estimateTransactionFee(uint32_t priority, uint32_t 
 }
 
 EXPORT
-TransactionHistory *WalletImpl::history()
+Wallet::TransactionHistory *Wallet::WalletImpl::history()
 {
     return m_history.get();
 }
 
 EXPORT
-AddressBook *WalletImpl::addressBook()
+Wallet::AddressBook *Wallet::WalletImpl::addressBook()
 {
     return m_addressBook.get();
 }
 
 EXPORT
-Subaddress *WalletImpl::subaddress()
+Wallet::Subaddress *Wallet::WalletImpl::subaddress()
 {
     return m_subaddress.get();
 }
 
 EXPORT
-SubaddressAccount *WalletImpl::subaddressAccount()
+Wallet::SubaddressAccount *Wallet::WalletImpl::subaddressAccount()
 {
     return m_subaddressAccount.get();
 }
 
 EXPORT
-void WalletImpl::setListener(WalletListener *l)
+void Wallet::WalletImpl::setListener(WalletListener *l)
 {
     // TODO thread synchronization;
     m_wallet2Callback->setListener(l);
 }
 
 EXPORT
-bool WalletImpl::setCacheAttribute(const std::string &key, const std::string &val)
+bool Wallet::WalletImpl::setCacheAttribute(const std::string &key, const std::string &val)
 {
     wallet()->set_attribute(key, val);
     return true;
 }
 
 EXPORT
-std::string WalletImpl::getCacheAttribute(const std::string &key) const
+std::string Wallet::WalletImpl::getCacheAttribute(const std::string &key) const
 {
     std::string value;
     wallet()->get_attribute(key, value);
@@ -1869,7 +1869,7 @@ std::string WalletImpl::getCacheAttribute(const std::string &key) const
 }
 
 EXPORT
-bool WalletImpl::setUserNote(const std::string &txid, const std::string &note)
+bool Wallet::WalletImpl::setUserNote(const std::string &txid, const std::string &note)
 {
     cryptonote::blobdata txid_data;
     if(!epee::string_tools::parse_hexstr_to_binbuff(txid, txid_data) || txid_data.size() != sizeof(crypto::hash))
@@ -1881,7 +1881,7 @@ bool WalletImpl::setUserNote(const std::string &txid, const std::string &note)
 }
 
 EXPORT
-std::string WalletImpl::getUserNote(const std::string &txid) const
+std::string Wallet::WalletImpl::getUserNote(const std::string &txid) const
 {
     cryptonote::blobdata txid_data;
     if(!epee::string_tools::parse_hexstr_to_binbuff(txid, txid_data) || txid_data.size() != sizeof(crypto::hash))
@@ -1892,7 +1892,7 @@ std::string WalletImpl::getUserNote(const std::string &txid) const
 }
 
 EXPORT
-std::string WalletImpl::getTxKey(const std::string &txid_str) const
+std::string Wallet::WalletImpl::getTxKey(const std::string &txid_str) const
 {
     crypto::hash txid;
     if(!tools::hex_to_type(txid_str, txid))
@@ -1975,7 +1975,7 @@ bool WalletImpl::checkTxKey(const std::string &txid_str, std::string_view tx_key
 }
 
 EXPORT
-std::string WalletImpl::getTxProof(const std::string &txid_str, const std::string &address_str, const std::string &message) const
+std::string Wallet::WalletImpl::getTxProof(const std::string &txid_str, const std::string &address_str, const std::string &message) const
 {
     crypto::hash txid;
     if (!tools::hex_to_type(txid_str, txid))

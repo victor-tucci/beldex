@@ -198,7 +198,7 @@ struct TransactionInfo
 /**
  * @brief The TransactionHistory - interface for displaying transaction history
  */
-struct TransactionHistory
+struct Wallet::TransactionHistory
 {
     virtual ~TransactionHistory() = 0;
     virtual int count() const = 0;
@@ -233,7 +233,7 @@ public:
  * @brief The AddressBook - interface for
 Book
  */
-struct AddressBook
+struct Wallet::AddressBook
 {
     enum ErrorCode {
         Status_Ok,
@@ -249,7 +249,7 @@ struct AddressBook
     virtual int errorCode() const = 0;
 };
 
-struct SubaddressRow {
+struct Wallet::SubaddressRow {
 public:
     SubaddressRow(std::size_t _rowId, std::string _address, std::string _label):
         m_rowId(_rowId),
@@ -267,7 +267,7 @@ public:
     std::size_t getRowId() const {return m_rowId;}
 };
 
-struct Subaddress
+struct Wallet::Subaddress
 {
     virtual ~Subaddress() = 0;
     virtual std::vector<SubaddressRow*> getAll() const = 0;
@@ -300,7 +300,7 @@ public:
     std::size_t getRowId() const {return m_rowId;}
 };
 
-struct SubaddressAccount
+struct Wallet::SubaddressAccount
 {
     virtual ~SubaddressAccount() = 0;
     virtual std::vector<SubaddressAccountRow*> getAll() const = 0;
