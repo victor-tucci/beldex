@@ -1594,14 +1594,14 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
             setStatusError(tr("failed to set up payment id, though it was decoded correctly"));
             break;
         }
-        try {
-            std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-            if (!hf_version)
-            {
-              setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
-              return transaction;
-            }
+
+        std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+        if (!hf_version)
+        {
+          setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
+          return transaction;
         }
+
         if (error) {
             break;
         }
