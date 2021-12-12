@@ -27,6 +27,8 @@
 # STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
 add_library(wallet_api
   wallet.cpp
   wallet_manager.cpp
@@ -51,6 +53,7 @@ target_link_libraries(wallet_api
     Boost::thread
   PRIVATE
     extra)
+
 
 set_property(TARGET wallet_api PROPERTY EXCLUDE_FROM_ALL TRUE)
 
@@ -146,7 +149,7 @@ if (STATIC AND BUILD_STATIC_DEPS)
     else()
         set(lib_folder lib)
     endif()
-    install(TARGETS wallet_merged
-        ARCHIVE DESTINATION ${lib_folder}
-        EXCLUDE_FROM_ALL)
+   # install(TARGETS wallet_merged
+   #     ARCHIVE DESTINATION ${lib_folder}
+   #     EXCLUDE_FROM_ALL)
 endif()

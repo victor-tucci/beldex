@@ -60,19 +60,25 @@ void SubaddressAccountImpl::setLabel(uint32_t accountIndex, const std::string &l
 EXPORT
 void SubaddressAccountImpl::refresh() 
 {
-  LOG_PRINT_L2("Refreshing subaddress account");
+    std::optional<uint8_t> hf_version = m_wallet->hardForkVersion();
+    if (hf_version)
+    {
+        LOG_PRINT_L2("Refreshing subaddress account");
+        clearRows();
+        for (uint32_t i = 0; i < m_wallet->m_wallet->get_num_subaddress_accounts(); ++i)
+        {
+            m_rows.push_back(new SubaddressAccountRow(
+                    i,
+                    m_wallet->m_wallet->get_subaddress_as_str({i,0}),
+                    m_wallet->m_wallet->get_subaddress_label({i,0}),
+                    cryptonote::print_money(m_wallet->m_wallet->balance(i, false)),
+                    cryptonote::print_money(m_wallet->m_wallet->unlocked_balance(i, false,NULL,NULL,*hf_version))
+            ));
+        }
+    }
+
   
-  clearRows();
-  for (uint32_t i = 0; i < m_wallet->m_wallet->get_num_subaddress_accounts(); ++i)
-  {
-    m_rows.push_back(new SubaddressAccountRow(
-      i,
-      m_wallet->m_wallet->get_subaddress_as_str({i,0}),
-      m_wallet->m_wallet->get_subaddress_label({i,0}),
-      cryptonote::print_money(m_wallet->m_wallet->balance(i, false)),
-      cryptonote::print_money(m_wallet->m_wallet->unlocked_balance(i, false))
-    ));
-  }
+
 }
 
 EXPORT

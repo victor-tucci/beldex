@@ -1064,7 +1064,12 @@ uint64_t WalletImpl::balance(uint32_t accountIndex) const
 EXPORT
 uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 {
-    return m_wallet->unlocked_balance(accountIndex, false);
+    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+    if (!hf_version)
+    {
+        return 0;
+    }
+    return m_wallet->unlocked_balance(accountIndex, false,NULL,NULL,*hf_version);
 }
 
 EXPORT
