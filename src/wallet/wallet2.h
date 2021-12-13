@@ -61,7 +61,14 @@
 #include "common/password.h"
 #include "node_rpc_proxy.h"
 #include "message_store.h"
+
+#ifdef ENABLE_LIGHT_WALLET
 #include "wallet_light_rpc.h"
+// Same as above, but for light wallet args
+#define ENABLE_IF_LIGHT_WALLET(...) __VA_ARGS__
+#else
+#define ENABLE_IF_LIGHT_WALLET(...)
+#endif
 
 #include "tx_construction_data.h"
 #include "tx_sets.h"
@@ -1230,6 +1237,7 @@ private:
 
     bool is_unattended() const { return m_unattended; }
 
+#ifdef ENABLE_LIGHT_WALLET
     // Light wallet specific functions
     // fetch unspent outs from lw node and store in m_transfers
     void light_wallet_get_unspent_outs();
@@ -1247,7 +1255,7 @@ private:
     bool light_wallet_parse_rct_str(const std::string& rct_string, const crypto::public_key& tx_pub_key, uint64_t internal_output_index, rct::key& decrypted_mask, rct::key& rct_commit, bool decrypt) const;
     // check if key image is ours
     bool light_wallet_key_image_is_ours(const crypto::key_image& key_image, const crypto::public_key& tx_public_key, uint64_t out_index);
-
+#endif
     /*
      * "attributes" are a mechanism to store an arbitrary number of string values
      * on the level of the wallet as a whole, identified by keys. Their introduction,
@@ -1275,10 +1283,12 @@ private:
     template <typename RPC>
     bool invoke_http(const typename RPC::request& req, typename RPC::response& res, bool throw_on_error = false)
     {
-      using namespace cryptonote::rpc;
-      static_assert(std::is_base_of_v<RPC_COMMAND, RPC> || std::is_base_of_v<tools::light_rpc::LIGHT_RPC_COMMAND, RPC>);
-
-      if (m_offline) return false;
+        using namespace cryptonote::rpc;
+        static_assert(std::is_base_of_v<RPC_COMMAND, RPC>
+        #ifdef ENABLE_LIGHT_WALLET
+                        || std::is_base_of_v<tools::light_rpc::LIGHT_RPC_COMMAND, RPC>
+        #endif
+                );
 
       try {
         if constexpr (std::is_base_of_v<LEGACY, RPC>)

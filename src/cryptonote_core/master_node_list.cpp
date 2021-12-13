@@ -442,6 +442,7 @@ namespace master_nodes
                                              staking_components *contribution)
   {
     staking_components contribution_unused_ = {};
+    LOG_PRINT_L0("tx_get_staking_components_and_amounts");
     if (!contribution) contribution = &contribution_unused_;
 
     if (!tx_get_staking_components(tx, contribution))

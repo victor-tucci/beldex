@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2019, The Monero Project
-//
+// 
 // All rights reserved.
-//
+// 
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-//
+// 
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-//
+// 
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-//
+// 
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-//
+// 
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,11 +25,12 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -216,7 +217,7 @@ public:
         m_rowId(_rowId),
         m_address(std::move(_address)),
         m_description(std::move(_description)) {}
-
+ 
 private:
     std::size_t m_rowId;
     std::string m_address;
@@ -224,12 +225,12 @@ private:
 public:
     std::string extra;
     const std::string& getAddress() const { return m_address; }
-    const std::string& getDescription() const { return m_description; }
+    const std::string& getDescription() const { return m_description; } 
     std::size_t getRowId() const { return m_rowId; }
 };
 
 /**
- * @brief The AddressBook - interface for
+ * @brief The AddressBook - interface for 
 Book
  */
 struct AddressBook
@@ -241,9 +242,9 @@ struct AddressBook
     };
     virtual ~AddressBook() = 0;
     virtual std::vector<AddressBookRow*> getAll() const = 0;
-    virtual bool addRow(const std::string &dst_addr, const std::string &description) = 0;
+    virtual bool addRow(const std::string &dst_addr, const std::string &description) = 0;  
     virtual bool deleteRow(std::size_t rowId) = 0;
-    virtual void refresh() = 0;
+    virtual void refresh() = 0;  
     virtual std::string errorString() const = 0;
     virtual int errorCode() const = 0;
 };
@@ -254,7 +255,7 @@ public:
         m_rowId(_rowId),
         m_address(std::move(_address)),
         m_label(std::move(_label)) {}
-
+ 
 private:
     std::size_t m_rowId;
     std::string m_address;
@@ -347,7 +348,7 @@ struct WalletListener
      * @param amount        - amount
      */
     virtual void moneyReceived(const std::string &txId, uint64_t amount) = 0;
-
+    
    /**
     * @brief unconfirmedMoneyReceived - called when payment arrived in tx pool
     * @param txId          - transaction id
@@ -456,7 +457,7 @@ struct Wallet
     virtual void hardForkInfo(uint8_t &version, uint64_t &earliest_height) const = 0;
     virtual std::optional<uint8_t> hardForkVersion() const = 0;
     //! check if hard fork rules should be used
-    virtual bool useForkRules(uint8_t version, int64_t early_blocks) const = 0;
+    virtual bool useForkRules(uint8_t version, int64_t early_blocks) const = 0;  
     /*!
      * \brief integratedAddress - returns integrated address for current wallet address and given payment_id.
      *                            if passed "payment_id" param is an empty string or not-valid payment id string
@@ -467,7 +468,7 @@ struct Wallet
      * \return                  - 106 characters string representing integrated address
      */
     virtual std::string integratedAddress(const std::string &payment_id) const = 0;
-
+    
    /*!
     * \brief secretViewKey     - returns secret view key
     * \return                  - secret view key
@@ -527,7 +528,11 @@ struct Wallet
      * \param lightWallet - start wallet in light mode, connect to a openmonero compatible server.
      * \return  - true on success
      */
-    virtual bool init(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, const std::string &daemon_username = "", const std::string &daemon_password = "", bool use_ssl = false, bool lightWallet = false) = 0;
+    virtual bool init(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, const std::string &daemon_username = "", const std::string &daemon_password = "", bool use_ssl = false
+#ifdef ENABLE_LIGHT_WALLET
+        , bool lightWallet = false
+#endif
+        ) = 0;
 
    /*!
     * \brief createWatchOnly - Creates a watch only wallet
@@ -602,7 +607,7 @@ struct Wallet
     }
 
    /**
-    * @brief listCurrentStakes - returns a list of the wallets locked stakes, provides both service node address and the staked amount
+    * @brief listCurrentStakes - returns a list of the wallets locked stakes, provides both master node address and the staked amount
     * @return
     */
     virtual std::vector<std::pair<std::string, uint64_t>>* listCurrentStakes() const = 0;
@@ -614,8 +619,8 @@ struct Wallet
     virtual bool watchOnly() const = 0;
 
     /**
-     * @brief blockChainHeight - returns current blockchain height
-     * @return
+     * @brief blockChainHeight - returns current blockchain height.  This is thread-safe and will
+     * not block if called from different threads.
      */
     virtual uint64_t blockChainHeight() const = 0;
 
@@ -629,10 +634,10 @@ struct Wallet
     * @brief estimateBlockChainHeight - returns estimate blockchain height. More accurate than approximateBlockChainHeight,
     *                                   uses daemon height and falls back to calculation from date/time
     * @return
-    **/
+    **/ 
     virtual uint64_t estimateBlockChainHeight() const = 0;
     /**
-     * @brief daemonBlockChainHeight - returns daemon blockchain height
+     * @brief daemonBlockChainHeight - returns daemon blockchain height; thread-safe.
      * @return 0 - in case error communicating with the daemon.
      *             status() will return Status_Error and a return verbose error description
      */
@@ -689,6 +694,21 @@ struct Wallet
      * @brief refreshAsync - refreshes wallet asynchronously.
      */
     virtual void refreshAsync() = 0;
+
+    /**
+     * @brief refreshing - returns true if a refresh is currently underway; this is done *without*
+     * requiring a lock, unlike most other wallet-interacting functions.
+     *
+     * @param max_wait - the maximum time to try to obtain the refresh thread lock.  If this time
+     * expires without acquiring a lock, we return true, otherwise we return false.  Defaults to
+     * 50ms; can be set to 0ms to always return immediately.
+     *
+     * @return - true if the refresh thread is currently active, false otherwise.  If true, very few
+     * other methods here will work (i.e. they will block until the refresh finishes).  The most
+     * notably non-blocking, thread-safe methods that can be used when this returns true are
+     * blockChainHeight and daemonBlockChainHeight.
+     */
+    virtual bool isRefreshing(std::chrono::milliseconds max_wait = std::chrono::milliseconds{50}) = 0;
 
     /**
      * @brief rescanBlockchain - rescans the wallet, updating transactions from daemon
@@ -842,21 +862,21 @@ struct Wallet
      */
 
     virtual PendingTransaction* createSweepUnmixableTransaction() = 0;
-
+    
    /*!
     * \brief loadUnsignedTx  - creates transaction from unsigned tx file (utf8 filename)
     * \return                - UnsignedTransaction object. caller is responsible to check UnsignedTransaction::status()
     *                          after object returned
     */
     virtual UnsignedTransaction* loadUnsignedTx(std::string_view unsigned_filename) = 0;
-
+    
    /*!
     * \brief submitTransaction - submits transaction in signed tx file (utf8 filename)
     * \param filename - utf8 filename to read from
     * \return                  - true on success
     */
     virtual bool submitTransaction(std::string_view filename) = 0;
-
+    
 
     /*!
      * \brief disposeTransaction - destroys transaction object
@@ -878,7 +898,7 @@ struct Wallet
     * \return                  - true on success
     */
     virtual bool exportKeyImages(std::string_view filename) = 0;
-
+   
    /*!
     * \brief importKeyImages - imports key images from file
     * \param filename - utf8 filename to read from
@@ -965,13 +985,13 @@ struct Wallet
     virtual bool parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error) = 0;
 
     virtual std::string getDefaultDataDir() const = 0;
-
+   
    /*
     * \brief rescanSpent - Rescan spent outputs - Can only be used with trusted daemon
     * \return true on success
     */
     virtual bool rescanSpent() = 0;
-
+    
     //! blackballs a set of outputs
     virtual bool blackballOutputs(const std::vector<std::string> &outputs, bool add) = 0;
 
@@ -999,11 +1019,13 @@ struct Wallet
     //! secondary key reuse mitigation
     virtual void keyReuseMitigation2(bool mitigation) = 0;
 
+#ifdef ENABLE_LIGHT_WALLET
     //! Light wallet authenticate and login
     virtual bool lightWalletLogin(bool &isNewWallet) const = 0;
-
+    
     //! Initiates a light wallet import wallet request
     virtual bool lightWalletImportWalletRequest(std::string &payment_id, uint64_t &fee, bool &new_request, bool &request_fulfilled, std::string &payment_address, std::string &status) = 0;
+#endif
 
     //! locks/unlocks the keys file; returns true on success
     virtual bool lockKeysFile() = 0;
