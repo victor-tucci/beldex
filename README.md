@@ -1,4 +1,4 @@
-# Beldex
+# Beldex_
 
 <p align="center">
     <a href="https://github.com/Beldex-Coin/beldex/commits/dev"><img alt="pipeline status" src="https://gitlab.com/beldexproject/beldex/badges/dev/pipeline.svg" /></a>
