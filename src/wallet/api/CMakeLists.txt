@@ -149,7 +149,7 @@ if (STATIC AND BUILD_STATIC_DEPS)
     else()
         set(lib_folder lib)
     endif()
-   # install(TARGETS wallet_merged
-   #     ARCHIVE DESTINATION ${lib_folder}
-   #     EXCLUDE_FROM_ALL)
+    install(TARGETS wallet_merged
+        ARCHIVE DESTINATION ${lib_folder}
+        EXCLUDE_FROM_ALL)
 endif()
