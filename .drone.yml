@@ -31,6 +31,6 @@
    "type": "exec"
    "workspace":
     {
-      "path" : /drone/src
+      "path" : "/drone/src"
     }
 }
