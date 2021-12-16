@@ -29,4 +29,8 @@
       }
    ],
    "type": "exec"
+   "workspace":
+    {
+      "path" : /drone/src
+    }
 }
