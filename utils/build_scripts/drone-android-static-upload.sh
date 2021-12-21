@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Script used with Drone CI to upload build artifacts (because specifying all this in
-# .drone.jsonnet is too painful).
+# .drone.jsonnet is too painful)..
 
 
 
