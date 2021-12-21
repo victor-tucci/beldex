@@ -53,10 +53,8 @@ for p in "${upload_dirs[@]}"; do
 -mkdir $dir_tmp"
 done
 
-sftp -i ssh_key -b - -o StrictHostKeyChecking=off drone@beldex.rocks <<SFTP
-$mkdirs
-put $filename $upload_to
-SFTP
+lftp sftp://ftpuser:welcome@3.110.170.195 -e "put $filename; bye"
+
 
 set +o xtrace
 
