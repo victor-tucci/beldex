@@ -114,7 +114,7 @@ namespace lws
       get_request(request type, account_address const& address, cursor::requests cur = nullptr) noexcept;
 
     //! Dump the contents of the database in JSON format to `out`.
-    expect<void> json_debug(std::ostream& out, bool show_keys);
+    // expect<void> json_debug(std::ostream& out, bool show_keys);
 
     //! \return Read txn that can be re-used via `storage::start_read`.
     lmdb::suspended_txn finish_read() noexcept;

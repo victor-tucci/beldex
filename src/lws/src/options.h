@@ -11,7 +11,7 @@
 #include "common/fs.h"           // beldex/src
 #include "cryptonote_config.h"   // beldex/src
 #include "config.h"
-
+#include <iostream>
 namespace lws
 {
    const std::string default_db_subdir = "/light_wallet_server";

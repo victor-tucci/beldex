@@ -568,8 +568,16 @@ namespace cryptonote { namespace rpc {
     size_t size = 0, ntxes = 0;
     res.blocks.reserve(bs.size());
     res.output_indices.reserve(bs.size());
+    block blk;
+    crypto::hash block_hash;
     for(auto& bd: bs)
     {
+      if (!m_core.get_block_by_height(req.start_height, blk))
+        throw rpc_error{ERROR_INTERNAL, "Internal error: can't get block by height. Height = " + std::to_string(req.start_height) + '.'};
+      block_hash = get_block_hash(blk);
+      std::cout<<"HELLLO WORLD";
+      std::cout<<tools::type_to_hex(block_hash);
+      res.
       res.blocks.resize(res.blocks.size()+1);
       res.blocks.back().block = bd.first.first;
       size += bd.first.first.size();

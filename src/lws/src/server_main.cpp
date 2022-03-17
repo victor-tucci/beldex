@@ -168,7 +168,7 @@ namespace
      std::cout << "inside the run " << std::endl;
    // boost::filesystem::create_directories("/home/blockhash123/.beldex/light_wallet_server");
     // std::filesystem::create_directories(prog.db_path);
-    system("mkdir -p /home/blockhash/.beldex/light_wallet_server");
+    system("mkdir -p /home/apple-pro/.beldex/light_wallet_server");
     auto disk = lws::db::storage::open(prog.db_path.c_str(), prog.create_queue_max);
     lws::scanner::sync(disk.clone());
 
