@@ -51,6 +51,7 @@ include(Version)
 add_library(version ${CMAKE_BINARY_DIR}/version.cpp)
 add_dependencies(version genversion)
 
+set(CMAKE_CXX_STANDARD 17)
 add_subdirectory(common)
 add_subdirectory(crypto)
 add_subdirectory(ringct)
@@ -91,7 +92,6 @@ endif()
 if(PER_BLOCK_CHECKPOINT)
   add_subdirectory(blocks)
 endif()
-
 add_subdirectory(device)
 add_subdirectory(device_trezor)
 

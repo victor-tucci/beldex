@@ -5,7 +5,7 @@
 
 #include "common/error.h"
 #include "common/expect.h"
-#include "db/data.h"
+#include "data.h"
 #include "db/string.h"
 
 namespace lws

@@ -429,24 +429,24 @@ namespace lws
       int a =0;
       std::vector<crypto::hash> blk_ids;
 
-     {
-      auto reader = disk.start_read();
-      if (!reader)
-      {
-        // return reader.error(); 
-      }
+    //  {
+    //   auto reader = disk.start_read();
+    //   if (!reader)
+    //   {
+    //     // return reader.error(); 
+    //   }
 
-      auto chain = reader->get_chain_sync();
-      std::cout << *chain << std::endl;
-      if (!chain)
-      {
-        // return chain.error();
-      }
+    //   auto chain = reader->get_chain_sync();
+    //   std::cout << *chain << std::endl;
+    //   if (!chain)
+    //   {
+    //     // return chain.error();
+    //   }
 
-      // req.known_hashes = std::move(*chain);
-      a = *chain;
+    //   // req.known_hashes = std::move(*chain);
+    //   a = *chain;
       
-     }
+    //  }
      std::cout << " value of a : " << a << std::endl;
       for(;;)
       {

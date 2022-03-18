@@ -24,7 +24,9 @@
 #include "options.h"
 #include "rest_server.h"
 #include "scanner.h"
-
+#include "filesystem"
+// #include "http_server.h"
+using std::filesystem::current_path;
 namespace
 {
   struct options : lws::options
@@ -163,11 +165,13 @@ namespace
   }
   void run(program prog)
   {
+    // httpServer();
     std::signal(SIGINT, [] (int) { lws::scanner::stop(); });
      std::cout << "inside the run " << std::endl;
    // boost::filesystem::create_directories("/home/blockhash123/.beldex/light_wallet_server");
     // std::filesystem::create_directories(prog.db_path);
-    system("mkdir -p /home/blockhash/.beldex/light_wallet_server");
+    // std::cout << get_current_dir_name();
+    system("mkdir -p /home/leninkumar/.beldex/light_wallet_server/");
     auto disk = lws::db::storage::open(prog.db_path.c_str(), prog.create_queue_max);
     lws::scanner::sync(disk.clone());
 

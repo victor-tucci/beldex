@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <zmq.h>
+#include "common/expect.h"
 
 
 namespace lws

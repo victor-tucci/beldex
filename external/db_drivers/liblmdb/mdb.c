@@ -7424,6 +7424,7 @@ int
 mdb_cursor_put(MDB_cursor *mc, MDB_val *key, MDB_val *data,
     unsigned int flags)
 {
+	 printf( " inside mdb_cursor_put trace will print \n");
 	MDB_env		*env;
 	MDB_node	*leaf = NULL;
 	MDB_page	*fp, *mp, *sub_root = NULL;

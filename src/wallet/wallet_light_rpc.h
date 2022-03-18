@@ -33,7 +33,7 @@
 #include "serialization/vector.h"
 #include "crypto/hash.h"
 #include <string_view>
-
+#include "common/beldex.h"
 namespace tools
 {
 namespace light_rpc

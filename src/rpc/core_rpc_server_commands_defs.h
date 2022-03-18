@@ -51,6 +51,8 @@
 #include "cryptonote_core/master_node_list.h"
 #include "common/beldex.h"
 
+
+
 namespace cryptonote {
 
 /// Namespace for core RPC commands.  Every RPC commands gets defined here (including its name(s),
