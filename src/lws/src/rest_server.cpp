@@ -16,44 +16,25 @@
 #include "rpc/light_wallet.h"
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "util/random_outputs.h"
-#include "wire/read.h"
-#include "wire/write.h"
-// #include "json/write.h"
-#include "wire/json/base.h"
-#include "nlohmann/json.hpp"
 #include "error.h"
-#include "wire/json/write.h"
 #include "cryptonote_core/blockchain.h"
 #include "wallet/wallet2.h"
 #include "cryptonote_core/blockchain.h"
+#include <nlohmann/json.hpp>
+#include "wire/json.h"
+#include "wire/read.h"
+using json = nlohmann::json;
 using namespace oxenmq;
 using namespace std;
-using namespace cryptonote;
+using namespace cryptonote::rpc;
+using namespace wire;
 
 string failmsg = " its_failed ";
-json msg = " success ";
-// // namespace conn_url
-// // {
-// //     auto connectionURL()
-// //     {
-// //         cout << __func__ << " function_called "
-// //                   << "\n";
-// //         auto connection_url = m_LMQ->connect_remote(
-// //             "tcp://127.0.0.1:4567",
-// //             [](ConnectionID conn)
-// //             {
-// //                 cout << "Connected \n";
-// //             },
-// //             [](ConnectionID conn, string_view f)
-// //             {
-// //                 cout << "connect failed: \n";
-// //             });
-// //         return connection_url;
-// //     }
-// // }msg
+// json msg = " success ";
+
 namespace connectionURL
 {
-    auto conn()
+    auto connect() 
     {
         using LMQ_ptr = shared_ptr<oxenmq::OxenMQ>;
         string msg = " success ";
@@ -72,6 +53,7 @@ namespace connectionURL
 
 namespace lws
 {
+    using json = nlohmann::json;
     namespace {
 
     std::vector<db::output::spend_meta_>::const_iterator
@@ -134,22 +116,7 @@ namespace lws
 
     struct submit_raw_tx
     {
-
-        // using request = tools::light_rpc::SUBMIT_RAW_TX::request;
-        struct request
-      {
-        std::string address;
-        std::string view_key;
-        std::string tx;
-        bool flash;
-
-        BEGIN_KV_SERIALIZE_MAP()
-          KV_SERIALIZE(address)
-          KV_SERIALIZE(view_key)
-          KV_SERIALIZE(tx)
-          KV_SERIALIZE_OPT(flash, false)
-        END_KV_SERIALIZE_MAP()
-      };
+      using request = cryptonote::rpc::SEND_RAW_TX::request;
       struct response
       {
         std::string status;
@@ -164,7 +131,7 @@ namespace lws
         // using response = tools::light_rpc::SUBMIT_RAW_TX::response;
 
         request object_1;
-        string param = object_1.tx;
+        // string param = object_1.tx;
         int flash{};
         string tx_hash;
         
@@ -184,9 +151,10 @@ namespace lws
                 });
 
             // using transaction_rpc = cryptonote::rpc::SendRawTxHex;
+            string msg = " success ";
             json respond{};
             m_LMQ->request(
-                connection_url, "rpc.submit_raw_tx", [respond,msg](bool status, auto response_data)
+                connection_url, "rpc.send_raw_transaction", [respond,msg](bool status, auto response_data)
                 {
                 if (status == 1 && response_data[0] == "200") cout << " response : " << response_data[1] << "\n"; },
                 "{\"tx\": \"" + string(msg) + "\"}");
@@ -196,20 +164,20 @@ namespace lws
     };
     struct get_random_outs
     {
-        using request = rpc::get_random_outs_request;
+        using request = cryptonote::rpc::GET_OUTPUTS::request;
         using response = rpc::get_random_outs_response;
 
         static expect<response> handle(request req, const db::storage &)
         {
             using distribution_rpc = cryptonote::rpc::GET_OUTPUT_DISTRIBUTION;
             using histogram_rpc = cryptonote::rpc::GET_OUTPUT_HISTOGRAM;
-
-            vector<uint64_t> amounts = move(req.amounts.values);
+            // request::request reqs;
+            vector<uint64_t> amounts = move(req.values);
             const std::size_t rct_count = amounts.end() - std::lower_bound(amounts.begin(), amounts.end(), 0);
             vector<lws::histogram> histogram{};
             if (rct_count < amounts.size())
             {
-                json hist_req;
+                std::string msg = "success";
                 histogram_rpc::request his_req{};
                 his_req.amounts = std::move(amounts);
                 his_req.min_count = 0;
@@ -230,10 +198,10 @@ namespace lws
                     });
                 // using transaction_rpc = cryptonote::rpc::SendRawTxHex;
                 m_LMQ->request(
-                    connection_url, "rpc.get_output_histogram", [&hist_req,msg](bool status, auto histogram)
+                    connection_url, "rpc.get_output_histogram", [&his_req,msg](bool status, auto histogram)
                     {
                     if (status == 1 && histogram[0] == "200")cout << " response : " << histogram[1] << "\n";
-                    json res = json::parse(histogram[1]); 
+                    auto res = json::parse(histogram[1]); 
                     },"{\"tx\": \"" + std::string(msg) + "\"}");
 
                 amounts = move(his_req.amounts);
@@ -254,7 +222,7 @@ namespace lws
                     connection_url, "rpc.get_output_histogram", [&dist_req,msg](bool status, auto distribution)
                     {
                     if (status == 1 && distribution[0] == "200")cout << " response : " << distribution[1] << "\n";
-                    json dist_req = json::parse(distribution[1]); 
+                    auto dist_req = json::parse(distribution[1]); 
                     },"{\"tx\": \"" + std::string(msg) + "\"}");
 
                     // distributions = std::move(dist_req[0]);
@@ -340,7 +308,7 @@ namespace lws
                     connection_url, "rpc.get_fee_estimate", [grace_blocks](bool status, auto estimate_fee)
                     {
                     if (status == 1 && estimate_fee[0] == "200")cout << " response : " << estimate_fee[1] << "\n";
-                    json response = json::parse(estimate_fee[1]); 
+                    auto response = json::parse(estimate_fee[1]); 
                     // json res;
                     // res = response;
                     },"{\"grace_blocks\": \"" + std::to_string(grace_blocks) + "\"}");
@@ -529,8 +497,8 @@ expect<epee::byte_slice> call(string &&root, db::storage disk)
         return req.error();
 
     expect<response> resp = E::handle(move(*req), move(disk));
-    // if (!resp)
-    //     return resp.error();
+    if (!resp)
+        return resp.error();
     return wire::json::to_bytes<response>(*resp);
 }
 
@@ -542,12 +510,11 @@ struct endpoint
 };
 
 constexpr const endpoint endpoints[] = {
-    {"/submit_raw_tx",      call<submit_raw_tx>,    2 * 1024},
-    {"/get_random_outs",    call<get_random_outs>,  2 * 1024},
-    {"/get_unspent_outs",   call<get_unspent_outs>, 2 * 1024},
-    {"/get_random_outs",    call<login>,            2 * 1024},
-    {"/get_address_txs",    call<get_address_txs>,  2 * 1024}
+    {"/submit_raw_tx",      call<submit_raw_tx>,    2 * 1024}
+    // {"/get_random_outs",    call<get_random_outs>,  2 * 1024},
+    // {"/get_unspent_outs",   call<get_unspent_outs>, 2 * 1024},
+    // {"/get_random_outs",    call<login>,            2 * 1024},
+    // {"/get_address_txs",    call<get_address_txs>,  2 * 1024}
 
     };
-
 } //namespace lws

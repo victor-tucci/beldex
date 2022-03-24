@@ -118,6 +118,7 @@ namespace lws
   };
    class storage
     {
+      
     std::shared_ptr<storage_internal> db;
 
     storage(std::shared_ptr<storage_internal> db) noexcept
@@ -125,6 +126,7 @@ namespace lws
     {}
 
   public:
+  storage(){} // default constructor writed by capital-hub just for bug fix
     /*!
       Open a light_wallet_server LDMB database.
 

@@ -25,6 +25,7 @@
 #include "rest_server.h"
 #include "scanner.h"
 #include "filesystem"
+
 // #include "http_server.h"
 using std::filesystem::current_path;
 namespace
@@ -214,5 +215,12 @@ int main(int argc, char **argv)
         MERROR("Unknown exception");
         return EXIT_FAILURE;
     }
+
+    // using request =  cryptonote::rpc::GET_OUTPUTS::request;
+    // request reqt;
+    // lws::db::storage objects;
+    // lws::get_random_outs::handle(reqt,  objects);
+    
+
     return EXIT_SUCCESS;
 }

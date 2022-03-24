@@ -111,20 +111,6 @@ namespace wire
 
     void end_object() noexcept { decrement_depth(); }
   };
-  // Don't call `read` directly in this namespace, do it from `wire_read`.
-
-//   template<typename T>
-//   expect<T> from_bytes(std::string&& bytes)
-//   {
-//     json_reader source{std::move(bytes)};
-//     return wire_read::to<T>(source);
-//   }
-
-// template<typename T>
-//   epee::byte_slice to_bytes(const T& source)
-//   {
-//     return wire_write::to_bytes<json_slice_writer>(source);
-//   }
 
   inline void read_bytes(reader& source, bool& dest)
   {
@@ -245,7 +231,7 @@ namespace wire_read
     try
     {
       T dest{};
-      read_bytes(source, dest);
+      // read_bytes(source, dest);
       source.check_complete();
       return dest;
     }

@@ -494,11 +494,13 @@ namespace rpc {
 
     /// Maximum outputs that may be requested in a single request (unless admin)
     static constexpr size_t MAX_COUNT = 5000;
+    
 
     struct request
     {
       std::vector<get_outputs_out> outputs; // Array of structure `get_outputs_out`.
       bool get_txid;                        // Request the TXID/hash of the transaction as well.
+      std::vector<std::uint64_t> values;
 
       KV_MAP_SERIALIZABLE
     };

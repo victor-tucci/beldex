@@ -471,6 +471,20 @@ namespace db
   storage_reader::~storage_reader() noexcept
   {}
 
+  expect<block_info> storage_reader::get_last_block() noexcept
+  {
+    MONERO_PRECOND(txn != nullptr);
+    assert(db != nullptr);
+    MONERO_CHECK(check_cursor(*txn, db->tables.blocks, curs.blocks_cur));
+
+    MDB_val key = lmdb::to_val(blocks_version);
+    MDB_val value{};
+    MONERO_LMDB_CHECK(mdb_cursor_get(curs.blocks_cur.get(), &key, &value, MDB_SET));
+    MONERO_LMDB_CHECK(mdb_cursor_get(curs.blocks_cur.get(), &key, &value, MDB_LAST_DUP));
+
+    return blocks.get_value<block_info>(value);
+  }
+  
   expect<int> storage_reader::get_chain_sync()
   {
     MONERO_PRECOND(txn != nullptr);
@@ -529,6 +543,24 @@ namespace db
     }
 
     return accounts.get_value<account>(value);
+  }
+
+  expect<lmdb::value_stream<db::key_image, cursor::close_images>>
+  storage_reader::get_images(output_id id, cursor::images cur) noexcept
+  {
+    MONERO_PRECOND(txn != nullptr);
+    assert(db != nullptr);
+    MONERO_CHECK(check_cursor(*txn, db->tables.images, cur));
+    return images.get_value_stream(id, std::move(cur));
+  }
+
+  expect<lmdb::value_stream<spend, cursor::close_spends>>
+  storage_reader::get_spends(account_id id, cursor::spends cur) noexcept
+  {
+    MONERO_PRECOND(txn != nullptr);
+    assert(db != nullptr);
+    MONERO_CHECK(check_cursor(*txn, db->tables.spends, cur));
+    return spends.get_value_stream(id, std::move(cur));
   }
 
   expect<std::pair<account_status, account>>

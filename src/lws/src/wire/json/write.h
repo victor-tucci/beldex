@@ -114,7 +114,11 @@ namespace wire
     }
   };
 
- 
+ template<typename T>
+  epee::byte_slice json::to_bytes(const T& source)
+  {
+    return wire_write::to_bytes<json_slice_writer>(source);
+  }
 
 
   template<typename T, typename F = identity_>

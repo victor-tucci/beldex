@@ -15,8 +15,13 @@ using namespace std;
 
 namespace lws
 {
+    struct get_random_outs;
     class rest_server
     {
+        struct internal;
+        boost::asio::io_service io_service_;
+        std::list<internal> ports_;
+
     public:
         struct configuration
         {
@@ -25,6 +30,15 @@ namespace lws
             std::size_t threads;
             bool allow_external;
         }; // configre
+        explicit rest_server(epee::span<const std::string> addresses, db::storage disk, configuration config);
+
+        rest_server(rest_server &&) = delete;
+        rest_server(rest_server const &) = delete;
+
+        ~rest_server() noexcept;
+
+        rest_server &operator=(rest_server &&) = delete;
+        rest_server &operator=(rest_server const &) = delete;
 
     }; // rest_server
 } // lws
