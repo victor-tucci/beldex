@@ -697,6 +697,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::init(const boost::program_options::variables_map& vm)
   {
+    m_connection_timeout_started=false;
     bool res = handle_command_line(vm);
     CHECK_AND_ASSERT_MES(res, false, "Failed to handle command line");
 
@@ -848,11 +849,31 @@ namespace nodetool
               if (!(cntxt.m_state == p2p_connection_context::state_before_handshake && std::chrono::steady_clock::now() < cntxt.m_started + 10s))
                 ++number_of_out_peers;
             }
+
             return true;
           }); // lambda
           zone.second.m_current_number_of_in_peers = number_of_in_peers;
           zone.second.m_current_number_of_out_peers = number_of_out_peers;
+
         }
+
+          size_t count = get_public_connections_count();
+
+          if(count==0 && !m_connection_timeout_started){
+              m_connection_timeout_timer = std::chrono::steady_clock::now()+std::chrono::seconds(60*5);
+              m_connection_timeout_started=true;
+          }
+          else if(count==0 && m_connection_timeout_started){
+
+              if(std::chrono::steady_clock::now()  > m_connection_timeout_timer){
+                  MWARNING("No incomming or outgoing connections found for too long, sending stop signal triggering watchdog to restart this process");
+                  send_stop_signal();
+              }
+
+          }
+          else{
+              m_connection_timeout_started=false;
+          }
         std::this_thread::sleep_for(1s);
       } // main loop of thread
       MDEBUG("Thread monitor number of peers - done");

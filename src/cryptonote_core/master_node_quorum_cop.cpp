@@ -552,10 +552,24 @@ namespace master_nodes
     LOG_PRINT_L2("start handle_obligations_vote");
     if (votes.size() < STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE)
     {
+      crypto::public_key const &master_node_pubkey = quorum.workers[vote.state_change.worker_index];
+      if(vote.state_change.state==new_state::decommission){
+          LOG_PRINT_L2("handle decommission votes:");
+      }
+      else if (vote.state_change.state==new_state::deregister){
+            LOG_PRINT_L2("handle deregister votes:");
+      }
+      else if(vote.state_change.state==new_state::ip_change_penalty){
+            LOG_PRINT_L2("handle ip_change_penalty votes:");
+        }
+      else if(vote.state_change.state==new_state::recommission){
+          LOG_PRINT_L2("handle recommission votes:");
+      }
+
       LOG_PRINT_L2("Don't have enough votes yet to submit a state change transaction: have " << votes.size() << " of " << STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE << " required");
       return true;
     }
-    LOG_PRINT_L2("get_network_version");
+    LOG_PRINT_L2("get_network_version_vote");
     auto net = core.get_blockchain_storage().get_network_version();
     // NOTE: Verify state change is still valid or have we processed some other state change already that makes it invalid
     {
