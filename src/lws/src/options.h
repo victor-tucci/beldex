@@ -17,7 +17,7 @@ namespace lws
    const std::string default_db_subdir = "/light_wallet_server";
    const std::string dir_slash = "/.";
   //  const std::string default_db_dir = std::getenv("HOME")+ dir_slash + CRYPTONOTE_NAME;
-  const std::string default_db_dir = std::string("/home/leninkumar")+ dir_slash + CRYPTONOTE_NAME ;
+  const std::string default_db_dir = std::string("${HOME}")+ dir_slash + CRYPTONOTE_NAME ;
    struct options
   {
     const command_line::arg_descriptor<std::string> db_path;

@@ -12,7 +12,6 @@
 #include "wire/json/base.h"
 #include "wire/read.h"
 #include "wire/traits.h"
-#include "wire/write.h"
 
 namespace wire
 {

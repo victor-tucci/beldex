@@ -450,7 +450,7 @@ namespace lws
      std::cout << " value of a : " << a << std::endl;
       for(;;)
       {
-         break;
+        //  break;
           m_LMQ->request(c,"rpc.get_hashes",[&details,a,&blk_ids](bool s , auto data){
           if(s==1 && data[0]=="200"){
             //  std::cout << " get_hashes is : " << data[1] << "\n";

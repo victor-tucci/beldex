@@ -120,7 +120,6 @@ namespace wire
     return wire_write::to_bytes<json_slice_writer>(source);
   }
 
-
   template<typename T, typename F = identity_>
   inline void array(json_writer& dest, const T& source, F filter = F{})
   {
@@ -156,72 +155,3 @@ namespace wire
     wire_write::object(dest, std::move(fields)...);
   }
 }
-
-namespace wire_write
-{
-  /*! Don't add a function called `write_bytes` to this namespace, it will
-      prevent ADL lookup. ADL lookup delays the function searching until the
-      template is used instead of when its defined. This allows the unqualified
-      calls to `write_bytes` in this namespace to "find" user functions that are
-      declared after these functions. */
-
-  template<typename W, typename T>
-  inline epee::byte_slice to_bytes(const T& value)
-  {
-    W dest{};
-    write_bytes(dest, value);
-    return dest.take_bytes();
-  }
-
-  // template<typename W, typename T, typename F = wire::identity_>
-  // inline void array(W& dest, const T& source, const std::size_t count, F filter = F{})
-  // {
-  //   using value_type = typename T::value_type;
-  //   static_assert(!std::is_same<value_type, char>::value, "write array of chars as binary");
-  //   static_assert(!std::is_same<value_type, std::uint8_t>::value, "write array of unsigned chars as binary");
-
-  //   dest.start_array(count);
-  //   for (const auto& elem : source)
-  //     write_bytes(dest, filter(elem));
-  //   dest.end_array();
-  // }
-
-  // template<typename W, typename T>
-  // inline bool field(W& dest, const wire::field_<T, true> elem)
-  // {
-  //   dest.key(0, elem.name);
-  //   write_bytes(dest, elem.get_value());
-  //   return true;
-  // }
-
-  // template<typename W, typename T>
-  // inline bool field(W& dest, const wire::field_<T, false> elem)
-  // {
-  //   if (bool(elem.get_value()))
-  //   {
-  //     dest.key(0, elem.name);
-  //     write_bytes(dest, *elem.get_value());
-  //   }
-  //   return true;
-  // }
-
-  // template<typename W, typename... T>
-  // inline void object(W& dest, T... fields)
-  // {
-  //   dest.start_object(wire::sum(std::size_t(wire::available(fields))...));
-  //   const bool dummy[] = {field(dest, std::move(fields))...};
-  //   dest.end_object();
-  // }
-
-  // template<typename W, typename T, typename F, typename G>
-  // inline void dynamic_object(W& dest, const T& values, const std::size_t count, F key_filter, G value_filter)
-  // {
-  //   dest.start_object(count);
-  //   for (const auto& elem : values)
-  //   {
-  //     dest.key(key_filter(elem.first));
-  //     write_bytes(dest, value_filter(elem.second));
-  //   }
-  //   dest.end_object();
-  // }
-} // wire_write

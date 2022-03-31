@@ -350,6 +350,7 @@ namespace net_utils
     const network_address m_remote_address;
     const bool     m_is_income;
     std::chrono::steady_clock::time_point m_started;
+    // const bool      m_ssl;
     std::chrono::steady_clock::time_point m_last_recv;
     std::chrono::steady_clock::time_point m_last_send;
     uint64_t m_recv_cnt;

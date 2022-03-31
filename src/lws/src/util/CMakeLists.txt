@@ -1,6 +1,7 @@
 set(util_headers 
     gamma_picker.h
     random_outputs.h
+    http_server.h
 )
 
 set(util_sources

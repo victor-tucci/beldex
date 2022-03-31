@@ -280,6 +280,17 @@ POP_WARNINGS
     return hex_to_pod(hex_str, unwrap(s));
   }
   //----------------------------------------------------------------------------
+  inline std::string get_extension(const std::string& str)
+	{
+		std::string res;
+		std::string::size_type pos = str.rfind('.');
+		if(std::string::npos == pos)
+			return res;
+		
+		res = str.substr(pos+1, str.size()-pos);
+		return res;
+	}
+  //----------------------------------------------------------------------------
   template<class t_pod_type>
   bool hex_to_pod(const boost::string_ref hex_str, epee::mlocked<t_pod_type>& s)
   {

@@ -169,10 +169,10 @@ namespace
     // httpServer();
     std::signal(SIGINT, [] (int) { lws::scanner::stop(); });
      std::cout << "inside the run " << std::endl;
-   // boost::filesystem::create_directories("/home/blockhash123/.beldex/light_wallet_server");
-    // std::filesystem::create_directories(prog.db_path);
-    // std::cout << get_current_dir_name();
-    system("mkdir -p /home/leninkumar/.beldex/light_wallet_server/");
+   boost::filesystem::create_directories("${HOME}/.beldex/light_wallet_server");
+    std::filesystem::create_directories(prog.db_path);
+    std::cout << get_current_dir_name();
+    // system("mkdir -p /home/leninkumar/.beldex/light_wallet_server/");
     auto disk = lws::db::storage::open(prog.db_path.c_str(), prog.create_queue_max);
     lws::scanner::sync(disk.clone());
 

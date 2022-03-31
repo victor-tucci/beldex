@@ -8,6 +8,8 @@ add_subdirectory(util)
 add_subdirectory(rpc)
 
 find_package(nlohmann_json 3.7.0 REQUIRED)
+find_package(Boost 1.45.0 COMPONENTS filesystem regex)
+
 
 set(beldex-lws-common_sources config.cpp error.cpp)
 set(beldex-lws-common_headers config.h error.h fwd.h)
@@ -23,10 +25,13 @@ target_link_libraries(beldex-lws-daemon PUBLIC
     beldex-lws-common
     PRIVATE
     Boost::serialization
-    filesystem
+    Boost::filesystem
     Boost::thread
     Boost::system
     Threads::Threads
+    Boost::regex
+    net
+    
 )
 target_link_libraries(beldex-lws-daemon PRIVATE nlohmann_json::nlohmann_json)
 add_executable(beldex-lws-admin admin_main.cpp) 

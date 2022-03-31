@@ -33,6 +33,8 @@
 #include "epee/file_io_utils.h"
 #include "net_parse_helpers.h"
 #include "epee/time_helper.h"
+#include "epee/syncobj.h"
+using namespace epee;
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net.http"
@@ -554,14 +556,14 @@ namespace net_utils
 	}
 	//-----------------------------------------------------------------------------------
   template<class t_connection_context>
-	bool simple_http_connection_handler<t_connection_context>::get_len_from_content_lenght(const std::string& str, size_t& OUT len)
+	bool simple_http_connection_handler<t_connection_context>::get_len_from_content_lenght(const std::string& str, size_t& OUT)
 	{
 		STATIC_REGEXP_EXPR_1(rexp_mach_field, "\\d+", boost::regex::normal);
 		std::string res;
 		boost::smatch result;
 		if(!(boost::regex_search( str, result, rexp_mach_field, boost::match_default) && result[0].matched))
 			return false;
-
+		size_t len;
 		try { len = boost::lexical_cast<size_t>(result[0]); }
 		catch(...) { return false; }
 		return true;
@@ -596,11 +598,13 @@ namespace net_utils
 		if ((response.m_body.size() && (query_info.m_http_method != http::http_method_head)) || (query_info.m_http_method == http::http_method_options))
 			response_data += response.m_body;
 
-		m_psnd_hndlr->do_send(byte_slice{std::move(response_data)});
+		m_psnd_hndlr->do_send((epee::shared_sv)std::move(response_data));
 		m_psnd_hndlr->send_done();
 		return res;
 	}
 	//-----------------------------------------------------------------------------------
+
+	critical_section m_lock_1;
   template<class t_connection_context>
 	bool simple_http_connection_handler<t_connection_context>::handle_request(const http::http_request_info& query_info, http_response_info& response)
 	{
@@ -610,9 +614,9 @@ namespace net_utils
 			uri_to_path = "/index.html";
 
 		//slash_to_back_slash(uri_to_path);
-		m_config.m_lock.lock();
+		m_lock_1.lock();
 		std::string destination_file_path = m_config.m_folder + uri_to_path;
-		m_config.m_lock.unlock();
+		m_lock_1.unlock();
 		if(!file_io_utils::load_file_to_string(destination_file_path.c_str(), response.m_body))
 		{
 			MWARNING("URI \""<< query_info.m_full_request_str.substr(0, query_info.m_full_request_str.size()-2) << "\" [" << destination_file_path << "] Not Found (404 )");

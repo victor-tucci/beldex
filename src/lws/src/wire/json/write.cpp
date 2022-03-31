@@ -3,7 +3,7 @@
 #include <ostream>
 #include <stdexcept>
 
-#include "hex.h" // beldex/contrib/epee/include/epee
+#include "hex.h" // beldex/contrib/epee/include
 
 namespace
 {

@@ -1,3 +1,30 @@
+// Copyright (c) 2020, The Monero Project
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without modification, are
+// permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this list of
+//    conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice, this list
+//    of conditions and the following disclaimer in the documentation and/or other
+//    materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors may be
+//    used to endorse or promote products derived from this software without specific
+//    prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+// THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+// STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+// THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 #pragma once
 
 #include <array>
@@ -5,37 +32,11 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "byte_slice.h" // beldex/contrib/epee/include
-#include "span.h"       // beldex/contrib/epee/include
+#include "byte_slice.h" // monero/contrib/epee/include
+#include "span.h"       // monero/contrib/epee/include
 #include "wire/field.h"
 #include "wire/filters.h"
 #include "wire/traits.h"
-// #include "json/write.h"
-
-
-#pragma once
-
-#include <cstdint>
-#include <string>
-
-#include "common/expect.h" // monero/src
-#include "crypto/hash.h"   // monero/src
-#include "wire/json/fwd.h"
-
-namespace lws
-{
-namespace rpc
-{
-  //! Represents only the last block listed in "minimal-chain_main" pub.
-  struct minimal_chain_pub
-  {
-    std::uint64_t top_block_height;
-    crypto::hash top_block_id;
-
-    static expect<minimal_chain_pub> from_json(std::string&&);
-  };
-}
-}
 
 namespace wire
 {
@@ -133,11 +134,13 @@ namespace wire_write
       calls to `write_bytes` in this namespace to "find" user functions that are
       declared after these functions. */
 
-  //  template<typename T>
-  // epee::byte_slice to_bytes(const T& source)
-  // {
-  //   return wire_write::to_bytes<wire::json_slice_writer>(source);
-  // }
+  template<typename W, typename T>
+  inline epee::byte_slice to_bytes(const T& value)
+  {
+    W dest{};
+    // write_bytes(dest, value);
+    return dest.take_bytes();
+  }
 
   template<typename W, typename T, typename F = wire::identity_>
   inline void array(W& dest, const T& source, const std::size_t count, F filter = F{})
@@ -190,8 +193,6 @@ namespace wire_write
     }
     dest.end_object();
   }
-  template<typename T>
-  epee::byte_slice to_bytes(const T& source);
 } // wire_write
 
 namespace wire

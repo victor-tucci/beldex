@@ -39,7 +39,7 @@
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net.http"
-
+using namespace epee;
 namespace epee
 {
 namespace net_utils
@@ -62,7 +62,82 @@ namespace net_utils
 		/************************************************************************/
 		/*                                                                      */
 		/************************************************************************/
-		template<class t_connection_context  = net_utils::connection_context_base>
+
+//*********************************************************************************************************
+	struct connection_context_base_1
+	{
+    const boost::uuids::uuid m_connection_id;
+    const network_address m_remote_address;
+    const bool     m_is_income;
+    std::chrono::steady_clock::time_point m_started;
+    // const bool      m_ssl;
+    std::chrono::steady_clock::time_point m_last_recv;
+    std::chrono::steady_clock::time_point m_last_send;
+    uint64_t m_recv_cnt;
+    uint64_t m_send_cnt;
+    double m_current_speed_down;
+    double m_current_speed_up;
+    double m_max_speed_down;
+    double m_max_speed_up;
+
+    connection_context_base_1(boost::uuids::uuid connection_id,
+                            const network_address &remote_address, bool is_income,
+                            std::chrono::steady_clock::time_point last_recv = std::chrono::steady_clock::time_point::min(),
+                            std::chrono::steady_clock::time_point last_send = std::chrono::steady_clock::time_point::min(),
+                            uint64_t recv_cnt = 0, uint64_t send_cnt = 0):
+                                            m_connection_id(connection_id),
+                                            m_remote_address(remote_address),
+                                            m_is_income(is_income),
+                                            m_started(std::chrono::steady_clock::now()),
+                                            m_last_recv(last_recv),
+                                            m_last_send(last_send),
+                                            m_recv_cnt(recv_cnt),
+                                            m_send_cnt(send_cnt),
+                                            m_current_speed_down(0),
+                                            m_current_speed_up(0),
+                                            m_max_speed_down(0),
+                                            m_max_speed_up(0)
+    {}
+
+    connection_context_base_1(): m_connection_id(),
+                               m_remote_address(),
+                               m_is_income(false),
+                               m_started(std::chrono::steady_clock::now()),
+                               m_last_recv(std::chrono::steady_clock::time_point::min()),
+                               m_last_send(std::chrono::steady_clock::time_point::min()),
+                               m_recv_cnt(0),
+                               m_send_cnt(0),
+                               m_current_speed_down(0),
+                               m_current_speed_up(0),
+                               m_max_speed_down(0),
+                               m_max_speed_up(0)
+    {}
+
+    connection_context_base_1(const connection_context_base_1& a): connection_context_base_1()
+    {
+      set_details(a.m_connection_id, a.m_remote_address, a.m_is_income);
+    }
+
+    connection_context_base_1& operator=(const connection_context_base_1& a)
+    {
+      set_details(a.m_connection_id, a.m_remote_address, a.m_is_income);
+      return *this;
+    }
+    
+  private:
+    template<class t_protocol_handler>
+    friend class connection;
+    void set_details(boost::uuids::uuid connection_id, const network_address &remote_address, bool is_income)
+    {
+      this->~connection_context_base_1();
+      new(this) connection_context_base_1(connection_id, remote_address, is_income);
+    }
+
+	};
+
+//*********************************************************************************************************
+
+		template<class t_connection_context  = connection_context_base_1>
 		class simple_http_connection_handler
 		{
 		public:
@@ -168,8 +243,8 @@ namespace net_utils
 		/************************************************************************/
 		/*                                                                      */
 		/************************************************************************/
-
-		template<class t_connection_context = net_utils::connection_context_base>
+		
+		template<class t_connection_context = connection_context_base_1>
 		class http_custom_handler: public simple_http_connection_handler<t_connection_context>
 		{
 		public:

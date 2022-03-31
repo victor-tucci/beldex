@@ -38,9 +38,60 @@ namespace file_io_utils
     bool save_string_to_file(const std::string& path_to_file, const std::string& str);
     bool get_file_time(const std::string& path_to_file, time_t& ft);
     bool set_file_time(const std::string& path_to_file, const time_t& ft);
-    bool load_file_to_string(const std::string& path_to_file, std::string& target_str, size_t max_size = 1000000000);
+    // bool load_file_to_string(const std::string& path_to_file, std::string& target_str, size_t max_size = 1000000000);
     bool append_string_to_file(const std::string& path_to_file, const std::string& str);
     bool get_file_size(const std::string& path_to_file, uint64_t &size);
+
+    inline
+		bool load_file_to_string(const std::string& path_to_file, std::string& target_str, size_t max_size = 1000000000)
+	{
+#ifdef WIN32
+                std::wstring wide_path;
+                try { wide_path = string_tools::utf8_to_utf16(path_to_file); } catch (...) { return false; }
+                HANDLE file_handle = CreateFileW(wide_path.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (file_handle == INVALID_HANDLE_VALUE)
+                    return false;
+                DWORD file_size = GetFileSize(file_handle, NULL);
+                if ((file_size == INVALID_FILE_SIZE) || (uint64_t)file_size > (uint64_t)max_size) {
+                    CloseHandle(file_handle);
+                    return false;
+                }
+                target_str.resize(file_size);
+                DWORD bytes_read;
+                BOOL result = ReadFile(file_handle, &target_str[0], file_size, &bytes_read, NULL);
+                CloseHandle(file_handle);
+                if (bytes_read != file_size)
+                    result = FALSE;
+                return result;
+#else
+		try
+		{
+			std::ifstream fstream;
+			fstream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+			fstream.open(path_to_file, std::ios_base::binary | std::ios_base::in | std::ios::ate);
+
+			std::ifstream::pos_type file_size = fstream.tellg();
+			
+			if((uint64_t)file_size > (uint64_t)max_size) // ensure a large domain for comparison, and negative -> too large
+				return false;//don't go crazy
+			size_t file_size_t = static_cast<size_t>(file_size);
+
+			target_str.resize(file_size_t);
+
+			fstream.seekg (0, std::ios::beg);
+			fstream.read((char*)target_str.data(), target_str.size());
+			fstream.close();
+			return true;
+		}
+
+		catch(...)
+		{
+			return false;
+		}
+#endif
+	}
+
+    
 }
 }
 
