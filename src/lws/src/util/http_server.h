@@ -48,6 +48,7 @@ namespace lws
                 LOG_ERROR("Failed to bind server");
                 return false;
             }
+            std::cout<< " result : "<< res<<"\n";
             return true;
         }
 

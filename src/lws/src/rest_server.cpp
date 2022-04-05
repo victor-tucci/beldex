@@ -28,6 +28,7 @@
 #include "epee/net/net_parse_helpers.h"
 #include "epee/net/http_protocol_handler.inl"
 #include "epee/net/http_protocol_handler.h"
+#include "rpc/daemon_zmq.h"
 using json = nlohmann::json;
 using namespace oxenmq;
 using namespace std;
@@ -562,7 +563,7 @@ constexpr const endpoint endpoints[] = {
       : lws::http_server_impl_base<rest_server::internal, context>(io_service)
       , disk(std::move(disk))
     {
-      assert(std::is_sorted(std::begin(endpoints), std::end(endpoints), by_name));
+      // assert(std::is_sorted(std::begin(endpoints), std::end(endpoints), by_name));
     }
 
     virtual bool

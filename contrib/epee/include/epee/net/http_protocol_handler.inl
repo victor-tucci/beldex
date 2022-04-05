@@ -236,7 +236,7 @@ namespace net_utils
 		bool res = handle_buff_in(buf);
 		if(m_want_close/*m_state == http_state_connection_close || m_state == http_state_error*/)
 			return false;
-		return res;
+		return true;
 	}
 	//--------------------------------------------------------------------------------------------
   template<class t_connection_context>

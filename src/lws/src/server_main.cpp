@@ -51,14 +51,16 @@ namespace
       switch (lws::config::network)
       {
       case cryptonote::TESTNET:
-        return base + std::to_string(config::testnet::ZMQ_RPC_DEFAULT_PORT);
+        return base + std::to_string(config::testnet::P2P_DEFAULT_PORT);
       case cryptonote::DEVNET:
-        return base + std::to_string(config::devnet::ZMQ_RPC_DEFAULT_PORT);
+        return base + std::to_string(config::devnet::P2P_DEFAULT_PORT);
       case cryptonote::MAINNET:
+       return base + std::to_string(config::P2P_DEFAULT_PORT);
       default:
+       return base + std::to_string(config::P2P_DEFAULT_PORT);
         break;
       }
-      return base + std::to_string(config::ZMQ_RPC_DEFAULT_PORT);
+      return base + std::to_string(config::P2P_DEFAULT_PORT);
     }
 
     options()
@@ -168,13 +170,14 @@ namespace
   {
     // httpServer();
     std::signal(SIGINT, [] (int) { lws::scanner::stop(); });
-     std::cout << "inside the run " << std::endl;
-   boost::filesystem::create_directories("${HOME}/.beldex/light_wallet_server");
     std::filesystem::create_directories(prog.db_path);
-    std::cout << get_current_dir_name();
+    // std::cout << get_current_dir_name();
     // system("mkdir -p /home/leninkumar/.beldex/light_wallet_server/");
     auto disk = lws::db::storage::open(prog.db_path.c_str(), prog.create_queue_max);
+    auto ctx = std::move(prog.daemon_rpc);
     lws::scanner::sync(disk.clone());
+    //  auto conncet = lws::scanner::sync(disk.clone(), ctx.connect().value()).value();
+    lws::rest_server server{epee::to_span(prog.rest_servers), disk.clone(), std::move(prog.rest_config)};
 
         // blocks until SIGINT
    lws::scanner::run(std::move(disk), prog.scan_threads);

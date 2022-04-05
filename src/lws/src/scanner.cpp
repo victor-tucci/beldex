@@ -420,7 +420,7 @@ namespace lws
       LMQ_ptr m_LMQ = std::make_shared<oxenmq::OxenMQ>(); 
       m_LMQ->start();
 
-      auto c = m_LMQ->connect_remote("tcp://127.0.0.1:4567",
+      auto c = m_LMQ->connect_remote("tcp://192.168.1.49:4567",
       [](ConnectionID conn) { std::cout << "Connected \n";},
       [](ConnectionID conn, std::string_view f) { std::cout << "connect failed: \n";} 
       );
@@ -450,7 +450,11 @@ namespace lws
      std::cout << " value of a : " << a << std::endl;
       for(;;)
       {
+        break;
+         std::cout << "in for loop" << std::endl;
+        // expect<void> sent{lws::error::daemon_timeout};
         //  break;
+        //  expect<void> sent{lws::error::daemon_timeout};
           m_LMQ->request(c,"rpc.get_hashes",[&details,a,&blk_ids](bool s , auto data){
           if(s==1 && data[0]=="200"){
             //  std::cout << " get_hashes is : " << data[1] << "\n";
@@ -467,7 +471,7 @@ namespace lws
             std::cout << "timeout fetching get_hashes !";
           },"{\"start_height\": \"" + std::to_string(a) + "\"}");
 
-           std::this_thread::sleep_for(3s);
+           std::this_thread::sleep_for(10s);
            int block_ids_size = details["m_block_ids"].size();
            int start_height = details["start_height"];
            int current_height = details["current_height"];
@@ -483,11 +487,11 @@ namespace lws
                  std::cout <<" the size of the blockchain data    : " << a << std::endl;
                  break;
             }
-            std::cout << a << std::endl;
+            // std::cout << a << std::endl;
       }
            std::this_thread::sleep_for(5s);
-           std::cout <<"the current_height details : " <<details["current_height"] << std::endl;
-           std::cout << " connection end " << std::endl;
+          //  std::cout <<"the current_height details : " <<details["current_height"] << std::endl;
+          //  std::cout << " connection end " << std::endl;
     }
 
    void scanner::run(db::storage disk, std::size_t thread_count)
