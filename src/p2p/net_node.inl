@@ -862,11 +862,16 @@ namespace nodetool
           if(count==0 && !m_connection_timeout_started){
               m_connection_timeout_timer = std::chrono::steady_clock::now()+std::chrono::seconds(60*5);
               m_connection_timeout_started=true;
+              MGINFO("No incomming or outgoing connections found for too long, starting timer for watchdog to restart this process");
+          }
+          else if(count==1 && m_connection_timeout_started){
+              m_connection_timeout_timer = m_connection_timeout_timer + std::chrono::seconds(1);
+              MGINFO("only one incomming connection so the timer added 1s");
           }
           else if(count==0 && m_connection_timeout_started){
 
               if(std::chrono::steady_clock::now()  > m_connection_timeout_timer){
-                  MWARNING("No incomming or outgoing connections found for too long, sending stop signal triggering watchdog to restart this process");
+                  MGINFO("No incomming or outgoing connections found for too long, sending stop signal triggering watchdog to restart this process");
                   send_stop_signal();
               }
 
