@@ -2235,7 +2235,7 @@ namespace nodetool
     if(arg.node_data.network_id != m_network_id)
     {
 
-      LOG_INFO_CC(context, "WRONG NETWORK AGENT CONNECTED! id=" << arg.node_data.network_id);
+      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE WRONG NETWORK AGENT CONNECTED! id=" << arg.node_data.network_id);
       drop_connection(context);
       add_host_fail(context.m_remote_address);
       return 1;
@@ -2243,7 +2243,7 @@ namespace nodetool
 
     if(!context.m_is_income)
     {
-      LOG_WARNING_CC(context, "COMMAND_HANDSHAKE came not from incoming connection");
+      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came not from incoming connection");
       drop_connection(context);
       add_host_fail(context.m_remote_address);
       return 1;
@@ -2251,7 +2251,7 @@ namespace nodetool
 
     if(context.peer_id)
     {
-      LOG_WARNING_CC(context, "COMMAND_HANDSHAKE came, but seems that connection already have associated peer_id (double COMMAND_HANDSHAKE?)");
+      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came, but seems that connection already have associated peer_id (double COMMAND_HANDSHAKE?)");
       drop_connection(context);
       return 1;
     }
@@ -2262,21 +2262,21 @@ namespace nodetool
     // and pass in a tor connection's peer id, and deduce the two are the same if you reject it
     if(arg.node_data.peer_id == zone.m_config.m_peer_id)
     {
-      LOG_DEBUG_CC(context, "Connection to self detected, dropping connection");
+      LOG_PRINT_CCONTEXT_L0(context, "Connection to self detected, dropping connection");
       drop_connection(context);
       return 1;
     }
 
     if (zone.m_current_number_of_in_peers >= zone.m_config.m_net_config.max_in_connection_count) // in peers limit
     {
-      LOG_WARNING_CC(context, "COMMAND_HANDSHAKE came, but already have max incoming connections, so dropping this one.");
+      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came, but already have max incoming connections, so dropping this one.");
       drop_connection(context);
       return 1;
     }
 
     if(!m_payload_handler.process_payload_sync_data(std::move(arg.payload_data), context, true))
     {
-      LOG_WARNING_CC(context, "COMMAND_HANDSHAKE came, but process_payload_sync_data returned false, dropping connection.");
+      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came, but process_payload_sync_data returned false, dropping connection.");
       drop_connection(context);
       return 1;
     }
@@ -2284,7 +2284,7 @@ namespace nodetool
 #if !defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
     if(has_too_many_connections(context.m_remote_address))
     {
-      LOG_PRINT_CCONTEXT_L1("CONNECTION FROM " << context.m_remote_address.host_str() << " REFUSED, too many connections from the same address");
+      LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE CONNECTION FROM " << context.m_remote_address.host_str() << " REFUSED, too many connections from the same address");
       drop_connection(context);
       return 1;
     }
@@ -2297,6 +2297,7 @@ namespace nodetool
 
     if(arg.node_data.my_port && zone.m_can_pingback)
     {
+      LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE trying PING");
       peerid_type peer_id_l = arg.node_data.peer_id;
       uint32_t port_l = arg.node_data.my_port;
       //try ping to be sure that we can add this peer to peer_list
@@ -2322,20 +2323,26 @@ namespace nodetool
         pe.pruning_seed = context.m_pruning_seed;
         pe.rpc_port = context.m_rpc_port;
         this->m_network_zones.at(context.m_remote_address.get_zone()).m_peerlist.append_with_peer_white(pe);
-        LOG_DEBUG_CC(context, "PING SUCCESS " << context.m_remote_address.host_str() << ":" << port_l);
+        LOG_DEBUG_CC(context, "COMMAND_HANDSHAKE PING SUCCESS " << context.m_remote_address.host_str() << ":" << port_l);
       });
     }
-    
+    LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE try_get_support_flags");
     try_get_support_flags(context, [](p2p_connection_context& flags_context, const uint32_t& support_flags) 
     {
+      LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE support_flags");
       flags_context.support_flags = support_flags;
     });
 
     //fill response
+    LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE get_peerlist_head");
     zone.m_peerlist.get_peerlist_head(rsp.local_peerlist_new, true);
+    LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE sent_addresses");
     for (const auto &e: rsp.local_peerlist_new)
       context.sent_addresses.insert(e.adr);
+
+    LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE get_local_node_data");
     get_local_node_data(rsp.node_data, zone);
+    LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE get_payload_sync_data");
     m_payload_handler.get_payload_sync_data(rsp.payload_data);
     LOG_DEBUG_CC(context, "COMMAND_HANDSHAKE");
     return 1;
