@@ -729,7 +729,6 @@ namespace master_nodes
     std::vector<pool_vote_entry> votes = m_vote_pool.add_pool_vote_if_unique(vote, vvc);
     if (!vvc.m_added_to_pool) // NOTE: Not unique vote
     {
-        LOG_PRINT_L1("NOTE: Not unique vote");
         return true;
     }
 

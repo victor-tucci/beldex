@@ -977,6 +977,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::do_handshake_with_peer(peerid_type& pi, p2p_connection_context& context_, bool just_take_peerlist)
   {
+    LOG_PRINT_L0("do_handshake_with_peer");
     network_zone& zone = m_network_zones.at(context_.m_remote_address.get_zone());
 
     typename COMMAND_HANDSHAKE::request arg{};
@@ -987,7 +988,7 @@ namespace nodetool
     std::promise<void> ev;
     std::atomic<bool> hsh_result(false);
     bool timeout = false;
-
+    LOG_PRINT_L0("do_handshake_with_peer COMMAND_HANDSHAKE");
     bool r = epee::net_utils::async_invoke_remote_command2<typename COMMAND_HANDSHAKE::response>(context_.m_connection_id, COMMAND_HANDSHAKE::ID, arg, zone.m_net_server.get_config_object(),
       [this, &pi, &ev, &hsh_result, &just_take_peerlist, &context_, &timeout](int code, typename COMMAND_HANDSHAKE::response&& rsp, p2p_connection_context& context)
     {
@@ -1057,7 +1058,8 @@ namespace nodetool
     }
     else if (!just_take_peerlist)
     {
-      try_get_support_flags(context_, [](p2p_connection_context& flags_context, const uint32_t& support_flags) 
+      LOG_PRINT_L0("do_handshake_with_peer try_get_support_flags");
+      try_get_support_flags(context_, [](p2p_connection_context& flags_context, const uint32_t& support_flags)
       {
         flags_context.support_flags = support_flags;
       });
@@ -1200,18 +1202,21 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::try_to_connect_and_handshake_with_new_peer(const epee::net_utils::network_address& na, bool just_take_peerlist, uint64_t last_seen_stamp, PeerType peer_type, uint64_t first_seen_stamp)
   {
+    LOG_PRINT_L0("try_to_connect_and_handshake_with_new_peer");
     network_zone& zone = m_network_zones.at(na.get_zone());
     if (zone.m_connect == nullptr) // outgoing connections in zone not possible
       return false;
 
     if (zone.m_current_number_of_out_peers == zone.m_config.m_net_config.max_out_connection_count) // out peers limit
     {
+        LOG_PRINT_L0("try_to_connect_and_handshake_with_new_peer out peers limit");
       return false;
     }
     else if (zone.m_current_number_of_out_peers > zone.m_config.m_net_config.max_out_connection_count)
     {
       zone.m_net_server.get_config_object().del_out_connections(1);
       --(zone.m_current_number_of_out_peers); // atomic variable, update time = 1s
+      LOG_PRINT_L0("try_to_connect_and_handshake_with_new_peer m_current_number_of_out_peers > max");
       return false;
     }
 
@@ -1232,6 +1237,7 @@ namespace nodetool
 
     con->m_anchor = peer_type == anchor;
     peerid_type pi{};
+    LOG_PRINT_L0("try_to_connect_and_handshake_with_new_peer do_handshake_with_peer");
     bool res = do_handshake_with_peer(pi, *con, just_take_peerlist);
 
     if(!res)
@@ -2167,25 +2173,25 @@ namespace nodetool
     COMMAND_REQUEST_SUPPORT_FLAGS::request support_flags_request{};
     bool r = epee::net_utils::async_invoke_remote_command2<typename COMMAND_REQUEST_SUPPORT_FLAGS::response>
     (
-      context.m_connection_id, 
-      COMMAND_REQUEST_SUPPORT_FLAGS::ID, 
-      support_flags_request, 
+      context.m_connection_id,
+      COMMAND_REQUEST_SUPPORT_FLAGS::ID,
+      support_flags_request,
       m_network_zones.at(epee::net_utils::zone::public_).m_net_server.get_config_object(),
       [=](int code, const typename COMMAND_REQUEST_SUPPORT_FLAGS::response& rsp, p2p_connection_context& context_)
-      {  
+      {
         if(code < 0)
         {
           LOG_WARNING_CC(context_, "COMMAND_REQUEST_SUPPORT_FLAGS invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
           return;
         }
-        
+
         f(context_, rsp.support_flags);
       },
       P2P_DEFAULT_HANDSHAKE_INVOKE_TIMEOUT
     );
 
     return r;
-  }  
+  }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_timed_sync(int command, typename COMMAND_TIMED_SYNC::request& arg, typename COMMAND_TIMED_SYNC::response& rsp, p2p_connection_context& context)
@@ -2232,10 +2238,11 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_handshake(int command, typename COMMAND_HANDSHAKE::request& arg, typename COMMAND_HANDSHAKE::response& rsp, p2p_connection_context& context)
   {
+    LOG_PRINT_L0("handle_handshake");
     if(arg.node_data.network_id != m_network_id)
     {
 
-      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE WRONG NETWORK AGENT CONNECTED! id=" << arg.node_data.network_id);
+      LOG_PRINT_CCONTEXT_L0( "COMMAND_HANDSHAKE WRONG NETWORK AGENT CONNECTED! id=" << arg.node_data.network_id);
       drop_connection(context);
       add_host_fail(context.m_remote_address);
       return 1;
@@ -2243,7 +2250,7 @@ namespace nodetool
 
     if(!context.m_is_income)
     {
-      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came not from incoming connection");
+      LOG_PRINT_CCONTEXT_L0( "COMMAND_HANDSHAKE came not from incoming connection");
       drop_connection(context);
       add_host_fail(context.m_remote_address);
       return 1;
@@ -2251,7 +2258,7 @@ namespace nodetool
 
     if(context.peer_id)
     {
-      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came, but seems that connection already have associated peer_id (double COMMAND_HANDSHAKE?)");
+      LOG_PRINT_CCONTEXT_L0( "COMMAND_HANDSHAKE came, but seems that connection already have associated peer_id (double COMMAND_HANDSHAKE?)");
       drop_connection(context);
       return 1;
     }
@@ -2262,21 +2269,21 @@ namespace nodetool
     // and pass in a tor connection's peer id, and deduce the two are the same if you reject it
     if(arg.node_data.peer_id == zone.m_config.m_peer_id)
     {
-      LOG_PRINT_CCONTEXT_L0(context, "Connection to self detected, dropping connection");
+      LOG_PRINT_CCONTEXT_L0( "Connection to self detected, dropping connection");
       drop_connection(context);
       return 1;
     }
 
     if (zone.m_current_number_of_in_peers >= zone.m_config.m_net_config.max_in_connection_count) // in peers limit
     {
-      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came, but already have max incoming connections, so dropping this one.");
+      LOG_PRINT_CCONTEXT_L0( "COMMAND_HANDSHAKE came, but already have max incoming connections, so dropping this one.");
       drop_connection(context);
       return 1;
     }
 
     if(!m_payload_handler.process_payload_sync_data(std::move(arg.payload_data), context, true))
     {
-      LOG_PRINT_CCONTEXT_L0(context, "COMMAND_HANDSHAKE came, but process_payload_sync_data returned false, dropping connection.");
+      LOG_PRINT_CCONTEXT_L0( "COMMAND_HANDSHAKE came, but process_payload_sync_data returned false, dropping connection.");
       drop_connection(context);
       return 1;
     }
@@ -2327,9 +2334,9 @@ namespace nodetool
       });
     }
     LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE try_get_support_flags");
-    try_get_support_flags(context, [](p2p_connection_context& flags_context, const uint32_t& support_flags) 
+    try_get_support_flags(context, [](p2p_connection_context& flags_context, const uint32_t& support_flags)
     {
-      LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE support_flags");
+      LOG_PRINT_L0("COMMAND_HANDSHAKE support_flags");
       flags_context.support_flags = support_flags;
     });
 
@@ -2351,7 +2358,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_ping(int command, COMMAND_PING::request& arg, COMMAND_PING::response& rsp, p2p_connection_context& context)
   {
-    LOG_DEBUG_CC(context, "COMMAND_PING");
+    LOG_PRINT_L1( "COMMAND_PING");
     rsp.status = PING_OK_RESPONSE_STATUS_TEXT;
     rsp.peer_id = m_network_zones.at(context.m_remote_address.get_zone()).m_config.m_peer_id;
     return 1;
