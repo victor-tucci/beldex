@@ -977,7 +977,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::do_handshake_with_peer(peerid_type& pi, p2p_connection_context& context_, bool just_take_peerlist)
   {
-    LOG_PRINT_L0("do_handshake_with_peer");
+    LOG_PRINT_CC_L0(context_,"do_handshake_with_peer");
     network_zone& zone = m_network_zones.at(context_.m_remote_address.get_zone());
 
     typename COMMAND_HANDSHAKE::request arg{};
@@ -988,15 +988,14 @@ namespace nodetool
     std::promise<void> ev;
     std::atomic<bool> hsh_result(false);
     bool timeout = false;
-    LOG_PRINT_L0("do_handshake_with_peer COMMAND_HANDSHAKE");
+    LOG_PRINT_CC_L0(context_,"do_handshake_with_peer COMMAND_HANDSHAKE");
     bool r = epee::net_utils::async_invoke_remote_command2<typename COMMAND_HANDSHAKE::response>(context_.m_connection_id, COMMAND_HANDSHAKE::ID, arg, zone.m_net_server.get_config_object(),
       [this, &pi, &ev, &hsh_result, &just_take_peerlist, &context_, &timeout](int code, typename COMMAND_HANDSHAKE::response&& rsp, p2p_connection_context& context)
     {
       BELDEX_DEFER { ev.set_value(); };
-
       if(code < 0)
       {
-        LOG_WARNING_CC(context, "COMMAND_HANDSHAKE invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
+        LOG_PRINT_CC_L0(context, "COMMAND_HANDSHAKE invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
         if (code == LEVIN_ERROR_CONNECTION_TIMEDOUT || code == LEVIN_ERROR_CONNECTION_DESTROYED)
           timeout = true;
         return;
@@ -1007,7 +1006,7 @@ namespace nodetool
         LOG_WARNING_CC(context, "COMMAND_HANDSHAKE Failed, wrong network!  (" << rsp.node_data.network_id << "), closing connection.");
         return;
       }
-
+      LOG_PRINT_CC_L0(context,"do_handshake_with_peer before handle_remote_peerlist");
       if(!handle_remote_peerlist(rsp.local_peerlist_new, context))
       {
         LOG_WARNING_CC(context, "COMMAND_HANDSHAKE: failed to handle_remote_peerlist(...), closing connection.");
@@ -1072,6 +1071,7 @@ namespace nodetool
   bool node_server<t_payload_net_handler>::do_peer_timed_sync(const epee::net_utils::connection_context_base& context_, peerid_type peer_id)
   {
     typename COMMAND_TIMED_SYNC::request arg{};
+    LOG_PRINT_CC_L0(context_,"do_peer_timed_sync");
     m_payload_handler.get_payload_sync_data(arg.payload_data);
 
     network_zone& zone = m_network_zones.at(context_.m_remote_address.get_zone());
@@ -1084,7 +1084,7 @@ namespace nodetool
         LOG_WARNING_CC(context, "COMMAND_TIMED_SYNC invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
         return;
       }
-
+      LOG_PRINT_CC_L0(context,"do_peer_timed_sync before handle_remote_peerlist");
       if(!handle_remote_peerlist(rsp.local_peerlist_new, context))
       {
         LOG_WARNING_CC(context, "COMMAND_TIMED_SYNC: failed to handle_remote_peerlist(...), closing connection.");
@@ -1237,7 +1237,7 @@ namespace nodetool
 
     con->m_anchor = peer_type == anchor;
     peerid_type pi{};
-    LOG_PRINT_L0("try_to_connect_and_handshake_with_new_peer do_handshake_with_peer");
+    LOG_PRINT_L0("try_to_connect_and_handshake_with_new_peer do_handshake_with_peer just_take_peerlist:" << just_take_peerlist);
     bool res = do_handshake_with_peer(pi, *con, just_take_peerlist);
 
     if(!res)
@@ -2167,6 +2167,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::try_get_support_flags(const p2p_connection_context& context, std::function<void(p2p_connection_context&, const uint32_t&)> f)
   {
+    LOG_PRINT_CC_L0(context,"try_get_support_flags");
     if(context.m_remote_address.get_zone() != epee::net_utils::zone::public_)
       return false;
 
@@ -2181,10 +2182,10 @@ namespace nodetool
       {
         if(code < 0)
         {
-          LOG_WARNING_CC(context_, "COMMAND_REQUEST_SUPPORT_FLAGS invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
+          LOG_PRINT_CC_L0(context_, "COMMAND_REQUEST_SUPPORT_FLAGS invoke failed. (" << code <<  ", " << epee::levin::get_err_descr(code) << ")");
           return;
         }
-
+        LOG_PRINT_CC_L0(context_,"try_get_support_flags response");
         f(context_, rsp.support_flags);
       },
       P2P_DEFAULT_HANDSHAKE_INVOKE_TIMEOUT
@@ -2238,7 +2239,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_handshake(int command, typename COMMAND_HANDSHAKE::request& arg, typename COMMAND_HANDSHAKE::response& rsp, p2p_connection_context& context)
   {
-    LOG_PRINT_L0("handle_handshake");
+    LOG_PRINT_CC_L0(context,"handle_handshake");
     if(arg.node_data.network_id != m_network_id)
     {
 
@@ -2280,7 +2281,7 @@ namespace nodetool
       drop_connection(context);
       return 1;
     }
-
+    LOG_PRINT_CC_L0(context,"process_payload_sync_data");
     if(!m_payload_handler.process_payload_sync_data(std::move(arg.payload_data), context, true))
     {
       LOG_PRINT_CCONTEXT_L0( "COMMAND_HANDSHAKE came, but process_payload_sync_data returned false, dropping connection.");
@@ -2358,7 +2359,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_ping(int command, COMMAND_PING::request& arg, COMMAND_PING::response& rsp, p2p_connection_context& context)
   {
-    LOG_PRINT_L1( "COMMAND_PING");
+    LOG_PRINT_CC_L0(context,"COMMAND_PING");
     rsp.status = PING_OK_RESPONSE_STATUS_TEXT;
     rsp.peer_id = m_network_zones.at(context.m_remote_address.get_zone()).m_config.m_peer_id;
     return 1;
@@ -2433,6 +2434,7 @@ namespace nodetool
   template<class t_payload_net_handler> template <class Container>
   bool node_server<t_payload_net_handler>::connect_to_peerlist(const Container& peers)
   {
+    LOG_PRINT_L0("connect_to_peerlist");
     const network_zone& public_zone = m_network_zones.at(epee::net_utils::zone::public_);
     for(const epee::net_utils::network_address& na: peers)
     {
@@ -2452,7 +2454,7 @@ namespace nodetool
   bool node_server<t_payload_net_handler>::parse_peers_and_add_to_container(const boost::program_options::variables_map& vm, const command_line::arg_descriptor<std::vector<std::string> > & arg, Container& container)
   {
     std::vector<std::string> perrs = command_line::get_arg(vm, arg);
-
+    LOG_PRINT_L0("parse_peers_and_add_to_container");
     for(const std::string& pr_str: perrs)
     {
       const uint16_t default_port = cryptonote::get_config(m_nettype).P2P_DEFAULT_PORT;
@@ -2480,6 +2482,7 @@ namespace nodetool
   {
     if (max == -1)
       max = P2P_DEFAULT_CONNECTIONS_COUNT_OUT;
+    LOG_PRINT_L0("set_max_out_peers " << max);
     zone.m_config.m_net_config.max_out_connection_count = max;
     return true;
   }
@@ -2489,6 +2492,7 @@ namespace nodetool
   {
     if (max == -1)
       max = P2P_DEFAULT_CONNECTIONS_COUNT_IN;
+    LOG_PRINT_L0("set_max_in_peers " << max);
     zone.m_config.m_net_config.max_in_connection_count = max;
     return true;
   }
@@ -2621,7 +2625,7 @@ namespace nodetool
           return false;
         }
       }
-
+      LOG_PRINT_L0("has_too_many_connections " << address.host_str());
       return true;
     });
 
