@@ -706,18 +706,18 @@ bool BlockchainLMDB::need_resize(uint64_t threshold_size) const
   // additional size needed.
   uint64_t size_used = mst.ms_psize * mei.me_last_pgno;
 
-  MDEBUG("DB map size:     " << mei.me_mapsize);
-  MDEBUG("Space used:      " << size_used);
-  MDEBUG("Space remaining: " << mei.me_mapsize - size_used);
-  MDEBUG("Size threshold:  " << threshold_size);
+  LOG_PRINT_L3("DB map size:     " << mei.me_mapsize);
+  LOG_PRINT_L3("Space used:      " << size_used);
+  LOG_PRINT_L3("Space remaining: " << mei.me_mapsize - size_used);
+  LOG_PRINT_L3("Size threshold:  " << threshold_size);
   float resize_percent = RESIZE_PERCENT;
-  MDEBUG(boost::format("Percent used: %.04f  Percent threshold: %.04f") % (100.*size_used/mei.me_mapsize) % (100.*resize_percent));
+  LOG_PRINT_L3(boost::format("Percent used: %.04f  Percent threshold: %.04f") % (100.*size_used/mei.me_mapsize) % (100.*resize_percent));
 
   if (threshold_size > 0)
   {
     if (mei.me_mapsize - size_used < threshold_size)
     {
-      MINFO("Threshold met (size-based)");
+      LOG_PRINT_L3("Threshold met (size-based)");
       return true;
     }
     else
@@ -726,7 +726,7 @@ bool BlockchainLMDB::need_resize(uint64_t threshold_size) const
 
   if ((double)size_used / mei.me_mapsize  > resize_percent)
   {
-    MINFO("Threshold met (percent-based)");
+    LOG_PRINT_L3("Threshold met (percent-based)");
     return true;
   }
   return false;
@@ -745,7 +745,7 @@ void BlockchainLMDB::check_and_resize_for_batch(uint64_t batch_num_blocks, uint6
   if (batch_num_blocks > 0)
   {
     threshold_size = get_estimated_batch_size(batch_num_blocks, batch_bytes);
-    MDEBUG("calculated batch size: " << threshold_size);
+    LOG_PRINT_L3("calculated batch size: " << threshold_size);
 
     // The increased DB size could be a multiple of threshold_size, a fixed
     // size increase (> threshold_size), or other variations.
@@ -754,7 +754,7 @@ void BlockchainLMDB::check_and_resize_for_batch(uint64_t batch_num_blocks, uint6
     // minimum size increase is used to avoid frequent resizes when the batch
     // size is set to a very small numbers of blocks.
     increase_size = (threshold_size > min_increase_size) ? threshold_size : min_increase_size;
-    MDEBUG("increase size: " << increase_size);
+    LOG_PRINT_L3("increase size: " << increase_size);
   }
 
   // if threshold_size is 0 (i.e. number of blocks for batch not passed in), it
@@ -762,7 +762,7 @@ void BlockchainLMDB::check_and_resize_for_batch(uint64_t batch_num_blocks, uint6
   // size-based check
   if (need_resize(threshold_size))
   {
-    MGINFO("[batch] DB resize needed");
+    LOG_PRINT_L3("[batch] DB resize needed");
     do_resize(increase_size);
   }
 }
@@ -792,7 +792,7 @@ uint64_t BlockchainLMDB::get_estimated_batch_size(uint64_t batch_num_blocks, uin
     block_start = block_stop - num_prev_blocks + 1;
   uint32_t num_blocks_used = 0;
   uint64_t total_block_size = 0;
-  MDEBUG("[" << __func__ << "] " << "m_height: " << m_height << "  block_start: " << block_start << "  block_stop: " << block_stop);
+  LOG_PRINT_L3("[" << __func__ << "] " << "m_height: " << m_height << "  block_start: " << block_start << "  block_stop: " << block_stop);
   size_t avg_block_size = 0;
   if (batch_bytes)
   {
@@ -801,12 +801,12 @@ uint64_t BlockchainLMDB::get_estimated_batch_size(uint64_t batch_num_blocks, uin
   }
   if (m_height == 0)
   {
-    MDEBUG("No existing blocks to check for average block size");
+    LOG_PRINT_L3("No existing blocks to check for average block size");
   }
   else if (m_cum_count >= num_prev_blocks)
   {
     avg_block_size = m_cum_size / m_cum_count;
-    MDEBUG("average block size across recent " << m_cum_count << " blocks: " << avg_block_size);
+    LOG_PRINT_L3("average block size across recent " << m_cum_count << " blocks: " << avg_block_size);
     m_cum_size = 0;
     m_cum_count = 0;
   }
@@ -828,12 +828,12 @@ uint64_t BlockchainLMDB::get_estimated_batch_size(uint64_t batch_num_blocks, uin
     }
     if (my_rtxn) block_rtxn_stop();
     avg_block_size = total_block_size / (num_blocks_used ? num_blocks_used : 1);
-    MDEBUG("average block size across recent " << num_blocks_used << " blocks: " << avg_block_size);
+    LOG_PRINT_L3("average block size across recent " << num_blocks_used << " blocks: " << avg_block_size);
   }
 estim:
   if (avg_block_size < min_block_size)
     avg_block_size = min_block_size;
-  MDEBUG("estimated average block size for batch: " << avg_block_size);
+  LOG_PRINT_L3("estimated average block size for batch: " << avg_block_size);
 
   // bigger safety margin on smaller block sizes
   if (batch_fudge_factor < 5000.0)

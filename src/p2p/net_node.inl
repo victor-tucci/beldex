@@ -1006,7 +1006,7 @@ namespace nodetool
         LOG_WARNING_CC(context, "COMMAND_HANDSHAKE Failed, wrong network!  (" << rsp.node_data.network_id << "), closing connection.");
         return;
       }
-      LOG_PRINT_CC_L0(context,"do_handshake_with_peer before handle_remote_peerlist");
+      LOG_PRINT_CC_L0(context,"do_handshake_with_peer callback");
       if(!handle_remote_peerlist(rsp.local_peerlist_new, context))
       {
         LOG_WARNING_CC(context, "COMMAND_HANDSHAKE: failed to handle_remote_peerlist(...), closing connection.");
@@ -1941,6 +1941,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_get_support_flags(int command, COMMAND_REQUEST_SUPPORT_FLAGS::request& arg, COMMAND_REQUEST_SUPPORT_FLAGS::response& rsp, p2p_connection_context& context)
   {
+    LOG_PRINT_CC_L0(context, "handle_get_support_flags");
     rsp.support_flags = m_network_zones.at(context.m_remote_address.get_zone()).m_config.m_support_flags;
     return 1;
   }
@@ -2107,6 +2108,7 @@ namespace nodetool
       address = epee::net_utils::network_address{epee::net_utils::ipv6_network_address(ipv6_addr, node_data.my_port)};
     }
     peerid_type pr = node_data.peer_id;
+    LOG_PRINT_CC_L0(context,"try_ping start ip:" << ip << " port:" << port << " timeout:" << zone.m_config.m_net_config.ping_connection_timeout );
     bool r = zone.m_net_server.connect_async(ip, port, zone.m_config.m_net_config.ping_connection_timeout, [cb, /*context,*/ address, pr, this](
       const typename net_server::t_connection_context& ping_context,
       const boost::system::error_code& ec)->bool
@@ -2128,7 +2130,7 @@ namespace nodetool
       peerid_type pr_ = pr;
 
       network_zone& zone = m_network_zones.at(address.get_zone());
-
+      LOG_PRINT_CC_L0(ping_context,"try_ping connected send ping" );
       bool inv_call_res = epee::net_utils::async_invoke_remote_command2<COMMAND_PING::response>(ping_context.m_connection_id, COMMAND_PING::ID, req, zone.m_net_server.get_config_object(),
         [=](int code, const COMMAND_PING::response& rsp, p2p_connection_context& context)
       {
@@ -2145,8 +2147,11 @@ namespace nodetool
           zone.m_net_server.get_config_object().close(ping_context.m_connection_id);
           return;
         }
-        zone.m_net_server.get_config_object().close(ping_context.m_connection_id);
+        LOG_PRINT_CC_L0(context,"ping handler before callback" );
         cb();
+        //zone.m_net_server.get_config_object().close(ping_context.m_connection_id);
+
+
       });
 
       if(!inv_call_res)
@@ -2289,14 +2294,12 @@ namespace nodetool
       return 1;
     }
 
-#if !defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
     if(has_too_many_connections(context.m_remote_address))
     {
       LOG_PRINT_CCONTEXT_L0("COMMAND_HANDSHAKE CONNECTION FROM " << context.m_remote_address.host_str() << " REFUSED, too many connections from the same address");
       drop_connection(context);
       return 1;
     }
-#endif
 
     //associate peer_id with this connection
     context.peer_id = arg.node_data.peer_id;
@@ -2359,7 +2362,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_ping(int command, COMMAND_PING::request& arg, COMMAND_PING::response& rsp, p2p_connection_context& context)
   {
-    LOG_PRINT_CC_L0(context,"COMMAND_PING");
+    LOG_PRINT_CC_L0(context,"COMMAND_PING received");
     rsp.status = PING_OK_RESPONSE_STATUS_TEXT;
     rsp.peer_id = m_network_zones.at(context.m_remote_address.get_zone()).m_config.m_peer_id;
     return 1;
@@ -2625,10 +2628,8 @@ namespace nodetool
           return false;
         }
       }
-      LOG_PRINT_L0("has_too_many_connections " << address.host_str());
       return true;
     });
-
     return count > max_connections;
   }
 
