@@ -139,8 +139,8 @@ namespace master_nodes {
 #else
   constexpr size_t STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE = 7;
   constexpr size_t STATE_CHANGE_QUORUM_SIZE               = 10;
-  constexpr size_t CHECKPOINT_QUORUM_SIZE                 = 20;
-  constexpr size_t CHECKPOINT_MIN_VOTES                   = 13;
+  constexpr size_t CHECKPOINT_QUORUM_SIZE                 = 10;
+  constexpr size_t CHECKPOINT_MIN_VOTES                   = 7;
   constexpr int    FLASH_SUBQUORUM_SIZE                   = 10;
   constexpr int    FLASH_MIN_VOTES                        = 7;
 #endif
