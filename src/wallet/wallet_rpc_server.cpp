@@ -1715,14 +1715,18 @@ namespace tools
       else if(req.key_type.compare("view_key") == 0)
       {
           epee::wipeable_string key = epee::to_hex::wipeable_string(m_wallet->get_account().get_keys().m_view_secret_key);
+          epee::wipeable_string viewPubkey = epee::to_hex::wipeable_string(m_wallet->get_account().get_keys().m_account_address.m_view_public_key);
           res.key = std::string(key.data(), key.size());
+          res.pubkey = std::string(viewPubkey.data(), viewPubkey.size());
       }
       else if(req.key_type.compare("spend_key") == 0)
       {
           if (m_wallet->watch_only())
             throw wallet_rpc_error{error_code::WATCH_ONLY, "The wallet is watch-only. Cannot retrieve spend key."};
           epee::wipeable_string key = epee::to_hex::wipeable_string(m_wallet->get_account().get_keys().m_spend_secret_key);
+          epee::wipeable_string spendPubkey = epee::to_hex::wipeable_string(m_wallet->get_account().get_keys().m_account_address.m_spend_public_key);
           res.key = std::string(key.data(), key.size());
+          res.pubkey = std::string(spendPubkey.data(), spendPubkey.size());
       }
       else
         throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "key_type " + req.key_type + " not found"};

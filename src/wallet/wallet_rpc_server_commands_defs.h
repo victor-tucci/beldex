@@ -844,7 +844,7 @@ namespace tools::wallet_rpc {
     struct response
     {
       std::string key; //  The view key will be hex encoded, while the mnemonic will be a string of words.
-
+      std::string pubkey; //public key for the view key and spend key
       KV_MAP_SERIALIZABLE
     };
   };
