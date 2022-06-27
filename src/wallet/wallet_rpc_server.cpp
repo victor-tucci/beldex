@@ -2429,6 +2429,7 @@ namespace {
   //------------------------------------------------------------------------------------------------------------------------------
   CREATE_WALLET::response wallet_rpc_server::invoke(CREATE_WALLET::request&& req)
   {
+    CREATE_WALLET::response res{};
     if (m_wallet_dir.empty())
       throw wallet_rpc_error{error_code::NO_WALLET_DIR, "No wallet dir configured"};
 
@@ -2479,7 +2480,11 @@ namespace {
 
     close_wallet(true);
     m_wallet = std::move(wal);
-    return {};
+    // Display the seed
+    epee::wipeable_string seed;
+    m_wallet->get_seed(seed);
+    res.key = std::string(seed.data(), seed.size());
+    return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
   OPEN_WALLET::response wallet_rpc_server::invoke(OPEN_WALLET::request&& req)

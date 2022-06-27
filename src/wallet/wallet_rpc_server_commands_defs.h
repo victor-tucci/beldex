@@ -1702,7 +1702,13 @@ BELDEX_RPC_DOC_INTROSPECT
       KV_MAP_SERIALIZABLE
     };
 
-    using response = EMPTY;
+    struct response
+    {
+      std::string key; //  The view key will be hex encoded, while the mnemonic will be a string of words.
+
+      KV_MAP_SERIALIZABLE
+    };
+
   };
 
   BELDEX_RPC_DOC_INTROSPECT
