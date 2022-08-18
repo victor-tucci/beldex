@@ -356,7 +356,7 @@ if(APPLE)
   endif()
 endif()
 
-option(BUILD_STATIC_DEPS "Download, build and statically link against core dependencies" OFF)
+option(BUILD_STATIC_DEPS "Download, build and statically link against core dependencies" ON)
 if(BUILD_STATIC_DEPS)
   include(StaticBuild)
 endif()
