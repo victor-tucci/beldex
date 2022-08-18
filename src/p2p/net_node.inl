@@ -2148,9 +2148,8 @@ namespace nodetool
           return;
         }
         LOG_PRINT_CC_L0(context,"ping handler before callback" );
+        zone.m_net_server.get_config_object().close(ping_context.m_connection_id);
         cb();
-        //zone.m_net_server.get_config_object().close(ping_context.m_connection_id);
-
 
       });
 
