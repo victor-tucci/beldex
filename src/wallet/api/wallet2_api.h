@@ -40,6 +40,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <optional>
+#include <tuple>
 
 //  Public interface for libwallet library
 namespace Wallet {
@@ -1212,6 +1213,12 @@ struct WalletManagerFactory
     static WalletManagerBase* getWalletManager();
     static void setLogLevel(int level);
     static void setLogCategories(const std::string &categories);
+};
+
+struct GetKey
+{
+   virtual std::pair<std::string,std::string> get_keys_from_address(std::string_view address, uint64_t tag) = 0;
+//    virtual bool get_keys_from_address_hex(std::string_view &address, uint64_t& tag, crypto::public_key& view_key ,crypto::public_key& spend_key) = 0;
 };
 
 } // namespace Wallet

@@ -72,6 +72,14 @@
         "thread": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "coroutine": "cpp",
+        "ranges": "cpp",
+        "span": "cpp",
+        "csetjmp": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "rope": "cpp",
+        "stop_token": "cpp"
     }
 }

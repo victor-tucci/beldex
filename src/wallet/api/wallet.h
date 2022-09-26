@@ -281,5 +281,12 @@ private:
     std::optional<tools::login> m_daemon_login;
 };
 
+class Get_Key : public GetKey
+{
+    public:
+    std::pair<std::string,std::string> get_keys_from_address(std::string_view address, uint64_t tag) override;
+    // bool get_keys_from_address_hex(std::string_view &address, uint64_t& tag, crypto::public_key& view_key ,crypto::public_key& spend_key) override;
+
+};
 
 } // namespace

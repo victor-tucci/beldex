@@ -44,6 +44,10 @@
 #include "common_defines.h"
 #include "common/util.h"
 #include "common/fs.h"
+#include "common/base58.h"
+#include "cryptonote_basic/blobdatatype.h"
+#include "cryptonote_basic/cryptonote_basic_impl.h"
+#include "serialization/binary_utils.h"
 
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
@@ -2713,4 +2717,39 @@ void WalletImpl::deviceShowAddress(uint32_t accountIndex, uint32_t addressIndex,
 
     m_wallet->device_show_address(accountIndex, addressIndex, payment_id_param);
 }
+EXPORT
+std::pair<std::string,std::string> Get_Key::get_keys_from_address(std::string_view address, uint64_t tag)
+{
+    std::pair <std::string,std::string> addressKeys;
+    cryptonote::blobdata data ;
+
+    bool check = tools::base58::decode_addr(address,tag,data);
+
+    cryptonote::address_parse_info info;
+    serialization::parse_binary(data, info.address);
+
+    std::string spend_key = tools::type_to_hex(info.address.m_spend_public_key);
+    std::string view_key = tools::type_to_hex(info.address.m_view_public_key);
+
+    addressKeys.first = view_key;
+    addressKeys.second = spend_key;
+
+    return addressKeys;
+}
+
+// EXPORT
+// bool Get_Key::get_keys_from_address_hex(std::string_view& address, uint64_t& tag, crypto::public_key& view_key ,crypto::public_key& spend_key)
+// {
+//     cryptonote::blobdata data ;
+
+//     bool check = tools::base58::decode_addr(address,tag,data);
+
+//     cryptonote::address_parse_info info;
+//     serialization::parse_binary(data, info.address);
+
+//     spend_key = info.address.m_spend_public_key;
+//     view_key = info.address.m_view_public_key;
+
+//     return check;
+// }
 } // namespace
