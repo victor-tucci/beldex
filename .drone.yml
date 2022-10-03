@@ -1,0 +1,425 @@
+---
+{
+   "kind": "pipeline",
+   "name": "Debian sid (w/ tests) (amd64)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=ON  -DWARNINGS_AS_ERRORS=OFF ",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest",
+            "mkdir -v -p $$HOME/.oxen",
+            "GTEST_COLOR=1 ctest --output-on-failure -j6"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-debian-sid",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Debian sid Debug (amd64)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Debug -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF -DBUILD_DEBUG_UTILS=ON",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-debian-sid",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Debian sid/clang-13 (amd64)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb clang-13 libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF -DCMAKE_C_COMPILER=clang-13 -DCMAKE_CXX_COMPILER=clang++-13 ",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-debian-sid-clang",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Debian stable (i386)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF -DDOWNLOAD_SODIUM=ON -DARCH_ID=i386 -DARCH=i686",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-debian-stable/i386",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Debian buster (amd64)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF -DDOWNLOAD_SODIUM=ON",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-debian-buster",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Ubuntu LTS (amd64)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF ",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-ubuntu-lts",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Ubuntu latest (amd64)",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=ON  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF ",
+            "ninja -j6 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-ubuntu-rolling",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Debian sid (ARM64)",
+   "platform": {
+      "arch": "arm64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo \"Building on ${DRONE_STAGE_MACHINE}\"",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake git ninja-build ccache gdb g++ libboost-program-options-dev libboost-serialization-dev libboost-thread-dev libcurl4-openssl-dev libevent-dev libgtest-dev libhidapi-dev libreadline-dev libsodium-dev libsqlite3-dev libssl-dev libsystemd-dev libunbound-dev libunwind8-dev libusb-1.0-0-dev nettle-dev pkg-config python3 qttools5-dev",
+            "mkdir build",
+            "cd build",
+            "cmake .. -G Ninja -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DLOCAL_MIRROR=https://builds.lokinet.dev/deps  -DBUILD_TESTS=OFF  -DUSE_LTO=OFF  -DWARNINGS_AS_ERRORS=OFF ",
+            "ninja -j1 rpc wallet -v",
+            "ninja -j2 daemon -v",
+            "ninja -j1 wallet_rpc_server -v",
+            "ninja -j2 -v",
+            "(sleep 3; echo \"status\ndiff\nexit\") | TERM=xterm ../utils/build_scripts/drone-gdb.sh ./bin/oxend --offline --data-dir=startuptest"
+         ],
+         "environment": {
+            "GTEST_FILTER": "-AddressFromURL.Failure:DNSResolver.DNSSEC*",
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-debian-sid",
+         "name": "build",
+         "pull": "always"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "Android wallet_api",
+   "platform": {
+      "arch": "amd64"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4"
+         ],
+         "image": "drone/git",
+         "name": "submodules"
+      },
+      {
+         "commands": [
+            "echo deb http://deb.debian.org/debian sid contrib >/etc/apt/sources.list.d/sid-contrib.list",
+            "apt-get -o=Dpkg::Use-Pty=0 -q update",
+            "apt-get -o=Dpkg::Use-Pty=0 -q install -y eatmydata",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q dist-upgrade -y",
+            "eatmydata apt-get -o=Dpkg::Use-Pty=0 -q install -y --no-install-recommends cmake g++ git ninja-build ccache tar xz-utils google-android-ndk-installer autoconf automake file gperf libtool make openssh-client patch pkg-config qttools5-dev",
+            "mkdir build-armeabi-v7a",
+            "cd build-armeabi-v7a",
+            "cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_C_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=21 -DANDROID_ABI=armeabi-v7a  -DBUILD_TESTS=OFF  -DMONERO_SLOW_HASH=ON  -DWARNINGS_AS_ERRORS=OFF -DLOCAL_MIRROR=https://builds.lokinet.dev/deps -DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja -DARCH=armv7-a -DARCH_ID=arm32",
+            "ninja -j6 -v wallet_merged",
+            "cd ..",
+            "mkdir build-arm64-v8a",
+            "cd build-arm64-v8a",
+            "cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_C_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=21 -DANDROID_ABI=arm64-v8a  -DBUILD_TESTS=OFF  -DMONERO_SLOW_HASH=ON  -DWARNINGS_AS_ERRORS=OFF -DLOCAL_MIRROR=https://builds.lokinet.dev/deps -DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja -DARCH=armv8-a -DARCH_ID=arm64",
+            "ninja -j6 -v wallet_merged",
+            "cd ..",
+            "mkdir build-x86_64",
+            "cd build-x86_64",
+            "cmake .. -DCMAKE_CXX_FLAGS=-fdiagnostics-color=always -DCMAKE_C_FLAGS=-fdiagnostics-color=always -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake -DANDROID_PLATFORM=21 -DANDROID_ABI=x86_64  -DBUILD_TESTS=OFF  -DMONERO_SLOW_HASH=ON  -DWARNINGS_AS_ERRORS=OFF -DLOCAL_MIRROR=https://builds.lokinet.dev/deps -DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja -DARCH=\"x86-64 -msse4.2 -mpopcnt\" -DARCH_ID=x86-64",
+            "ninja -j6 -v wallet_merged",
+            "cd ..",
+            "./utils/build_scripts/drone-android-static-upload.sh armeabi-v7a arm64-v8a x86_64"
+         ],
+         "environment": {
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "image": "registry.oxen.rocks/lokinet-ci-android",
+         "name": "build"
+      }
+   ],
+   "type": "docker"
+}
+---
+{
+   "kind": "pipeline",
+   "name": "iOS wallet_api",
+   "platform": {
+      "arch": "amd64",
+      "os": "darwin"
+   },
+   "steps": [
+      {
+         "commands": [
+            "git fetch --tags",
+            "git submodule update --init --recursive --depth=1 --jobs=4",
+            "mkdir -p build/{arm64,sim64}",
+            "cd build/arm64",
+            "cmake ../.. -G Ninja -DCMAKE_TOOLCHAIN_FILE=../../cmake/ios.toolchain.cmake -DPLATFORM=OS -DDEPLOYMENT_TARGET=13 -DENABLE_VISIBILITY=ON -DENABLE_BITCODE=OFF -DSTATIC=ON -DBUILD_STATIC_DEPS=ON -DUSE_LTO=OFF -DCMAKE_BUILD_TYPE=Release -DRANDOMX_ENABLE_JIT=OFF -DCMAKE_CXX_FLAGS=-fcolor-diagnostics",
+            "ninja -j6 -v wallet_merged",
+            "cd ../sim64",
+            "cmake ../.. -G Ninja -DCMAKE_TOOLCHAIN_FILE=../../cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR64 -DDEPLOYMENT_TARGET=13 -DENABLE_VISIBILITY=ON -DENABLE_BITCODE=OFF -DSTATIC=ON -DBUILD_STATIC_DEPS=ON -DUSE_LTO=OFF -DCMAKE_BUILD_TYPE=Release -DRANDOMX_ENABLE_JIT=OFF -DCMAKE_CXX_FLAGS=-fcolor-diagnostics",
+            "ninja -j6 -v wallet_merged",
+            "cd ../..",
+            "./utils/build_scripts/drone-ios-static-upload.sh"
+         ],
+         "environment": {
+            "SSH_KEY": {
+               "from_secret": "SSH_KEY"
+            }
+         },
+         "name": "build"
+      }
+   ],
+   "type": "exec"
+}
