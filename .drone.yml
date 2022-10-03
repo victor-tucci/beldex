@@ -2,7 +2,7 @@
    "kind": "pipeline",
    "name": "iOS wallet_api",
    "platform": {
-      "arch": "arm64",
+      "arch": "amd64",
       "os": "darwin"
    },
    "steps": [
