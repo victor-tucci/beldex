@@ -84,6 +84,8 @@ static_assert(STAKING_PORTIONS % 12 == 0, "Use a multiple of twelve, so that it 
 
 #define DIFFICULTY_TARGET_V2                            120  // seconds
 #define DIFFICULTY_TARGET_V1                            60  // seconds - before first fork
+#define DIFFICULTY_TARGET_V17                           30  // seconds
+
 constexpr auto TARGET_BLOCK_TIME_OLD     = 2min;
 constexpr uint64_t BLOCKS_PER_HOUR_OLD   = 1h / TARGET_BLOCK_TIME_OLD;
 constexpr uint64_t BLOCKS_PER_DAY_OLD    = 24h / TARGET_BLOCK_TIME_OLD;
