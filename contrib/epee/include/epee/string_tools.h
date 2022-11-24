@@ -61,6 +61,11 @@ using namespace std::literals;
 namespace string_tools
 {
   //----------------------------------------------------------------------------
+  inline std::string buff_to_hex_nodelimer(const std::string& src)
+  {
+    return to_hex::string(to_byte_span(to_span(src)));
+  }
+  //----------------------------------------------------------------------------
   inline bool parse_hexstr_to_binbuff(const epee::span<const char> s, epee::span<char>& res)
   {
       if (s.size() != res.size() * 2)
@@ -246,6 +251,32 @@ POP_WARNINGS
     std::string str = str_;
     trim(str);
     return str;
+  }
+  //----------------------------------------------------------------------------
+  template<class t_pod_type>
+  std::string pod_to_hex(const t_pod_type& s)
+  {
+    static_assert(std::is_standard_layout<t_pod_type>(), "expected standard layout type");
+    return to_hex::string(as_byte_span(s));
+  }
+  //----------------------------------------------------------------------------
+  template<class t_pod_type>
+  bool hex_to_pod(const boost::string_ref hex_str, t_pod_type& s)
+  {
+    static_assert(std::is_standard_layout<t_pod_type>(), "expected standard layout type");
+    return from_hex::to_buffer(as_mut_byte_span(s), hex_str);
+  }
+  //----------------------------------------------------------------------------
+  template<class t_pod_type>
+  bool hex_to_pod(const boost::string_ref hex_str, tools::scrubbed<t_pod_type>& s)
+  {
+    return hex_to_pod(hex_str, unwrap(s));
+  }
+  //----------------------------------------------------------------------------
+  template<class t_pod_type>
+  bool hex_to_pod(const boost::string_ref hex_str, epee::mlocked<t_pod_type>& s)
+  {
+    return hex_to_pod(hex_str, unwrap(s));
   }
   //----------------------------------------------------------------------------
   inline std::string pad_string(std::string s, size_t n, char c = ' ', bool prepend = false)

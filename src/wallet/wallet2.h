@@ -1036,6 +1036,8 @@ private:
     std::string get_spend_proof(const crypto::hash &txid, std::string_view message);
     bool check_spend_proof(const crypto::hash &txid, std::string_view message, std::string_view sig_str);
 
+    void scan_tx(const std::vector<crypto::hash> &txids);
+    
     /*!
      * \brief  Generates a proof that proves the reserve of unspent funds
      * \param  account_minreserve       When specified, collect outputs only belonging to the given account and prove the smallest reserve above the given amount
@@ -1074,6 +1076,7 @@ private:
     const fs::path& get_wallet_file() const;
     const fs::path& get_keys_file() const;
     std::string get_daemon_address() const;
+    const std::optional<tools::login>& get_daemon_login() const { return m_daemon_login; }
     uint64_t get_daemon_blockchain_height(std::string& err) const;
     uint64_t get_daemon_blockchain_target_height(std::string& err);
    /*!
@@ -1571,6 +1574,7 @@ private:
     bool should_expand(const cryptonote::subaddress_index &index) const;
 
     cryptonote::account_base m_account;
+    std::optional<tools::login> m_daemon_login;
     fs::path m_wallet_file;
     fs::path m_keys_file;
     fs::path m_mms_file;

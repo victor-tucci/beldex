@@ -158,6 +158,7 @@ namespace cryptonote
     bool set_device_name(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_export_format(const std::vector<std::string> &args = std::vector<std::string>());
     bool help(const std::vector<std::string> &args = std::vector<std::string>());
+    bool scan_tx(const std::vector<std::string> &args);
     bool start_mining(const std::vector<std::string> &args);
     bool stop_mining(const std::vector<std::string> &args);
     bool set_daemon(const std::vector<std::string> &args);

@@ -31,6 +31,7 @@
 #include <iterator>
 #include <numeric>
 #include <tuple>
+#include <queue>
 #include <optional>
 #include <mutex>
 #include <boost/format.hpp>
@@ -1230,6 +1231,7 @@ bool wallet2::set_daemon(std::string daemon_address, std::optional<tools::login>
 
   m_http_client.set_base_url(daemon_address);
   m_http_client.set_timeout(rpc_timeout);
+  m_daemon_login = std::move(daemon_login);
   if (daemon_login)
     m_http_client.set_auth(daemon_login->username, daemon_login->password.password().view());
   else
@@ -1510,6 +1512,50 @@ std::string wallet2::get_subaddress_label(const cryptonote::subaddress_index& in
     return "";
   }
   return m_subaddress_labels[index.major][index.minor];
+}
+//----------------------------------------------------------------------------------------------------
+void wallet2::scan_tx(const std::vector<crypto::hash> &txids)
+{
+  // Get the transactions from daemon in batches and add them to a priority queue ordered in chronological order
+  auto cmp_tx_entry = [](const rpc::GET_TRANSACTIONS::entry& l, const rpc::GET_TRANSACTIONS::entry& r)
+  { return l.block_height > r.block_height; };
+
+  std::priority_queue<rpc::GET_TRANSACTIONS::entry, std::vector<rpc::GET_TRANSACTIONS::entry>, decltype(cmp_tx_entry)> txq(cmp_tx_entry);
+  const size_t SLICE_SIZE =  100; // RESTRICTED_TRANSACTIONS_COUNT as defined in rpc/core_rpc_server.cpp, hardcoded in daemon code
+  for(size_t slice = 0; slice < txids.size(); slice += SLICE_SIZE) {
+    rpc::GET_TRANSACTIONS::request req {};
+    rpc::GET_TRANSACTIONS::response res {};
+    req.decode_as_json = false;
+    req.prune = true;
+
+    size_t ntxes = slice + SLICE_SIZE > txids.size() ? txids.size() - slice : SLICE_SIZE;
+    for (size_t i = slice; i < slice + ntxes; ++i)
+     req.txs_hashes.push_back(epee::string_tools::pod_to_hex(txids[i]));
+
+    {
+      // const boost::lock_guard<boost::recursive_mutex> lock{m_daemon_rpc_mutex};
+      // req.client = get_client_signature();
+      bool ok = invoke_http<rpc::GET_TRANSACTIONS>(req, res);
+      THROW_WALLET_EXCEPTION_IF(!ok, error::no_connection_to_daemon, "Failed to get transaction(s) from daemon: HTTP request failed");
+      THROW_WALLET_EXCEPTION_IF(res.status == rpc::STATUS_BUSY, error::daemon_busy, "Failed to get transaction(s) from daemon: daemon busy");
+      THROW_WALLET_EXCEPTION_IF(res.status != rpc::STATUS_OK, error::wallet_internal_error, "Failed to get transaction(s) from daemon: daemon returned " + get_rpc_status(res.status));
+      THROW_WALLET_EXCEPTION_IF(res.txs.size() != req.txs_hashes.size(), error::wallet_internal_error, "Failed to get transaction(s) from daemon: expected " + std::to_string(req.txs_hashes.size()) + " txes, got " + std::to_string(res.txs.size()));
+
+    }
+
+    for (auto& tx_info : res.txs)
+      txq.push(tx_info);
+  }
+
+  // Process the transactions in chronologically ascending order
+  while(!txq.empty()) {
+    auto& tx_info = txq.top();
+    cryptonote::transaction tx;
+    crypto::hash tx_hash;
+    THROW_WALLET_EXCEPTION_IF(!get_pruned_tx(tx_info, tx, tx_hash), error::wallet_internal_error, "Failed to get transaction from daemon (2)");
+    process_new_transaction(tx_hash, tx, tx_info.output_indices, tx_info.block_height, 0, tx_info.block_timestamp, false, tx_info.in_pool, tx_info.double_spend_seen, {}, {});
+    txq.pop();
+  }
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::set_subaddress_label(const cryptonote::subaddress_index& index, const std::string &label)
