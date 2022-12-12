@@ -4826,9 +4826,7 @@ crypto::secret_key wallet2::generate(const fs::path& wallet_, const epee::wipeab
 
  uint64_t wallet2::estimate_blockchain_height()
  {
-   std::optional<uint8_t> hf_version = get_hard_fork_version();
-   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
-   const uint64_t blocks_per_month = BLOCKS_EXPECTED_IN_DAYS(30,*hf_version);
+   const uint64_t blocks_per_month = BLOCKS_EXPECTED_IN_DAYS(30);
 
    // try asking the daemon first
    std::string err;
@@ -13013,9 +13011,7 @@ uint64_t wallet2::get_approximate_blockchain_height() const
 {
   const auto& netconf = cryptonote::get_config(m_nettype);
   const time_t since_ts = time(nullptr) - netconf.HEIGHT_ESTIMATE_TIMESTAMP;
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
-  THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
-  uint64_t approx_blockchain_height = netconf.HEIGHT_ESTIMATE_HEIGHT + (since_ts > 0 ? (uint64_t)since_ts / tools::to_seconds((*hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)) : 0) - BLOCKS_EXPECTED_IN_DAYS(7,*hf_version); // subtract a week's worth of blocks to be conservative
+  uint64_t approx_blockchain_height = netconf.HEIGHT_ESTIMATE_HEIGHT + (since_ts > 0 ? (uint64_t)since_ts / tools::to_seconds(TARGET_BLOCK_TIME_V17) : 0) - BLOCKS_EXPECTED_IN_DAYS(7); // subtract a week's worth of blocks to be conservative
   LOG_PRINT_L2("Calculated blockchain height: " << approx_blockchain_height);
   return approx_blockchain_height;
 }
