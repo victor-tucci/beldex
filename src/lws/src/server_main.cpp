@@ -166,12 +166,11 @@ namespace
     std::signal(SIGINT, [] (int) { lws::scanner::stop(); });
     fs::create_directories(prog.db_path);
     auto disk = lws::db::storage::open(prog.db_path.c_str(), prog.create_queue_max);
-    lws::rpc::Connection connection = lws::rpc::connect_daemon();
-    lws::scanner::sync(disk.clone(),connection);
+    lws::scanner::sync(disk.clone());
 
     lws::rest_server server{epee::to_span(prog.rest_servers), disk.clone(), std::move(prog.rest_config)};
         // blocks until SIGINT
-   lws::scanner::run(std::move(disk), prog.scan_threads,connection);
+   lws::scanner::run(std::move(disk), prog.scan_threads);
     
   }
 } // anonymous
