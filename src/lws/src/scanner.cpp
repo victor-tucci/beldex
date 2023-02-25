@@ -718,17 +718,10 @@ namespace lws
     }
 
    }//anonymous
-    void scanner::sync(db::storage disk,lws::rpc::Connection connection)
+    void scanner::sync(db::storage disk)
     {
       try
       {
-        if(!connection.daemon_connected)
-        {
-          MERROR("Daemon not connected so stop action called");
-          lws::scanner::stop();
-        }
-        MINFO("Starting blockchain sync with daemon");
-
         json details;
         int a =0;
         std::vector<crypto::hash> blk_ids;
@@ -807,7 +800,7 @@ namespace lws
       }
     }
 
-   void scanner::run(db::storage disk, std::size_t thread_count,lws::rpc::Connection connection)
+   void scanner::run(db::storage disk, std::size_t thread_count)
    {
     thread_count = std::max(std::size_t(1), thread_count);
 
@@ -868,7 +861,7 @@ namespace lws
       //   client = MONERO_UNWRAP(ctx.connect());
 
       // expect<rpc::client> synced = sync(disk.clone(), std::move(client));
-      sync(disk.clone(), connection);
+      sync(disk.clone());
       // if (!synced)
       // {
       //   if (!synced.matches(std::errc::timed_out))
