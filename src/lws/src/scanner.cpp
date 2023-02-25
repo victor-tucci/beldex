@@ -720,6 +720,7 @@ namespace lws
    }//anonymous
     void scanner::sync(db::storage disk)
     {
+      MINFO("Starting blockchain sync with daemon");
       try
       {
         json details;
