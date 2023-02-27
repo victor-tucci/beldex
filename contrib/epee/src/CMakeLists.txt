@@ -29,7 +29,11 @@
 add_library(epee
     buffer.cpp
     connection_basic.cpp
+    byte_slice.cpp
+    byte_stream.cpp 
     hex.cpp
+    http_auth.cpp
+    net_ssl.cpp
     levin_base.cpp
     memwipe.c
     mlocker.cpp
@@ -68,4 +72,6 @@ target_link_libraries(epee
   PRIVATE
     filesystem
     Boost::thread
+    OpenSSL::SSL
+    OpenSSL::Crypto
     extra)

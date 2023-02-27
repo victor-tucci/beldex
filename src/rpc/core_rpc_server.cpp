@@ -65,6 +65,8 @@
 #include "core_rpc_server_error_codes.h"
 #include "p2p/net_node.h"
 #include "version.h"
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
@@ -547,6 +549,160 @@ namespace cryptonote { namespace rpc {
     res.status = STATUS_OK;
     return res;
   }
+  
+  //------------------------------------------------------------------------------------------------------------------------------
+  GET_BLOCKS_FAST_RPC::response core_rpc_server::invoke(GET_BLOCKS_FAST_RPC::request&& req, rpc_context context)
+  {
+    GET_BLOCKS_FAST_RPC::response res{};
+    
+    typedef std::vector<uint64_t> tx_output_indices_rpc;
+    typedef std::vector<tx_output_indices_rpc> block_output_indices_rpc;
+    std::vector<block_output_indices_rpc> output_indices_rpc;
+    PERF_TIMER(on_get_blocks);
+    if (use_bootstrap_daemon_if_necessary<GET_BLOCKS_FAST_RPC>(req, res))
+      return res;
+    
+    std::vector<std::pair<std::pair<blobdata, crypto::hash>, std::vector<std::pair<crypto::hash, blobdata> > > > blocks;
+
+    if(!m_core.find_blockchain_supplement(req.start_height, req.block_ids, blocks, res.current_height, res.start_height, req.prune, !req.no_miner_tx, GET_BLOCKS_FAST::MAX_COUNT))
+    {
+      res.status = "Failed";
+      return res;
+    }
+
+    size_t size = 0, ntxes = 0;
+    res.blocks.reserve(blocks.size());
+    res.output_indices.reserve(blocks.size());
+    
+    cryptonote::block blk;
+    cryptonote::transaction tx_hash;
+    uint64_t block_count = 0;
+    for(auto& bd: blocks)
+    {
+      res.blocks.resize(res.blocks.size()+1);
+      if (!parse_and_validate_block_from_blob(bd.first.first, blk))
+      {
+        res.blocks.clear();
+        res.output_indices.clear();
+        res.status = "Failed";
+        return res;
+      }
+
+      char hexstr[10];
+      std::string extra_res;
+      for(int i=0;i<blk.miner_tx.extra.size();i++)
+      {
+        sprintf(hexstr, "%02x", blk.miner_tx.extra[i]);
+        extra_res+=hexstr;
+      }
+      //----------blk data's key changed for lws -----------------------------------
+      std::string block_json = obj_to_json_str(blk);
+      auto block = json::parse(block_json);
+    
+      if(block.contains("POS"))
+      {
+        block.erase(block.find("POS"));
+      }
+
+      block["miner_tx"]["extra"] = extra_res;
+      //-----------------------------------------------------------------------
+      if (bd.second.size() != blk.tx_hashes.size())
+      {
+        res.blocks.clear();
+        res.output_indices.clear();
+        res.status = "Failed";
+        return res;
+      }
+      
+      block_output_indices_rpc indices;
+      // miner tx output indices
+      {
+        tx_output_indices_rpc tx_indices;
+        if (!m_core.get_tx_outputs_gindexs(get_transaction_hash(blk.miner_tx), tx_indices))
+        {
+          res.status = "Failed";
+          return res;
+        }
+        indices.push_back(std::move(tx_indices));
+      }
+
+      auto hash_it = blk.tx_hashes.begin();
+      std::vector<std::string> tx;
+      json tx_hash_block = {};
+      for (const auto& blob : bd.second)
+      {
+        tx_hash.pruned = req.prune;
+
+        const bool parsed = req.prune ?
+          parse_and_validate_tx_base_from_blob(blob.second, tx_hash) :
+          parse_and_validate_tx_from_blob(blob.second, tx_hash);
+        
+        if (parsed)
+        {
+          char hexstr_tx[10];
+          std::string extra_res_tx;
+          for(int i=0;i<tx_hash.extra.size();i++)
+          {
+            sprintf(hexstr_tx, "%02x", tx_hash.extra[i]);
+            extra_res_tx+=hexstr_tx;
+          }
+          //----------tx_hash data's key changed -----------------------
+          std::string block_transactions = obj_to_json_str(tx_hash);
+          auto block_tx = json::parse(block_transactions);
+
+          if(!(block_tx.contains("rct_signatures"))){
+            ++hash_it;
+            continue;
+          }
+          else{
+            tx_output_indices_rpc tx_indices;
+            if (!m_core.get_tx_outputs_gindexs(*hash_it, tx_indices))
+            {
+              res.status ="failed";
+              return res;
+            }
+            indices.push_back(std::move(tx_indices));
+            ++hash_it;
+          }
+
+          block_tx["extra"] = extra_res_tx;
+
+          tx_hash_block.push_back(tools::type_to_hex(blob.first));
+          tx.push_back(block_tx.dump());
+          //---------------------------------------------------------------------------------------
+        }            
+        else
+          ++hash_it;
+      }
+
+      block["tx_hashes"] = tx_hash_block;
+      res.blocks.back().block = block.dump();
+      if(bd.second.size() != 0)
+      {
+        for(auto it : tx)
+        {
+          res.blocks[block_count].transactions.push_back(it);
+        }
+      }
+      else
+      {
+        json tx = json::array();
+        res.blocks[block_count].transactions.push_back(tx.dump());
+      }
+
+      output_indices_rpc.push_back(indices);
+      block_count++;
+    }
+
+    std::string block_indices = obj_to_json_str(output_indices_rpc);
+    auto blkindices = json::parse(block_indices);
+    res.output_indices = blkindices.dump();
+
+    MGINFO("on_get_blocks: " << blocks.size() << " blocks, " << ntxes << " txes, size " << size);
+    res.status = STATUS_OK;
+    return res;
+  }
+  //---------------------------------------------------------------------------------------------------------------------------
   GET_ALT_BLOCKS_HASHES::response core_rpc_server::invoke(GET_ALT_BLOCKS_HASHES::request&& req, rpc_context context)
   {
     GET_ALT_BLOCKS_HASHES::response res{};
@@ -619,11 +775,43 @@ namespace cryptonote { namespace rpc {
       return res;
 
     res.start_height = req.start_height;
+
     if(!m_core.get_blockchain_storage().find_blockchain_supplement(req.block_ids, res.m_block_ids, res.start_height, res.current_height, false))
     {
       res.status = "Failed";
       return res;
     }
+
+    res.status = STATUS_OK;
+    return res;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
+  GET_HASHES_FAST_RPC::response core_rpc_server::invoke(GET_HASHES_FAST_RPC::request&& req, rpc_context context)
+  {
+    GET_HASHES_FAST_RPC::response res{};
+
+    PERF_TIMER(on_get_hashes);
+
+    // std::cout << "req.start_height : " << req.start_height << std::endl;
+    
+    if (use_bootstrap_daemon_if_necessary<GET_HASHES_FAST_RPC>(req, res))
+      return res;
+
+    res.start_height = req.start_height;
+    std::vector<crypto::hash> blk_ids;
+    if(!m_core.get_blockchain_storage().find_blockchain_supplement_rpc(req.block_ids, blk_ids, res.start_height, res.current_height, false))
+    {
+      res.status = "Failed";
+      return res;
+    }
+
+   res.m_block_ids.reserve(blk_ids.size());
+
+   for (const crypto::hash &m_blocks_id : blk_ids)
+    {
+       res.m_block_ids.push_back(tools::type_to_hex(m_blocks_id));
+    }
+    
 
     res.status = STATUS_OK;
     return res;
@@ -1153,7 +1341,17 @@ namespace cryptonote { namespace rpc {
       res.status = "Failed";
       return res;
     }
-
+    cryptonote::transaction tx_lws;
+    if(parse_and_validate_tx_base_from_blob(tx_blob, tx_lws))
+    {
+      std::string block_transactions = obj_to_json_str(tx_lws);
+          auto block_tx = json::parse(block_transactions);
+      std::cout << "block_tx : " << block_tx << std::endl;
+    }
+    else
+    {
+       LOG_PRINT_L0("can't convert into tx object blob" << tx_blob);
+    }
     if (req.do_sanity_checks && !cryptonote::tx_sanity_check(tx_blob, m_core.get_blockchain_storage().get_num_mature_outputs(0)))
     {
       res.status = "Failed";

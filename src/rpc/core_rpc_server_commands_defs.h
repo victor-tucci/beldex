@@ -198,6 +198,49 @@ namespace rpc {
     };
   };
 
+  struct GET_BLOCKS_FAST_RPC : PUBLIC, LEGACY
+  {
+    static constexpr auto names() { return NAMES("get_blocks_fast", "getblocks_fast"); }
+
+    static constexpr size_t MAX_COUNT = 1000;
+
+    struct request
+    {
+      std::list<crypto::hash> block_ids; // First 10 blocks id goes sequential, next goes in pow(2,n) offset, like 2, 4, 8, 16, 32, 64 and so on, and the last one is always genesis block
+      uint64_t    start_height;          // The starting block's height.
+      bool        prune;                 // Prunes the blockchain, drops off 7/8 off the block iirc.
+      bool        no_miner_tx;           // Optional (false by default).
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct tx_output_indices
+    {
+      std::vector<uint64_t> indices; // Array of unsigned int.
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct block_output_indices
+    {
+      std::vector<tx_output_indices> indices; // Array of TX output indices:
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct response
+    {
+      std::vector<block_complete_entry_rpc> blocks;     // Array of block complete entries
+      uint64_t    start_height;                         // The starting block's height.
+      uint64_t    current_height;                       // The current block height.
+      std::string status;                               // General RPC error code. "OK" means everything looks good.
+      std::string output_indices;                       // Array of indices.
+      bool untrusted;                                   // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
+
+     KV_MAP_SERIALIZABLE
+    };
+  };
+
   BELDEX_RPC_DOC_INTROSPECT
   // Get blocks by height. Binary request.
   struct GET_BLOCKS_BY_HEIGHT : PUBLIC, BINARY
@@ -256,6 +299,32 @@ namespace rpc {
     struct response
     {
       std::vector<crypto::hash> m_block_ids; // Binary array of hashes, See block_ids above.
+      uint64_t    start_height;              // The starting block's height.
+      uint64_t    current_height;            // The current block height.
+      std::string status;                    // General RPC error code. "OK" means everything looks good.
+      bool untrusted;                        // States if the result is obtained using the bootstrap mode, and is therefore not trusted (`true`), or when the daemon is fully synced (`false`).
+
+      KV_MAP_SERIALIZABLE
+    };
+  };
+
+BELDEX_RPC_DOC_INTROSPECT
+  // Get hashes. rpc request.
+  struct GET_HASHES_FAST_RPC : PUBLIC, LEGACY
+  {
+    static constexpr auto names() { return NAMES("get_hashes", "gethashes"); }
+
+    struct request
+    {
+      std::list<crypto::hash> block_ids; // First 10 blocks id goes sequential, next goes in pow(2,n) offset, like 2, 4, 8, 16, 32, 64 and so on, and the last one is always genesis block */
+      uint64_t    start_height;          // The starting block's height.
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct response
+    {
+      std::vector<std::string>  m_block_ids; // Binary array of hashes, See block_ids above.
       uint64_t    start_height;              // The starting block's height.
       uint64_t    current_height;            // The current block height.
       std::string status;                    // General RPC error code. "OK" means everything looks good.
@@ -1786,6 +1855,37 @@ namespace rpc {
     };
   };
 
+  // BELDEX_RPC_DOC_INTROSPECT
+  // struct GET_OUTPUT_KEYS : PUBLIC
+  // {
+  //   static constexpr auto names() { return NAMES("get_output_keys"); }
+
+  //   struct output_amount_and_index
+  //   {
+  //     uint64_t amount;
+  //     uint64_t index;
+  //   };
+  //   struct request
+  //   {
+  //     std::vector<output_amount_and_index> outputs;
+
+  //     KV_MAP_SERIALIZABLE
+  //   };
+
+  //   struct output_key_mask_unlocked
+  //   {
+  //     crypto::public_key key;
+  //     rct::key mask;
+  //     bool unlocked;
+  //   };
+
+  //   struct response
+  //   {
+  //     std::vector<output_key_mask_unlocked> keys;
+  //     KV_MAP_SERIALIZABLE
+  //   };
+  // };
+
   BELDEX_RPC_DOC_INTROSPECT
   // Exactly like GET_OUTPUT_DISTRIBUTION, but does a binary RPC transfer instead of JSON
   struct GET_OUTPUT_DISTRIBUTION_BIN : PUBLIC, BINARY
@@ -2579,9 +2679,11 @@ namespace rpc {
   using core_rpc_types = tools::type_list<
     GET_HEIGHT,
     GET_BLOCKS_FAST,
+    GET_BLOCKS_FAST_RPC,
     GET_BLOCKS_BY_HEIGHT,
     GET_ALT_BLOCKS_HASHES,
     GET_HASHES_FAST,
+    GET_HASHES_FAST_RPC,
     GET_TRANSACTIONS,
     IS_KEY_IMAGE_SPENT,
     GET_TX_GLOBAL_OUTPUTS_INDEXES,
@@ -2634,6 +2736,7 @@ namespace rpc {
     RELAY_TX,
     SYNC_INFO,
     GET_OUTPUT_DISTRIBUTION,
+    // GET_OUTPUT_KEYS,
     GET_OUTPUT_DISTRIBUTION_BIN,
     POP_BLOCKS,
     PRUNE_BLOCKCHAIN,

@@ -49,7 +49,7 @@ all: release-all
 
 cmake-debug:
 	mkdir -p $(builddir)/debug
-	cd $(builddir)/debug && cmake -D CMAKE_BUILD_TYPE=Debug $(topdir)
+	cd $(builddir)/debug && cmake -D CMAKE_BUILD_TYPE=Debug $(topdir) -DUSE_LTO=OFF -DRANDOMX_ENABLE_JIT=OFF
 
 debug: cmake-debug
 	cd $(builddir)/debug && $(MAKE)
@@ -101,7 +101,7 @@ release-test:
 
 release-all:
 	mkdir -p $(builddir)/release
-	cd $(builddir)/release && cmake -D BUILD_TESTS=ON -D CMAKE_BUILD_TYPE=Release $(topdir) && $(MAKE)
+	cd $(builddir)/release && cmake -D BUILD_TESTS=OFF -D CMAKE_BUILD_TYPE=Release $(topdir) && $(MAKE)
 
 release-static:
 	mkdir -p $(builddir)/release
