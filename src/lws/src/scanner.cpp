@@ -105,8 +105,15 @@ namespace lws
         cryptonote::parse_tx_extra(tx.extra, extra);
         // allow partial parsing of tx extra (similar to wallet2.cpp)
 
-        if (!cryptonote::find_tx_extra_field_by_type(extra, key))
-          return;
+        size_t pk_index = 0;
+        while(true)
+        {
+          if (!cryptonote::find_tx_extra_field_by_type(extra, key, pk_index++))
+          {
+            if (pk_index > 1)
+              break;
+          }
+        }
 
         // std::cout << "key : " << key << std::endl;
         extra_nonce.emplace();
