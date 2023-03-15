@@ -302,7 +302,7 @@ uint64_t Blockchain::get_current_blockchain_height(bool lock) const
 bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 {
   uint64_t const snl_height   = std::max(hard_fork_begins(m_nettype, network_version_9_master_nodes).value_or(0), m_master_node_list.height() + 1);
-  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, network_version_16_bns).value_or(0),          m_bns_db.height() + 1);
+  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, network_version_16).value_or(0),          m_bns_db.height() + 1);
   uint64_t const end_height   = m_db->height();
   uint64_t const start_height = std::min(end_height, std::min(bns_height, snl_height));
 
