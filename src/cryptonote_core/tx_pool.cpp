@@ -249,6 +249,13 @@ namespace cryptonote
       tvc.m_verifivation_failed = true;
       return false;
     }
+    if ((tx.type == txtype::beldex_name_system)&&(hf_version<=cryptonote::network_version_17_POS))
+    {
+      // beldex_name_system never accepted in below v17
+      LOG_PRINT_L1("bns buy option is not available in v17");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
 
     // we do not accept transactions that timed out before, unless they're
     // kept_by_block

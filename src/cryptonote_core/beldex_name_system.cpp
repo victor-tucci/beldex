@@ -1284,6 +1284,11 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
 
 bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version, bns_tx_type txtype, bns::mapping_type *mapping_type, std::string *reason)
 {
+  if(hf_version <= cryptonote::network_version_17_POS)
+  {
+    if (reason) *reason = "Unsupported BNS Buying BNS buy enable at v18";
+    return false;
+  }
   std::string mapping = tools::lowercase_ascii_string(mapping_type_str);
   std::optional<bns::mapping_type> mapping_type_;
   if (txtype != bns_tx_type::renew && tools::string_iequal(mapping, "bchat"))
