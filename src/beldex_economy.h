@@ -78,8 +78,8 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_type type)
 
   // The base amount for bchat/wallet/belnet-1year:
   const uint64_t basic_fee = (
-      hf_version >= 16 ? 15*COIN :  // cryptonote::network_version_16_POS -- but don't want to add cryptonote_config.h include
-      20*COIN                       // cryptonote::network_version_15_bns
+      hf_version >= 18 ? 100*COIN : hf_version >= 16 ? 15*COIN :  // cryptonote::network_version_16 -- but don't want to add cryptonote_config.h include
+      20*COIN                       // cryptonote::network_version_15_flash
   );
   switch (type)
   {
