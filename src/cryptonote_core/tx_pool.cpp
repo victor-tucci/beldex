@@ -251,7 +251,7 @@ namespace cryptonote
     }
     uint64_t height = m_blockchain.get_current_blockchain_height();
     std::cout << "height : " << height << std::endl;
-    if ((tx.type == txtype::beldex_name_system)&&(hf_version<=cryptonote::network_version_17_POS && height >514400))
+    if ((tx.type == txtype::beldex_name_system)&&(hf_version<=cryptonote::network_version_17_POS && height >get_config(m_blockchain.nettype()).BNS_VALIDATION_HEIGHT))
     {
       // beldex_name_system never accepted in below v17
       LOG_PRINT_L1("bns buy option is not available in v17");
