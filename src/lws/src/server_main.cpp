@@ -30,7 +30,7 @@ namespace
   struct options : lws::options
   {
     const command_line::arg_descriptor<std::string> daemon_rpc;
-    const command_line::arg_descriptor<std::string> daemon_sub;
+    // const command_line::arg_descriptor<std::string> daemon_sub;
     const command_line::arg_descriptor<std::vector<std::string>> rest_servers;
     const command_line::arg_descriptor<std::string> rest_ssl_key;
     const command_line::arg_descriptor<std::string> rest_ssl_cert;
@@ -44,24 +44,24 @@ namespace
 
     static std::string get_default_zmq()
     {
-      static constexpr const char base[] = "tcp://127.0.0.1:";
+      static constexpr const char base[] = "http://127.0.0.1:";
       switch (lws::config::network)
       {
       case cryptonote::TESTNET:
-        return base + std::to_string(config::testnet::ZMQ_RPC_DEFAULT_PORT);
+        return base + std::to_string(config::testnet::RPC_DEFAULT_PORT);
       case cryptonote::DEVNET:
-        return base + std::to_string(config::devnet::ZMQ_RPC_DEFAULT_PORT);
+        return base + std::to_string(config::devnet::RPC_DEFAULT_PORT);
       case cryptonote::MAINNET:
       default:
         break;
       }
-      return base + std::to_string(config::ZMQ_RPC_DEFAULT_PORT);
+      return base + std::to_string(config::RPC_DEFAULT_PORT)+"/json_rpc";
     }
 
     options()
       : lws::options()
-      , daemon_rpc{"daemon", "<protocol>://<address>:<port> of a beldexd OMQ RPC", get_default_zmq()}
-      , daemon_sub{"sub", "tcp://address:port or ipc://path of a beldexd OMQ Pub", ""}
+      , daemon_rpc{"daemon", "[(https|http)://<address>:]<port> for daemon connections", get_default_zmq()}
+      // , daemon_sub{"sub", "tcp://address:port or ipc://path of a beldexd OMQ Pub", ""}
       , rest_servers{"rest-server", "[(https|http)://<address>:]<port> for incoming connections, multiple declarations allowed"}
       , rest_ssl_key{"rest-ssl-key", "<path> to PEM formatted SSL key for https REST server", ""}
       , rest_ssl_cert{"rest-ssl-certificate", "<path> to PEM formatted SSL certificate (chains supported) for https REST server", ""}
@@ -80,7 +80,7 @@ namespace
 
       lws::options::prepare(description);
       command_line::add_arg(description, daemon_rpc);
-      command_line::add_arg(description, daemon_sub);
+      // command_line::add_arg(description, daemon_sub);
       description.add_options()(rest_servers.name, boost::program_options::value<std::vector<std::string>>()->default_value({rest_default}, rest_default), rest_servers.description);
       command_line::add_arg(description, rest_ssl_key);
       command_line::add_arg(description, rest_ssl_cert);
@@ -99,7 +99,7 @@ namespace
     std::vector<std::string> rest_servers;
     lws::rest_server::configuration rest_config;
     std::string daemon_rpc;
-    std::string daemon_sub;
+    // std::string daemon_sub;
     std::chrono::minutes rates_interval;
     std::size_t scan_threads;
     unsigned create_queue_max;
@@ -147,7 +147,7 @@ namespace
             command_line::get_arg(args, opts.rest_threads),
             command_line::get_arg(args, opts.external_bind)},
         command_line::get_arg(args, opts.daemon_rpc),
-        command_line::get_arg(args, opts.daemon_sub),
+        // command_line::get_arg(args, opts.daemon_sub),
         std::chrono::minutes{command_line::get_arg(args, opts.rates_interval)},
         command_line::get_arg(args, opts.scan_threads),
         command_line::get_arg(args, opts.create_queue_max),
@@ -158,6 +158,8 @@ namespace
 
     if (command_line::is_arg_defaulted(args, opts.daemon_rpc))
         prog.daemon_rpc = options::get_default_zmq();
+    else
+      prog.daemon_rpc = prog.daemon_rpc +"/json_rpc";
 
     return prog;
   }
@@ -166,11 +168,13 @@ namespace
     std::signal(SIGINT, [] (int) { lws::scanner::stop(); });
     fs::create_directories(prog.db_path);
     auto disk = lws::db::storage::open(prog.db_path.c_str(), prog.create_queue_max);
-    lws::scanner::sync(disk.clone());
+    MINFO("Using beldexd RPC at " << prog.daemon_rpc);
+
+    lws::scanner::sync(disk.clone(),prog.daemon_rpc);
 
     lws::rest_server server{epee::to_span(prog.rest_servers), disk.clone(), std::move(prog.rest_config)};
         // blocks until SIGINT
-   lws::scanner::run(std::move(disk), prog.scan_threads);
+   lws::scanner::run(std::move(disk),prog.daemon_rpc, prog.scan_threads);
     
   }
 } // anonymous
