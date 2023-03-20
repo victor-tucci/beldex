@@ -18,10 +18,10 @@ namespace lws
     public:
 
         //! Use `client` to sync blockchain data, and \return client if successful.
-        static void sync(db::storage disk);
+        static void sync(db::storage disk,std::string daemon_rpc);
 
         //! Poll daemon until `stop()` is called, using `thread_count` threads.
-        static void run(db::storage disk, std::size_t thread_count);
+        static void run(db::storage disk, std::string daemon_rpc,std::size_t thread_count);
 
         //! \return True if `stop()` has never been called.
         static bool is_running() noexcept { return running; }
