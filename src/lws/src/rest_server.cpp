@@ -203,7 +203,7 @@ namespace lws
             {"params",{{"grace_blocks",grace_blocks}}}
           };
 
-          auto fee_data = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+          auto fee_data = cpr::Post(cpr::Url{lws::daemon_add},
                          cpr::Body{dynamic_fee.dump()},
                          cpr::Header{ { "Content-Type", "application/json" }});
 
@@ -439,7 +439,7 @@ namespace lws
           };
 
           // auto histogram_resp = client->receive<histogram_rpc::Response>(std::chrono::minutes{3}, MLWS_CURRENT_LOCATION);
-          auto histogram_data = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+          auto histogram_data = cpr::Post(cpr::Url{lws::daemon_add},
                cpr::Body{output_histogram.dump()},
                cpr::Header{ { "Content-Type", "application/json" }});
 
@@ -491,7 +491,7 @@ namespace lws
 
           // auto distribution_resp =
           //   client->receive<distribution_rpc::Response>(std::chrono::minutes{3}, MLWS_CURRENT_LOCATION);
-          auto distribution_data = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+          auto distribution_data = cpr::Post(cpr::Url{lws::daemon_add},
                cpr::Body{output_distribution.dump()},
                cpr::Header{ { "Content-Type", "application/json" }});
 
@@ -566,7 +566,7 @@ namespace lws
 
             // epee::byte_slice msg = rpc::client::make_message("get_output_keys", keys_req);
             // MONERO_CHECK(client->send(std::move(msg), std::chrono::seconds{10}));
-            auto out_keys_data = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+            auto out_keys_data = cpr::Post(cpr::Url{lws::daemon_add},
                  cpr::Body{out_keys.dump()},
                  cpr::Header{ { "Content-Type", "application/json" }});
 
@@ -730,7 +730,7 @@ namespace lws
             {"params",{{"tx_as_hex",daemon_req.tx_as_hex},{"do_not_relay",daemon_req.do_not_relay},{"flash",daemon_req.flash}}}
           };
           // std::cout <<"message : " << message.dump() << std::endl;
-          auto resp = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+          auto resp = cpr::Post(cpr::Url{lws::daemon_add},
                          cpr::Body{message.dump()},
                          cpr::Header{ { "Content-Type", "application/json" }});
 

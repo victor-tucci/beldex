@@ -16,6 +16,7 @@
 
 namespace lws
 {
+    inline std::string daemon_add;
     class rest_server
     {
         struct internal;
@@ -29,7 +30,6 @@ namespace lws
             std::size_t threads;
             bool allow_external;
         }; //configre
-
         rest_server(epee::span<const std::string> addresses, db::storage disk, configuration config);
 
         rest_server(rest_server&&) = delete;

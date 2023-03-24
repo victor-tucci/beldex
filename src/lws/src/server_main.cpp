@@ -48,9 +48,9 @@ namespace
       switch (lws::config::network)
       {
       case cryptonote::TESTNET:
-        return base + std::to_string(config::testnet::RPC_DEFAULT_PORT);
+        return base + std::to_string(config::testnet::RPC_DEFAULT_PORT)+"/json_rpc";
       case cryptonote::DEVNET:
-        return base + std::to_string(config::devnet::RPC_DEFAULT_PORT);
+        return base + std::to_string(config::devnet::RPC_DEFAULT_PORT)+"/json_rpc";
       case cryptonote::MAINNET:
       default:
         break;
@@ -156,10 +156,14 @@ namespace
     prog.rest_config.threads = std::max(std::size_t(1), prog.rest_config.threads);
     prog.scan_threads = std::max(std::size_t(1), prog.scan_threads);
 
-    if (command_line::is_arg_defaulted(args, opts.daemon_rpc))
+    if (command_line::is_arg_defaulted(args, opts.daemon_rpc)){
         prog.daemon_rpc = options::get_default_zmq();
-    else
+        lws::daemon_add = prog.daemon_rpc;
+    }
+    else{
       prog.daemon_rpc = prog.daemon_rpc +"/json_rpc";
+      lws::daemon_add = prog.daemon_rpc;
+      }
 
     return prog;
   }
