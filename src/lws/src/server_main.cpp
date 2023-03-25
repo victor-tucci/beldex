@@ -48,14 +48,14 @@ namespace
       switch (lws::config::network)
       {
       case cryptonote::TESTNET:
-        return base + std::to_string(config::testnet::RPC_DEFAULT_PORT)+"/json_rpc";
+        return base + std::to_string(config::testnet::RPC_DEFAULT_PORT);
       case cryptonote::DEVNET:
-        return base + std::to_string(config::devnet::RPC_DEFAULT_PORT)+"/json_rpc";
+        return base + std::to_string(config::devnet::RPC_DEFAULT_PORT);
       case cryptonote::MAINNET:
       default:
         break;
       }
-      return base + std::to_string(config::RPC_DEFAULT_PORT)+"/json_rpc";
+      return base + std::to_string(config::RPC_DEFAULT_PORT);
     }
 
     options()
@@ -156,15 +156,12 @@ namespace
     prog.rest_config.threads = std::max(std::size_t(1), prog.rest_config.threads);
     prog.scan_threads = std::max(std::size_t(1), prog.scan_threads);
 
-    if (command_line::is_arg_defaulted(args, opts.daemon_rpc)){
-        prog.daemon_rpc = options::get_default_zmq();
-        lws::daemon_add = prog.daemon_rpc;
-    }
-    else{
+    if (command_line::is_arg_defaulted(args, opts.daemon_rpc))
+        prog.daemon_rpc = options::get_default_zmq()+ "/json_rpc";
+    else
       prog.daemon_rpc = prog.daemon_rpc +"/json_rpc";
-      lws::daemon_add = prog.daemon_rpc;
-      }
 
+    lws::daemon_add = prog.daemon_rpc;
     return prog;
   }
   void run(program prog)
