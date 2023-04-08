@@ -1390,7 +1390,7 @@ MultisigState WalletImpl::multisig(LockedWallet& w) {
 EXPORT
 MultisigState WalletImpl::multisig() const {
     auto w=wallet();
-    return multisig(w)
+    return multisig(w);
 }
 
 EXPORT
@@ -1427,7 +1427,7 @@ EXPORT
 std::string WalletImpl::exchangeMultisigKeys(const std::vector<std::string> &info) {
     try {
         clearStatus();
-        auto w=wallet()
+        auto w=wallet();
         checkMultisigWalletNotReady(w);
 
         return w->exchange_multisig_keys(epee::wipeable_string(m_password), info);
@@ -1443,7 +1443,7 @@ EXPORT
 bool WalletImpl::finalizeMultisig(const std::vector<std::string>& extraMultisigInfo) {
     try {
         clearStatus();
-        auto w=wallet()
+        auto w=wallet();
         checkMultisigWalletNotReady(w);
 
         if (w->finalize_multisig(epee::wipeable_string(m_password), extraMultisigInfo)) {

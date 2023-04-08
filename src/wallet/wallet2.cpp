@@ -13815,11 +13815,11 @@ std::tuple<size_t,crypto::hash,std::vector<crypto::hash>> wallet2::export_blockc
 void wallet2::import_blockchain(const std::tuple<size_t, crypto::hash, std::vector<crypto::hash>> &bc)
 {
   m_blockchain.clear();
-  const auto& [offset,genesis_hash,hashes] = bc;
+  const auto& [offset,genesis_h,hashes] = bc;
   if (offset)
   {
     for (size_t n = offset; n > 0; --n)
-      m_blockchain.push_back(genesis_hash);
+      m_blockchain.push_back(genesis_h);
     m_blockchain.trim(offset);
   }
   for (auto const &b : hashes)

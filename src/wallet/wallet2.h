@@ -837,7 +837,7 @@ private:
 
     //Returns the current height up to which the wallet has synchronized the blockchain.  Thread
     // safe (though the value may be behind if another thread is in the middle of adding blocks).
-    uint64_t get_blockchain_current_height() const { return m_light_wallet_blockchain_height ? m_light_wallet_blockchain_height : m_cached_height; }
+    uint64_t get_blockchain_current_height() const { return m_cached_height; }
     void rescan_spent();
     void rescan_blockchain(bool hard, bool refresh = true, bool keep_key_images = false);
     bool is_transfer_unlocked(const transfer_details &td) const;
