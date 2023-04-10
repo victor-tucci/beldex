@@ -45,6 +45,7 @@ TransactionInfo::Transfer::Transfer(uint64_t _amount, std::string _address)
 EXPORT
 TransactionInfoImpl::TransactionInfoImpl()
     : m_direction(Direction_Out)
+      , m_is_stake(false)
       , m_pending(false)
       , m_failed(false)
       , m_reward_type(reward_type::unspecified)
@@ -81,6 +82,12 @@ EXPORT
 bool TransactionInfoImpl::isMinerReward() const
 {
     return m_reward_type == reward_type::miner;
+}
+
+EXPORT
+bool TransactionInfoImpl::isStake() const
+{
+    return m_is_stake;
 }
 
 EXPORT
