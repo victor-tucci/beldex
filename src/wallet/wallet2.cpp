@@ -13042,6 +13042,7 @@ std::vector<rpc::GET_MASTER_NODES::response::entry> wallet2::list_current_stakes
         continue;
 
       master_node_states.push_back(node_info);
+      break;         // not necessory to check the other contributor in the same masternode once we got our info
     }
   }
 
