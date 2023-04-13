@@ -67,6 +67,5 @@ target_link_libraries(common
     filesystem
   PRIVATE
     libunbound
-    OpenSSL::SSL
-    OpenSSL::Crypto
+    sodium
     extra)
