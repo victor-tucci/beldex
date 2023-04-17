@@ -1418,9 +1418,6 @@ private:
     bool frozen(const crypto::key_image &ki) const;
     bool frozen(const transfer_details &td) const;
 
-    bool save_to_file(const fs::path& path_to_file, std::string_view binary, bool is_printable = false) const;
-    static bool load_from_file(const fs::path& path_to_file, std::string& target_str);
-
     uint64_t get_bytes_sent() const;
     uint64_t get_bytes_received() const;
 
