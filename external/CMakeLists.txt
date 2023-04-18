@@ -83,7 +83,7 @@ endif()
 add_subdirectory(db_drivers)
 add_subdirectory(easylogging++ easyloggingpp)
 add_subdirectory(randomx EXCLUDE_FROM_ALL)
-
+add_subdirectory(fmt)
 # uSockets doesn't really have a proper build system (just a very simple Makefile) so build it
 # ourselves.
 if (NOT CMAKE_VERSION VERSION_LESS 3.12)
