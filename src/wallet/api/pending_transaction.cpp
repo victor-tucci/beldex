@@ -234,7 +234,7 @@ std::string PendingTransactionImpl::multisigSignData() {
         txSet.m_signers = m_signers;
         auto cipher = w->save_multisig_tx(txSet);
 
-        return oxenmq::to_hex(cipher);
+        return oxenc::to_hex(cipher);
     } catch (const std::exception& e) {
         m_status = {Status_Error, std::string(tr("Couldn't multisig sign data: ")) + e.what()};
     }

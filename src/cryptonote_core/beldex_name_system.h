@@ -6,7 +6,7 @@
 #include "epee/span.h"
 #include "cryptonote_basic/tx_extra.h"
 #include "common/fs.h"
-#include <oxenmq/hex.h>
+#include <oxenc/hex.h>
 
 #include <cassert>
 #include <string>
@@ -115,7 +115,7 @@ struct mapping_value
   mapping_value();
   mapping_value(std::string encrypted_value, std::string nonce);
 };
-inline std::ostream &operator<<(std::ostream &os, mapping_value const &v) { return os << oxenmq::to_hex(v.to_view()); }
+inline std::ostream &operator<<(std::ostream &os, mapping_value const &v) { return os << oxenc::to_hex(v.to_view()); }
 
 inline std::string_view mapping_type_str(mapping_type type)
 {

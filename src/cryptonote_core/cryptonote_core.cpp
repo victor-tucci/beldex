@@ -37,7 +37,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <iomanip>
-#include <oxenmq/base32z.h>
+#include <oxenc/base32z.h>
 
 extern "C" {
 #include <sodium.h>
@@ -980,7 +980,7 @@ namespace cryptonote
       MGINFO_YELLOW("- primary: " << tools::type_to_hex(keys.pub));
       MGINFO_YELLOW("- ed25519: " << tools::type_to_hex(keys.pub_ed25519));
       // .mnode address is the ed25519 pubkey, encoded with base32z and with .mnode appended:
-      MGINFO_YELLOW("- belnet: " << oxenmq::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
+      MGINFO_YELLOW("- belnet: " << oxenc::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
