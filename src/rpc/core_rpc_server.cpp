@@ -38,7 +38,7 @@
 #include <iterator>
 #include <type_traits>
 #include <variant>
-#include <oxenmq/base64.h>
+#include <oxenc/base64.h>
 #include "crypto/crypto.h"
 #include "cryptonote_basic/hardfork.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -729,9 +729,9 @@ namespace cryptonote { namespace rpc {
       void operator()(const tx_extra_nonce& x) {
         if ((x.nonce.size() == sizeof(crypto::hash) + 1 && x.nonce[0] == TX_EXTRA_NONCE_PAYMENT_ID)
             || (x.nonce.size() == sizeof(crypto::hash8) + 1 && x.nonce[0] == TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID))
-          entry.payment_id = oxenmq::to_hex(x.nonce.begin() + 1, x.nonce.end());
+          entry.payment_id = oxenc::to_hex(x.nonce.begin() + 1, x.nonce.end());
         else
-          entry.extra_nonce = oxenmq::to_hex(x.nonce);
+          entry.extra_nonce = oxenc::to_hex(x.nonce);
       }
       void operator()(const tx_extra_merge_mining_tag& x) { entry.mm_depth = x.depth; entry.mm_root = tools::type_to_hex(x.merkle_root); }
       void operator()(const tx_extra_additional_pub_keys& x) { entry.additional_pubkeys = hexify(x.data); }
@@ -823,7 +823,7 @@ namespace cryptonote { namespace rpc {
           bns.renew = true;
         bns.name_hash = tools::type_to_hex(x.name_hash);
         if (!x.encrypted_value.empty())
-          bns.value = oxenmq::to_hex(x.encrypted_value);
+          bns.value = oxenc::to_hex(x.encrypted_value);
         _load_owner(bns.owner, x.owner);
         _load_owner(bns.backup_owner, x.backup_owner);
       }
@@ -973,9 +973,9 @@ namespace cryptonote { namespace rpc {
         }
         else
         {
-          e.pruned_as_hex = oxenmq::to_hex(unprunable_data);
+          e.pruned_as_hex = oxenc::to_hex(unprunable_data);
           if (!req.prune && prunable && !pruned)
-            e.prunable_as_hex = oxenmq::to_hex(prunable_data);
+            e.prunable_as_hex = oxenc::to_hex(prunable_data);
         }
       }
       else
@@ -984,7 +984,7 @@ namespace cryptonote { namespace rpc {
         tx_data = unprunable_data;
         tx_data += prunable_data;
         if (!req.decode_as_json)
-          e.as_hex = oxenmq::to_hex(tx_data);
+          e.as_hex = oxenc::to_hex(tx_data);
       }
 
       cryptonote::transaction t;
@@ -1493,7 +1493,7 @@ namespace cryptonote { namespace rpc {
 
     m_core.get_pool().get_transactions_and_spent_keys_info(res.transactions, res.spent_key_images, load_extra, context.admin);
     for (tx_info& txi : res.transactions)
-      txi.tx_blob = oxenmq::to_hex(txi.tx_blob);
+      txi.tx_blob = oxenc::to_hex(txi.tx_blob);
     res.status = STATUS_OK;
     return res;
   }
@@ -1723,8 +1723,8 @@ namespace cryptonote { namespace rpc {
     }
     blobdata hashing_blob = get_block_hashing_blob(b);
     res.prev_hash = tools::type_to_hex(b.prev_id);
-    res.blocktemplate_blob = oxenmq::to_hex(block_blob);
-    res.blockhashing_blob =  oxenmq::to_hex(hashing_blob);
+    res.blocktemplate_blob = oxenc::to_hex(block_blob);
+    res.blockhashing_blob =  oxenc::to_hex(hashing_blob);
     res.status = STATUS_OK;
     return res;
   }
@@ -1806,7 +1806,7 @@ namespace cryptonote { namespace rpc {
         return true;
       }, b, template_res.difficulty, template_res.height);
 
-      submit_req.blob[0] = oxenmq::to_hex(block_to_blob(b));
+      submit_req.blob[0] = oxenc::to_hex(block_to_blob(b));
       auto submit_res = invoke(std::move(submit_req), context);
       res.status = submit_res.status;
 
@@ -2088,7 +2088,7 @@ namespace cryptonote { namespace rpc {
     res.tx_hashes.reserve(blk.tx_hashes.size());
     for (const auto& tx_hash : blk.tx_hashes)
         res.tx_hashes.push_back(tools::type_to_hex(tx_hash));
-    res.blob = oxenmq::to_hex(t_serializable_object_to_blob(blk));
+    res.blob = oxenc::to_hex(t_serializable_object_to_blob(blk));
     res.json = obj_to_json_str(blk);
     res.status = STATUS_OK;
     return res;
@@ -3540,7 +3540,7 @@ namespace cryptonote { namespace rpc {
         entry.name_hash                                        = record.name_hash;
         entry.owner                                            = record.owner.to_string(nettype());
         if (record.backup_owner) entry.backup_owner            = record.backup_owner.to_string(nettype());
-        entry.encrypted_value                                  = oxenmq::to_hex(record.encrypted_value.to_view());
+        entry.encrypted_value                                  = oxenc::to_hex(record.encrypted_value.to_view());
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);
@@ -3602,7 +3602,7 @@ namespace cryptonote { namespace rpc {
       entry.name_hash       = std::move(record.name_hash);
       if (record.owner) entry.owner = record.owner.to_string(nettype());
       if (record.backup_owner) entry.backup_owner = record.backup_owner.to_string(nettype());
-      entry.encrypted_value = oxenmq::to_hex(record.encrypted_value.to_view());
+      entry.encrypted_value = oxenc::to_hex(record.encrypted_value.to_view());
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);
@@ -3634,9 +3634,9 @@ namespace cryptonote { namespace rpc {
         type, *name_hash, m_core.get_current_blockchain_height()))
     {
       auto [val, nonce] = mapping->value_nonce(type);
-      res.encrypted_value = oxenmq::to_hex(val);
+      res.encrypted_value = oxenc::to_hex(val);
       if (val.size() < mapping->to_view().size())
-        res.nonce = oxenmq::to_hex(nonce);
+        res.nonce = oxenc::to_hex(nonce);
     }
     return res;
   }

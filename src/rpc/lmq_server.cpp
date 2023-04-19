@@ -64,10 +64,10 @@ auto as_x_pubkeys(const std::vector<std::string>& pk_strings) {
   std::vector<crypto::x25519_public_key> pks;
   pks.reserve(pk_strings.size());
   for (const auto& pkstr : pk_strings) {
-    if (pkstr.size() != 64 || !oxenmq::is_hex(pkstr))
+    if (pkstr.size() != 64 || !oxenc::is_hex(pkstr))
       throw std::runtime_error("Invalid LMQ login pubkey: '" + pkstr + "'; expected 64-char hex pubkey");
     pks.emplace_back();
-    oxenmq::to_hex(pkstr.begin(), pkstr.end(), reinterpret_cast<char *>(&pks.back()));
+    oxenc::to_hex(pkstr.begin(), pkstr.end(), reinterpret_cast<char *>(&pks.back()));
   }
   return pks;
 }

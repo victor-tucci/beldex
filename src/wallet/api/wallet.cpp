@@ -344,14 +344,14 @@ std::string Wallet::genPaymentId()
 EXPORT
 bool Wallet::paymentIdValid(const std::string &payment_id)
 {
-    return payment_id.size() == 16 && oxenmq::is_hex(payment_id);
+    return payment_id.size() == 16 && oxenc::is_hex(payment_id);
 }
 
 EXPORT
 bool Wallet::masterNodePubkeyValid(const std::string &str)
 {
     crypto::public_key mn_key;
-    return str.size() == 64 && oxenmq::is_hex(str);
+    return str.size() == 64 && oxenc::is_hex(str);
 }
 
 EXPORT
@@ -1435,7 +1435,7 @@ bool WalletImpl::exportMultisigImages(std::string& images) {
         checkMultisigWalletReady(m_wallet);
 
         auto blob = m_wallet->export_multisig();
-        images = oxenmq::to_hex(blob);
+        images = oxenc::to_hex(blob);
         return true;
     } catch (const std::exception& e) {
         LOG_ERROR("Error on exporting multisig images: " << e.what());
