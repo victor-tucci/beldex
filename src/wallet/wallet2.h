@@ -725,7 +725,7 @@ private:
 
     // locked & unlocked balance of given or current subaddress account
     uint64_t balance(uint32_t subaddr_index_major, bool strict) const;
-    uint64_t unlocked_balance(uint32_t subaddr_index_major, bool strict, uint64_t *blocks_to_unlock , uint64_t *time_to_unlock ,uint8_t hf_version) const;
+    uint64_t unlocked_balance(uint32_t subaddr_index_major, bool strict, uint64_t *blocks_to_unlock = NULL, uint64_t *time_to_unlock = NULL ,uint8_t hf_version =17) const;
     // locked & unlocked balance per subaddress of given or current subaddress account
     std::map<uint32_t, uint64_t> balance_per_subaddress(uint32_t subaddr_index_major, bool strict) const;
     std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> unlocked_balance_per_subaddress(uint32_t subaddr_index_major, bool strict,uint8_t hf_version) const;
@@ -835,7 +835,9 @@ private:
 
     std::unordered_map<std::string, bns_detail> get_bns_cache();
 
-    uint64_t get_blockchain_current_height() const { return m_light_wallet_blockchain_height ? m_light_wallet_blockchain_height : m_blockchain.size(); }
+    //Returns the current height up to which the wallet has synchronized the blockchain.  Thread
+    // safe (though the value may be behind if another thread is in the middle of adding blocks).
+    uint64_t get_blockchain_current_height() const { return m_cached_height; }
     void rescan_spent();
     void rescan_blockchain(bool hard, bool refresh = true, bool keep_key_images = false);
     bool is_transfer_unlocked(const transfer_details &td) const;
@@ -864,6 +866,7 @@ private:
       {
         a & m_blockchain;
       }
+      m_cached_height = m_blockchain.size();
       a & m_transfers;
       a & m_account_public_address;
       a & m_key_images;
@@ -1418,9 +1421,6 @@ private:
     bool frozen(const crypto::key_image &ki) const;
     bool frozen(const transfer_details &td) const;
 
-    bool save_to_file(const fs::path& path_to_file, std::string_view binary, bool is_printable = false) const;
-    static bool load_from_file(const fs::path& path_to_file, std::string& target_str);
-
     uint64_t get_bytes_sent() const;
     uint64_t get_bytes_received() const;
 
@@ -1575,6 +1575,7 @@ private:
     fs::path m_keys_file;
     fs::path m_mms_file;
     hashchain m_blockchain;
+    std::atomic<uint64_t> m_cached_height; // Tracks m_blockchain.size(), but thread-safe.
     std::unordered_map<crypto::hash, unconfirmed_transfer_details> m_unconfirmed_txs;
     std::unordered_map<crypto::hash, confirmed_transfer_details> m_confirmed_txs;
     std::unordered_multimap<crypto::hash, pool_payment_details> m_unconfirmed_payments;

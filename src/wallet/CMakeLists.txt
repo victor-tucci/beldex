@@ -52,8 +52,6 @@ target_link_libraries(wallet
     filesystem
     Boost::thread
   PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
     extra)
 
 beldex_add_executable(wallet_rpc_server "beldex-wallet-rpc"

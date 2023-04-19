@@ -38,8 +38,6 @@ target_link_libraries(ringct_basic
   PUBLIC
     common
   PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
     extra)
 
 add_library(ringct
@@ -51,6 +49,4 @@ target_link_libraries(ringct
     cryptonote_basic
     device
   PRIVATE
-    OpenSSL::SSL
-    OpenSSL::Crypto
     extra)

@@ -50,15 +50,15 @@ EXPORT
 bool AddressBookImpl::addRow(const std::string &dst_addr, const std::string &description)
 {
   clearStatus();
-  
+  auto w = m_wallet->wallet();
   cryptonote::address_parse_info info;
-  if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), dst_addr)) {
+  if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet_ptr->nettype(), dst_addr)) {
     m_errorString = tr("Invalid destination address");
     m_errorCode = Invalid_Address;
     return false;
   }
 
-  bool r =  m_wallet->m_wallet->add_address_book_row(info.address, info.has_payment_id ? &info.payment_id : NULL,description,info.is_subaddress);
+  bool r =  w->add_address_book_row(info.address, info.has_payment_id ? &info.payment_id : NULL,description,info.is_subaddress);
   if (r)
     refresh();
   else
@@ -72,17 +72,17 @@ void AddressBookImpl::refresh()
   LOG_PRINT_L2("Refreshing addressbook");
   
   clearRows();
-  
+  auto w = m_wallet->wallet();
   // Fetch from Wallet2 and create vector of AddressBookRow objects
-  std::vector<tools::wallet2::address_book_row> rows = m_wallet->m_wallet->get_address_book();
+  std::vector<tools::wallet2::address_book_row> rows = w->get_address_book();
   for (size_t i = 0; i < rows.size(); ++i) {
     tools::wallet2::address_book_row * row = &rows.at(i);
     
     std::string address;
     if (row->m_has_payment_id)
-      address = cryptonote::get_account_integrated_address_as_str(m_wallet->m_wallet->nettype(), row->m_address, row->m_payment_id);
+      address = cryptonote::get_account_integrated_address_as_str(m_wallet->m_wallet_ptr->nettype(), row->m_address, row->m_payment_id);
     else
-      address = get_account_address_as_str(m_wallet->m_wallet->nettype(), row->m_is_subaddress, row->m_address);
+      address = get_account_address_as_str(m_wallet->m_wallet_ptr->nettype(), row->m_is_subaddress, row->m_address);
     AddressBookRow* abr = new AddressBookRow(i, address, row->m_description);
     m_rows.push_back(abr);
   }
@@ -93,7 +93,7 @@ EXPORT
 bool AddressBookImpl::deleteRow(std::size_t rowId)
 {
   LOG_PRINT_L2("Deleting address book row " << rowId);
-  bool r = m_wallet->m_wallet->delete_address_book_row(rowId);
+  bool r = m_wallet->wallet()->delete_address_book_row(rowId);
   if (r)
     refresh();
   return r;
