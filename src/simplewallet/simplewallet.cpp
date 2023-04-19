@@ -1223,7 +1223,7 @@ bool simple_wallet::export_multisig_main(const std::vector<std::string> &args, b
     }
     else
     {
-      bool r = m_wallet->save_to_file(filename, ciphertext);
+      bool r = tools::dump_file(filename, ciphertext);
       if (!r)
       {
         fail_msg_writer() << tr("failed to save file ") << filename.u8string();
@@ -1284,7 +1284,7 @@ bool simple_wallet::import_multisig_main(const std::vector<std::string> &args, b
     {
       const fs::path filename = fs::u8path(args[n]);
       std::string data;
-      bool r = m_wallet->load_from_file(filename, data);
+      bool r = tools::slurp_file(filename, data);
       if (!r)
       {
         fail_msg_writer() << tr("failed to read file ") << filename.u8string();
@@ -1597,7 +1597,7 @@ bool simple_wallet::export_raw_multisig(const std::vector<std::string> &args)
       if (!filenames.empty())
         filenames += ", ";
       filenames += fn.u8string();
-      if (!m_wallet->save_to_file(fn, cryptonote::tx_to_blob(ptx.tx)))
+      if (!tools::dump_file(fn, cryptonote::tx_to_blob(ptx.tx)))
       {
         fail_msg_writer() << tr("Failed to export multisig transaction to file ") << fn.u8string();
         return true;
@@ -8058,7 +8058,7 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args)
   {
     std::string sig_str = m_wallet->get_tx_proof(txid, info.address, info.is_subaddress, args.size() == 3 ? args[2] : "");
     const fs::path filename{"beldex_tx_proof"};
-    if (m_wallet->save_to_file(filename, sig_str, true))
+    if (tools::dump_file(filename, sig_str))
       success_msg_writer() << tr("signature file saved to: ") << filename.u8string();
     else
       fail_msg_writer() << tr("failed to save signature file");
@@ -8186,7 +8186,7 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
 
   // read signature file
   std::string sig_str;
-  if (!m_wallet->load_from_file(args[2], sig_str))
+  if (!tools::slurp_file(args[2], sig_str))
   {
     fail_msg_writer() << tr("failed to load signature file");
     return true;
@@ -8270,7 +8270,7 @@ bool simple_wallet::get_spend_proof(const std::vector<std::string> &args)
   {
     const std::string sig_str = m_wallet->get_spend_proof(txid, args.size() == 2 ? args[1] : "");
     const fs::path filename{"beldex_spend_proof"};
-    if (m_wallet->save_to_file(filename, sig_str, true))
+    if (tools::dump_file(filename, sig_str))
       success_msg_writer() << tr("signature file saved to: ") << filename.u8string();
     else
       fail_msg_writer() << tr("failed to save signature file");
@@ -8300,7 +8300,7 @@ bool simple_wallet::check_spend_proof(const std::vector<std::string> &args)
     return true;
 
   std::string sig_str;
-  if (!m_wallet->load_from_file(args[1], sig_str))
+  if (!tools::slurp_file(args[1], sig_str))
   {
     fail_msg_writer() << tr("failed to load signature file");
     return true;
@@ -8359,7 +8359,7 @@ bool simple_wallet::get_reserve_proof(const std::vector<std::string> &args)
   {
     const std::string sig_str = m_wallet->get_reserve_proof(account_minreserve, args.size() == 2 ? args[1] : "");
     const fs::path filename{"beldex_reserve_proof"};
-    if (m_wallet->save_to_file(filename, sig_str, true))
+    if (tools::dump_file(filename, sig_str))
       success_msg_writer() << tr("signature file saved to: ") << filename.u8string();
     else
       fail_msg_writer() << tr("failed to save signature file");
@@ -8394,7 +8394,7 @@ bool simple_wallet::check_reserve_proof(const std::vector<std::string> &args)
   }
 
   std::string sig_str;
-  if (!m_wallet->load_from_file(args[1], sig_str))
+  if (!tools::slurp_file(args[1], sig_str))
   {
     fail_msg_writer() << tr("failed to load signature file");
     return true;
@@ -9709,7 +9709,7 @@ bool simple_wallet::sign(const std::vector<std::string> &args)
 
   const fs::path filename = fs::u8path(args.back());
   std::string data;
-  if (!m_wallet->load_from_file(filename, data))
+  if (!tools::slurp_file(filename, data))
   {
     fail_msg_writer() << tr("failed to read file ") << filename.u8string();
     return true;
@@ -9741,7 +9741,7 @@ bool simple_wallet::verify(const std::vector<std::string> &args)
   }
   fs::path filename = fs::u8path(args[0]);
   std::string data;
-  if (!m_wallet->load_from_file(filename, data))
+  if (!tools::slurp_file(filename, data))
   {
     fail_msg_writer() << tr("failed to read file ") << filename.u8string();
     return true;
@@ -9980,7 +9980,7 @@ bool simple_wallet::export_outputs(const std::vector<std::string> &args)
   try
   {
     std::string data = m_wallet->export_outputs_to_str(all);
-    bool r = m_wallet->save_to_file(filename, data);
+    bool r = tools::dump_file(filename, data);
     if (!r)
     {
       fail_msg_writer() << tr("failed to save file ") << filename.u8string();
@@ -10013,7 +10013,7 @@ bool simple_wallet::import_outputs(const std::vector<std::string> &args)
   const fs::path filename = fs::u8path(args[0]);
 
   std::string data;
-  bool r = m_wallet->load_from_file(filename, data);
+  bool r = tools::slurp_file(filename, data);
   if (!r)
   {
     fail_msg_writer() << tr("failed to read file ") << filename.u8string();
@@ -10246,7 +10246,7 @@ void simple_wallet::commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_
       const std::string blob_hex = oxenmq::to_hex(blob);
       fs::path filename = fs::u8path("raw_beldex_tx");
       if (ptx_vector.size() > 1) filename += "_" + std::to_string(i++);
-      bool success = m_wallet->save_to_file(filename, blob_hex, true);
+      bool success = tools::dump_file(filename, blob_hex);
 
       if (success) msg_buf += tr("Transaction successfully saved to ");
       else         msg_buf += tr("Failed to save transaction to ");
@@ -11039,7 +11039,7 @@ void simple_wallet::mms_export(const std::vector<std::string> &args)
   if (valid_id)
   {
     fs::path filename = fs::u8path("mms_message_content");
-    if (m_wallet->save_to_file(filename, m.content))
+    if (tools::dump_file(filename, m.content))
     {
       success_msg_writer() << tr("Message content saved to: ") << filename;
     }

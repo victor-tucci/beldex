@@ -38,7 +38,6 @@ target_link_libraries(device
     common
     cncrypto
     ringct_basic
-    OpenSSL::Crypto
     Boost::serialization
   PRIVATE
     version
