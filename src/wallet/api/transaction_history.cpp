@@ -144,6 +144,7 @@ void TransactionHistoryImpl::refresh()
         ti->m_direction = TransactionInfo::Direction_In;
         ti->m_hash      = tools::type_to_hex(pd.m_tx_hash);
         ti->m_blockheight = pd.m_block_height;
+        ti->m_is_stake = pd.m_type == wallet::pay_type::stake;
         ti->m_subaddrIndex = { pd.m_subaddr_index.minor };
         ti->m_subaddrAccount = pd.m_subaddr_index.major;
         ti->m_label     = w->get_subaddress_label(pd.m_subaddr_index);
@@ -188,6 +189,7 @@ void TransactionHistoryImpl::refresh()
         ti->m_direction = TransactionInfo::Direction_Out;
         ti->m_hash = tools::type_to_hex(hash);
         ti->m_blockheight = pd.m_block_height;
+        ti->m_is_stake = pd.m_pay_type == wallet::pay_type::stake;
         ti->m_subaddrIndex = pd.m_subaddr_indices;
         ti->m_subaddrAccount = pd.m_subaddr_account;
         ti->m_label = pd.m_subaddr_indices.size() == 1 ? w->get_subaddress_label({pd.m_subaddr_account, *pd.m_subaddr_indices.begin()}) : "";
@@ -219,6 +221,7 @@ void TransactionHistoryImpl::refresh()
         ti->m_amount = amount - pd.m_change - fee;
         ti->m_fee    = fee;
         ti->m_direction = TransactionInfo::Direction_Out;
+        ti->m_is_stake = pd.m_pay_type == wallet::pay_type::stake;
         ti->m_failed = is_failed;
         ti->m_pending = true;
         ti->m_hash = tools::type_to_hex(hash);
@@ -245,6 +248,7 @@ void TransactionHistoryImpl::refresh()
         ti->m_direction = TransactionInfo::Direction_In;
         ti->m_hash      = tools::type_to_hex(pd.m_tx_hash);
         ti->m_blockheight = pd.m_block_height;
+        ti->m_is_stake = pd.m_type == wallet::pay_type::stake;
         ti->m_pending = true;
         ti->m_subaddrIndex = { pd.m_subaddr_index.minor };
         ti->m_subaddrAccount = pd.m_subaddr_index.major;

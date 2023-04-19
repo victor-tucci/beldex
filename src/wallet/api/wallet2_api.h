@@ -177,6 +177,7 @@ struct TransactionInfo
     virtual ~TransactionInfo() = 0;
     virtual bool isMasterNodeReward() const = 0;
     virtual bool isMinerReward() const = 0;
+    virtual bool isStake() const =0;
     virtual int  direction() const = 0;
     virtual bool isPending() const = 0;
     virtual bool isFailed() const = 0;
@@ -410,6 +411,14 @@ struct WalletListener
 };
 
 
+struct stakeInfo{
+    std::string mn_pubkey;
+    uint64_t stake = 0;
+    std::optional<uint64_t> unlock_height;
+    bool awaiting = false;
+    bool decommissioned = false;
+};
+
 /**
  * @brief Interface for wallet operations.
  *        TODO: check if /include/IWallet.h is still actual
@@ -606,7 +615,7 @@ struct Wallet
     * @brief listCurrentStakes - returns a list of the wallets locked stakes, provides both service node address and the staked amount
     * @return
     */
-    virtual std::vector<std::pair<std::string, uint64_t>>* listCurrentStakes() const = 0;
+    virtual std::vector<stakeInfo>* listCurrentStakes() const = 0;
 
    /**
     * @brief watchOnly - checks if wallet is watch only

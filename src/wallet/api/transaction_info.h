@@ -65,10 +65,12 @@ public:
     virtual uint64_t confirmations() const override;
     virtual uint64_t unlockTime() const override;
     bool isMasterNodeReward() const override;
+    bool isStake() const override;
     bool isMinerReward() const override;
 
 private:
     int         m_direction;
+    bool        m_is_stake;
     bool        m_pending;
     bool        m_failed;
     reward_type m_reward_type;                 // may have a value rather than `unspecified` after hf 10
