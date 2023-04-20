@@ -33,41 +33,10 @@
 # ...except for FreeBSD, because FreeBSD is a special case that doesn't play well with
 # others.
 
-set(DEFAULT_WITH_MINIUPNPC ON)
-if(ANDROID OR IOS)
-  set(DEFAULT_WITH_MINIUPNPC OFF)
-endif()
-
-option(WITH_MINIUPNPC "Enable miniupnpc support for IGD NAT hole punching" ${DEFAULT_WITH_MINIUPNPC})
-
 if(NOT STATIC AND NOT BUILD_STATIC_DEPS)
   find_package(PkgConfig REQUIRED)
-  if(WITH_MINIUPNPC)
-      pkg_check_modules(MINIUPNPC miniupnpc>=2.1 IMPORTED_TARGET)
-  endif()
   pkg_check_modules(OXENC liboxenc>=1.0.1 IMPORTED_TARGET)
   pkg_check_modules(OXENMQ liboxenmq>=1.2.3 IMPORTED_TARGET)
-endif()
-
-if(NOT WITH_MINIUPNPC)
-  message(STATUS "miniupnpc support disabled")
-  target_compile_definitions(miniupnpc INTERFACE WITHOUT_MINIUPNPC)
-elseif(MINIUPNPC_FOUND)
-  message(STATUS "Found miniupnpc")
-  target_link_libraries(miniupnpc INTERFACE PkgConfig::MINIUPNPC)
-else()
-  message(STATUS "Using in-tree miniupnpc")
-  add_subdirectory(miniupnp/miniupnpc)
-  if(MSVC)
-    target_compile_options(libminiupnpc-static PRIVATE -wd4244 -wd4267)
-  else()
-    target_compile_options(libminiupnpc-static PRIVATE -Wno-undef -Wno-unused-result -Wno-unused-value)
-  endif()
-  if(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
-    target_compile_definitions(libminiupnpc-static PRIVATE _NETBSD_SOURCE)
-  endif()
-
-  target_link_libraries(miniupnpc INTERFACE libminiupnpc-static)
 endif()
 
 if(NOT OXENC_FOUND)

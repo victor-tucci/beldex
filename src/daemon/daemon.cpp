@@ -268,7 +268,7 @@ void daemon::init_options(boost::program_options::options_description& option_sp
   else
     called = true;
   cryptonote::core::init_options(option_spec);
-  node_server::init_options(option_spec);
+  node_server::init_options(option_spec,hidden);
   cryptonote::rpc::core_rpc_server::init_options(option_spec, hidden);
   cryptonote::rpc::http_server::init_options(option_spec, hidden);
   cryptonote::rpc::init_omq_options(option_spec);

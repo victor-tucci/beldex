@@ -103,7 +103,6 @@ target_link_libraries(unit_tests
     p2p
     version
     Boost::thread
-    miniupnpc
     gtest
     extra)
 set_property(TARGET unit_tests
