@@ -1351,7 +1351,6 @@ namespace cryptonote
     //auto lock = incoming_tx_lock();
     uint8_t version      = m_blockchain_storage.get_network_version();
     bool ok              = true;
-    bool tx_pool_changed = false;
     if (flash_rollback_height)
       *flash_rollback_height = 0;
     tx_pool_options tx_opts;
@@ -1378,7 +1377,6 @@ namespace cryptonote
       }
       if (m_mempool.add_tx(info.tx, info.tx_hash, *info.blob, weight, info.tvc, *local_opts, version, flash_rollback_height))
       {
-        tx_pool_changed |= info.tvc.m_added_to_pool;
         MDEBUG("tx added: " << info.tx_hash);
       }
       else
