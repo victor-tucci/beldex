@@ -170,9 +170,9 @@ int main(int argc, char* argv[])
 
   mlog_configure("", true);
 
-  cryptonote::blobdata blob;
-  if (epee::string_tools::parse_hexstr_to_binbuff(input, blob))
+  if (oxenc::is_hex(input))
   {
+    auto blob = oxenc::from_hex(input);
     bool full;
     cryptonote::block block;
     cryptonote::transaction tx;

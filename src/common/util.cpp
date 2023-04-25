@@ -41,6 +41,7 @@
 #include "util.h"
 #include "epee/misc_os_dependent.h"
 #include "epee/readline_buffer.h"
+#include "epee/misc_log_ex.h"
 #include "string_util.h"
 
 #include "i18n.h"

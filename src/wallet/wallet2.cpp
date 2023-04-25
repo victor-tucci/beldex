@@ -854,7 +854,15 @@ bool get_pruned_tx(const rpc::GET_TRANSACTIONS::entry &entry, cryptonote::transa
   // easy case if we have the whole tx
   if (entry.as_hex || (entry.prunable_as_hex && entry.pruned_as_hex))
   {
-    CHECK_AND_ASSERT_MES(epee::string_tools::parse_hexstr_to_binbuff(entry.as_hex ? *entry.as_hex : *entry.pruned_as_hex + *entry.prunable_as_hex, bd), false, "Failed to parse tx data");
+    if (entry.as_hex) {
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.as_hex), false, "Failed to parse tx data");
+      bd = oxenc::from_hex(*entry.as_hex);
+    } else {
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.pruned_as_hex) && oxenc::is_hex(*entry.prunable_as_hex), false, "Failed to parse tx data");
+      bd.reserve(oxenc::from_hex_size(entry.pruned_as_hex->size() + entry.prunable_as_hex->size()));
+      oxenc::from_hex(entry.pruned_as_hex->begin(), entry.pruned_as_hex->end(), std::back_inserter(bd));
+      oxenc::from_hex(entry.prunable_as_hex->begin(), entry.prunable_as_hex->end(), std::back_inserter(bd));
+    }
     CHECK_AND_ASSERT_MES(cryptonote::parse_and_validate_tx_from_blob(bd, tx), false, "Invalid tx data");
     tx_hash = cryptonote::get_transaction_hash(tx);
     // if the hash was given, check it matches
@@ -867,7 +875,8 @@ bool get_pruned_tx(const rpc::GET_TRANSACTIONS::entry &entry, cryptonote::transa
   {
     crypto::hash ph;
     CHECK_AND_ASSERT_MES(tools::hex_to_type(*entry.prunable_hash, ph), false, "Failed to parse prunable hash");
-    CHECK_AND_ASSERT_MES(epee::string_tools::parse_hexstr_to_binbuff(*entry.pruned_as_hex, bd), false, "Failed to parse pruned data");
+    CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.pruned_as_hex), false, "Failed to parse pruned data");
+    bd = oxenc::from_hex(*entry.pruned_as_hex);
     CHECK_AND_ASSERT_MES(parse_and_validate_tx_base_from_blob(bd, tx), false, "Invalid base tx data");
     // only v2 txes can calculate their txid after pruned
     if (bd[0] > 1)
@@ -1350,7 +1359,9 @@ bool wallet2::get_multisig_seed(epee::wipeable_string& seed, const epee::wipeabl
 
   if (raw)
   {
-    seed = epee::to_hex::wipeable_string({(const unsigned char*)data.data(), data.size()});
+    epee::wipeable_string seed;
+    seed.reserve(oxenc::to_hex_size(data.size()));
+    oxenc::to_hex(data.data(), data.data() + data.size(), std::back_inserter(seed));
   }
   else
   {
@@ -12099,11 +12110,15 @@ bool wallet2::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, s
 
     cryptonote::transaction tx;
     crypto::hash tx_hash{};
-    cryptonote::blobdata tx_data;
     crypto::hash tx_prefix_hash{};
     const auto& res_tx = res.txs.front();
-    bool valid_hex = string_tools::parse_hexstr_to_binbuff(*res_tx.pruned_as_hex + (res_tx.prunable_as_hex ? *res_tx.prunable_as_hex : ""s), tx_data);
-    THROW_WALLET_EXCEPTION_IF(!valid_hex, error::wallet_internal_error, "Failed to parse transaction from daemon");
+
+    THROW_WALLET_EXCEPTION_IF(!oxenc::is_hex(*res_tx.pruned_as_hex) || !oxenc::is_hex(res_tx.prunable_as_hex.value_or(""s)),error::wallet_internal_error, "Failed to parse transaction from daemon");
+    std::string tx_data;
+    tx_data.reserve(oxenc::from_hex_size(res_tx.pruned_as_hex->size() + (res_tx.prunable_as_hex ? res_tx.prunable_as_hex->size() : 0)));
+    oxenc::from_hex(res_tx.pruned_as_hex->begin(), res_tx.pruned_as_hex->end(), std::back_inserter(tx_data));
+    if (res_tx.prunable_as_hex)
+      oxenc::from_hex(res_tx.prunable_as_hex->begin(), res_tx.prunable_as_hex->end(), std::back_inserter(tx_data));
     THROW_WALLET_EXCEPTION_IF(!cryptonote::parse_and_validate_tx_from_blob(tx_data, tx, tx_hash, tx_prefix_hash),
                               error::wallet_internal_error, "Failed to validate transaction from daemon");
     THROW_WALLET_EXCEPTION_IF(tx_hash != txid, error::wallet_internal_error,

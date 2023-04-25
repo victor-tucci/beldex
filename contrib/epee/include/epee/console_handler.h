@@ -37,6 +37,7 @@
 #include <iostream>
 #include <any>
 #include <unordered_map>
+#include <optional>
 #ifdef __OpenBSD__
 #include <stdio.h>
 #endif
