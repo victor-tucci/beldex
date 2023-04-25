@@ -6738,7 +6738,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     }
 
     auto& enc_hex = response[0].encrypted_value;
-    if (!oxenc::is_hex(enc_hex) || enc_hex.size() % 2 != 0 || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
+    if (!oxenc::is_hex(enc_hex) || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
     {
       LOG_ERROR("invalid BNS data returned from beldexd");
       fail_msg_writer() << tr("invalid BNS data returned from beldexd");
@@ -6980,7 +6980,7 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
   for (auto const &mapping : response)
   {
     auto& enc_hex = mapping.encrypted_value;
-    if (mapping.entry_index >= args.size() || !oxenc::is_hex(enc_hex) || enc_hex.size() % 2 != 0 || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
+    if (mapping.entry_index >= args.size() || !oxenc::is_hex(enc_hex) || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
     {
       fail_msg_writer() << "Received invalid BNS mapping data from beldexd";
       return false;
