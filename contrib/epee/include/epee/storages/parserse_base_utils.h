@@ -38,7 +38,7 @@ namespace epee::misc_utils::parse
     // 8: whitespace
     // 16: allowed in float but doesn't necessarily mean it's a float
     // 32: \ and " (end of verbatim string)
-    static const constexpr uint8_t lut[256]={
+    inline constexpr uint8_t lut[256]={
       0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 0, 0, // 16
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 32
       8, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 16, 18, 0, // 48

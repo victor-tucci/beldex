@@ -122,7 +122,7 @@ namespace net_utils
 				{
 					// some servers (notably Apache with mod_deflate) don't generate zlib headers
 					// insert a dummy header and try again
-					static char dummy_head[2] =
+					static constexpr char dummy_head[2] =
 					{
 						0x8 + 0x7 * 0x10,
 						(((0x8 + 0x7 * 0x10) * 0x100 + 30) / 31 * 31) & 0xFF,
