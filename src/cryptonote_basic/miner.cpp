@@ -39,7 +39,6 @@
 #include "common/util.h"
 #include "common/file.h"
 #include "common/string_util.h"
-#include "epee/string_coding.h"
 #include "epee/string_tools.h"
 #include "epee/storages/portable_storage_template_helper.h"
 

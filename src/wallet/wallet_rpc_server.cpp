@@ -35,6 +35,7 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include <chrono>
 #include <exception>
+#include <oxenc/base64.h>
 
 #include "wallet_rpc_server_error_codes.h"
 #include "wallet_rpc_server.h"
@@ -47,7 +48,6 @@
 #include "cryptonote_basic/account.h"
 #include "multisig/multisig.h"
 #include "epee/misc_language.h"
-#include "epee/string_coding.h"
 #include "epee/string_tools.h"
 #include "epee/wipeable_string.h"
 #include "crypto/hash.h"
@@ -544,7 +544,7 @@ namespace tools
         crypto::rand(rand_128bit.size(), rand_128bit.data());
         m_login.emplace(
           default_rpc_username,
-          epee::string_encoding::base64_encode(rand_128bit.data(), rand_128bit.size())
+          oxenc::to_base64(rand_128bit.begin(), rand_128bit.end())
         );
 
         std::string temp = "beldex-wallet-rpc." + std::to_string(port) + ".login";

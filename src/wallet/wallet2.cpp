@@ -87,7 +87,6 @@
 #include "common/beldex.h"
 #include "common/beldex_integration_test_hooks.h"
 #include "beldex_economy.h"
-#include "epee/string_coding.h"
 
 extern "C"
 {

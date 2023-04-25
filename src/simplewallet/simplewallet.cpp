@@ -83,7 +83,6 @@
 #include "epee/readline_suspend.h"
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
-#include "epee/string_coding.h"
 
 extern "C"
 {
