@@ -29,7 +29,6 @@
 add_executable(unit_tests
   account.cpp
   apply_permutation.cpp
-  address_from_url.cpp
   base58.cpp
   blockchain_db.cpp
   block_queue.cpp
@@ -40,7 +39,6 @@ add_executable(unit_tests
   command_line.cpp
   crypto.cpp
   device.cpp
-  dns_resolver.cpp
   epee_boosted_tcp_server.cpp
   epee_levin_protocol_handler_async.cpp
   epee_utils.cpp

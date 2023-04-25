@@ -877,35 +877,19 @@ namespace tools
   //------------------------------------------------------------------------------------------------------------------------------
   cryptonote::address_parse_info wallet_rpc_server::extract_account_addr(
       cryptonote::network_type nettype,
-      std::string_view addr_or_url)
+      std::string_view addr)
   {
+    cryptonote::address_parse_info info;
     if (m_wallet->is_trusted_daemon())
     {
-        cryptonote::address_parse_info info;
-        if (!get_account_address_from_str_or_url(info, nettype, addr_or_url,
-          [](const std::string_view url, const std::vector<std::string> &addresses, bool dnssec_valid) {
-            if (!dnssec_valid)
-              throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid DNSSEC for "s + std::string{url}};
-            if (addresses.empty())
-              throw wallet_rpc_error{error_code::WRONG_ADDRESS, "No Beldex address found at "s + std::string{url}};
-            return addresses[0];
-          }))
-          throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address: "s + std::string{addr_or_url}};
+      std::optional<std::string> address = m_wallet->resolve_address(std::string{addr});
+      if (cryptonote::address_parse_info info; address && get_account_address_from_str(info, nettype, *address))
         return info;
-    } else {
-      cryptonote::address_parse_info info;
-      if (!get_account_address_from_str_or_url(info, nettype, addr_or_url,
-        [](const std::string_view url, const std::vector<std::string> &addresses, bool dnssec_valid) {
-          if (!dnssec_valid)
-            throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid DNSSEC for "s + std::string{url}};
-          if (addresses.empty())
-            throw wallet_rpc_error{error_code::WRONG_ADDRESS, "No Beldex address found at "s + std::string{url}};
-          return addresses[0];
-        }))
-        throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address: "s + std::string{addr_or_url}};
-      return info;
     }
-    return {};
+    else if (get_account_address_from_str(info, nettype, addr))
+      return info;
+
+    throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address: "s + std::string{addr}};
   }
 
   //------------------------------------------------------------------------------------------------------------------------------

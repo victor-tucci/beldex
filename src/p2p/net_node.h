@@ -266,15 +266,6 @@ namespace nodetool
     virtual void clear_used_stripe_peers();
 
   private:
-    const std::vector<std::string> m_seed_nodes_list =
-    {
-      // TODO(beldex): "seeds.beldexcoin.com"
-	    "34.85.44.103:19090",
-      "35.211.123.115:19090",
-      "35.228.216.218:19090",
-      "35.228.9.140:19090",
-      "35.229.161.161:19090"
-    };
 
     bool islimitup=false;
     bool islimitdown=false;

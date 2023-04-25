@@ -45,7 +45,6 @@
 #include "version.h"
 #include "epee/string_tools.h"
 #include "common/file.h"
-#include "common/dns_utils.h"
 #include "common/pruning.h"
 #include "net/error.h"
 #include "common/periodic_task.h"
@@ -615,38 +614,7 @@ namespace nodetool
       return get_seed_nodes(cryptonote::DEVNET);
     }
 
-    std::set<std::string> full_addrs;
-
-    // for each hostname in the seed nodes list, attempt to DNS resolve and
-    // add the result addresses as seed nodes
-    // TODO: at some point add IPv6 support, but that won't be relevant
-    // for some time yet.
-
-    auto dns_results = tools::DNSResolver::instance().get_many(tools::DNS_TYPE_A, m_seed_nodes_list, ::config::DNS_TIMEOUT);
-
-    for (size_t i = 0; i < dns_results.size(); i++)
-    {
-      const auto& result = dns_results[i];
-      MDEBUG("DNS lookup for " << m_seed_nodes_list[i] << ": " << result.size() << " results");
-      // if no results for seed node then lookup failed or timed out
-      for (const auto& addr_string : result)
-        full_addrs.insert(addr_string + ":" + std::to_string(cryptonote::get_config(m_nettype).P2P_DEFAULT_PORT));
-    }
-
-    // append the fallback nodes if we have too few seed nodes to start with
-    if (full_addrs.size() < MIN_WANTED_SEED_NODES)
-    {
-      if (full_addrs.empty())
-        MINFO("DNS seed node lookup either timed out or failed, falling back to defaults");
-      else
-        MINFO("Not enough DNS seed nodes found, using fallback defaults too");
-
-      for (const auto &peer: get_seed_nodes(cryptonote::MAINNET))
-        full_addrs.insert(peer);
-      m_fallback_seed_nodes_added.test_and_set();
-    }
-
-    return full_addrs;
+    return get_seed_nodes(cryptonote::MAINNET);
   }
   //-----------------------------------------------------------------------------------
   template<class t_payload_net_handler>
