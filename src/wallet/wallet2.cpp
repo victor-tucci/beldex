@@ -145,7 +145,6 @@ namespace {
   constexpr std::string_view MULTISIG_MAGIC = "MultisigV1"sv;
   constexpr std::string_view MULTISIG_SIGNATURE_MAGIC = "SigMultisigPkV1"sv;
   constexpr std::string_view MULTISIG_EXTRA_INFO_MAGIC = "MultisigxV1"sv;
-  const std::string ASCII_OUTPUT_MAGIC = "MoneroAsciiDataV1"s; // not string_view because we need it as a c string
   constexpr std::string_view SPEND_PROOF_MAGIC = "SpendProofV1"sv;
   constexpr std::string_view OUTBOUND_PROOF_MAGIC = "OutProofV1"sv;
   constexpr std::string_view INBOUND_PROOF_MAGIC = "InProofV1"sv;
