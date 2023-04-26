@@ -33,7 +33,7 @@
  #define __STDC_FORMAT_MACROS // NOTE(beldex): Explicitly define the PRIu64 macro on Mingw
 #endif
 
-include "crypto/crypto.h"
+#include "crypto/crypto.h"
 #include "wallet.h"
 #include "pending_transaction.h"
 #include "unsigned_transaction.h"
@@ -648,7 +648,7 @@ bool WalletImpl::recoverFromKeysWithPassword(std::string_view path_,
         }
     }
     if(has_viewkey) {
-      if(!tools::type_to_hex(viewkey_string, unwrap(unwrap(viewkey))))
+      if(!tools::hex_to_type(viewkey_string, unwrap(unwrap(viewkey))))
       {
           setStatusError(tr("failed to parse secret view key"));
           return false;
@@ -1078,7 +1078,7 @@ std::vector<stakeInfo>* WalletImpl::listCurrentStakes() const
 {
     std::vector<stakeInfo>* stakes = new std::vector<stakeInfo>;
 
-    auto response = m_wallet->list_current_stakes();
+    auto response = wallet()->list_current_stakes();
     auto address = mainAddress();
 
     for (rpc::GET_MASTER_NODES::response::entry const &node_info : response)
@@ -1887,7 +1887,7 @@ bool WalletImpl::setUserNote(const std::string &txid, const std::string &note)
 EXPORT
 std::string WalletImpl::getUserNote(const std::string &txid) const
 {
-    crypto::hash htxid
+    crypto::hash htxid;
     if(!tools::hex_to_type(txid, htxid))
       return "";
 
@@ -2169,7 +2169,7 @@ bool WalletImpl::verifyMessageWithPublicKey(const std::string &message, const st
 {
     clearStatus();
 
-    crypto::public_key pkey
+    crypto::public_key pkey;
     if(!tools::hex_to_type(publicKey, pkey))
         return setStatusError(tr("Given string is not a key"));
 
