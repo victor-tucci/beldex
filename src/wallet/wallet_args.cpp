@@ -226,7 +226,7 @@ namespace wallet_args
     }
     MINFO(wallet_args::tr("Logging to: ") << log_path);
 
-    Print(print) << fmt::format(wallet_args::tr("Logging to {}\n"), log_path); // -----TODO-----
+    Print(print) << fmt::format(wallet_args::tr("Logging to {}\n"), log_path);
 
     const ssize_t lockable_memory = tools::get_lockable_memory();
     if (lockable_memory >= 0 && lockable_memory < 256 * 4096) // 256 pages -> at least 256 secret keys and other such small/medium objects
