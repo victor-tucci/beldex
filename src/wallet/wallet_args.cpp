@@ -28,7 +28,7 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "wallet/wallet_args.h"
 
-#include <boost/format.hpp>
+#include <fmt/core.h>
 #include "common/i18n.h"
 #include "common/util.h"
 #include "common/file.h"
@@ -226,7 +226,7 @@ namespace wallet_args
     }
     MINFO(wallet_args::tr("Logging to: ") << log_path);
 
-    Print(print) << boost::format(wallet_args::tr("Logging to %s")) % log_path;
+    Print(print) << fmt::format(wallet_args::tr("Logging to {}\n"), log_path); // -----TODO-----
 
     const ssize_t lockable_memory = tools::get_lockable_memory();
     if (lockable_memory >= 0 && lockable_memory < 256 * 4096) // 256 pages -> at least 256 secret keys and other such small/medium objects
