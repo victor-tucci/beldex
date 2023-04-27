@@ -4174,7 +4174,7 @@ bool simple_wallet::try_connect_to_daemon(bool silent, rpc::version_t* version)
   if (!m_allow_mismatched_daemon_version && version->first != rpc::VERSION.first)
   {
     if (!silent)
-      fail_msg_writer() << fmt::format(tr("Daemon uses a different RPC major version ({}) than the wallet ({}}): {}. Either update one of them, or use --allow-mismatched-daemon-version."), version->first, rpc::VERSION.first, m_wallet->get_daemon_address());
+      fail_msg_writer() << boost::format(tr("Daemon uses a different RPC major version (%u) than the wallet (%u): %s. Either update one of them, or use --allow-mismatched-daemon-version.")) % version->first % rpc::VERSION.first % m_wallet->get_daemon_address();
     return false;
   }
   return true;
