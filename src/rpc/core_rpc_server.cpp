@@ -585,7 +585,7 @@ namespace cryptonote { namespace rpc {
         return res;
       }
 
-      std::string extra_res = oxenmq::to_hex(blk.miner_tx.extra.begin(), blk.miner_tx.extra.end());
+      std::string extra_res = oxenc::to_hex(blk.miner_tx.extra.begin(), blk.miner_tx.extra.end());
       //----------blk data's key changed for lws -----------------------------------
       std::string block_json = obj_to_json_str(blk);
       auto block = json::parse(block_json);
@@ -630,7 +630,7 @@ namespace cryptonote { namespace rpc {
         
         if (parsed)
         {
-          std::string extra_res_tx = oxenmq::to_hex(tx_hash.extra.begin(), tx_hash.extra.end());
+          std::string extra_res_tx = oxenc::to_hex(tx_hash.extra.begin(), tx_hash.extra.end());
           //----------tx_hash data's key changed -----------------------
           std::string block_transactions = obj_to_json_str(tx_hash);
           auto block_tx = json::parse(block_transactions);
