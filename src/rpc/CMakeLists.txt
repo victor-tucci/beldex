@@ -76,7 +76,10 @@ target_link_libraries(rpc
     Boost::thread
     Boost::program_options
     OpenSSL::SSL
+    nlohmann_json::nlohmann_json
     extra)
+
+target_include_directories(rpc PRIVATE "${CMAKE_SOURCE_DIR}/external")
 
 target_link_libraries(daemon_rpc_server
   PRIVATE

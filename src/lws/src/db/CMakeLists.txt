@@ -32,6 +32,7 @@ target_link_libraries(beldex-lws-db PUBLIC
     Boost::boost
     OpenSSL::SSL OpenSSL::Crypto
     oxenmq::oxenmq
+    nlohmann_json::nlohmann_json
     lmdb
     lmdb_lib
     easylogging

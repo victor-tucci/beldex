@@ -81,6 +81,7 @@ else()
 endif()
 
 add_subdirectory(db_drivers)
+add_subdirectory(nlohmann)
 add_subdirectory(easylogging++ easyloggingpp)
 add_subdirectory(randomx EXCLUDE_FROM_ALL)
 

@@ -7,8 +7,6 @@ add_subdirectory(rpc)
 add_subdirectory(util)
 add_subdirectory(wire)
 
-find_package(nlohmann_json 3.7.0 REQUIRED)
-find_package(Boost 1.45.0 COMPONENTS filesystem regex)
 
 set(beldex-lws-common_sources config.cpp error.cpp)
 set(beldex-lws-common_headers config.h error.h fwd.h)
@@ -31,7 +29,6 @@ target_link_libraries(beldex-lws-daemon PUBLIC
     Threads::Threads
     Boost::regex
 )
-target_link_libraries(beldex-lws-daemon PRIVATE nlohmann_json::nlohmann_json)
 
 add_executable(beldex-lws-admin admin_main.cpp)
 target_link_libraries(beldex-lws-admin PRIVATE 

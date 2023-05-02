@@ -7,13 +7,11 @@
 # ./util/build_scripts/collect_from_docker_container.sh
 
 # builder stage
-FROM ubuntu:16.04 as builder
+FROM ubuntu:18.04 as builder
 
 RUN set -ex && \
     apt-get update && \
     apt-get install -y curl apt-transport-https eatmydata && \
-    echo 'deb https://apt.kitware.com/ubuntu/ xenial main' >/etc/apt/sources.list.d/kitware-cmake.list && \
-    curl https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add - && \
     apt-get update && \
     eatmydata apt-get --no-install-recommends --yes install \
         ca-certificates \

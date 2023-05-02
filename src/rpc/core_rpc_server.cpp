@@ -65,7 +65,7 @@
 #include "core_rpc_server_error_codes.h"
 #include "p2p/net_node.h"
 #include "version.h"
-#include <nlohmann/json.hpp>
+#include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
