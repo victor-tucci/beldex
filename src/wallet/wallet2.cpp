@@ -48,7 +48,6 @@
 #include "wallet2.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
-#include "epee/misc_language.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/hardfork.h"
 #include "multisig/multisig.h"
@@ -5170,7 +5169,6 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
   // keys are decrypted
   bool reencrypt = false;
   crypto::chacha_key chacha_key;
-  epee::misc_utils::auto_scope_leave_caller keys_reencryptor;
   BELDEX_DEFER {
     if (reencrypt)
     {
@@ -5213,9 +5211,6 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
 
     ++m_multisig_rounds_passed;
     m_multisig_derivations.clear();
-
-    // keys are encrypted again
-    keys_reencryptor = epee::misc_utils::auto_scope_leave_caller();
 
     if (!m_wallet_file.empty())
     {

@@ -35,7 +35,6 @@
 #include "serialization/container.h"
 #include "cryptonote_format_utils.h"
 #include "cryptonote_config.h"
-#include "epee/misc_language.h"
 #include "common/base58.h"
 #include "crypto/hash.h"
 #include "epee/int-util.h"

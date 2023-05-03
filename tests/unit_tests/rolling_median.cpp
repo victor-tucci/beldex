@@ -28,9 +28,9 @@
 
 #include <random>
 #include "gtest/gtest.h"
-#include "epee/misc_language.h"
 #include "epee/rolling_median.h"
 #include "crypto/crypto.h"
+#include "common/median.h"
 
 TEST(rolling_median, one)
 {
@@ -74,8 +74,7 @@ TEST(rolling_median, series)
     if (v.size() > 100)
       v.erase(v.begin());
     m.insert(r);
-    std::vector<uint64_t> vcopy = v;
-    ASSERT_EQ(m.median(), epee::misc_utils::median(vcopy));
+    ASSERT_EQ(m.median(), tools::median(v));
   }
 }
 

@@ -53,6 +53,7 @@ add_executable(unit_tests
   long_term_block_weight.cpp
   lmdb.cpp
   main.cpp
+  median.cpp
   memwipe.cpp
   mlocker.cpp
   mnemonics.cpp

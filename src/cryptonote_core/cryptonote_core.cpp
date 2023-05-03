@@ -60,7 +60,6 @@ extern "C" {
 #include "crypto/crypto.h"
 #include "cryptonote_config.h"
 #include "cryptonote_basic/hardfork.h"
-#include "epee/misc_language.h"
 #include <csignal>
 #include "checkpoints/checkpoints.h"
 #include "ringct/rctTypes.h"

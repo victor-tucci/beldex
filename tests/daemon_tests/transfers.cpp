@@ -76,7 +76,7 @@ TEST(Transfers, Transfers)
 
   string s;
   //getline(cin, s);
-  sleep_no_w(1000);
+  std::this_thread::sleep_for(1s);
   ASSERT_TRUE(miner.refresh());
   cout << "miner balance: " << miner.balance() << endl;
 
@@ -86,7 +86,7 @@ TEST(Transfers, Transfers)
   ASSERT_TRUE(miner.transfer(d_accs));
 
   //getline(cin, s);
-  sleep_no_w(1000);
+  std::this_thread::sleep_for(1s);
   for (int i = 0; i < ACCS; i++) {
     ASSERT_TRUE(accs[i].refresh());
     ASSERT_TRUE(accs[i].transfer(receiver.get_account().get_keys().m_account_address, 1));
@@ -94,7 +94,7 @@ TEST(Transfers, Transfers)
 
   //getline(cin, s);
   cout << "wait for block" << endl;
-  sleep_no_w(10000);
+  std::this_thread::sleep_for(10s);
   receiver.refresh();
   ASSERT_TRUE(receiver.balance() == ACCS);
   cout << "OK" << endl;

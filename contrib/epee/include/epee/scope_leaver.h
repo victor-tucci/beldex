@@ -24,59 +24,40 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 
 
-
-
 #pragma once
 
-#include "misc_language.h"
-
-namespace epee
+namespace epee::misc_utils
 {
-  namespace tests
+
+  /************************************************************************/
+  /*                                                                      */
+  /************************************************************************/
+
+  template <typename Callback>
+  class scope_leave_handler_impl
   {
-    bool test_median()
+    Callback m_func;
+
+  public:
+    scope_leave_handler_impl(Callback f) : m_func(std::move(f)) {}
+
+    ~scope_leave_handler_impl()
     {
-      LOG_PRINT_L0("Testing median");
-      std::vector<size_t> sz;
-      size_t m = misc_utils::median(sz);
-      CHECK_AND_ASSERT_MES(m == 0, false, "test failed");
-      sz.push_back(1);
-      m = misc_utils::median(sz);
-      CHECK_AND_ASSERT_MES(m == 1, false, "test failed");
-      sz.push_back(10);
-      m = misc_utils::median(sz);
-      CHECK_AND_ASSERT_MES(m == 5, false, "test failed");
-      
-      sz.clear();
-      sz.resize(3);
-      sz[0] = 0;
-      sz[1] = 9;
-      sz[2] = 3;
-      m = misc_utils::median(sz);
-      CHECK_AND_ASSERT_MES(m == 3, false, "test failed");
-
-      sz.clear();
-      sz.resize(4);
-      sz[0] = 77;
-      sz[1] = 9;
-      sz[2] = 22;
-      sz[3] = 60;
-      m = misc_utils::median(sz);
-      CHECK_AND_ASSERT_MES(m == 41, false, "test failed");
-
-
-
-      sz.clear();
-      sz.resize(5);
-      sz[0] = 77;
-      sz[1] = 9;
-      sz[2] = 22;
-      sz[3] = 60;
-      sz[4] = 11;
-      m = misc_utils::median(sz);
-      CHECK_AND_ASSERT_MES(m == 22, false, "test failed");
-      return true;
+      try { m_func(); }
+      catch (...) { /* ignore */ }
     }
-  }
-}
 
+    // Moveable, Non-copyable
+    scope_leave_handler_impl(const scope_leave_handler_impl&) = delete;
+    scope_leave_handler_impl& operator=(const scope_leave_handler_impl&) = delete;
+    scope_leave_handler_impl(scope_leave_handler_impl&&) = default;
+    scope_leave_handler_impl& operator=(scope_leave_handler_impl&&) = default;
+  };
+
+  template <typename Callback>
+  auto create_scope_leave_handler(Callback f)
+  {
+    return scope_leave_handler_impl(std::move(f));
+  }
+
+}

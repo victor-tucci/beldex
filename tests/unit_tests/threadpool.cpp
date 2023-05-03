@@ -28,8 +28,11 @@
 
 #include <atomic>
 #include "gtest/gtest.h"
-#include "epee/misc_language.h"
 #include "common/threadpool.h"
+#include <thread>
+#include <chrono>
+
+using namespace std::literals;
 
 TEST(threadpool, wait_nothing)
 {
@@ -43,7 +46,7 @@ TEST(threadpool, wait_waits)
   std::shared_ptr<tools::threadpool> tpool(tools::threadpool::getNewForUnitTests());
   tools::threadpool::waiter waiter;
   std::atomic<bool> b(false);
-  tpool->submit(&waiter, [&b](){ epee::misc_utils::sleep_no_w(1000); b = true; });
+  tpool->submit(&waiter, [&b](){ std::this_thread::sleep_for(1s); b = true; });
   ASSERT_FALSE(b);
   waiter.wait(tpool.get());
   ASSERT_TRUE(b);

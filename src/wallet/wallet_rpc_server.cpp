@@ -47,7 +47,6 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/account.h"
 #include "multisig/multisig.h"
-#include "epee/misc_language.h"
 #include "epee/string_tools.h"
 #include "epee/wipeable_string.h"
 #include "crypto/hash.h"
