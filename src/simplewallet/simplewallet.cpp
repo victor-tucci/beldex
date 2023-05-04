@@ -8055,7 +8055,7 @@ bool simple_wallet::check_tx_key(const std::vector<std::string> &args_)
   try
   {
     uint64_t received;
-    bool in_pool;
+    bool in_pool = false;
     uint64_t confirmations;
     m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations);
 
