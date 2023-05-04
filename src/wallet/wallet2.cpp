@@ -13894,23 +13894,17 @@ size_t wallet2::import_outputs(const std::pair<size_t, std::vector<tools::wallet
     {
       // compare the data used to create the key image below
       const transfer_details &org_td = m_transfers[i + offset];
-      if (!org_td.m_key_image_known)
-        goto process;
-#define CMPF(f) if (!(td.f == org_td.f)) goto process
-      CMPF(m_txid);
-      CMPF(m_key_image);
-      CMPF(m_internal_output_index);
-#undef CMPF
-      if (!(get_transaction_prefix_hash(td.m_tx) == get_transaction_prefix_hash(org_td.m_tx)))
-        goto process;
+      if (org_td.m_key_image_known
+              && td.m_txid == org_td.m_txid
+              && td.m_key_image == org_td.m_key_image
+              && td.m_internal_output_index == org_td.m_internal_output_index
+              && get_transaction_prefix_hash(td.m_tx) == get_transaction_prefix_hash(org_td.m_tx)) {
 
-      // copy anyway, since the comparison does not include ancillary fields which may have changed
-      m_transfers[i + offset] = std::move(td);
-      continue;
+        // copy anyway, since the comparison does not include ancillary fields which may have changed
+        m_transfers[i + offset] = std::move(td);
+        continue;
+      }
     }
-
-process:
-
     // the hot wallet wouldn't have known about key images (except if we already exported them)
     cryptonote::keypair in_ephemeral;
 
