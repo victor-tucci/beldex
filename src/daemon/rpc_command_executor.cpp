@@ -40,6 +40,7 @@
 #include "cryptonote_core/master_node_rules.h"
 #include "cryptonote_basic/hardfork.h"
 #include "checkpoints/checkpoints.h"
+#include <boost/format.hpp>
 #include <fmt/core.h>
 #include <oxenmq/base32z.h>
 
@@ -407,10 +408,10 @@ bool rpc_command_executor::show_difficulty() {
 
 static std::string get_mining_speed(uint64_t hr)
 {
-  if (hr>1e9) return fmt::format("{:.2f} GH/s", hr / 1e9);
-  if (hr>1e6) return fmt::format("{:.2f} MH/s", hr / 1e6);
-  if (hr>1e3) return fmt::format("{:.2f} KH/s", hr / 1e3);
-  return fmt::format("{:.0f} H/s", hr);
+  if (hr>1e9) return (boost::format("%.2f GH/s") % (hr / 1e9)).str();
+  if (hr>1e6) return (boost::format("%.2f MH/s") % (hr / 1e6)).str();
+  if (hr>1e3) return (boost::format("%.2f kH/s") % (hr / 1e3)).str();
+  return (boost::format("%.0f H/s") % hr).str();
 }
 
 static std::ostream& print_fork_extra_info(std::ostream& o, uint64_t t, uint64_t now, uint64_t block_time)
