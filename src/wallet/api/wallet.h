@@ -49,6 +49,24 @@ class SubaddressImpl;
 class SubaddressAccountImpl;
 struct Wallet2CallbackImpl;
 
+struct LockedWallet {
+    std::unique_lock<std::recursive_timed_mutex> refresh_lock;
+    tools::wallet2* const wallet;
+    // Constructs a wallet wrapper from a moved existing unique_lock which may be initially locked
+    // or unlocked (if unlocked, it will be immediately locked).
+    LockedWallet(const std::unique_ptr<tools::wallet2>& w, std::unique_lock<std::recursive_timed_mutex>&& lock)
+            : refresh_lock{std::move(lock)}, wallet{w.get()} {
+        if (!refresh_lock) refresh_lock.lock();
+    }
+    // Constructs a wallet wrapper from a wallet and the refresh mutex; locks the mutex immediately.
+    LockedWallet(const std::unique_ptr<tools::wallet2>& w, std::recursive_timed_mutex& refresh_mutex)
+        : refresh_lock{refresh_mutex}, wallet{w.get()} {}
+
+    // Returns the wallet2 pointer, to allow `w->whatever()` to call into wallet functions through
+    // the locking wrapper.
+    tools::wallet2* operator->() { return wallet; }
+};
+
 class WalletImpl : public Wallet
 {
 public:
@@ -108,17 +126,17 @@ public:
     bool refresh() override;
     void refreshAsync() override;
     bool rescanBlockchain() override;
+    bool isRefreshing(std::chrono::milliseconds max_wait = std::chrono::milliseconds{50}) override;
     void rescanBlockchainAsync() override;    
     void setAutoRefreshInterval(int millis) override;
     int autoRefreshInterval() const override;
     void setRefreshFromBlockHeight(uint64_t refresh_from_block_height) override;
-    uint64_t getRefreshFromBlockHeight() const override { return m_wallet->get_refresh_from_block_height(); };
-    void setRecoveringFromSeed(bool recoveringFromSeed) override;
+    uint64_t getRefreshFromBlockHeight() const override { return m_wallet_ptr->get_refresh_from_block_height(); };    void setRecoveringFromSeed(bool recoveringFromSeed) override;
     void setRecoveringFromDevice(bool recoveringFromDevice) override;
     void setSubaddressLookahead(uint32_t major, uint32_t minor) override;
     bool watchOnly() const override;
     bool rescanSpent() override;
-    NetworkType nettype() const override {return static_cast<NetworkType>(m_wallet->nettype());}
+    NetworkType nettype() const override {return static_cast<NetworkType>(m_wallet_ptr->nettype());}
     void hardForkInfo(uint8_t &version, uint64_t &earliest_height) const override;
     std::optional<uint8_t> hardForkVersion() const override;
     bool useForkRules(uint8_t version, int64_t early_blocks) const override;
@@ -136,6 +154,7 @@ public:
 
     StakeUnlockResult* requestStakeUnlock(const std::string &mn_key) override;
 
+    static MultisigState multisig(LockedWallet& w);
     MultisigState multisig() const override;
     std::string getMultisigInfo() const override;
     std::string makeMultisig(const std::vector<std::string>& info, uint32_t threshold) override;
@@ -219,7 +238,7 @@ private:
     void pendingTxPostProcess(PendingTransactionImpl * pending);
     bool doInit(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, bool ssl = false);
 
-private:
+
     friend class PendingTransactionImpl;
     friend class UnsignedTransactionImpl;    
     friend class TransactionHistoryImpl;
@@ -228,8 +247,9 @@ private:
     friend class SubaddressImpl;
     friend class SubaddressAccountImpl;
 
-    std::unique_ptr<tools::wallet2> m_wallet;
+    std::unique_ptr<tools::wallet2> m_wallet_ptr;
     mutable std::mutex m_statusMutex;
+    LockedWallet wallet() const { return {m_wallet_ptr, m_refreshMutex2}; }
     mutable std::pair<int, std::string> m_status;
     std::string m_password;
     std::unique_ptr<TransactionHistoryImpl> m_history;
@@ -247,7 +267,7 @@ private:
     std::mutex        m_refreshMutex;
 
     // synchronizing  sync and async refresh
-    std::mutex        m_refreshMutex2;
+    mutable std::recursive_timed_mutex m_refreshMutex2;
     std::condition_variable m_refreshCV;
     std::thread       m_refreshThread;
     std::thread       m_longPollThread;

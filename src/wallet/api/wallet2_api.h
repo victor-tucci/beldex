@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -696,6 +697,8 @@ struct Wallet
      */
     virtual bool rescanBlockchain() = 0;
 
+    virtual bool isRefreshing(std::chrono::milliseconds max_wait = std::chrono::milliseconds{50}) = 0;
+
     /**
      * @brief rescanBlockchainAsync - rescans wallet asynchronously, starting from genesys
      */
@@ -1018,7 +1021,7 @@ struct Wallet
     virtual Device getDeviceType() const = 0;
 
     /// Prepare a staking transaction; return nullptr on failure
-    virtual PendingTransaction* stakePending(const std::string& master_node_key, const uint64_t amount) = 0;
+    virtual PendingTransaction* stakePending(const std::string& master_node_key, const uint64_t& amount) = 0;
 
     virtual StakeUnlockResult* canRequestStakeUnlock(const std::string &mn_key) = 0;
 
