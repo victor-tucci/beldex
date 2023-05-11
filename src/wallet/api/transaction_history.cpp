@@ -112,7 +112,6 @@ void TransactionHistoryImpl::refresh()
     // multithreaded access:
     // for "write" access, locking exclusively
     std::unique_lock lock{m_historyMutex};
-    auto w = m_wallet->wallet();
     // TODO: configurable values;
     uint64_t min_height = 0;
     uint64_t max_height = (uint64_t)-1;
@@ -132,6 +131,7 @@ void TransactionHistoryImpl::refresh()
     // one input transaction contains only one transfer. e.g. <transaction_id> - <100XMR>
 
     std::list<std::pair<crypto::hash, tools::wallet2::payment_details>> in_payments;
+    auto w = m_wallet->wallet();
     w->get_payments(in_payments, min_height, max_height);
     for (std::list<std::pair<crypto::hash, tools::wallet2::payment_details>>::const_iterator i = in_payments.begin(); i != in_payments.end(); ++i) {
         const tools::wallet2::payment_details &pd = i->second;
@@ -198,7 +198,7 @@ void TransactionHistoryImpl::refresh()
 
         // single output transaction might contain multiple transfers
         for (const auto &d: pd.m_dests) {
-            ti->m_transfers.push_back({d.amount, d.address(m_wallet->m_wallet_ptr->nettype(), pd.m_payment_id)});
+            ti->m_transfers.push_back({d.amount, d.address(w->nettype(), pd.m_payment_id)});
         }
         m_history.push_back(ti);
     }

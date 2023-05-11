@@ -87,8 +87,8 @@ bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, 
 
     auto filename = fs::u8path(filename_);
 
+    auto w = m_wallet.wallet();
     try {
-        auto w = m_wallet.wallet();
       // Save tx to file
       if (!filename.empty()) {
         if (std::error_code ec_ignore; fs::exists(filename, ec_ignore) && !overwrite){
@@ -109,8 +109,6 @@ bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, 
         if (multisigState.isMultisig && m_signers.size() < multisigState.threshold) {
             throw std::runtime_error("Not enough signers to send multisig transaction");
         }
-
-        m_wallet.pauseRefresh();
 
         const bool tx_cold_signed = w->get_account().get_device().has_tx_cold_sign();
         if (tx_cold_signed){
@@ -169,7 +167,7 @@ uint64_t PendingTransactionImpl::amount() const
         std::optional<uint8_t> hf_version = m_wallet.hardForkVersion();
         if (hf_version)
         {
-          if (master_nodes::tx_get_staking_components_and_amounts(static_cast<cryptonote::network_type>(m_wallet.nettype()), *hf_version, ptx.tx, height, &sc)
+          if (master_nodes::tx_get_staking_components_and_amounts(static_cast<cryptonote::network_type>(w->nettype()), *hf_version, ptx.tx, height, &sc)
           && sc.transferred > 0)
             result = sc.transferred;
         }
@@ -224,15 +222,14 @@ std::vector<std::set<uint32_t>> PendingTransactionImpl::subaddrIndices() const
 EXPORT
 std::string PendingTransactionImpl::multisigSignData() {
     try {
-        auto w = m_wallet.wallet();
-        if (!m_wallet.multisig(w).isMultisig) {
+            if (!m_wallet.multisig().isMultisig) {
             throw std::runtime_error("wallet is not multisig");
         }
 
         tools::wallet2::multisig_tx_set txSet;
         txSet.m_ptx = m_pending_tx;
         txSet.m_signers = m_signers;
-        auto cipher = w->save_multisig_tx(txSet);
+        auto cipher = m_wallet.wallet()->save_multisig_tx(txSet);
 
         return oxenc::to_hex(cipher);
     } catch (const std::exception& e) {
