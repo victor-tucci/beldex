@@ -47,7 +47,6 @@
 #include "boost/archive/portable_binary_oarchive.hpp"
 #include "epee/shared_sv.h"
 #include "crypto/crypto.h"
-#include "epee/hex.h"
 #include "epee/net/net_utils_base.h"
 #include "epee/net/local_ip.h"
 #include "epee/net/buffer.h"
@@ -91,25 +90,6 @@ namespace
   static_assert(epee::span<char>().empty(), "test failure");
   static_assert(epee::span<char>(nullptr).empty(), "test failure");
   static_assert(epee::span<const char>("foo", 2).size() == 2, "test failure");
-
-  std::string std_to_hex(const std::vector<unsigned char>& source)
-  {
-    std::stringstream out;
-    out << std::hex;
-    for (const unsigned char byte : source)
-    {
-      out << std::setw(2) << std::setfill('0') << int(byte);
-    }
-    return out.str();
-  }
-
-  std::vector<unsigned char> get_all_bytes()
-  {
-    std::vector<unsigned char> out;
-    out.resize(256);
-    boost::range::iota(out, 0);
-    return out;
-  }
 
   #define CHECK_EQUAL(lhs, rhs) \
     EXPECT_TRUE( lhs == rhs );  \
@@ -418,85 +398,6 @@ TEST(SharedSV, Tests)
   EXPECT_EQ(0, from_str.size());
   EXPECT_EQ(0, sv2.size());
   EXPECT_EQ(0, sv3.size());
-}
-
-TEST(ToHex, String)
-{
-  EXPECT_TRUE(epee::to_hex::string(nullptr).empty());
-  EXPECT_EQ(
-    std::string{"ffab0100"},
-    epee::to_hex::string(epee::as_byte_span("\xff\xab\x01"))
-  );
-
-  const std::vector<unsigned char> all_bytes = get_all_bytes();
-  EXPECT_EQ(
-    std_to_hex(all_bytes), epee::to_hex::string(epee::to_span(all_bytes))
-  );
-
-}
-
-TEST(FromHex, String)
-{
-    // the source data to encode and decode
-    std::vector<uint8_t> source{{ 0x00, 0xFF, 0x0F, 0xF0 }};
-
-    // encode and decode the data
-    auto hex = epee::to_hex::string({ source.data(), source.size() });
-    auto decoded = epee::from_hex::vector(hex);
-
-    // encoded should be twice the size and should decode to the exact same data
-    EXPECT_EQ(source.size() * 2, hex.size());
-    EXPECT_EQ(source, decoded);
-
-    // we will now create a padded hex string, we want to explicitly allow
-    // decoding it this way also, ignoring spaces and colons between the numbers
-    hex.assign("00:ff 0f:f0");
-    EXPECT_EQ(source, epee::from_hex::vector(hex));
-}
-
-TEST(ToHex, Array)
-{
-  EXPECT_EQ(
-    (std::array<char, 8>{{'f', 'f', 'a', 'b', '0', '1', '0', '0'}}),
-    (epee::to_hex::array(std::array<unsigned char, 4>{{0xFF, 0xAB, 0x01, 0x00}}))
-  );
-}
-
-TEST(ToHex, Ostream)
-{
-  std::stringstream out;
-  epee::to_hex::buffer(out, nullptr);
-  EXPECT_TRUE(out.str().empty());
-
-  {
-    const std::uint8_t source[] = {0xff, 0xab, 0x01, 0x00};
-    epee::to_hex::buffer(out, source);
-  }
-
-  std::string expected{"ffab0100"};
-  EXPECT_EQ(expected, out.str());
-
-  const std::vector<unsigned char> all_bytes = get_all_bytes();
-
-  expected.append(std_to_hex(all_bytes));
-  epee::to_hex::buffer(out, epee::to_span(all_bytes));
-  EXPECT_EQ(expected, out.str());
-}
-
-TEST(StringTools, ParseNotHex)
-{
-  std::string res;
-  for (size_t i = 0; i < 256; ++i)
-  {
-    std::string inputHexString = std::string(2, static_cast<char>(i));
-    if ((i >= '0' && i <= '9') || (i >= 'A' && i <= 'F') || (i >= 'a' && i <= 'f')) {
-      ASSERT_TRUE(epee::string_tools::parse_hexstr_to_binbuff(inputHexString, res));
-    } else {
-      ASSERT_FALSE(epee::string_tools::parse_hexstr_to_binbuff(inputHexString, res));
-    }
-  }
-
-  ASSERT_FALSE(epee::string_tools::parse_hexstr_to_binbuff(std::string("a"), res));
 }
 
 TEST(StringTools, GetIpString)
@@ -878,80 +779,111 @@ TEST(parsing, number)
 {
   std::string_view val;
   std::string s;
+  bool is_float, is_negative;
 
   // the parser expects another character to end the number, and accepts things
   // that aren't numbers, as it's meant as a pre-filter for strto* functions,
   // so we just check that numbers get accepted, but don't test non numbers
 
   s = "0 ";
-  auto i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  const char* i = s.data();
+  const char* e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "0");
+  ASSERT_FALSE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "000 ";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "000");
+  ASSERT_FALSE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "10x";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "10");
+  ASSERT_FALSE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "10.09/";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "10.09");
+  ASSERT_TRUE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "-1.r";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "-1.");
+  ASSERT_TRUE(is_float);
+  ASSERT_TRUE(is_negative);
 
   s = "-49.;";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "-49.");
+  ASSERT_TRUE(is_float);
+  ASSERT_TRUE(is_negative);
 
   s = "0.78/";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "0.78");
+  ASSERT_TRUE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "33E9$";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "33E9");
+  ASSERT_TRUE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = ".34e2=";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, ".34e2");
+  ASSERT_TRUE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "-9.34e-2=";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "-9.34e-2");
+  ASSERT_TRUE(is_float);
+  ASSERT_TRUE(is_negative);
+
+  s = "9.34e-2=";
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
+  ASSERT_EQ(val, "9.34e-2");
+  ASSERT_TRUE(is_float);
+  ASSERT_FALSE(is_negative);
 
   s = "+9.34e+03=";
-  i = s.begin();
-  epee::misc_utils::parse::match_number(i, s.end(), val);
+  i = s.data(); e = i + s.size();
+  epee::misc_utils::parse::match_number2(i, e, val, is_float, is_negative);
   ASSERT_EQ(val, "+9.34e+03");
+  ASSERT_TRUE(is_float);
+  ASSERT_FALSE(is_negative);
 }
 
 TEST(parsing, unicode)
 {
   std::string bs;
   std::string s;
-  std::string::const_iterator si;
+  const char* si;
 
-  s = "\"\""; si = s.begin(); ASSERT_TRUE(epee::misc_utils::parse::match_string(si, s.cend(), bs)); ASSERT_EQ(bs, "");
-  s = "\"\\u0000\""; si = s.begin(); ASSERT_TRUE(epee::misc_utils::parse::match_string(si, s.cend(), bs)); ASSERT_EQ(bs, std::string(1, '\0'));
-  s = "\"\\u0020\""; si = s.begin(); ASSERT_TRUE(epee::misc_utils::parse::match_string(si, s.cend(), bs)); ASSERT_EQ(bs, " ");
-  s = "\"\\u1\""; si = s.begin(); ASSERT_FALSE(epee::misc_utils::parse::match_string(si, s.cend(), bs));
-  s = "\"\\u12\""; si = s.begin(); ASSERT_FALSE(epee::misc_utils::parse::match_string(si, s.cend(), bs));
-  s = "\"\\u123\""; si = s.begin(); ASSERT_FALSE(epee::misc_utils::parse::match_string(si, s.cend(), bs));
-  s = "\"\\u1234\""; si = s.begin(); ASSERT_TRUE(epee::misc_utils::parse::match_string(si, s.cend(), bs)); ASSERT_EQ(bs, "ሴ");
-  s = "\"foo\\u1234bar\""; si = s.begin(); ASSERT_TRUE(epee::misc_utils::parse::match_string(si, s.cend(), bs)); ASSERT_EQ(bs, "fooሴbar");
-  s = "\"\\u3042\\u307e\\u3084\\u304b\\u3059\""; si = s.begin(); ASSERT_TRUE(epee::misc_utils::parse::match_string(si, s.cend(), bs)); ASSERT_EQ(bs, "あまやかす");
+  s = "\"\""; si = s.data(); ASSERT_NO_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs)); ASSERT_EQ(bs, "");
+  s = "\"\\u0000\""; si = s.data(); ASSERT_NO_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs)); ASSERT_EQ(bs, std::string(1, '\0'));
+  s = "\"\\u0020\""; si = s.data(); ASSERT_NO_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs)); ASSERT_EQ(bs, " ");
+  s = "\"\\u1\""; si = s.data(); ASSERT_ANY_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs));
+  s = "\"\\u12\""; si = s.data(); ASSERT_ANY_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs));
+  s = "\"\\u123\""; si = s.data(); ASSERT_ANY_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs));
+  s = "\"\\u1234\""; si = s.data(); ASSERT_NO_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs)); ASSERT_EQ(bs, "ሴ");
+  s = "\"foo\\u1234bar\""; si = s.data(); ASSERT_NO_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs)); ASSERT_EQ(bs, "fooሴbar");
+  s = "\"\\u3042\\u307e\\u3084\\u304b\\u3059\""; si = s.data(); ASSERT_NO_THROW(epee::misc_utils::parse::match_string2(si, s.data() + s.size(), bs)); ASSERT_EQ(bs, "あまやかす");
 }

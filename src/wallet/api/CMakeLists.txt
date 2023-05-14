@@ -125,8 +125,6 @@ if (STATIC AND BUILD_STATIC_DEPS)
             # Static deps:
             Boost::program_options Boost::serialization Boost::system Boost::thread
             zlib
-            expat
-            libunbound
             sqlite3
             ${merged_protobuf}
             sodium

@@ -33,14 +33,13 @@
 #include <iomanip>
 #include <thread>
 
-#include "unbound.h"
-
 #include "epee/string_tools.h"
 #include "epee/wipeable_string.h"
 #include "crypto/crypto.h"
 #include "util.h"
 #include "epee/misc_os_dependent.h"
 #include "epee/readline_buffer.h"
+#include "epee/misc_log_ex.h"
 #include "string_util.h"
 
 #include "i18n.h"
@@ -55,22 +54,6 @@
 
 namespace tools
 {
-
-  static bool unbound_built_with_threads()
-  {
-    ub_ctx *ctx = ub_ctx_create();
-    if (!ctx) return false; // cheat a bit, should not happen unless OOM
-    char *beldex = strdup("beldex"), *unbound = strdup("unbound");
-    ub_ctx_zone_add(ctx, beldex, unbound); // this calls ub_ctx_finalize first, then errors out with UB_SYNTAX
-    free(unbound);
-    free(beldex);
-    // if no threads, bails out early with UB_NOERROR, otherwise fails with UB_AFTERFINAL id already finalized
-    bool with_threads = ub_ctx_async(ctx, 1) != 0; // UB_AFTERFINAL is not defined in public headers, check any error
-    ub_ctx_delete(ctx);
-    MINFO("libunbound was built " << (with_threads ? "with" : "without") << " threads");
-    return with_threads;
-  }
-
   bool disable_core_dumps()
   {
 #ifdef __GLIBC__
@@ -110,9 +93,6 @@ namespace tools
     if (!strcmp(ver, "2.25"))
       MCLOG_RED(el::Level::Warning, "global", "Running with glibc " << ver << ", hangs may occur - change glibc version if possible");
 #endif
-
-    if (!unbound_built_with_threads())
-      MCLOG_RED(el::Level::Warning, "global", "libunbound was not built with threads enabled - crashes may occur");
 
     return true;
   }

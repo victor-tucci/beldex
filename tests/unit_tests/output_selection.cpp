@@ -31,6 +31,7 @@
 #include "gtest/gtest.h"
 
 #include "wallet/wallet2.h"
+#include "common/median.h"
 #include <string>
 
 static tools::wallet2::transfer_container make_transfers_container(size_t N)
@@ -127,7 +128,7 @@ TEST(select_outputs, gamma)
     ASSERT_LE(ages[i], offsets.size() * 120);
     ++i;
   }
-  double median = epee::misc_utils::median(ages);
+  double median = tools::median(std::move(ages));
   MDEBUG("median age: " << median / 86400. << " days");
   ASSERT_GE(median, 1.3 * 86400);
   ASSERT_LE(median, 1.4 * 86400);

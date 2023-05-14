@@ -55,16 +55,15 @@ struct stakeInfo;
 struct LockedWallet {
     std::unique_lock<std::recursive_timed_mutex> refresh_lock;
     tools::wallet2* const wallet;
-
     // Constructs a wallet wrapper from a moved existing unique_lock which may be initially locked
     // or unlocked (if unlocked, it will be immediately locked).
     LockedWallet(const std::unique_ptr<tools::wallet2>& w, std::unique_lock<std::recursive_timed_mutex>&& lock)
-        : refresh_lock{std::move(lock)}, wallet{w.get()} 
-    {
-         if (!refresh_lock) refresh_lock.lock();
+            : refresh_lock{std::move(lock)}, wallet{w.get()} {
+        if (!refresh_lock) refresh_lock.lock();
     }
+    // Constructs a wallet wrapper from a wallet and the refresh mutex; locks the mutex immediately.
     LockedWallet(const std::unique_ptr<tools::wallet2>& w, std::recursive_timed_mutex& refresh_mutex)
-         : refresh_lock{refresh_mutex}, wallet{w.get()} {}
+        : refresh_lock{refresh_mutex}, wallet{w.get()} {}
 
     // Returns the wallet2 pointer, to allow `w->whatever()` to call into wallet functions through
     // the locking wrapper.
@@ -273,7 +272,7 @@ private:
     std::mutex        m_refreshMutex;
 
     // synchronizing  sync and async refresh
-    mutable std::recursive_timed_mutex        m_refreshMutex2;
+    mutable std::recursive_timed_mutex m_refreshMutex2;
     std::condition_variable m_refreshCV;
     std::thread       m_refreshThread;
     std::thread       m_longPollThread;

@@ -35,6 +35,7 @@
 #include "common/pruning.h"
 #include "common/hex.h"
 #include "daemon/rpc_command_executor.h"
+#include "common/median.h"
 #include "epee/int-util.h"
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "cryptonote_core/master_node_rules.h"
@@ -1448,7 +1449,7 @@ bool rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
     avgdiff /= nblocks;
     avgnumtxes /= nblocks;
     avgreward /= nblocks;
-    uint64_t median_block_weight = epee::misc_utils::median(weights);
+    uint64_t median_block_weight = tools::median(std::move(weights));
     tools::msg_writer() << "Last " << nblocks << ": avg. diff " << (uint64_t)avgdiff << ", " << (latest - earliest) / nblocks << " avg sec/block, avg num txes " << avgnumtxes
         << ", avg. reward " << cryptonote::print_money(avgreward) << ", median block weight " << median_block_weight;
 

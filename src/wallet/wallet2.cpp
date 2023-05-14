@@ -48,7 +48,6 @@
 #include "wallet2.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
-#include "epee/misc_language.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/hardfork.h"
 #include "multisig/multisig.h"
@@ -73,7 +72,6 @@
 #include "epee/memwipe.h"
 #include "common/base58.h"
 #include "common/combinator.h"
-#include "common/dns_utils.h"
 #include "common/notify.h"
 #include "common/perf_timer.h"
 #include "common/hex.h"
@@ -87,7 +85,6 @@
 #include "common/beldex.h"
 #include "common/beldex_integration_test_hooks.h"
 #include "beldex_economy.h"
-#include "epee/string_coding.h"
 
 extern "C"
 {
@@ -146,7 +143,6 @@ namespace {
   constexpr std::string_view MULTISIG_MAGIC = "MultisigV1"sv;
   constexpr std::string_view MULTISIG_SIGNATURE_MAGIC = "SigMultisigPkV1"sv;
   constexpr std::string_view MULTISIG_EXTRA_INFO_MAGIC = "MultisigxV1"sv;
-  const std::string ASCII_OUTPUT_MAGIC = "MoneroAsciiDataV1"s; // not string_view because we need it as a c string
   constexpr std::string_view SPEND_PROOF_MAGIC = "SpendProofV1"sv;
   constexpr std::string_view OUTBOUND_PROOF_MAGIC = "OutProofV1"sv;
   constexpr std::string_view INBOUND_PROOF_MAGIC = "InProofV1"sv;
@@ -854,7 +850,15 @@ bool get_pruned_tx(const rpc::GET_TRANSACTIONS::entry &entry, cryptonote::transa
   // easy case if we have the whole tx
   if (entry.as_hex || (entry.prunable_as_hex && entry.pruned_as_hex))
   {
-    CHECK_AND_ASSERT_MES(epee::string_tools::parse_hexstr_to_binbuff(entry.as_hex ? *entry.as_hex : *entry.pruned_as_hex + *entry.prunable_as_hex, bd), false, "Failed to parse tx data");
+    if (entry.as_hex) {
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.as_hex), false, "Failed to parse tx data");
+      bd = oxenc::from_hex(*entry.as_hex);
+    } else {
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.pruned_as_hex) && oxenc::is_hex(*entry.prunable_as_hex), false, "Failed to parse tx data");
+      bd.reserve(oxenc::from_hex_size(entry.pruned_as_hex->size() + entry.prunable_as_hex->size()));
+      oxenc::from_hex(entry.pruned_as_hex->begin(), entry.pruned_as_hex->end(), std::back_inserter(bd));
+      oxenc::from_hex(entry.prunable_as_hex->begin(), entry.prunable_as_hex->end(), std::back_inserter(bd));
+    }
     CHECK_AND_ASSERT_MES(cryptonote::parse_and_validate_tx_from_blob(bd, tx), false, "Invalid tx data");
     tx_hash = cryptonote::get_transaction_hash(tx);
     // if the hash was given, check it matches
@@ -867,7 +871,8 @@ bool get_pruned_tx(const rpc::GET_TRANSACTIONS::entry &entry, cryptonote::transa
   {
     crypto::hash ph;
     CHECK_AND_ASSERT_MES(tools::hex_to_type(*entry.prunable_hash, ph), false, "Failed to parse prunable hash");
-    CHECK_AND_ASSERT_MES(epee::string_tools::parse_hexstr_to_binbuff(*entry.pruned_as_hex, bd), false, "Failed to parse pruned data");
+    CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.pruned_as_hex), false, "Failed to parse pruned data");
+    bd = oxenc::from_hex(*entry.pruned_as_hex);
     CHECK_AND_ASSERT_MES(parse_and_validate_tx_base_from_blob(bd, tx), false, "Invalid base tx data");
     // only v2 txes can calculate their txid after pruned
     if (bd[0] > 1)
@@ -1079,8 +1084,7 @@ wallet2::wallet2(network_type nettype, uint64_t kdf_rounds, bool unattended):
   m_devices_registered(false),
   m_device_last_key_image_sync(0),
   m_offline(false),
-  m_rpc_version(0),
-  m_export_format(ExportFormat::Binary)
+  m_rpc_version(0)
 {
 }
 
@@ -1350,7 +1354,9 @@ bool wallet2::get_multisig_seed(epee::wipeable_string& seed, const epee::wipeabl
 
   if (raw)
   {
-    seed = epee::to_hex::wipeable_string({(const unsigned char*)data.data(), data.size()});
+    epee::wipeable_string seed;
+    seed.reserve(oxenc::to_hex_size(data.size()));
+    oxenc::to_hex(data.data(), data.data() + data.size(), std::back_inserter(seed));
   }
   else
   {
@@ -4064,9 +4070,6 @@ std::optional<wallet2::keys_file_data> wallet2::get_keys_file_data(const epee::w
   value2.SetInt(m_original_keys_available ? 1 : 0);
   json.AddMember("original_keys_available", value2, json.GetAllocator());
 
-  value2.SetInt(m_export_format);
-  json.AddMember("export_format", value2, json.GetAllocator());
-
   value2.SetUint(1);
   json.AddMember("encrypted_secret_keys", value2, json.GetAllocator());
 
@@ -4223,7 +4226,6 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     m_subaddress_lookahead_major = SUBADDRESS_LOOKAHEAD_MAJOR;
     m_subaddress_lookahead_minor = SUBADDRESS_LOOKAHEAD_MINOR;
     m_original_keys_available = false;
-    m_export_format = ExportFormat::Binary;
     m_device_name = "";
     m_device_derivation_path = "";
     m_key_device_type = hw::device::device_type::SOFTWARE;
@@ -4388,9 +4390,6 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
 
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, encrypted_secret_keys, uint32_t, Uint, false, false);
     encrypted_secret_keys = field_encrypted_secret_keys;
-
-    GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, export_format, ExportFormat, Int, false, Binary);
-    m_export_format = field_export_format;
 
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, device_name, std::string, String, false, std::string());
     if (m_device_name.empty())
@@ -5170,7 +5169,6 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
   // keys are decrypted
   bool reencrypt = false;
   crypto::chacha_key chacha_key;
-  epee::misc_utils::auto_scope_leave_caller keys_reencryptor;
   BELDEX_DEFER {
     if (reencrypt)
     {
@@ -5213,9 +5211,6 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
 
     ++m_multisig_rounds_passed;
     m_multisig_derivations.clear();
-
-    // keys are encrypted again
-    keys_reencryptor = epee::misc_utils::auto_scope_leave_caller();
 
     if (!m_wallet_file.empty())
     {
@@ -12099,11 +12094,15 @@ bool wallet2::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, s
 
     cryptonote::transaction tx;
     crypto::hash tx_hash{};
-    cryptonote::blobdata tx_data;
     crypto::hash tx_prefix_hash{};
     const auto& res_tx = res.txs.front();
-    bool valid_hex = string_tools::parse_hexstr_to_binbuff(*res_tx.pruned_as_hex + (res_tx.prunable_as_hex ? *res_tx.prunable_as_hex : ""s), tx_data);
-    THROW_WALLET_EXCEPTION_IF(!valid_hex, error::wallet_internal_error, "Failed to parse transaction from daemon");
+
+    THROW_WALLET_EXCEPTION_IF(!oxenc::is_hex(*res_tx.pruned_as_hex) || !oxenc::is_hex(res_tx.prunable_as_hex.value_or(""s)),error::wallet_internal_error, "Failed to parse transaction from daemon");
+    std::string tx_data;
+    tx_data.reserve(oxenc::from_hex_size(res_tx.pruned_as_hex->size() + (res_tx.prunable_as_hex ? res_tx.prunable_as_hex->size() : 0)));
+    oxenc::from_hex(res_tx.pruned_as_hex->begin(), res_tx.pruned_as_hex->end(), std::back_inserter(tx_data));
+    if (res_tx.prunable_as_hex)
+      oxenc::from_hex(res_tx.prunable_as_hex->begin(), res_tx.prunable_as_hex->end(), std::back_inserter(tx_data));
     THROW_WALLET_EXCEPTION_IF(!cryptonote::parse_and_validate_tx_from_blob(tx_data, tx, tx_hash, tx_prefix_hash),
                               error::wallet_internal_error, "Failed to validate transaction from daemon");
     THROW_WALLET_EXCEPTION_IF(tx_hash != txid, error::wallet_internal_error,
@@ -13894,23 +13893,17 @@ size_t wallet2::import_outputs(const std::pair<size_t, std::vector<tools::wallet
     {
       // compare the data used to create the key image below
       const transfer_details &org_td = m_transfers[i + offset];
-      if (!org_td.m_key_image_known)
-        goto process;
-#define CMPF(f) if (!(td.f == org_td.f)) goto process
-      CMPF(m_txid);
-      CMPF(m_key_image);
-      CMPF(m_internal_output_index);
-#undef CMPF
-      if (!(get_transaction_prefix_hash(td.m_tx) == get_transaction_prefix_hash(org_td.m_tx)))
-        goto process;
+      if (org_td.m_key_image_known
+              && td.m_txid == org_td.m_txid
+              && td.m_key_image == org_td.m_key_image
+              && td.m_internal_output_index == org_td.m_internal_output_index
+              && get_transaction_prefix_hash(td.m_tx) == get_transaction_prefix_hash(org_td.m_tx)) {
 
-      // copy anyway, since the comparison does not include ancillary fields which may have changed
-      m_transfers[i + offset] = std::move(td);
-      continue;
+        // copy anyway, since the comparison does not include ancillary fields which may have changed
+        m_transfers[i + offset] = std::move(td);
+        continue;
+      }
     }
-
-process:
-
     // the hot wallet wouldn't have known about key images (except if we already exported them)
     cryptonote::keypair in_ephemeral;
 

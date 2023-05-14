@@ -44,8 +44,8 @@
 #include "common/boost_serialization_helper.h"
 #include "common/lock.h"
 #include "common/hex.h"
+#include "common/median.h"
 #include "epee/int-util.h"
-#include "epee/misc_language.h"
 #include "epee/warnings.h"
 #include "common/perf_timer.h"
 #include "crypto/hash.h"
@@ -1201,7 +1201,7 @@ namespace cryptonote
         ++stats.num_double_spends;
       return true;
     }, false, include_unrelayed_txes);
-    stats.bytes_med = epee::misc_utils::median(weights);
+    stats.bytes_med = tools::median(std::move(weights));
     if (stats.txs_total > 1)
     {
       /* looking for 98th percentile */

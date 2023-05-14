@@ -32,14 +32,12 @@
 
 #include <numeric>
 #include <oxenc/base64.h>
-#include "epee/misc_language.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "epee/misc_os_dependent.h"
 #include "common/command_line.h"
 #include "common/util.h"
 #include "common/file.h"
 #include "common/string_util.h"
-#include "epee/string_coding.h"
 #include "epee/string_tools.h"
 #include "epee/storages/portable_storage_template_helper.h"
 
@@ -457,7 +455,7 @@ namespace cryptonote
     {
       if(m_pausers_count)//anti split workaround
       {
-        epee::misc_utils::sleep_no_w(100);
+        std::this_thread::sleep_for(100ms);
         continue;
       }
 
@@ -476,7 +474,7 @@ namespace cryptonote
       if(!local_template_ver)//no any set_block_template call
       {
         LOG_PRINT_L2("Block template not set yet");
-        epee::misc_utils::sleep_no_w(1000);
+        std::this_thread::sleep_for(1s);
         continue;
       }
 

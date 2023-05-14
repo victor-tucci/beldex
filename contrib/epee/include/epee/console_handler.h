@@ -37,6 +37,7 @@
 #include <iostream>
 #include <any>
 #include <unordered_map>
+#include <optional>
 #ifdef __OpenBSD__
 #include <stdio.h>
 #endif
@@ -48,8 +49,8 @@
 #endif
 #include "readline_suspend.h"
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "console_handler"
+#undef BELDEX_DEFAULT_LOG_CATEGORY
+#define BELDEX_DEFAULT_LOG_CATEGORY "console_handler"
 
 namespace epee
 {

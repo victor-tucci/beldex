@@ -58,7 +58,6 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_core/tx_sanity_check.h"
 #include "cryptonote_core/uptime_proof.h"
-#include "epee/misc_language.h"
 #include "net/parse.h"
 #include "crypto/hash.h"
 #include "rpc/rpc_args.h"
@@ -1077,17 +1076,11 @@ namespace cryptonote { namespace rpc {
     std::vector<crypto::key_image> key_images;
     for(const auto& ki_hex_str: req.key_images)
     {
-      blobdata b;
-      if(!epee::string_tools::parse_hexstr_to_binbuff(ki_hex_str, b))
+      if (!tools::hex_to_type(ki_hex_str, key_images.emplace_back()))
       {
         res.status = "Failed to parse hex representation of key image";
         return res;
       }
-      if(b.size() != sizeof(crypto::key_image))
-      {
-        res.status = "Failed, size of data mismatch";
-      }
-      key_images.push_back(*reinterpret_cast<const crypto::key_image*>(b.data()));
     }
     std::vector<bool> spent_status;
     bool r = m_core.are_key_images_spent(key_images, spent_status);
@@ -1146,13 +1139,12 @@ namespace cryptonote { namespace rpc {
 
     CHECK_CORE_READY();
 
-    std::string tx_blob;
-    if(!epee::string_tools::parse_hexstr_to_binbuff(req.tx_as_hex, tx_blob))
-    {
+    if (!oxenc::is_hex(req.tx_as_hex))    {
       LOG_PRINT_L0("[on_send_raw_tx]: Failed to parse tx from hexbuff: " << req.tx_as_hex);
       res.status = "Failed";
       return res;
     }
+    auto tx_blob = oxenc::from_hex(req.tx_as_hex);
 
     if (req.do_sanity_checks && !cryptonote::tx_sanity_check(tx_blob, m_core.get_blockchain_storage().get_num_mature_outputs(0)))
     {
@@ -1667,8 +1659,9 @@ namespace cryptonote { namespace rpc {
     cryptonote::blobdata blob_reserve;
     if(!req.extra_nonce.empty())
     {
-      if(!epee::string_tools::parse_hexstr_to_binbuff(req.extra_nonce, blob_reserve))
+      if(!oxenc::is_hex(req.extra_nonce))
         throw rpc_error{ERROR_WRONG_PARAM, "Parameter extra_nonce should be a hex string"};
+      blob_reserve = oxenc::from_hex(req.extra_nonce);
     }
     else
       blob_reserve.resize(req.reserve_size, 0);
@@ -1745,10 +1738,9 @@ namespace cryptonote { namespace rpc {
     CHECK_CORE_READY();
     if(req.blob.size()!=1)
       throw rpc_error{ERROR_WRONG_PARAM, "Wrong param"};
-    blobdata blockblob;
-    if(!epee::string_tools::parse_hexstr_to_binbuff(req.blob[0], blockblob))
+    if(!oxenc::is_hex(req.blob[0]))
       throw rpc_error{ERROR_WRONG_BLOCKBLOB, "Wrong block blob"};
-
+    auto blockblob =oxenc::from_hex(req.blob[0]);
     // Fixing of high orphan issue for most pools
     // Thanks Boolberry!
     block b;
@@ -1795,10 +1787,10 @@ namespace cryptonote { namespace rpc {
       res.status = template_res.status;
 
       blobdata blockblob;
-      if(!epee::string_tools::parse_hexstr_to_binbuff(template_res.blocktemplate_blob, blockblob))
+      if(!oxenc::is_hex(template_res.blocktemplate_blob))
         throw rpc_error{ERROR_WRONG_BLOCKBLOB, "Wrong block blob"};
       block b;
-      if(!parse_and_validate_block_from_blob(blockblob, b))
+      if(!parse_and_validate_block_from_blob(oxenc::from_hex(template_res.blocktemplate_blob), b))
         throw rpc_error{ERROR_WRONG_BLOCKBLOB, "Wrong block blob"};
       b.nonce = req.starting_nonce;
       miner::find_nonce_for_given_block([this](const cryptonote::block &b, uint64_t height, unsigned int threads, crypto::hash &hash) {
@@ -2258,17 +2250,12 @@ namespace cryptonote { namespace rpc {
     }
     else
     {
-      for (const auto &str: req.txids)
+      for (const auto &txid_hex: req.txids)
       {
-        cryptonote::blobdata txid_data;
-        if(!epee::string_tools::parse_hexstr_to_binbuff(str, txid_data))
+        if(!tools::hex_to_type(txid_hex, txids.emplace_back()))
         {
           failed = true;
-        }
-        else
-        {
-          crypto::hash txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
-          txids.push_back(txid);
+          txids.pop_back();
         }
       }
     }
@@ -2523,20 +2510,17 @@ namespace cryptonote { namespace rpc {
     PERF_TIMER(on_relay_tx);
 
     res.status = "";
-    for (const auto &str: req.txids)
+    for (const auto &txid_hex: req.txids)
     {
-      cryptonote::blobdata txid_data;
-      if(!epee::string_tools::parse_hexstr_to_binbuff(str, txid_data))
+      crypto::hash txid;
+      if (!tools::hex_to_type(txid_hex, txid))
       {
         if (!res.status.empty()) res.status += ", ";
-        res.status += "invalid transaction id: " + str;
+        res.status += "invalid transaction id: " + txid;
         continue;
       }
-      crypto::hash txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
-
       cryptonote::blobdata txblob;
-      bool r = m_core.get_pool().get_transaction(txid, txblob);
-      if (r)
+      if (m_core.get_pool().get_transaction(txid, txblob))
       {
         cryptonote_connection_context fake_context{};
         NOTIFY_NEW_TRANSACTIONS::request r{};
@@ -2547,8 +2531,7 @@ namespace cryptonote { namespace rpc {
       else
       {
         if (!res.status.empty()) res.status += ", ";
-        res.status += "transaction not found in pool: " + str;
-        continue;
+        res.status += "transaction not found in pool: " + txid_hex;
       }
     }
 

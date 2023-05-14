@@ -313,8 +313,9 @@ TEST(node_server, bind_same_p2p_port)
 
   const auto init = [](const std::unique_ptr<test_data_t>& server, const char* port) -> bool {
     boost::program_options::options_description desc_options("Command line options");
+    boost::program_options::options_description hidden("Hidden options");
     cryptonote::core::init_options(desc_options);
-    Server::init_options(desc_options);
+    Server::init_options(desc_options, hidden);
 
     const char *argv[2] = {nullptr, nullptr};
     boost::program_options::variables_map vm;

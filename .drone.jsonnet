@@ -1,5 +1,5 @@
 local default_deps_base='libsystemd-dev libboost-thread-dev libgtest-dev ' +
-    'libboost-serialization-dev libboost-program-options-dev libunbound-dev nettle-dev libevent-dev libminiupnpc-dev ' +
+    'libboost-serialization-dev libboost-program-options-dev libunbound-dev nettle-dev libevent-dev ' +
     'libunwind8-dev libsodium-dev libssl-dev libreadline-dev libhidapi-dev libusb-1.0-0-dev python3 ' +
     'pkg-config libsqlite3-dev qttools5-dev libcurl4-openssl-dev';
 local default_deps='g++ ' + default_deps_base; // g++ sometimes needs replacement
@@ -137,7 +137,7 @@ local android_build_steps(android_abi, android_platform=21, jobs=6, cmake_extra=
         '-DCMAKE_BUILD_TYPE=Release ' +
         '-DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake ' +
         '-DANDROID_PLATFORM=' + android_platform + ' -DANDROID_ABI=' + android_abi + ' ' +
-        '-DMONERO_SLOW_HASH=ON ' +
+        '-DMONERO_SLOW_HASH=ON'+'-DWARNINGS_AS_ERRORS=OFF'+'-DBUILD_TESTS=OFF' +
         '-DLOCAL_MIRROR=https://builds.belnet.dev/deps ' +
         '-DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja ' + cmake_extra,
     'ninja -j' + jobs + ' -v wallet_merged',

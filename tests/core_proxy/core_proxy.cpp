@@ -77,8 +77,9 @@ int main(int argc, char* argv[])
 
 
   po::options_description desc("Allowed options");
+  po::options_description hidden("Hidden options");
   command_line::add_arg(desc, cryptonote::arg_data_dir);
-  nodetool::node_server<cryptonote::t_cryptonote_protocol_handler<tests::proxy_core> >::init_options(desc);
+  nodetool::node_server<cryptonote::t_cryptonote_protocol_handler<tests::proxy_core> >::init_options(desc,hidden);
 
   po::variables_map vm;
   bool r = command_line::handle_error_helper(desc, [&]()

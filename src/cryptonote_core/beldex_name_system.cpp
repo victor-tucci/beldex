@@ -1536,7 +1536,7 @@ std::optional<cryptonote::address_parse_info> mapping_value::get_wallet_address_
   assert(!encrypted);
   if (encrypted) return std::nullopt;
 
-  cryptonote::address_parse_info addr_info{0};
+  cryptonote::address_parse_info addr_info{};
   auto* bufpos = &buffer[1];
   std::memcpy(&addr_info.address.m_spend_public_key.data, bufpos, 32);
   bufpos += 32;
