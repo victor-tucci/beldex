@@ -35,7 +35,6 @@
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "wallet.h"
 #include "common_defines.h"
-#include "common/dns_utils.h"
 #include "common/util.h"
 #include "version.h"
 #include "common/fs.h"
@@ -269,15 +268,6 @@ uint64_t WalletManagerImpl::blockTarget()
 {
     auto res = get_info(m_http_client);
     return res ? res->target : 0;
-}
-
-EXPORT
-std::string WalletManagerImpl::resolveOpenAlias(const std::string &address, bool &dnssec_valid) const
-{
-    std::vector<std::string> addresses = tools::dns_utils::addresses_from_url(address, dnssec_valid);
-    if (addresses.empty())
-        return "";
-    return addresses.front();
 }
 
 ///////////////////// WalletManagerFactory implementation //////////////////////

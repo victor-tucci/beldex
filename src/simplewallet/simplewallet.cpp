@@ -53,13 +53,12 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/format.hpp>
-#include <oxenmq/hex.h>
+#include <oxenc/hex.h>
 #include "epee/console_handler.h"
 #include "common/i18n.h"
 #include "common/command_line.h"
 #include "common/util.h"
 #include "common/signal_handler.h"
-#include "common/dns_utils.h"
 #include "common/base58.h"
 #include "common/scoped_message_writer.h"
 #include "common/beldex_integration_test_hooks.h"
@@ -83,10 +82,9 @@
 #include "epee/readline_suspend.h"
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
-#include "epee/string_coding.h"
 #include <fmt/core.h>
 
-extern "C"
+extern "
 {
 #include <sodium.h>
 }
@@ -451,42 +449,6 @@ namespace
     return "invalid";
   }
 
-  std::string oa_prompter(const std::string_view url, const std::vector<std::string> &addresses, bool dnssec_valid)
-  {
-    if (addresses.empty())
-      return {};
-    // prompt user for confirmation.
-    // inform user of DNSSEC validation status as well.
-    std::string dnssec_str;
-    if (dnssec_valid)
-    {
-      dnssec_str = sw::tr("DNSSEC validation passed");
-    }
-    else
-    {
-      dnssec_str = sw::tr("WARNING: DNSSEC validation was unsuccessful, this address may not be correct!");
-    }
-    std::stringstream prompt;
-    prompt << sw::tr("For URL: ") << url
-           << ", " << dnssec_str << std::endl
-           << sw::tr(" Beldex Address = ") << addresses[0]
-           << std::endl
-           << sw::tr("Is this OK?")
-    ;
-    // prompt the user for confirmation given the dns query and dnssec status
-    std::string confirm_dns_ok = input_line(prompt.str(), true);
-    if (std::cin.eof())
-    {
-      return {};
-    }
-    if (!command_line::is_yes(confirm_dns_ok))
-    {
-      std::cout << sw::tr("you have cancelled the transfer request") << std::endl;
-      return {};
-    }
-    return addresses[0];
-  }
-
   std::optional<std::pair<uint32_t, uint32_t>> parse_subaddress_lookahead(const std::string& str)
   {
     auto r = tools::parse_subaddress_lookahead(str);
@@ -625,7 +587,7 @@ namespace
   {
     std::string_view data{k.data, sizeof(k.data)};
     std::ostream_iterator<char> osi{std::cout};
-    oxenmq::to_hex(data.begin(), data.end(), osi);
+    oxenc::to_hex(data.begin(), data.end(), osi);
   }
 
   bool long_payment_id_failure(bool ret)
@@ -1223,7 +1185,7 @@ bool simple_wallet::export_multisig_main(const std::vector<std::string> &args, b
     }
     else
     {
-      bool r = m_wallet->save_to_file(filename, ciphertext);
+      bool r = tools::dump_file(filename, ciphertext);
       if (!r)
       {
         fail_msg_writer() << tr("failed to save file ") << filename.u8string();
@@ -1284,7 +1246,7 @@ bool simple_wallet::import_multisig_main(const std::vector<std::string> &args, b
     {
       const fs::path filename = fs::u8path(args[n]);
       std::string data;
-      bool r = m_wallet->load_from_file(filename, data);
+      bool r = tools::slurp_file(filename, data);
       if (!r)
       {
         fail_msg_writer() << tr("failed to read file ") << filename.u8string();
@@ -1597,7 +1559,7 @@ bool simple_wallet::export_raw_multisig(const std::vector<std::string> &args)
       if (!filenames.empty())
         filenames += ", ";
       filenames += fn.u8string();
-      if (!m_wallet->save_to_file(fn, cryptonote::tx_to_blob(ptx.tx)))
+      if (!tools::dump_file(fn, cryptonote::tx_to_blob(ptx.tx)))
       {
         fail_msg_writer() << tr("Failed to export multisig transaction to file ") << fn.u8string();
         return true;
@@ -2560,35 +2522,6 @@ bool simple_wallet::set_device_name(const std::vector<std::string> &args/* = std
   return true;
 }
 
-bool simple_wallet::set_export_format(const std::vector<std::string> &args/* = std::vector<std::string()*/)
-{
-  if (args.size() < 2)
-  {
-    fail_msg_writer() << tr("Export format not specified");
-    return true;
-  }
-
-  if (boost::algorithm::iequals(args[1], "ascii"))
-  {
-    m_wallet->set_export_format(tools::wallet2::ExportFormat::Ascii);
-  }
-  else if (boost::algorithm::iequals(args[1], "binary"))
-  {
-    m_wallet->set_export_format(tools::wallet2::ExportFormat::Binary);
-  }
-  else
-  {
-    fail_msg_writer() << tr("Export format not recognized.");
-    return true;
-  }
-  const auto pwd_container = get_and_verify_password();
-  if (pwd_container)
-  {
-    m_wallet->rewrite(m_wallet_file, pwd_container->password());
-  }
-  return true;
-}
-
 bool simple_wallet::help(const std::vector<std::string> &args/* = std::vector<std::string>()*/)
 {
   if(args.empty())
@@ -3235,7 +3168,6 @@ bool simple_wallet::set_variable(const std::vector<std::string> &args)
     success_msg_writer() << "ignore-outputs-below = " << cryptonote::print_money(m_wallet->ignore_outputs_below());
     success_msg_writer() << "track-uses = " << m_wallet->track_uses();
     success_msg_writer() << "device_name = " << m_wallet->device_name();
-    success_msg_writer() << "export-format = " << (m_wallet->export_format() == tools::wallet2::ExportFormat::Ascii ? "ascii" : "binary");
     success_msg_writer() << "inactivity-lock-timeout = " << m_wallet->inactivity_lock_timeout().count()
 #ifdef _WIN32
         << " (disabled on Windows)"
@@ -3294,7 +3226,6 @@ bool simple_wallet::set_variable(const std::vector<std::string> &args)
     CHECK_SIMPLE_VARIABLE("track-uses", set_track_uses, tr("0 or 1"));
     CHECK_SIMPLE_VARIABLE("inactivity-lock-timeout", set_inactivity_lock_timeout, tr("unsigned integer (seconds, 0 to disable)"));
     CHECK_SIMPLE_VARIABLE("device-name", set_device_name, tr("<device_name[:device_spec]>"));
-    CHECK_SIMPLE_VARIABLE("export-format", set_export_format, tr("\"binary\" or \"ascii\""));
   }
   fail_msg_writer() << tr("set: unrecognized argument(s)");
   return true;
@@ -5955,12 +5886,12 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     LOG_PRINT_L0("has_uri" << has_uri);
     if (i + 1 < local_args.size())
     {
-      r = cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), local_args[i], oa_prompter);
+      r = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), local_args[i]);
       if (!r && m_wallet->is_trusted_daemon())
       {
         std::optional<std::string> address = m_wallet->resolve_address(local_args[i]);
         if (address)
-          r = cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), *address, oa_prompter);
+          r = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), *address);
       }
       if(!r)
       {
@@ -6396,19 +6327,22 @@ bool simple_wallet::query_locked_stakes(bool print_result)
     }
 
     bool once_only = true;
-    cryptonote::blobdata binary_buf;
-    binary_buf.reserve(sizeof(crypto::key_image));
-    for (size_t i = 0; i < response.size(); ++i)
+    bool first = true;
+    crypto::key_image key_image;
+    for (const auto& entry : response)
     {
-      rpc::GET_MASTER_NODE_BLACKLISTED_KEY_IMAGES::entry const &entry = response[i];
-      binary_buf.clear();
-      if(!epee::string_tools::parse_hexstr_to_binbuff(entry.key_image, binary_buf) || binary_buf.size() != sizeof(crypto::key_image))
+      if (first)
+        first = false;
+      else
+        msg_buf += "\n";
+
+      if (!tools::hex_to_type(entry.key_image, key_image))
       {
         fail_msg_writer() << tr("Failed to parse hex representation of key image: ") << entry.key_image;
         continue;
       }
 
-      if (!m_wallet->contains_key_image(*reinterpret_cast<const crypto::key_image*>(binary_buf.data())))
+      if (!m_wallet->contains_key_image(key_image))
         continue;
 
       has_locked_stakes = true;
@@ -6434,8 +6368,6 @@ bool simple_wallet::query_locked_stakes(bool print_result)
         msg_buf.append("\n");
       }
 
-      if (i < (response.size() - 1))
-        msg_buf.append("\n");
     }
   }
 
@@ -6743,7 +6675,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     }
 
     auto& enc_hex = response[0].encrypted_value;
-    if (!oxenmq::is_hex(enc_hex) || enc_hex.size() % 2 != 0 || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
+    if (!oxenc::is_hex(enc_hex) || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
     {
       LOG_ERROR("invalid BNS data returned from beldexd");
       fail_msg_writer() << tr("invalid BNS data returned from beldexd");
@@ -6753,7 +6685,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     bns::mapping_value mval{};
     mval.len = enc_hex.size() / 2;
     mval.encrypted = true;
-    oxenmq::from_hex(enc_hex.begin(), enc_hex.end(), mval.buffer.begin());
+    oxenc::from_hex(enc_hex.begin(), enc_hex.end(), mval.buffer.begin());
 
     if (!mval.decrypt(tools::lowercase_ascii_string(name), type))
     {
@@ -6878,7 +6810,7 @@ bool simple_wallet::bns_encrypt(std::vector<std::string> args)
     return false;
   }
 
-  tools::success_msg_writer() << "encrypted value=" << oxenmq::to_hex(mval.to_view());
+  tools::success_msg_writer() << "encrypted value=" << oxenc::to_hex(mval.to_view());
   return true;
 }
 //----------------------------------------------------------------------------------------------------
@@ -6987,7 +6919,7 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
   for (auto const &mapping : response)
   {
     auto& enc_hex = mapping.encrypted_value;
-    if (mapping.entry_index >= args.size() || !oxenmq::is_hex(enc_hex) || enc_hex.size() % 2 != 0 || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
+    if (mapping.entry_index >= args.size() || !oxenc::is_hex(enc_hex) || enc_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
     {
       fail_msg_writer() << "Received invalid BNS mapping data from beldexd";
       return false;
@@ -7002,7 +6934,7 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     bns::mapping_value value{};
     value.len = enc_hex.size() / 2;
     value.encrypted = true;
-    oxenmq::from_hex(enc_hex.begin(), enc_hex.end(), value.buffer.begin());
+    oxenc::from_hex(enc_hex.begin(), enc_hex.end(), value.buffer.begin());
 
     if (!value.decrypt(name, mapping.type))
     {
@@ -7071,7 +7003,7 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
         return false;
       }
 
-      if (!(oxenmq::is_hex(arg) && arg.size() == 64) && (!cryptonote::is_valid_address(arg, m_wallet->nettype())))
+      if (!(oxenc::is_hex(arg) && arg.size() == 64) && (!cryptonote::is_valid_address(arg, m_wallet->nettype())))
       {
         fail_msg_writer() << "arg contains non valid characters: " << arg;
         return false;
@@ -7108,7 +7040,7 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
       {
         name = got->second.name;
         bns::mapping_value mv;
-        if (bns::mapping_value::validate_encrypted(entry.type, oxenmq::from_hex(entry.encrypted_value), &mv)
+        if (bns::mapping_value::validate_encrypted(entry.type, oxenc::from_hex(entry.encrypted_value), &mv)
             && mv.decrypt(name, entry.type))
           value = mv.to_readable_value(nettype, entry.type);
       }
@@ -7496,7 +7428,7 @@ bool simple_wallet::sweep_main(uint32_t account, uint64_t below, Transfer transf
   else
     addr = m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0});
 
-  if (!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), addr, oa_prompter))
+  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), addr))
   {
     fail_msg_writer() << tr("failed to parse address");
     print_usage();
@@ -7592,7 +7524,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
   }
 
   cryptonote::address_parse_info info;
-  if (!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), local_args[1], oa_prompter))
+  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), local_args[1]))
   {
     fail_msg_writer() << tr("failed to parse address");
     return true;
@@ -8053,7 +7985,7 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args)
   }
 
   cryptonote::address_parse_info info;
-  if(!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), args[1], oa_prompter))
+  if(!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), args[1]))
   {
     fail_msg_writer() << tr("failed to parse address");
     return true;
@@ -8065,7 +7997,7 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args)
   {
     std::string sig_str = m_wallet->get_tx_proof(txid, info.address, info.is_subaddress, args.size() == 3 ? args[2] : "");
     const fs::path filename{"beldex_tx_proof"};
-    if (m_wallet->save_to_file(filename, sig_str, true))
+    if (tools::dump_file(filename, sig_str))
       success_msg_writer() << tr("signature file saved to: ") << filename.u8string();
     else
       fail_msg_writer() << tr("failed to save signature file");
@@ -8121,7 +8053,7 @@ bool simple_wallet::check_tx_key(const std::vector<std::string> &args_)
   }
 
   cryptonote::address_parse_info info;
-  if(!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), local_args[2], oa_prompter))
+  if(!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), local_args[2]))
   {
     fail_msg_writer() << tr("failed to parse address");
     return true;
@@ -8130,7 +8062,7 @@ bool simple_wallet::check_tx_key(const std::vector<std::string> &args_)
   try
   {
     uint64_t received;
-    bool in_pool;
+    bool in_pool = false;
     uint64_t confirmations;
     m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations);
 
@@ -8185,7 +8117,7 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
 
   // parse address
   cryptonote::address_parse_info info;
-  if(!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), args[1], oa_prompter))
+  if(!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), args[1]))
   {
     fail_msg_writer() << tr("failed to parse address");
     return true;
@@ -8193,7 +8125,7 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
 
   // read signature file
   std::string sig_str;
-  if (!m_wallet->load_from_file(args[2], sig_str))
+  if (!tools::slurp_file(args[2], sig_str))
   {
     fail_msg_writer() << tr("failed to load signature file");
     return true;
@@ -8277,7 +8209,7 @@ bool simple_wallet::get_spend_proof(const std::vector<std::string> &args)
   {
     const std::string sig_str = m_wallet->get_spend_proof(txid, args.size() == 2 ? args[1] : "");
     const fs::path filename{"beldex_spend_proof"};
-    if (m_wallet->save_to_file(filename, sig_str, true))
+    if (tools::dump_file(filename, sig_str))
       success_msg_writer() << tr("signature file saved to: ") << filename.u8string();
     else
       fail_msg_writer() << tr("failed to save signature file");
@@ -8307,7 +8239,7 @@ bool simple_wallet::check_spend_proof(const std::vector<std::string> &args)
     return true;
 
   std::string sig_str;
-  if (!m_wallet->load_from_file(args[1], sig_str))
+  if (!tools::slurp_file(args[1], sig_str))
   {
     fail_msg_writer() << tr("failed to load signature file");
     return true;
@@ -8366,7 +8298,7 @@ bool simple_wallet::get_reserve_proof(const std::vector<std::string> &args)
   {
     const std::string sig_str = m_wallet->get_reserve_proof(account_minreserve, args.size() == 2 ? args[1] : "");
     const fs::path filename{"beldex_reserve_proof"};
-    if (m_wallet->save_to_file(filename, sig_str, true))
+    if (tools::dump_file(filename, sig_str))
       success_msg_writer() << tr("signature file saved to: ") << filename.u8string();
     else
       fail_msg_writer() << tr("failed to save signature file");
@@ -8389,7 +8321,7 @@ bool simple_wallet::check_reserve_proof(const std::vector<std::string> &args)
     return true;
 
   cryptonote::address_parse_info info;
-  if(!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), args[0], oa_prompter))
+  if(!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), args[0]))
   {
     fail_msg_writer() << tr("failed to parse address");
     return true;
@@ -8401,7 +8333,7 @@ bool simple_wallet::check_reserve_proof(const std::vector<std::string> &args)
   }
 
   std::string sig_str;
-  if (!m_wallet->load_from_file(args[1], sig_str))
+  if (!tools::slurp_file(args[1], sig_str))
   {
     fail_msg_writer() << tr("failed to load signature file");
     return true;
@@ -9467,7 +9399,7 @@ bool simple_wallet::address_book(const std::vector<std::string> &args/* = std::v
   else if (args[0] == "add")
   {
     cryptonote::address_parse_info info;
-    if(!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), args[1], oa_prompter))
+    if(!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), args[1]))
     {
       fail_msg_writer() << tr("failed to parse address");
       return true;
@@ -9522,13 +9454,12 @@ bool simple_wallet::set_tx_note(const std::vector<std::string> &args)
     return true;
   }
 
-  cryptonote::blobdata txid_data;
-  if(!epee::string_tools::parse_hexstr_to_binbuff(args.front(), txid_data) || txid_data.size() != sizeof(crypto::hash))
+  crypto::hash txid;
+  if (!tools::hex_to_type(args.front(), txid))
   {
     fail_msg_writer() << tr("failed to parse txid");
     return true;
   }
-  crypto::hash txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
 
   std::string note = "";
   for (size_t n = 1; n < args.size(); ++n)
@@ -9550,13 +9481,12 @@ bool simple_wallet::get_tx_note(const std::vector<std::string> &args)
     return true;
   }
 
-  cryptonote::blobdata txid_data;
-  if(!epee::string_tools::parse_hexstr_to_binbuff(args.front(), txid_data) || txid_data.size() != sizeof(crypto::hash))
+  crypto::hash txid;
+  if(!tools::hex_to_type(args.front(), txid))
   {
     fail_msg_writer() << tr("failed to parse txid");
     return true;
   }
-  crypto::hash txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
 
   std::string note = m_wallet->get_tx_note(txid);
   if (note.empty())
@@ -9702,7 +9632,7 @@ bool simple_wallet::sign(const std::vector<std::string> &args)
 
   const fs::path filename = fs::u8path(args.back());
   std::string data;
-  if (!m_wallet->load_from_file(filename, data))
+  if (!tools::slurp_file(filename, data))
   {
     fail_msg_writer() << tr("failed to read file ") << filename.u8string();
     return true;
@@ -9714,7 +9644,7 @@ bool simple_wallet::sign(const std::vector<std::string> &args)
 bool simple_wallet::verify_string(std::string_view value, std::string_view address, std::string_view signature)
 {
   cryptonote::address_parse_info info;
-  if(!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), address, oa_prompter))
+  if(!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), address))
     fail_msg_writer() << tr("failed to parse address");
   else if (!m_wallet->verify(value, info.address, signature))
     fail_msg_writer() << tr("Bad signature from ") << address;
@@ -9734,7 +9664,7 @@ bool simple_wallet::verify(const std::vector<std::string> &args)
   }
   fs::path filename = fs::u8path(args[0]);
   std::string data;
-  if (!m_wallet->load_from_file(filename, data))
+  if (!tools::slurp_file(filename, data))
   {
     fail_msg_writer() << tr("failed to read file ") << filename.u8string();
     return true;
@@ -9973,7 +9903,7 @@ bool simple_wallet::export_outputs(const std::vector<std::string> &args)
   try
   {
     std::string data = m_wallet->export_outputs_to_str(all);
-    bool r = m_wallet->save_to_file(filename, data);
+    bool r = tools::dump_file(filename, data);
     if (!r)
     {
       fail_msg_writer() << tr("failed to save file ") << filename.u8string();
@@ -10006,7 +9936,7 @@ bool simple_wallet::import_outputs(const std::vector<std::string> &args)
   const fs::path filename = fs::u8path(args[0]);
 
   std::string data;
-  bool r = m_wallet->load_from_file(filename, data);
+  bool r = tools::slurp_file(filename, data);
   if (!r)
   {
     fail_msg_writer() << tr("failed to read file ") << filename.u8string();
@@ -10036,13 +9966,12 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
     return true;
   }
 
-  cryptonote::blobdata txid_data;
-  if(!epee::string_tools::parse_hexstr_to_binbuff(args.front(), txid_data) || txid_data.size() != sizeof(crypto::hash))
+  crypto::hash txid;
+  if(!tools::hex_to_type(args.front(), txid))
   {
     fail_msg_writer() << tr("failed to parse txid");
     return true;
   }
-  crypto::hash txid = *reinterpret_cast<const crypto::hash*>(txid_data.data());
 
   const uint64_t last_block_height = m_wallet->get_blockchain_current_height();
 
@@ -10236,10 +10165,10 @@ void simple_wallet::commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_
     {
       cryptonote::blobdata blob;
       tx_to_blob(ptx.tx, blob);
-      const std::string blob_hex = oxenmq::to_hex(blob);
+      const std::string blob_hex = oxenc::to_hex(blob);
       fs::path filename = fs::u8path("raw_beldex_tx");
       if (ptx_vector.size() > 1) filename += "_" + std::to_string(i++);
-      bool success = m_wallet->save_to_file(filename, blob_hex, true);
+      bool success = tools::dump_file(filename, blob_hex);
 
       if (success) msg_buf += tr("Transaction successfully saved to ");
       else         msg_buf += tr("Failed to save transaction to ");
@@ -10712,7 +10641,7 @@ void simple_wallet::mms_signer(const std::vector<std::string> &args)
   if (args.size() == 4)
   {
     cryptonote::address_parse_info info;
-    bool ok = cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), args[3], oa_prompter);
+    bool ok = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), args[3]);
     if (!ok)
     {
       fail_msg_writer() << tr("Invalid Beldex address");
@@ -11032,7 +10961,7 @@ void simple_wallet::mms_export(const std::vector<std::string> &args)
   if (valid_id)
   {
     fs::path filename = fs::u8path("mms_message_content");
-    if (m_wallet->save_to_file(filename, m.content))
+    if (tools::dump_file(filename, m.content))
     {
       success_msg_writer() << tr("Message content saved to: ") << filename;
     }

@@ -46,6 +46,7 @@
 #include <boost/multi_index/member.hpp>
 #include <atomic>
 #include <functional>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -1415,8 +1416,8 @@ namespace cryptonote
      *
      * @return true if the block's timestamp is valid, otherwise false
      */
-    bool check_block_timestamp(std::vector<uint64_t>& timestamps, const block& b, uint64_t& median_ts) const;
-    bool check_block_timestamp(std::vector<uint64_t>& timestamps, const block& b) const { uint64_t median_ts; return check_block_timestamp(timestamps, b, median_ts); }
+    bool check_block_timestamp(std::vector<uint64_t> timestamps, const block& b, uint64_t& median_ts) const;
+    bool check_block_timestamp(std::vector<uint64_t> timestamps, const block& b) const { uint64_t median_ts; return check_block_timestamp(std::move(timestamps), b, median_ts); }
 
     /**
      * @brief get the "adjusted time"

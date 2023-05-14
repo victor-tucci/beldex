@@ -32,7 +32,6 @@ add_library(common
   base58.cpp
   combinator.cpp
   command_line.cpp
-  dns_utils.cpp
   error.cpp
   expect.cpp
   file.cpp
@@ -67,7 +66,5 @@ target_link_libraries(common
     filesystem
     fmt::fmt
   PRIVATE
-    libunbound
-    OpenSSL::SSL
-    OpenSSL::Crypto
+    sodium
     extra)

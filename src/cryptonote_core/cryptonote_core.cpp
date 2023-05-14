@@ -37,7 +37,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <iomanip>
-#include <oxenmq/base32z.h>
+#include <oxenc/base32z.h>
 
 extern "C" {
 #include <sodium.h>
@@ -56,12 +56,10 @@ extern "C" {
 #include "common/command_line.h"
 #include "common/hex.h"
 #include "common/base58.h"
-#include "common/dns_utils.h"
 #include "epee/warnings.h"
 #include "crypto/crypto.h"
 #include "cryptonote_config.h"
 #include "cryptonote_basic/hardfork.h"
-#include "epee/misc_language.h"
 #include <csignal>
 #include "checkpoints/checkpoints.h"
 #include "ringct/rctTypes.h"
@@ -980,7 +978,7 @@ namespace cryptonote
       MGINFO_YELLOW("- primary: " << tools::type_to_hex(keys.pub));
       MGINFO_YELLOW("- ed25519: " << tools::type_to_hex(keys.pub_ed25519));
       // .mnode address is the ed25519 pubkey, encoded with base32z and with .mnode appended:
-      MGINFO_YELLOW("- belnet: " << oxenmq::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
+      MGINFO_YELLOW("- belnet: " << oxenc::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
@@ -1351,7 +1349,6 @@ namespace cryptonote
     //auto lock = incoming_tx_lock();
     uint8_t version      = m_blockchain_storage.get_network_version();
     bool ok              = true;
-    bool tx_pool_changed = false;
     if (flash_rollback_height)
       *flash_rollback_height = 0;
     tx_pool_options tx_opts;
@@ -1378,7 +1375,6 @@ namespace cryptonote
       }
       if (m_mempool.add_tx(info.tx, info.tx_hash, *info.blob, weight, info.tvc, *local_opts, version, flash_rollback_height))
       {
-        tx_pool_changed |= info.tvc.m_added_to_pool;
         MDEBUG("tx added: " << info.tx_hash);
       }
       else

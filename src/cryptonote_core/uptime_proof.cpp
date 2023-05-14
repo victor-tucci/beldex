@@ -43,7 +43,7 @@ Proof::Proof(
 Proof::Proof(const std::string& serialized_proof)
 {
   try {
-    using namespace oxenmq;
+    using namespace oxenc;
 
     const bt_dict bt_proof = bt_deserialize<bt_dict>(serialized_proof);
     //mnode_version <X,X,X>
@@ -98,11 +98,11 @@ crypto::hash Proof::hash_uptime_proof() const
   return result;
 }
 
-oxenmq::bt_dict Proof::bt_encode_uptime_proof() const
+oxenc::bt_dict Proof::bt_encode_uptime_proof() const
 {
-  oxenmq::bt_dict encoded_proof{
+  oxenc::bt_dict encoded_proof{
     //version
-    {"v", oxenmq::bt_list{{version[0], version[1], version[2]}}},
+    {"v", oxenc::bt_list{{version[0], version[1], version[2]}}},
     //timestamp
     {"t", timestamp},
     //public_ip
@@ -116,9 +116,9 @@ oxenmq::bt_dict Proof::bt_encode_uptime_proof() const
     //storage_omq_port
     {"sop", storage_omq_port},
     //storage_version
-    {"sv", oxenmq::bt_list{{storage_server_version[0], storage_server_version[1], storage_server_version[2]}}},
+    {"sv", oxenc::bt_list{{storage_server_version[0], storage_server_version[1], storage_server_version[2]}}},
     //belnet_version
-    {"lv", oxenmq::bt_list{{belnet_version[0], belnet_version[1], belnet_version[2]}}},
+    {"lv", oxenc::bt_list{{belnet_version[0], belnet_version[1], belnet_version[2]}}},
   };
 
   if (tools::view_guts(pubkey) != tools::view_guts(pubkey_ed25519)) {

@@ -34,11 +34,9 @@
 #include <optional>
 #include <mutex>
 #include <boost/format.hpp>
-#include <openssl/evp.h>
-#include <openssl/pem.h>
 #include <type_traits>
 #include <cpr/parameters.h>
-#include <oxenmq/base64.h>
+#include <oxenc/base64.h>
 #include "common/password.h"
 #include "common/string_util.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -50,7 +48,6 @@
 #include "wallet2.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
-#include "epee/misc_language.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/hardfork.h"
 #include "multisig/multisig.h"
@@ -75,7 +72,6 @@
 #include "epee/memwipe.h"
 #include "common/base58.h"
 #include "common/combinator.h"
-#include "common/dns_utils.h"
 #include "common/notify.h"
 #include "common/perf_timer.h"
 #include "common/hex.h"
@@ -89,7 +85,6 @@
 #include "common/beldex.h"
 #include "common/beldex_integration_test_hooks.h"
 #include "beldex_economy.h"
-#include "epee/string_coding.h"
 
 extern "C"
 {
@@ -125,9 +120,9 @@ namespace {
 
   constexpr float SECOND_OUTPUT_RELATEDNESS_THRESHOLD = 0.0f;
 
-  constexpr std::string_view KEY_IMAGE_EXPORT_FILE_MAGIC = "Loki key image export\002"sv;
-  constexpr std::string_view MULTISIG_EXPORT_FILE_MAGIC = "Loki multisig export\001"sv;
-  constexpr std::string_view OUTPUT_EXPORT_FILE_MAGIC = "Loki output export\003"sv;
+  constexpr std::string_view KEY_IMAGE_EXPORT_FILE_MAGIC = "Beldex key image export\002"sv;
+  constexpr std::string_view MULTISIG_EXPORT_FILE_MAGIC = "Beldex multisig export\001"sv;
+  constexpr std::string_view OUTPUT_EXPORT_FILE_MAGIC = "Beldex output export\003"sv;
 
   constexpr uint64_t SEGREGATION_FORK_HEIGHT = 99999999;
   constexpr uint64_t SEGREGATION_FORK_VICINITY = 1500; // blocks
@@ -148,7 +143,6 @@ namespace {
   constexpr std::string_view MULTISIG_MAGIC = "MultisigV1"sv;
   constexpr std::string_view MULTISIG_SIGNATURE_MAGIC = "SigMultisigPkV1"sv;
   constexpr std::string_view MULTISIG_EXTRA_INFO_MAGIC = "MultisigxV1"sv;
-  const std::string ASCII_OUTPUT_MAGIC = "MoneroAsciiDataV1"s; // not string_view because we need it as a c string
   constexpr std::string_view SPEND_PROOF_MAGIC = "SpendProofV1"sv;
   constexpr std::string_view OUTBOUND_PROOF_MAGIC = "OutProofV1"sv;
   constexpr std::string_view INBOUND_PROOF_MAGIC = "InProofV1"sv;
@@ -856,7 +850,15 @@ bool get_pruned_tx(const rpc::GET_TRANSACTIONS::entry &entry, cryptonote::transa
   // easy case if we have the whole tx
   if (entry.as_hex || (entry.prunable_as_hex && entry.pruned_as_hex))
   {
-    CHECK_AND_ASSERT_MES(epee::string_tools::parse_hexstr_to_binbuff(entry.as_hex ? *entry.as_hex : *entry.pruned_as_hex + *entry.prunable_as_hex, bd), false, "Failed to parse tx data");
+    if (entry.as_hex) {
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.as_hex), false, "Failed to parse tx data");
+      bd = oxenc::from_hex(*entry.as_hex);
+    } else {
+      CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.pruned_as_hex) && oxenc::is_hex(*entry.prunable_as_hex), false, "Failed to parse tx data");
+      bd.reserve(oxenc::from_hex_size(entry.pruned_as_hex->size() + entry.prunable_as_hex->size()));
+      oxenc::from_hex(entry.pruned_as_hex->begin(), entry.pruned_as_hex->end(), std::back_inserter(bd));
+      oxenc::from_hex(entry.prunable_as_hex->begin(), entry.prunable_as_hex->end(), std::back_inserter(bd));
+    }
     CHECK_AND_ASSERT_MES(cryptonote::parse_and_validate_tx_from_blob(bd, tx), false, "Invalid tx data");
     tx_hash = cryptonote::get_transaction_hash(tx);
     // if the hash was given, check it matches
@@ -869,7 +871,8 @@ bool get_pruned_tx(const rpc::GET_TRANSACTIONS::entry &entry, cryptonote::transa
   {
     crypto::hash ph;
     CHECK_AND_ASSERT_MES(tools::hex_to_type(*entry.prunable_hash, ph), false, "Failed to parse prunable hash");
-    CHECK_AND_ASSERT_MES(epee::string_tools::parse_hexstr_to_binbuff(*entry.pruned_as_hex, bd), false, "Failed to parse pruned data");
+    CHECK_AND_ASSERT_MES(oxenc::is_hex(*entry.pruned_as_hex), false, "Failed to parse pruned data");
+    bd = oxenc::from_hex(*entry.pruned_as_hex);
     CHECK_AND_ASSERT_MES(parse_and_validate_tx_base_from_blob(bd, tx), false, "Invalid base tx data");
     // only v2 txes can calculate their txid after pruned
     if (bd[0] > 1)
@@ -1081,8 +1084,7 @@ wallet2::wallet2(network_type nettype, uint64_t kdf_rounds, bool unattended):
   m_devices_registered(false),
   m_device_last_key_image_sync(0),
   m_offline(false),
-  m_rpc_version(0),
-  m_export_format(ExportFormat::Binary)
+  m_rpc_version(0)
 {
 }
 
@@ -1352,7 +1354,9 @@ bool wallet2::get_multisig_seed(epee::wipeable_string& seed, const epee::wipeabl
 
   if (raw)
   {
-    seed = epee::to_hex::wipeable_string({(const unsigned char*)data.data(), data.size()});
+    epee::wipeable_string seed;
+    seed.reserve(oxenc::to_hex_size(data.size()));
+    oxenc::to_hex(data.data(), data.data() + data.size(), std::back_inserter(seed));
   }
   else
   {
@@ -2644,7 +2648,7 @@ void wallet2::process_new_blockchain_entry(const cryptonote::block& b, const cry
       LOG_PRINT_L2( "Skipped block by timestamp, height: " << height << ", block time " << b.timestamp << ", account time " << m_account.get_createtime());
   }
   m_blockchain.push_back(bl_id);
-
+  m_cached_height++;
   if (0 != m_callback)
     m_callback->on_new_block(height, b);
 }
@@ -3311,6 +3315,7 @@ void wallet2::fast_refresh(uint64_t stop_height, uint64_t &blocks_start_height, 
       m_blockchain.push_back(crypto::null_hash); // maybe a bit suboptimal, but deque won't do huge reallocs like vector
     m_blockchain.push_back(checkpoint_hash);
     m_blockchain.trim(checkpoint_height);
+    m_cached_height = m_blockchain.size();
     short_chain_history.clear();
     get_short_chain_history(short_chain_history);
   }
@@ -3343,6 +3348,7 @@ void wallet2::fast_refresh(uint64_t stop_height, uint64_t &blocks_start_height, 
         if (!(current_index % 1024))
           LOG_PRINT_L2( "Skipped block by height: " << current_index);
         m_blockchain.push_back(bl_id);
+        m_cached_height++;
 
         if (0 != m_callback)
         { // FIXME: this isn't right, but simplewallet just logs that we got a block.
@@ -3549,6 +3555,7 @@ void wallet2::refresh(bool trusted_daemon, uint64_t start_height, uint64_t & blo
           generate_genesis(b);
           m_blockchain.clear();
           m_blockchain.push_back(get_block_hash(b));
+          m_cached_height++;
           short_chain_history.clear();
           get_short_chain_history(short_chain_history);
           fast_refresh(stop_height, blocks_start_height, short_chain_history, true);
@@ -3556,6 +3563,7 @@ void wallet2::refresh(bool trusted_daemon, uint64_t start_height, uint64_t & blo
           THROW_WALLET_EXCEPTION_IF(m_blockchain.offset() != 0, error::wallet_internal_error, "Unexpected hashchain offset");
           for (const auto &h: tip)
             m_blockchain.push_back(h);
+          m_cached_height = m_blockchain.size();
           short_chain_history.clear();
           get_short_chain_history(short_chain_history);
           start_height = stop_height;
@@ -3793,6 +3801,7 @@ void wallet2::detach_blockchain(uint64_t height, std::map<std::pair<uint64_t, ui
 
   size_t blocks_detached = m_blockchain.size() - height;
   m_blockchain.crop(height);
+  m_cached_height = m_blockchain.size();
 
   for (auto it = m_payments.begin(); it != m_payments.end(); )
   {
@@ -3824,6 +3833,7 @@ bool wallet2::deinit()
 bool wallet2::clear()
 {
   m_blockchain.clear();
+  m_cached_height = m_blockchain.size();
   m_transfers.clear();
   m_key_images.clear();
   m_pub_keys.clear();
@@ -3860,6 +3870,7 @@ void wallet2::clear_soft(bool keep_key_images)
   cryptonote::block b;
   generate_genesis(b);
   m_blockchain.push_back(get_block_hash(b));
+  m_cached_height = m_blockchain.size();
   m_last_block_reward = cryptonote::get_outs_money_amount(b.miner_tx);
 }
 
@@ -3881,7 +3892,7 @@ bool wallet2::store_keys(const fs::path& keys_file_name, const epee::wipeable_st
   bool r = false;
   try {
     buf = serialization::dump_binary(*keys_file_data);
-    r = save_to_file(tmp_file_name, buf);
+    r = tools::dump_file(tmp_file_name, buf);
   } catch (...) {}
   CHECK_AND_ASSERT_MES(r, false, "failed to generate wallet keys file " << tmp_file_name);
 
@@ -4059,9 +4070,6 @@ std::optional<wallet2::keys_file_data> wallet2::get_keys_file_data(const epee::w
   value2.SetInt(m_original_keys_available ? 1 : 0);
   json.AddMember("original_keys_available", value2, json.GetAllocator());
 
-  value2.SetInt(m_export_format);
-  json.AddMember("export_format", value2, json.GetAllocator());
-
   value2.SetUint(1);
   json.AddMember("encrypted_secret_keys", value2, json.GetAllocator());
 
@@ -4135,7 +4143,7 @@ void wallet2::change_password(const fs::path& filename, const epee::wipeable_str
 bool wallet2::load_keys(const fs::path& keys_file_name, const epee::wipeable_string& password)
 {
   std::string keys_file_buf;
-  bool r = load_from_file(keys_file_name, keys_file_buf);
+  bool r = tools::slurp_file(keys_file_name, keys_file_buf);
   THROW_WALLET_EXCEPTION_IF(!r, error::file_read_error, keys_file_name);
 
   // Load keys from buffer
@@ -4218,7 +4226,6 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     m_subaddress_lookahead_major = SUBADDRESS_LOOKAHEAD_MAJOR;
     m_subaddress_lookahead_minor = SUBADDRESS_LOOKAHEAD_MINOR;
     m_original_keys_available = false;
-    m_export_format = ExportFormat::Binary;
     m_device_name = "";
     m_device_derivation_path = "";
     m_key_device_type = hw::device::device_type::SOFTWARE;
@@ -4384,9 +4391,6 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, encrypted_secret_keys, uint32_t, Uint, false, false);
     encrypted_secret_keys = field_encrypted_secret_keys;
 
-    GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, export_format, ExportFormat, Int, false, Binary);
-    m_export_format = field_export_format;
-
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, device_name, std::string, String, false, std::string());
     if (m_device_name.empty())
     {
@@ -4525,7 +4529,7 @@ bool wallet2::verify_password(const fs::path& keys_file_name, const epee::wipeab
   wallet2::keys_file_data keys_file_data;
   std::string buf;
   bool encrypted_secret_keys = false;
-  bool r = load_from_file(keys_file_name, buf);
+  bool r = tools::slurp_file(keys_file_name, buf);
   THROW_WALLET_EXCEPTION_IF(!r, error::file_read_error, keys_file_name);
 
   // Decrypt the contents
@@ -4606,6 +4610,7 @@ void wallet2::setup_new_blockchain()
   cryptonote::block b;
   generate_genesis(b);
   m_blockchain.push_back(get_block_hash(b));
+  m_cached_height = m_blockchain.size();
   m_last_block_reward = cryptonote::get_outs_money_amount(b.miner_tx);
   add_subaddress_account(tr("Primary account"));
 }
@@ -4621,7 +4626,7 @@ void wallet2::create_keys_file(const fs::path &wallet_, bool watch_only, const e
     {
       auto addrfile = m_wallet_file;
       addrfile += ".address.txt";
-      r = save_to_file(addrfile, m_account.get_public_address_str(m_nettype), true);
+      r = tools::dump_file(addrfile, m_account.get_public_address_str(m_nettype));
       if(!r) MERROR("String with address text not saved");
     }
   }
@@ -4643,7 +4648,7 @@ bool wallet2::query_device(hw::device::device_type& device_type, const fs::path&
   rapidjson::Document json;
   wallet2::keys_file_data keys_file_data;
   std::string buf;
-  bool r = load_from_file(keys_file_name, buf);
+  bool r = tools::slurp_file(keys_file_name, buf);
   THROW_WALLET_EXCEPTION_IF(!r, error::file_read_error, keys_file_name);
 
   // Decrypt the contents
@@ -4969,7 +4974,7 @@ void wallet2::restore_from_device(const fs::path& wallet_, const epee::wipeable_
   if (hwdev_label) {
     fs::path hwdev_txt = m_wallet_file;
     hwdev_txt += ".hwdev.txt";
-    if (!save_to_file(hwdev_txt, *hwdev_label, true))
+    if (!tools::dump_file(hwdev_txt, *hwdev_label))
       MERROR("failed to write .hwdev.txt comment file");
   }
   if (progress_callback)
@@ -5164,7 +5169,6 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
   // keys are decrypted
   bool reencrypt = false;
   crypto::chacha_key chacha_key;
-  epee::misc_utils::auto_scope_leave_caller keys_reencryptor;
   BELDEX_DEFER {
     if (reencrypt)
     {
@@ -5208,9 +5212,6 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
     ++m_multisig_rounds_passed;
     m_multisig_derivations.clear();
 
-    // keys are encrypted again
-    keys_reencryptor = epee::misc_utils::auto_scope_leave_caller();
-
     if (!m_wallet_file.empty())
     {
       bool r = store_keys(m_keys_file, password, false);
@@ -5220,7 +5221,7 @@ std::string wallet2::exchange_multisig_keys(const epee::wipeable_string &passwor
       addrfile += ".address.txt";
       if (fs::exists(addrfile))
       {
-        r = save_to_file(addrfile, m_account.get_public_address_str(m_nettype), true);
+        r = tools::dump_file(addrfile, m_account.get_public_address_str(m_nettype));
         if(!r) MERROR("String with address text not saved");
       }
     }
@@ -5696,7 +5697,7 @@ void wallet2::load(const fs::path& wallet_, const epee::wipeable_string& passwor
     bool r = true;
     if (use_fs)
     {
-      load_from_file(m_wallet_file, cache_file_buf);
+      tools::slurp_file(m_wallet_file, cache_file_buf);
       THROW_WALLET_EXCEPTION_IF(!r, error::file_read_error, m_wallet_file);
     }
 
@@ -5791,6 +5792,7 @@ void wallet2::load(const fs::path& wallet_, const epee::wipeable_string& passwor
   {
     m_blockchain.push_back(genesis_hash);
     m_last_block_reward = cryptonote::get_outs_money_amount(genesis.miner_tx);
+    m_cached_height = m_blockchain.size();
   }
   else
   {
@@ -5854,6 +5856,7 @@ void wallet2::trim_hashchain()
     MDEBUG("trimming to " << height << ", offset " << m_blockchain.offset());
     m_blockchain.trim(height);
   }
+  m_cached_height = m_blockchain.size();
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::check_genesis(const crypto::hash& genesis_hash) const {
@@ -5917,7 +5920,7 @@ void wallet2::store_to(const fs::path &path, const epee::wipeable_string &passwo
       // save address to the new file
       fs::path address_file = path;
       address_file += ".address.txt";
-      r = save_to_file(address_file, m_account.get_public_address_str(m_nettype), true);
+      r = tools::dump_file(address_file, m_account.get_public_address_str(m_nettype));
       THROW_WALLET_EXCEPTION_IF(!r, error::file_save_error, m_wallet_file);
       // remove old address file
       if (!fs::remove(old_address_file, ec))
@@ -6960,7 +6963,7 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
     light_rpc::SUBMIT_RAW_TX::response ores{};
     oreq.address = get_account().get_public_address_str(m_nettype);
     oreq.view_key = tools::type_to_hex(get_account().get_keys().m_view_secret_key);
-    oreq.tx = oxenmq::to_hex(tx_to_blob(ptx.tx));
+    oreq.tx = oxenc::to_hex(tx_to_blob(ptx.tx));
     oreq.flash = flash;
     bool r = invoke_http<light_rpc::SUBMIT_RAW_TX>(oreq, ores);
     THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "submit_raw_tx");
@@ -6971,7 +6974,7 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
   {
     // Normal submit
     rpc::SEND_RAW_TX::request req{};
-    req.tx_as_hex = oxenmq::to_hex(tx_to_blob(ptx.tx));
+    req.tx_as_hex = oxenc::to_hex(tx_to_blob(ptx.tx));
     req.do_not_relay = false;
     req.do_sanity_checks = true;
     req.flash = flash;
@@ -7045,7 +7048,7 @@ bool wallet2::save_tx(const std::vector<pending_tx>& ptx_vector, const fs::path&
   std::string ciphertext = dump_tx_to_str(ptx_vector);
   if (ciphertext.empty())
     return false;
-  return save_to_file(filename, ciphertext);
+  return tools::dump_file(filename, ciphertext);
 }
 //----------------------------------------------------------------------------------------------------
 std::string wallet2::dump_tx_to_str(const std::vector<pending_tx> &ptx_vector) const
@@ -7086,7 +7089,7 @@ bool wallet2::load_unsigned_tx(const fs::path& unsigned_filename, unsigned_tx_se
   }
 
   std::string s;
-  if (!load_from_file(unsigned_filename, s))
+  if (!tools::slurp_file(unsigned_filename, s))
   {
     LOG_PRINT_L0("Failed to load from " << unsigned_filename);
     return false;
@@ -7310,7 +7313,7 @@ bool wallet2::sign_tx(unsigned_tx_set& exported_txs, const fs::path& signed_file
     return false;
   }
 
-  if (!save_to_file(signed_filename, ciphertext))
+  if (!tools::dump_file(signed_filename, ciphertext))
   {
     LOG_PRINT_L0("Failed to save file to " << signed_filename);
     return false;
@@ -7320,11 +7323,11 @@ bool wallet2::sign_tx(unsigned_tx_set& exported_txs, const fs::path& signed_file
   {
     for (size_t i = 0; i < signed_txes.ptx.size(); ++i)
     {
-      std::string tx_as_hex = oxenmq::to_hex(tx_to_blob(signed_txes.ptx[i].tx));
+      std::string tx_as_hex = oxenc::to_hex(tx_to_blob(signed_txes.ptx[i].tx));
       fs::path raw_filename = signed_filename;
       raw_filename += "_raw";
       if (signed_txes.ptx.size() > 1) raw_filename += "_" + std::to_string(i);
-      if (!save_to_file(raw_filename, tx_as_hex))
+      if (!tools::dump_file(raw_filename, tx_as_hex))
       {
         LOG_PRINT_L0("Failed to save file to " << raw_filename);
         return false;
@@ -7369,7 +7372,7 @@ bool wallet2::load_tx(const fs::path& signed_filename, std::vector<tools::wallet
   }
 
   std::string s;
-  if (!load_from_file(signed_filename, s))
+  if (!tools::slurp_file(signed_filename, s))
   {
     LOG_PRINT_L0("Failed to load from " << signed_filename);
     return false;
@@ -7498,7 +7501,7 @@ bool wallet2::save_multisig_tx(const multisig_tx_set& txs, const fs::path& filen
   std::string ciphertext = save_multisig_tx(txs);
   if (ciphertext.empty())
     return false;
-  return save_to_file(filename, ciphertext);
+  return tools::dump_file(filename, ciphertext);
 }
 //----------------------------------------------------------------------------------------------------
 wallet2::multisig_tx_set wallet2::make_multisig_tx_set(const std::vector<pending_tx>& ptx_vector) const
@@ -7526,7 +7529,7 @@ bool wallet2::save_multisig_tx(const std::vector<pending_tx>& ptx_vector, const 
   std::string ciphertext = save_multisig_tx(ptx_vector);
   if (ciphertext.empty())
     return false;
-  return save_to_file(filename, ciphertext);
+  return tools::dump_file(filename, ciphertext);
 }
 //----------------------------------------------------------------------------------------------------
 bool wallet2::parse_multisig_tx_from_str(std::string_view multisig_tx_st, multisig_tx_set &exported_txs) const
@@ -7615,7 +7618,7 @@ bool wallet2::load_multisig_tx_from_file(const fs::path& filename, multisig_tx_s
   }
 
   std::string s;
-  if (!load_from_file(filename, s))
+  if (!tools::slurp_file(filename, s))
   {
     LOG_PRINT_L0("Failed to load from " << filename);
     return false;
@@ -8779,7 +8782,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
     cryptonote::rpc::BNS_NAMES_TO_OWNERS::request request = {};
     {
       auto &request_entry = request.entries.emplace_back();
-      request_entry.name_hash = oxenmq::to_base64(tools::view_guts(result.name_hash));
+      request_entry.name_hash = oxenc::to_base64(tools::view_guts(result.name_hash));
       request_entry.types.push_back(bns::db_mapping_type(type));
     }
 
@@ -9188,7 +9191,7 @@ void wallet2::light_wallet_get_outs(std::vector<std::vector<tools::wallet2::get_
       rct::key mask{}; // decrypted mask - not used here
       rct::key rct_commit{};
       const auto& pkey = ores.amount_outs[amount_key].outputs[i].public_key;
-      THROW_WALLET_EXCEPTION_IF(pkey.size() != 64 || !oxenmq::is_hex(pkey), error::wallet_internal_error, "Invalid public_key");
+      THROW_WALLET_EXCEPTION_IF(pkey.size() != 64 || !oxenc::is_hex(pkey), error::wallet_internal_error, "Invalid public_key");
       tools::hex_to_type(ores.amount_outs[amount_key].outputs[i].public_key, tx_public_key);
       const uint64_t global_index = ores.amount_outs[amount_key].outputs[i].global_index;
       if(!light_wallet_parse_rct_str(ores.amount_outs[amount_key].outputs[i].rct, tx_public_key, 0, mask, rct_commit, false))
@@ -10440,14 +10443,14 @@ void wallet2::light_wallet_get_unspent_outs()
     bool add_transfer = true;
     crypto::key_image unspent_key_image;
     crypto::public_key tx_public_key{};
-    THROW_WALLET_EXCEPTION_IF(o.tx_pub_key.size() != 64 || !oxenmq::is_hex(o.tx_pub_key), error::wallet_internal_error, "Invalid tx_pub_key field");
+    THROW_WALLET_EXCEPTION_IF(o.tx_pub_key.size() != 64 || !oxenc::is_hex(o.tx_pub_key), error::wallet_internal_error, "Invalid tx_pub_key field");
     tools::hex_to_type(o.tx_pub_key, tx_public_key);
 
     for (const std::string &ski: o.spend_key_images) {
       spent = false;
 
       // Check if key image is ours
-      THROW_WALLET_EXCEPTION_IF(ski.size() != 64 || !oxenmq::is_hex(ski), error::wallet_internal_error, "Invalid key image");
+      THROW_WALLET_EXCEPTION_IF(ski.size() != 64 || !oxenc::is_hex(ski), error::wallet_internal_error, "Invalid key image");
       tools::hex_to_type(ski, unspent_key_image);
       if(light_wallet_key_image_is_ours(unspent_key_image, tx_public_key, o.index)){
         MTRACE("Output " << o.public_key << " is spent. Key image: " <<  ski);
@@ -10462,9 +10465,9 @@ void wallet2::light_wallet_get_unspent_outs()
     crypto::hash txid;
     crypto::public_key tx_pub_key;
     crypto::public_key public_key;
-    THROW_WALLET_EXCEPTION_IF(o.tx_hash.size() != 64 || !oxenmq::is_hex(o.tx_hash), error::wallet_internal_error, "Invalid tx_hash field");
-    THROW_WALLET_EXCEPTION_IF(o.public_key.size() != 64 || !oxenmq::is_hex(o.public_key), error::wallet_internal_error, "Invalid public_key field");
-    THROW_WALLET_EXCEPTION_IF(o.tx_pub_key.size() != 64 || !oxenmq::is_hex(o.tx_pub_key), error::wallet_internal_error, "Invalid tx_pub_key field");
+    THROW_WALLET_EXCEPTION_IF(o.tx_hash.size() != 64 || !oxenc::is_hex(o.tx_hash), error::wallet_internal_error, "Invalid tx_hash field");
+    THROW_WALLET_EXCEPTION_IF(o.public_key.size() != 64 || !oxenc::is_hex(o.public_key), error::wallet_internal_error, "Invalid public_key field");
+    THROW_WALLET_EXCEPTION_IF(o.tx_pub_key.size() != 64 || !oxenc::is_hex(o.tx_pub_key), error::wallet_internal_error, "Invalid tx_pub_key field");
     tools::hex_to_type(o.tx_hash, txid);
     tools::hex_to_type(o.public_key, public_key);
     tools::hex_to_type(o.tx_pub_key, tx_pub_key);
@@ -10608,8 +10611,8 @@ void wallet2::light_wallet_get_address_txs()
     {
       crypto::public_key tx_public_key;
       crypto::key_image key_image;
-      THROW_WALLET_EXCEPTION_IF(so.tx_pub_key.size() != 64 || !oxenmq::is_hex(so.tx_pub_key), error::wallet_internal_error, "Invalid tx_pub_key field");
-      THROW_WALLET_EXCEPTION_IF(so.key_image.size() != 64 || !oxenmq::is_hex(so.key_image), error::wallet_internal_error, "Invalid key_image field");
+      THROW_WALLET_EXCEPTION_IF(so.tx_pub_key.size() != 64 || !oxenc::is_hex(so.tx_pub_key), error::wallet_internal_error, "Invalid tx_pub_key field");
+      THROW_WALLET_EXCEPTION_IF(so.key_image.size() != 64 || !oxenc::is_hex(so.key_image), error::wallet_internal_error, "Invalid key_image field");
       tools::hex_to_type(so.tx_pub_key, tx_public_key);
       tools::hex_to_type(so.key_image, key_image);
 
@@ -10626,8 +10629,8 @@ void wallet2::light_wallet_get_address_txs()
     crypto::hash payment_id = null_hash;
     crypto::hash tx_hash;
 
-    THROW_WALLET_EXCEPTION_IF(t.payment_id.size() != 64 || !oxenmq::is_hex(t.payment_id), error::wallet_internal_error, "Invalid payment_id field");
-    THROW_WALLET_EXCEPTION_IF(t.hash.size() != 64 || !oxenmq::is_hex(t.hash), error::wallet_internal_error, "Invalid hash field");
+    THROW_WALLET_EXCEPTION_IF(t.payment_id.size() != 64 || !oxenc::is_hex(t.payment_id), error::wallet_internal_error, "Invalid payment_id field");
+    THROW_WALLET_EXCEPTION_IF(t.hash.size() != 64 || !oxenc::is_hex(t.hash), error::wallet_internal_error, "Invalid hash field");
     tools::hex_to_type(t.payment_id, payment_id);
     tools::hex_to_type(t.hash, tx_hash);
 
@@ -10766,8 +10769,8 @@ bool wallet2::light_wallet_parse_rct_str(const std::string& rct_string, const cr
   rct::key encrypted_mask;
   std::string rct_commit_str = rct_string.substr(0,64);
   std::string encrypted_mask_str = rct_string.substr(64,64);
-  THROW_WALLET_EXCEPTION_IF(rct_commit_str.size() != 64 || !oxenmq::is_hex(rct_commit_str), error::wallet_internal_error, "Invalid rct commit hash: " + rct_commit_str);
-  THROW_WALLET_EXCEPTION_IF(encrypted_mask_str.size() != 64 || !oxenmq::is_hex(encrypted_mask_str), error::wallet_internal_error, "Invalid rct mask: " + encrypted_mask_str);
+  THROW_WALLET_EXCEPTION_IF(rct_commit_str.size() != 64 || !oxenc::is_hex(rct_commit_str), error::wallet_internal_error, "Invalid rct commit hash: " + rct_commit_str);
+  THROW_WALLET_EXCEPTION_IF(encrypted_mask_str.size() != 64 || !oxenc::is_hex(encrypted_mask_str), error::wallet_internal_error, "Invalid rct mask: " + encrypted_mask_str);
   tools::hex_to_type(rct_commit_str, rct_commit);
   tools::hex_to_type(encrypted_mask_str, encrypted_mask);
   if (decrypt) {
@@ -12091,11 +12094,15 @@ bool wallet2::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, s
 
     cryptonote::transaction tx;
     crypto::hash tx_hash{};
-    cryptonote::blobdata tx_data;
     crypto::hash tx_prefix_hash{};
     const auto& res_tx = res.txs.front();
-    bool valid_hex = string_tools::parse_hexstr_to_binbuff(*res_tx.pruned_as_hex + (res_tx.prunable_as_hex ? *res_tx.prunable_as_hex : ""s), tx_data);
-    THROW_WALLET_EXCEPTION_IF(!valid_hex, error::wallet_internal_error, "Failed to parse transaction from daemon");
+
+    THROW_WALLET_EXCEPTION_IF(!oxenc::is_hex(*res_tx.pruned_as_hex) || !oxenc::is_hex(res_tx.prunable_as_hex.value_or(""s)),error::wallet_internal_error, "Failed to parse transaction from daemon");
+    std::string tx_data;
+    tx_data.reserve(oxenc::from_hex_size(res_tx.pruned_as_hex->size() + (res_tx.prunable_as_hex ? res_tx.prunable_as_hex->size() : 0)));
+    oxenc::from_hex(res_tx.pruned_as_hex->begin(), res_tx.pruned_as_hex->end(), std::back_inserter(tx_data));
+    if (res_tx.prunable_as_hex)
+      oxenc::from_hex(res_tx.prunable_as_hex->begin(), res_tx.prunable_as_hex->end(), std::back_inserter(tx_data));
     THROW_WALLET_EXCEPTION_IF(!cryptonote::parse_and_validate_tx_from_blob(tx_data, tx, tx_hash, tx_prefix_hash),
                               error::wallet_internal_error, "Failed to validate transaction from daemon");
     THROW_WALLET_EXCEPTION_IF(tx_hash != txid, error::wallet_internal_error,
@@ -13042,6 +13049,7 @@ std::vector<rpc::GET_MASTER_NODES::response::entry> wallet2::list_current_stakes
         continue;
 
       master_node_states.push_back(node_info);
+      break;         // not necessory to check the other contributor in the same masternode once we got our info
     }
   }
 
@@ -13336,7 +13344,7 @@ bool wallet2::export_key_images_to_file(const fs::path& filename, bool requested
   PERF_TIMER(export_key_images_encrypt);
   std::string ciphertext{KEY_IMAGE_EXPORT_FILE_MAGIC};
   ciphertext += encrypt_with_view_secret_key(data);
-  return save_to_file(filename, ciphertext);
+  return tools::dump_file(filename, ciphertext);
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -13399,7 +13407,7 @@ uint64_t wallet2::import_key_images_from_file(const fs::path& filename, uint64_t
 {
   PERF_TIMER(__FUNCTION__);
   std::string data;
-  bool r = load_from_file(filename, data);
+  bool r = tools::slurp_file(filename, data);
 
   THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, std::string(tr("failed to read file ")) + filename.u8string());
 
@@ -13694,13 +13702,12 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
       process_outgoing(*spent_txid, spent_tx, e.block_height, e.block_timestamp, tx_money_spent_in_ins, tx_money_got_in_outs, subaddr_account, subaddr_indices);
 
       // erase corresponding incoming payment
-      for (auto j = m_payments.begin(); j != m_payments.end(); ++j)
+      for (auto j = m_payments.begin(); j != m_payments.end(); )
       {
         if (j->second.m_tx_hash == *spent_txid)
-        {
-          m_payments.erase(j);
-          break;
-        }
+          j = m_payments.erase(j);
+        else
+          ++j;
       }
 
       ++spent_txid;
@@ -13794,25 +13801,25 @@ void wallet2::import_payments_out(const std::list<std::pair<crypto::hash,wallet2
 std::tuple<size_t,crypto::hash,std::vector<crypto::hash>> wallet2::export_blockchain() const
 {
   std::tuple<size_t, crypto::hash, std::vector<crypto::hash>> bc;
-  std::get<0>(bc) = m_blockchain.offset();
-  std::get<1>(bc) = m_blockchain.empty() ? crypto::null_hash: m_blockchain.genesis();
+  auto& [offset, genesis_hash, hashes] = bc;
+  offset = m_blockchain.offset();
+  genesis_hash = m_blockchain.empty() ? crypto::null_hash: m_blockchain.genesis();
   for (size_t n = m_blockchain.offset(); n < m_blockchain.size(); ++n)
-  {
-    std::get<2>(bc).push_back(m_blockchain[n]);
-  }
+    hashes.push_back(m_blockchain[n]);
   return bc;
 }
 
 void wallet2::import_blockchain(const std::tuple<size_t, crypto::hash, std::vector<crypto::hash>> &bc)
 {
   m_blockchain.clear();
-  if (std::get<0>(bc))
+  const auto& [offset,genesis_h,hashes] = bc;
+  if (offset)
   {
-    for (size_t n = std::get<0>(bc); n > 0; --n)
-      m_blockchain.push_back(std::get<1>(bc));
-    m_blockchain.trim(std::get<0>(bc));
+    for (size_t n = offset; n > 0; --n)
+      m_blockchain.push_back(genesis_h);
+    m_blockchain.trim(offset);
   }
-  for (auto const &b : std::get<2>(bc))
+  for (auto const &b : hashes)
   {
     m_blockchain.push_back(b);
   }
@@ -13821,6 +13828,7 @@ void wallet2::import_blockchain(const std::tuple<size_t, crypto::hash, std::vect
   crypto::hash genesis_hash = get_block_hash(genesis);
   check_genesis(genesis_hash);
   m_last_block_reward = cryptonote::get_outs_money_amount(genesis.miner_tx);
+  m_cached_height = m_blockchain.size();
 }
 //----------------------------------------------------------------------------------------------------
 std::pair<size_t, std::vector<tools::wallet2::transfer_details>> wallet2::export_outputs(bool all) const
@@ -13885,23 +13893,17 @@ size_t wallet2::import_outputs(const std::pair<size_t, std::vector<tools::wallet
     {
       // compare the data used to create the key image below
       const transfer_details &org_td = m_transfers[i + offset];
-      if (!org_td.m_key_image_known)
-        goto process;
-#define CMPF(f) if (!(td.f == org_td.f)) goto process
-      CMPF(m_txid);
-      CMPF(m_key_image);
-      CMPF(m_internal_output_index);
-#undef CMPF
-      if (!(get_transaction_prefix_hash(td.m_tx) == get_transaction_prefix_hash(org_td.m_tx)))
-        goto process;
+      if (org_td.m_key_image_known
+              && td.m_txid == org_td.m_txid
+              && td.m_key_image == org_td.m_key_image
+              && td.m_internal_output_index == org_td.m_internal_output_index
+              && get_transaction_prefix_hash(td.m_tx) == get_transaction_prefix_hash(org_td.m_tx)) {
 
-      // copy anyway, since the comparison does not include ancillary fields which may have changed
-      m_transfers[i + offset] = std::move(td);
-      continue;
+        // copy anyway, since the comparison does not include ancillary fields which may have changed
+        m_transfers[i + offset] = std::move(td);
+        continue;
+      }
     }
-
-process:
-
     // the hot wallet wouldn't have known about key images (except if we already exported them)
     cryptonote::keypair in_ephemeral;
 
@@ -14424,9 +14426,9 @@ std::string uri_decode(std::string_view encoded)
   std::string decoded;
   for (auto it = encoded.begin(); it != encoded.end(); )
   {
-    if (*it == '%' && encoded.end() - it >= 3 && oxenmq::is_hex(it + 1, it + 3))
+    if (*it == '%' && encoded.end() - it >= 3 && oxenc::is_hex(it + 1, it + 3))
     {
-      decoded += oxenmq::from_hex(it + 1, it + 3);
+      decoded += oxenc::from_hex(it + 1, it + 3);
       it += 3;
     }
     else
@@ -14755,71 +14757,6 @@ std::string wallet2::get_rpc_status(const std::string &s) const
   if (m_trusted_daemon)
     return s;
   return "<error>";
-}
-//----------------------------------------------------------------------------------------------------
-
-bool wallet2::save_to_file(const fs::path& path_to_file, std::string_view binary, bool is_printable) const
-{
-  if (is_printable || m_export_format == ExportFormat::Binary)
-  {
-    return tools::dump_file(path_to_file, binary);
-  }
-
-#ifdef _WIN32
-  FILE *fp = _wfopen(path_to_file.c_str(), L"w+");
-#else
-  FILE *fp = fopen(path_to_file.c_str(), "w+");
-#endif
-  if (!fp)
-  {
-    MERROR("Failed to open wallet file for writing: " << path_to_file << ": " << strerror(errno));
-    return false;
-  }
-
-  // Save the result b/c we need to close the fp before returning success/failure.
-  int write_result = PEM_write(fp, ASCII_OUTPUT_MAGIC.c_str(), "", reinterpret_cast<const unsigned char *>(binary.data()), binary.length());
-  fclose(fp);
-
-  return write_result != 0;
-}
-//----------------------------------------------------------------------------------------------------
-
-bool wallet2::load_from_file(const fs::path& path_to_file, std::string& target_str)
-{
-  std::string data;
-  if (!tools::slurp_file(path_to_file, data))
-    return false;
-
-  if (data.find(ASCII_OUTPUT_MAGIC) == std::string::npos)
-  {
-    // It's NOT our ascii dump.
-    target_str = std::move(data);
-    return true;
-  }
-
-  // Creating a BIO and calling PEM_read_bio instead of simpler PEM_read
-  // to avoid reading the file from disk twice.
-  BIO* b = BIO_new_mem_buf((const void*) data.data(), data.length());
-
-  char *name = nullptr;
-  char *header = nullptr;
-  unsigned char *openssl_data = nullptr;
-  long len = 0;
-
-  // Save the result b/c we need to free the data before returning success/failure.
-  bool success = PEM_read_bio(b, &name, &header, &openssl_data, &len);
-  if (success)
-  {
-    target_str.clear();
-    target_str.append((const char*) openssl_data, len);
-  }
-
-  OPENSSL_free((void *) name);
-  OPENSSL_free((void *) header);
-  OPENSSL_free((void *) openssl_data);
-  BIO_free(b);
-
-  return success;
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::hash_m_transfer(const transfer_details & transfer, crypto::hash &hash) const
