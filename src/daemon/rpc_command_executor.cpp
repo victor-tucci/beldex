@@ -42,6 +42,7 @@
 #include "cryptonote_basic/hardfork.h"
 #include "checkpoints/checkpoints.h"
 #include <boost/format.hpp>
+#include <fmt/core.h>
 #include <oxenc/base32z.h>
 
 #include "common/beldex_integration_test_hooks.h"
@@ -140,7 +141,7 @@ namespace {
     std::string addr_str = peer.host + ":" + std::to_string(peer.port);
     std::string rpc_port = peer.rpc_port ? std::to_string(peer.rpc_port) : "-";
     std::string pruning_seed = epee::string_tools::to_string_hex(peer.pruning_seed);
-    tools::msg_writer() << boost::format("%-10s %-25s %-25s %-5s %-4s %s") % prefix % id_str % addr_str % rpc_port % pruning_seed % elapsed;
+    tools::msg_writer() << fmt::format("{:<10} {:<25} {:<25} {:<5} {:<4} {}", prefix, id_str, addr_str, rpc_port, pruning_seed, elapsed);
   }
 
   void print_block_header(block_header_response const & header)
@@ -175,11 +176,11 @@ namespace {
     if (dt < 90s)
       s = std::to_string(dt.count()) + (abbreviate ? "sec" : dt == 1s ? " second" : " seconds");
     else if (dt < 90min)
-      s = (boost::format(abbreviate ? "%.1fmin" : "%.1f minutes") % ((float)dt.count()/60)).str();
+      s = fmt::format(abbreviate ? "{:.1f}min" : "{:.1f} minutes", static_cast<float>(dt.count()) / 60.0f);
     else if (dt < 36h)
-      s = (boost::format(abbreviate ? "%.1fhr" : "%.1f hours") % ((float)dt.count()/3600)).str();
+      s = fmt::format(abbreviate ? "{:.1f}hr" : "{:.1f} hours", static_cast<float>(dt.count()) / 3600.0f);
     else
-      s = (boost::format("%.1f days") % ((float)dt.count()/(86400))).str();
+      s = fmt::format("{:.1f} days", static_cast<float>(dt.count()) / 86400);
     if (abbreviate) {
         if (ago < 0s)
             return s + " (in fut.)";
@@ -408,9 +409,9 @@ bool rpc_command_executor::show_difficulty() {
 
 static std::string get_mining_speed(uint64_t hr)
 {
-  if (hr>1e9) return (boost::format("%.2f GH/s") % (hr/1e9)).str();
-  if (hr>1e6) return (boost::format("%.2f MH/s") % (hr/1e6)).str();
-  if (hr>1e3) return (boost::format("%.2f kH/s") % (hr/1e3)).str();
+  if (hr>1e9) return (boost::format("%.2f GH/s") % (hr / 1e9)).str();
+  if (hr>1e6) return (boost::format("%.2f MH/s") % (hr / 1e6)).str();
+  if (hr>1e3) return (boost::format("%.2f kH/s") % (hr / 1e3)).str();
   return (boost::format("%.0f H/s") % hr).str();
 }
 
@@ -429,8 +430,8 @@ static std::ostream& print_fork_extra_info(std::ostream& o, uint64_t t, uint64_t
   if (dblocks <= 30)
     return o << dblocks << " blocks)";
   if (dblocks <= blocks_per_day / 2)
-    return o << boost::format("%.1f hours)") % (dblocks / (float)blocks_per_day * 24);
-  return o << boost::format("%.1f days)") % (dblocks / (float)blocks_per_day);
+    return o << fmt::format("{:.1f} hours)", dblocks / static_cast<float>(blocks_per_day) * 24);
+  return o << fmt::format("{:.1f} days)", dblocks / static_cast<float>(blocks_per_day));
 }
 
 static float get_sync_percentage(uint64_t height, uint64_t target_height)
@@ -506,7 +507,7 @@ bool rpc_command_executor::show_status() {
   std::ostringstream str;
   str << "Height: " << ires.height;
   if (ires.height != net_height)
-      str << "/" << net_height << " (" << boost::format("%.1f") % get_sync_percentage(ires) << "%)";
+    str << "/" << net_height << " (" << fmt::format("{:.1f}%)", get_sync_percentage(ires));
 
   if (ires.testnet)     str << " ON TESTNET";
   else if (ires.devnet) str << " ON DEVNET";
@@ -518,7 +519,7 @@ bool rpc_command_executor::show_status() {
   {
     str << ", bootstrap " << *ires.bootstrap_daemon_address;
     if (ires.untrusted)
-      str << boost::format(", local height: %llu (%.1f%%)") % *ires.height_without_bootstrap % get_sync_percentage(*ires.height_without_bootstrap, net_height);
+      str << fmt::format(", local height: {} ({:.1f}%)", *ires.height_without_bootstrap, get_sync_percentage(*ires.height_without_bootstrap, net_height));
     else
       str << " was used";
   }
@@ -692,24 +693,24 @@ bool rpc_command_executor::print_net_stats()
   uint64_t average = seconds > 0 ? net_stats_res.total_bytes_in / seconds : 0;
   uint64_t limit = limit_res.limit_down * 1024;   // convert to bytes, as limits are always kB/s
   double percent = (double)average / (double)limit * 100.0;
-  tools::success_msg_writer() << boost::format("Received %u bytes (%s) in %u packets, average %s/s = %.2f%% of the limit of %s/s")
-    % net_stats_res.total_bytes_in
-    % tools::get_human_readable_bytes(net_stats_res.total_bytes_in)
-    % net_stats_res.total_packets_in
-    % tools::get_human_readable_bytes(average)
-    % percent
-    % tools::get_human_readable_bytes(limit);
+  tools::success_msg_writer() << fmt::format("Received {} bytes ({}) in {} packets, average {}/s = {:.2f}% of the limit of {}/s"
+    , net_stats_res.total_bytes_in
+    , tools::get_human_readable_bytes(net_stats_res.total_bytes_in)
+    , net_stats_res.total_packets_in
+    , tools::get_human_readable_bytes(average)
+    , percent
+    , tools::get_human_readable_bytes(limit));
 
   average = seconds > 0 ? net_stats_res.total_bytes_out / seconds : 0;
   limit = limit_res.limit_up * 1024;
   percent = (double)average / (double)limit * 100.0;
-  tools::success_msg_writer() << boost::format("Sent %u bytes (%s) in %u packets, average %s/s = %.2f%% of the limit of %s/s")
-    % net_stats_res.total_bytes_out
-    % tools::get_human_readable_bytes(net_stats_res.total_bytes_out)
-    % net_stats_res.total_packets_out
-    % tools::get_human_readable_bytes(average)
-    % percent
-    % tools::get_human_readable_bytes(limit);
+  tools::success_msg_writer() << fmt::format("Sent {} bytes ({}) in {} packets, average {}/s = {:.2f}% of the limit of {}/s"
+    , net_stats_res.total_bytes_out
+    , tools::get_human_readable_bytes(net_stats_res.total_bytes_out)
+    , net_stats_res.total_packets_out
+    , tools::get_human_readable_bytes(average)
+    , percent
+    , tools::get_human_readable_bytes(limit));
 
   return true;
 }
@@ -1044,7 +1045,7 @@ bool rpc_command_executor::print_transaction_pool_stats() {
   else
   {
     uint64_t backlog = (res.pool_stats.bytes_total + full_reward_zone - 1) / full_reward_zone;
-    backlog_message = (boost::format("estimated %u block (%u minutes ) backlog") % backlog %((backlog * TARGET_BLOCK_TIME_V17 / 1min) ) ).str();
+    backlog_message = fmt::format("estimated {} block ({} minutes ) backlog", backlog, backlog * TARGET_BLOCK_TIME_V17 / 1min);
   }
 
   tools::msg_writer() << n_transactions << " tx(es), " << res.pool_stats.bytes_total << " bytes total (min " << res.pool_stats.bytes_min << ", max " << res.pool_stats.bytes_max << ", avg " << avg_bytes << ", median " << res.pool_stats.bytes_med << ")" << std::endl

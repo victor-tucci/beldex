@@ -28,7 +28,7 @@
 
 #include "db_lmdb.h"
 
-#include <boost/format.hpp>
+#include <fmt/core.h>
 #include <boost/circular_buffer.hpp>
 #include <boost/endian/conversion.hpp>
 #include <memory>
@@ -712,7 +712,7 @@ bool BlockchainLMDB::need_resize(uint64_t threshold_size) const
   LOG_PRINT_L3("Space remaining: " << mei.me_mapsize - size_used);
   LOG_PRINT_L3("Size threshold:  " << threshold_size);
   float resize_percent = RESIZE_PERCENT;
-  LOG_PRINT_L3(boost::format("Percent used: %.04f  Percent threshold: %.04f") % (100.*size_used/mei.me_mapsize) % (100.*resize_percent));
+  LOG_PRINT_L3(fmt::format("Percent used: {:.04f}  Percent threshold: {:.04f}", 100. * size_used / mei.me_mapsize, 100. * resize_percent));
 
   if (threshold_size > 0)
   {

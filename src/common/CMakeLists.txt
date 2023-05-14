@@ -64,6 +64,7 @@ target_link_libraries(common
     cncrypto
     oxenmq::oxenmq
     filesystem
+    fmt::fmt
   PRIVATE
     sodium
     extra)

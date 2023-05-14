@@ -28,7 +28,7 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
-#include <boost/format.hpp>
+#include <fmt/core.h>
 #include <boost/asio/ip/address.hpp>
 #include <boost/algorithm/string.hpp>
 #include <cstdint>
@@ -276,11 +276,11 @@ namespace tools
       } catch (const tools::error::not_enough_unlocked_money& e) {
         json_error = {error_code::NOT_ENOUGH_UNLOCKED_MONEY, e.what()};
       } catch (const tools::error::tx_not_possible& e) {
-        json_error = {error_code::TX_NOT_POSSIBLE, (boost::format(tr("Transaction not possible. Available only %s, transaction amount %s = %s + %s (fee)")) %
-            cryptonote::print_money(e.available()) %
-            cryptonote::print_money(e.tx_amount() + e.fee())  %
-            cryptonote::print_money(e.tx_amount()) %
-            cryptonote::print_money(e.fee())).str()};
+        json_error = { error_code::TX_NOT_POSSIBLE, fmt::format(tr("Transaction not possible. Available only {}, transaction amount {} = {} + {} (fee)"),
+                cryptonote::print_money(e.available()),
+                cryptonote::print_money(e.tx_amount() + e.fee()),
+                cryptonote::print_money(e.tx_amount()),
+                cryptonote::print_money(e.fee()))};
       } catch (const tools::error::not_enough_outs_to_mix& e) {
         json_error = {error_code::NOT_ENOUGH_OUTS_TO_MIX, e.what() + std::string(" Please use sweep_dust.")};
       } catch (const error::file_exists& e) {
@@ -768,7 +768,7 @@ namespace tools
       if (!req.tag.empty() && account_tags.first.count(req.tag) == 0)
         throw wallet_rpc_error{
           error_code::UNKNOWN_ERROR,
-          (boost::format(tr("Tag %s is unregistered.")) % req.tag).str()};
+          fmt::format(tr("Tag {} is unregistered."), req.tag)};
       for (cryptonote::subaddress_index subaddr_index = {0,0};
           subaddr_index.major < m_wallet->get_num_subaddress_accounts();
           ++subaddr_index.major)
