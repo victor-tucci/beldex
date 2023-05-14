@@ -63,13 +63,13 @@ namespace {
 
   std::string input_line(std::string const &prompt)
   {
+    rdln::suspend_readline pause_readline;
     std::cout << prompt << std::flush;
     std::string result;
 #if defined (BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
     integration_test::write_buffered_stdout();
     result = integration_test::read_from_pipe();
 #else
-    rdln::suspend_readline pause_readline;
     std::cin >> result;
 #endif
 
@@ -2048,59 +2048,57 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
 
   // anything less than DUST will be added to operator stake
   const uint64_t DUST = MAX_NUMBER_OF_CONTRIBUTORS;
-  std::cout << "Current staking requirement: " << cryptonote::print_money(staking_requirement) << " " << cryptonote::get_unit() << std::endl;
+  std::cout << "\n BELDEX MASTER NODE REGISTRATION "<< std::endl;
+    std::cout << "Current staking requirement: " << cryptonote::print_money(staking_requirement) << " " << cryptonote::get_unit() << std::endl;
 
-  enum struct register_step
-  {
-    ask_is_solo_stake = 0,
-    is_solo_stake__operator_address_to_reserve,
-
-    is_open_stake__get_operator_fee,
-    is_open_stake__do_you_want_to_reserve_other_contributors,
-    is_open_stake__how_many_more_contributors,
-    is_open_stake__operator_amount_to_reserve,
-    is_open_stake__operator_address_to_reserve,
-    is_open_stake__contributor_address_to_reserve,
-    is_open_stake__contributor_amount_to_reserve,
-    is_open_stake__summary_info,
-    final_summary,
-    cancelled_by_user,
-  };
-
-  struct prepare_registration_state
-  {
-    register_step            prev_step                    = register_step::ask_is_solo_stake;
-    bool                     is_solo_stake;
-    size_t                   num_participants             = 1;
-    uint64_t                 operator_fee_portions        = STAKING_PORTIONS;
-    uint64_t                 portions_remaining           = STAKING_PORTIONS;
-    uint64_t                 total_reserved_contributions = 0;
-    std::vector<std::string> addresses;
-    std::vector<uint64_t>    contributions;
-  };
-
-  prepare_registration_state state = {};
-  std::stack<prepare_registration_state> state_stack;
-  state_stack.push(state);
-
-  bool finished = false;
-  register_step step = register_step::ask_is_solo_stake;
-  for (input_line_result last_input_result = input_line_result::yes; !finished;)
-  {
-    if (last_input_result == input_line_result::back)
+    enum struct register_step
     {
-      step = state.prev_step;
-      state_stack.pop();
-      state = state_stack.top();
-      std::cout << std::endl;
-    }
+      is_open_stake__operator_address_to_reserve = 0,
+      ask_is_solo_stake,
+      is_open_stake__operator_amount_to_reserve,
+      is_open_stake__get_operator_fee,
+      is_open_stake__do_you_want_to_reserve_other_contributors,
+      is_open_stake__how_many_more_contributors,
+      is_open_stake__contributor_address_to_reserve,
+      is_open_stake__contributor_amount_to_reserve,
+      is_open_stake__summary_info,
+      final_summary,
+      cancelled_by_user,
+    };
 
-    switch(step)
+    struct prepare_registration_state
     {
+      register_step prev_step = register_step::is_open_stake__operator_address_to_reserve;
+      bool is_solo_stake;
+      size_t num_participants = 1;
+      uint64_t operator_fee_portions = STAKING_PORTIONS;
+      uint64_t portions_remaining = STAKING_PORTIONS;
+      uint64_t total_reserved_contributions = 0;
+      std::vector<std::string> addresses;
+      std::vector<uint64_t> contributions;
+    };
+    prepare_registration_state state = {};
+    std::stack<prepare_registration_state> state_stack;
+    state_stack.push(state);
+
+    bool finished = false;
+    register_step step = register_step::is_open_stake__operator_address_to_reserve;
+    for (input_line_result last_input_result = input_line_result::yes; !finished;)
+    {
+      if (last_input_result == input_line_result::back)
+      {
+        step = state.prev_step;
+        state_stack.pop();
+        state = state_stack.top();
+        std::cout << std::endl;
+      }
+
+      switch (step)
+      {
       case register_step::ask_is_solo_stake:
       {
         last_input_result = input_line_yes_no_cancel("Will the operator contribute the entire stake?");
-        if(last_input_result == input_line_result::cancel)
+        if (last_input_result == input_line_result::cancel)
         {
           step = register_step::cancelled_by_user;
           continue;
@@ -2109,37 +2107,19 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         state.is_solo_stake = (last_input_result == input_line_result::yes);
         if (state.is_solo_stake)
         {
-          std::cout << std::endl;
-          step = register_step::is_solo_stake__operator_address_to_reserve;
+          std::string address_str;
+          state.addresses.push_back(address_str); 
+          state.contributions.push_back(STAKING_PORTIONS);
+          state.portions_remaining = 0;
+          state.total_reserved_contributions += staking_requirement;
+          state.prev_step = step;
+          step = register_step::final_summary;
+          state_stack.push(state);
         }
         else
         {
-          step = register_step::is_open_stake__get_operator_fee;
+          step = register_step::is_open_stake__operator_amount_to_reserve;
         }
-
-        state_stack.push(state);
-        continue;
-      }
-
-      case register_step::is_solo_stake__operator_address_to_reserve:
-      {
-        std::string address_str;
-        last_input_result = input_line_back_cancel_get_input("Enter the beldex address for the solo staker", address_str);
-        if (last_input_result == input_line_result::back)
-          continue;
-
-        if (last_input_result == input_line_result::cancel)
-        {
-          step = register_step::cancelled_by_user;
-          continue;
-        }
-
-        state.addresses.push_back(address_str); // the addresses will be validated later down the line
-        state.contributions.push_back(STAKING_PORTIONS);
-        state.portions_remaining = 0;
-        state.total_reserved_contributions += staking_requirement;
-        state.prev_step = step;
-        step            = register_step::final_summary;
         state_stack.push(state);
         continue;
       }
@@ -2182,14 +2162,14 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         }
 
         state.prev_step = step;
-        if(last_input_result == input_line_result::yes)
+        if (last_input_result == input_line_result::yes)
         {
           step = register_step::is_open_stake__how_many_more_contributors;
         }
         else
         {
           std::cout << std::endl;
-          step = register_step::is_open_stake__operator_address_to_reserve;
+          step = register_step::final_summary;
         }
 
         state_stack.push(state);
@@ -2212,7 +2192,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         }
 
         long additional_contributors = strtol(input.c_str(), NULL, 10 /*base 10*/);
-        if(additional_contributors < 1 || additional_contributors > (MAX_NUMBER_OF_CONTRIBUTORS - 1))
+        if (additional_contributors < 1 || additional_contributors > (MAX_NUMBER_OF_CONTRIBUTORS - 1))
         {
           std::cout << "Invalid value. Should be between [1-" << (MAX_NUMBER_OF_CONTRIBUTORS - 1) << "]" << std::endl;
           continue;
@@ -2221,7 +2201,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         std::cout << std::endl;
         state.num_participants += static_cast<size_t>(additional_contributors);
         state.prev_step = step;
-        step            = register_step::is_open_stake__operator_address_to_reserve;
+        step = register_step::is_open_stake__contributor_address_to_reserve;
         state_stack.push(state);
         continue;
       }
@@ -2229,7 +2209,26 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
       case register_step::is_open_stake__operator_address_to_reserve:
       {
         std::string address_str;
-        last_input_result = input_line_back_cancel_get_input("Enter the beldex address for the operator", address_str);
+        int tries = 0;
+        bool valid_address = false;
+        while (!valid_address && tries < 3)
+        {
+          last_input_result = input_line_back_cancel_get_input("Enter the Beldex address for the operator", address_str);
+          if (cryptonote::is_valid_address(address_str, nettype))
+          {
+            valid_address = true;
+          }
+          else
+          {
+            std::cout << "\033[1;31mInvalid address: " << address_str << " Please try again.\033[0m\n"<< std::endl;
+            tries++;
+          }
+        }
+        if (!valid_address)
+        {
+          std::cout << "Max tries exceeded. Aborting the process." << std::endl;
+          return false;
+        }
         if (last_input_result == input_line_result::back)
           continue;
 
@@ -2238,10 +2237,9 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
           step = register_step::cancelled_by_user;
           continue;
         }
-
-        state.addresses.push_back(address_str); // the addresses will be validated later down the line
+        state.addresses.push_back(address_str); 
         state.prev_step = step;
-        step            = register_step::is_open_stake__operator_amount_to_reserve;
+        step = register_step::ask_is_solo_stake;
         state_stack.push(state);
         continue;
       }
@@ -2249,7 +2247,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
       case register_step::is_open_stake__operator_amount_to_reserve:
       {
         uint64_t min_contribution_portions = master_nodes::get_min_node_contribution_in_portions(hf_version, staking_requirement, 0, 0);
-        const uint64_t min_contribution    = get_amount_to_make_portions(staking_requirement, min_contribution_portions);
+        const uint64_t min_contribution = get_amount_to_make_portions(staking_requirement, min_contribution_portions);
         std::cout << "Minimum amount that can be reserved: " << cryptonote::print_money(min_contribution) << " " << cryptonote::get_unit() << std::endl;
 
         std::string contribution_str;
@@ -2264,20 +2262,20 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         }
 
         uint64_t contribution;
-        if(!cryptonote::parse_amount(contribution, contribution_str))
+        if (!cryptonote::parse_amount(contribution, contribution_str))
         {
           std::cout << "Invalid amount." << std::endl;
           continue;
         }
 
         uint64_t portions = master_nodes::get_portions_to_make_amount(staking_requirement, contribution);
-        if(portions < min_contribution_portions)
+        if (portions < min_contribution_portions)
         {
           std::cout << "The operator needs to contribute at least 25% of the stake requirement (" << cryptonote::print_money(min_contribution) << " " << cryptonote::get_unit() << "). Aborted." << std::endl;
           continue;
         }
 
-        if(portions > state.portions_remaining)
+        if (portions > state.portions_remaining)
         {
           std::cout << "The operator contribution is higher than the staking requirement. Any excess contribution will be locked for the staking duration, but won't yield any additional reward." << std::endl;
           portions = state.portions_remaining;
@@ -2287,16 +2285,7 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         state.portions_remaining -= portions;
         state.total_reserved_contributions += get_actual_amount(staking_requirement, portions);
         state.prev_step = step;
-
-        if (state.num_participants > 1)
-        {
-          step = register_step::is_open_stake__contributor_address_to_reserve;
-        }
-        else
-        {
-          step = register_step::is_open_stake__summary_info;
-        }
-
+        step = register_step::is_open_stake__get_operator_fee;
         std::cout << std::endl;
         state_stack.push(state);
         continue;
@@ -2304,8 +2293,9 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
 
       case register_step::is_open_stake__contributor_address_to_reserve:
       {
-        std::string const prompt = "Enter the beldex address for contributor " + std::to_string(state.contributions.size() + 1);
+        std::string const prompt = "Enter the beldex address for contributor " + std::to_string(state.contributions.size());
         std::string address_str;
+
         last_input_result = input_line_back_cancel_get_input(prompt.c_str(), address_str);
         if (last_input_result == input_line_result::back)
           continue;
@@ -2315,27 +2305,32 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
           step = register_step::cancelled_by_user;
           continue;
         }
+        if (!cryptonote::is_valid_address(address_str, nettype))
+        {
+          std::cout << "\033[1;31mInvalid address: " << address_str << " Please try again.\033[0m\n"<< std::endl;
+          std::string const prompt = "Enter the beldex address for contributor " + std::to_string(state.contributions.size());
+          continue;
+        }
 
-        // the addresses will be validated later down the line
         state.addresses.push_back(address_str);
         state.prev_step = step;
-        step            = register_step::is_open_stake__contributor_amount_to_reserve;
+        step = register_step::is_open_stake__contributor_amount_to_reserve;
         state_stack.push(state);
         continue;
       }
 
       case register_step::is_open_stake__contributor_amount_to_reserve:
       {
-        const uint64_t amount_left         = staking_requirement - state.total_reserved_contributions;
+        const uint64_t amount_left = staking_requirement - state.total_reserved_contributions;
         uint64_t min_contribution_portions = master_nodes::get_min_node_contribution_in_portions(hf_version, staking_requirement, state.total_reserved_contributions, state.contributions.size());
-        const uint64_t min_contribution    = master_nodes::portions_to_amount(staking_requirement, min_contribution_portions);
+        const uint64_t min_contribution = master_nodes::portions_to_amount(staking_requirement, min_contribution_portions);
 
         std::cout << "The minimum amount possible to contribute is " << cryptonote::print_money(min_contribution) << " " << cryptonote::get_unit() << std::endl;
         std::cout << "There is " << cryptonote::print_money(amount_left) << " " << cryptonote::get_unit() << " left to meet the staking requirement." << std::endl;
 
         std::string contribution_str;
-        std::string const prompt = "How much beldex does contributor " + std::to_string(state.contributions.size() + 1) + " want to reserve in the stake?";
-        last_input_result        = input_line_back_cancel_get_input(prompt.c_str(), contribution_str);
+        std::string const prompt = "How much beldex does contributor " + std::to_string(state.contributions.size()) + " want to reserve in the stake?";
+        last_input_result = input_line_back_cancel_get_input(prompt.c_str(), contribution_str);
         if (last_input_result == input_line_result::back)
           continue;
 
@@ -2387,13 +2382,13 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
           std::cout << "You will leave the remaining portion of " << cryptonote::print_money(amount_left) << " " << cryptonote::get_unit() << " open to contributions from anyone, and the Master Node will not activate until the full staking requirement is filled." << std::endl;
 
           last_input_result = input_line_yes_no_back_cancel("Is this ok?\n");
-          if(last_input_result == input_line_result::no || last_input_result == input_line_result::cancel)
+          if (last_input_result == input_line_result::no || last_input_result == input_line_result::cancel)
           {
             step = register_step::cancelled_by_user;
             continue;
           }
 
-          if(last_input_result == input_line_result::back)
+          if (last_input_result == input_line_result::back)
             continue;
 
           state_stack.push(state);
@@ -2416,35 +2411,38 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
 
         for (size_t i = 0; i < state.num_participants; ++i)
         {
-          const std::string participant_name = (i==0) ? "Operator" : "Contributor " + std::to_string(i);
+          const std::string participant_name = (i == 0) ? "Operator" : "Contributor " + std::to_string(i);
           uint64_t amount = get_actual_amount(staking_requirement, state.contributions[i]);
           if (amount_left <= DUST && i == 0)
             amount += amount_left; // add dust to the operator.
-          printf("%-16s%-9s%-19s%-.9f\n", participant_name.c_str(), state.addresses[i].substr(0,6).c_str(), cryptonote::print_money(amount).c_str(), (double)state.contributions[i] * 100 / (double)STAKING_PORTIONS);
+          printf("%-16s%-9s%-19s%-.9f\n", participant_name.c_str(), state.addresses[i].substr(0, 6).c_str(), cryptonote::print_money(amount).c_str(), (double)state.contributions[i] * 100 / (double)STAKING_PORTIONS);
         }
 
         if (amount_left > DUST)
         {
-          printf("%-16s%-9s%-19s%-.2f\n", "(open)", "", cryptonote::print_money(amount_left).c_str(), amount_left * 100.0 / staking_requirement);
+          printf("%-16s%-9s%-19s%-.2f\n", "(open)", "(any)", cryptonote::print_money(amount_left).c_str(), amount_left * 100.0 / staking_requirement);
         }
         else if (amount_left > 0)
         {
-          std::cout << "\nActual amounts may differ slightly from specification. This is due to\n" << std::endl;
-          std::cout << "limitations on the way fractions are represented internally.\n" << std::endl;
+          std::cout << "\nActual amounts may differ slightly from specification. This is due to\n"
+                    << std::endl;
+          std::cout << "limitations on the way fractions are represented internally.\n"
+                    << std::endl;
         }
 
         std::cout << "\nBecause the actual requirement will depend on the time that you register, the\n";
         std::cout << "amounts shown here are used as a guide only, and the percentages will remain\n";
-        std::cout << "the same." << std::endl << std::endl;
+        std::cout << "the same." << std::endl
+                  << std::endl;
 
         last_input_result = input_line_yes_no_back_cancel("Do you confirm the information above is correct?");
-        if(last_input_result == input_line_result::no || last_input_result == input_line_result::cancel)
+        if (last_input_result == input_line_result::no || last_input_result == input_line_result::cancel)
         {
           step = register_step::cancelled_by_user;
           continue;
         }
 
-        if(last_input_result == input_line_result::back)
+        if (last_input_result == input_line_result::back)
           continue;
 
         finished = true;
@@ -2456,29 +2454,29 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         std::cout << "Cancel requested in prepare registration. Aborting." << std::endl;
         return true;
       }
-    }
-  }
-
-  // <operator cut> <address> <fraction> [<address> <fraction> [...]]]
-  std::vector<std::string> args;
-  args.push_back(std::to_string(state.operator_fee_portions));
-  for (size_t i = 0; i < state.num_participants; ++i)
-  {
-    args.push_back(state.addresses[i]);
-    args.push_back(std::to_string(state.contributions[i]));
-  }
-
-  for (size_t i = 0; i < state.addresses.size(); i++)
-  {
-    for (size_t j = 0; j < i; j++)
-    {
-      if (state.addresses[i] == state.addresses[j])
-      {
-        std::cout << "Must not provide the same address twice" << std::endl;
-        return true;
       }
     }
-  }
+
+    // <operator cut> <address> <fraction> [<address> <fraction> [...]]]
+    std::vector<std::string> args;
+    args.push_back(std::to_string(state.operator_fee_portions));
+    for (size_t i = 0; i < state.num_participants; ++i)
+    {
+      args.push_back(state.addresses[i]);
+      args.push_back(std::to_string(state.contributions[i]));
+    }
+
+    for (size_t i = 0; i < state.addresses.size(); i++)
+    {
+      for (size_t j = 0; j < i; j++)
+      {
+        if (state.addresses[i] == state.addresses[j])
+        {
+          std::cout << "Must not provide the same address twice. Aborting the process" << std::endl;
+          return true;
+        }
+      }
+    }
 
   scoped_log_cats.reset();
 

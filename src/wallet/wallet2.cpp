@@ -123,9 +123,9 @@ namespace {
 
   constexpr float SECOND_OUTPUT_RELATEDNESS_THRESHOLD = 0.0f;
 
-  constexpr std::string_view KEY_IMAGE_EXPORT_FILE_MAGIC = "Loki key image export\002"sv;
-  constexpr std::string_view MULTISIG_EXPORT_FILE_MAGIC = "Loki multisig export\001"sv;
-  constexpr std::string_view OUTPUT_EXPORT_FILE_MAGIC = "Loki output export\003"sv;
+  constexpr std::string_view KEY_IMAGE_EXPORT_FILE_MAGIC = "Beldex key image export\002"sv;
+  constexpr std::string_view MULTISIG_EXPORT_FILE_MAGIC = "Beldex multisig export\001"sv;
+  constexpr std::string_view OUTPUT_EXPORT_FILE_MAGIC = "Beldex output export\003"sv;
 
   constexpr uint64_t SEGREGATION_FORK_HEIGHT = 99999999;
   constexpr uint64_t SEGREGATION_FORK_VICINITY = 1500; // blocks
@@ -13703,13 +13703,12 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
       process_outgoing(*spent_txid, spent_tx, e.block_height, e.block_timestamp, tx_money_spent_in_ins, tx_money_got_in_outs, subaddr_account, subaddr_indices);
 
       // erase corresponding incoming payment
-      for (auto j = m_payments.begin(); j != m_payments.end(); ++j)
+      for (auto j = m_payments.begin(); j != m_payments.end(); )
       {
         if (j->second.m_tx_hash == *spent_txid)
-        {
-          m_payments.erase(j);
-          break;
-        }
+          j = m_payments.erase(j);
+        else
+          ++j;
       }
 
       ++spent_txid;
