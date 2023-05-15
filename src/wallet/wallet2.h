@@ -92,7 +92,7 @@ namespace tools
   static const char *ERR_MSG_NETWORK_VERSION_QUERY_FAILED = tr("Could not query the current network version, try later");
   static const char *ERR_MSG_NETWORK_HEIGHT_QUERY_FAILED = tr("Could not query the current network block height, try later: ");
   static const char *ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED = tr("Failed to query daemon for master node list");
-  static const char *ERR_MSG_TOO_MANY_TXS_CONSTRUCTED = tr("Constructed too many transations, please sweep_all first");
+  static const char *ERR_MSG_TOO_MANY_TXS_CONSTRUCTED = tr("Constructed too many transactions, please sweep_all first");
   static const char *ERR_MSG_EXCEPTION_THROWN = tr("Exception thrown, staking process could not be completed: ");
 
   class ringdb;

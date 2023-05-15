@@ -83,8 +83,9 @@
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include <fmt/core.h>
+#include <fmt/color.h>
 
-extern "
+extern "C"
 {
 #include <sodium.h>
 }
@@ -6254,7 +6255,7 @@ bool simple_wallet::request_stake_unlock(const std::vector<std::string> &args_)
   return true;
 }
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::query_locked_stakes(bool print_result)
+bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images)
 {
   if (!try_connect_to_daemon())
     return false;
@@ -6270,6 +6271,7 @@ bool simple_wallet::query_locked_stakes(bool print_result)
       bool only_once = true;
       for (const auto& contributor : node_info.contributors)
       {
+        std::unordered_set<std::string> printed_addresses;
         for (size_t i = 0; i < contributor.locked_contributions.size(); ++i)
         {
           const auto& contribution = contributor.locked_contributions[i];
@@ -6277,42 +6279,34 @@ bool simple_wallet::query_locked_stakes(bool print_result)
 
           if (!print_result)
             continue;
-
+          auto required = cryptonote::print_money(node_info.staking_requirement);
           msg_buf.reserve(512);
           if (only_once)
           {
-            only_once = false;
-            msg_buf.append("Master Node: ");
-            msg_buf.append(node_info.master_node_pubkey);
-            msg_buf.append("\n");
-
-            msg_buf.append("Unlock Height: ");
-            if (node_info.requested_unlock_height == master_nodes::KEY_IMAGE_AWAITING_UNLOCK_HEIGHT)
-                msg_buf.append("Unlock not requested yet");
+            if((node_info.contributors.size() - 1)==0)
+              msg_buf.append(fmt::format(fg(fmt::color::sky_blue) | fmt::emphasis::bold,"Master Node         :{}\n",node_info.master_node_pubkey));
             else
-                msg_buf.append(std::to_string(node_info.requested_unlock_height));
-            msg_buf.append("\n");
+              msg_buf.append(fmt::format(fg(fmt::color::sky_blue) | fmt::emphasis::bold,"Master Node         :{} ({} {})\n",node_info.master_node_pubkey,(node_info.contributors.size() - 1),(node_info.contributors.size()-1)==0 ? "": ((node_info.contributors.size()-1) > 1 ? "Contributions" : "Contribution")));
 
-            msg_buf.append("Total Locked: ");
-            msg_buf.append(cryptonote::print_money(contributor.amount));
-            msg_buf.append("\n");
-
-            msg_buf.append("Amount/Key Image: ");
+            if (node_info.requested_unlock_height != master_nodes::KEY_IMAGE_AWAITING_UNLOCK_HEIGHT)
+            {
+              msg_buf.append(fmt::format("Unlock Height       :{}\n",std::to_string(node_info.requested_unlock_height)));
+            }
+            msg_buf.append(fmt::format("Operator's Contribution :{} of {} BDX required\n",cryptonote::print_money(contributor.amount),required));
+            printed_addresses.insert(contributor.address);
           }
-
-          msg_buf.append(cryptonote::print_money(contribution.amount));
-          msg_buf.append("/");
-          msg_buf.append(contribution.key_image);
-          msg_buf.append("\n");
-
-          if (i < (contributor.locked_contributions.size() - 1))
+          if(!only_once && printed_addresses.find(contributor.address) == printed_addresses.end())
           {
-            msg_buf.append("                  ");
+            msg_buf.append(fmt::format(" Total_Contributions:{} ({})\n",cryptonote::print_money(contributor.amount),contributor.address));
+            printed_addresses.insert(contributor.address);
           }
-          else
+          only_once = false;
+          msg_buf.append(fmt::format("     ● BDX          :{}\n",cryptonote::print_money(contribution.amount)));
+          if(print_key_images)
           {
-            msg_buf.append("\n");
+            msg_buf.append(fmt::format("     Key Image      :{}\n",contribution.key_image));
           }
+            msg_buf.append("\n");
         }
       }
     }
@@ -6355,18 +6349,17 @@ bool simple_wallet::query_locked_stakes(bool print_result)
         msg_buf.append("Blacklisted Stakes\n");
         once_only = false;
       }
-
-      msg_buf.append("  Unlock Height/Key Image: ");
-      msg_buf.append(std::to_string(entry.unlock_height));
-      msg_buf.append("/");
-      msg_buf.append(entry.key_image);
-      msg_buf.append("\n");
-      if (entry.amount > 0) {
-        // version >= master_nodes::key_image_blacklist_entry::version_1_serialize_amount
-        msg_buf.append("  Total Locked: ");
-        msg_buf.append(cryptonote::print_money(entry.amount));
-        msg_buf.append("\n");
+      msg_buf.append(fmt::format("  Unlock Height : {}\n", std::to_string(entry.unlock_height)));
+      if(print_key_images)
+      {
+        msg_buf.append(fmt::format("  Key Image     : {}\n", entry.key_image));
       }
+      if (entry.amount > 0)
+      {
+        // version >= master_nodes::key_image_blacklist_entry::version_1_serialize_amount
+        msg_buf.append(fmt::format("  Total Locked  : {}\n", cryptonote::print_money(entry.amount)));
+      }
+      msg_buf.append("\n");
 
     }
   }
@@ -6386,10 +6379,11 @@ bool simple_wallet::query_locked_stakes(bool print_result)
   return has_locked_stakes;
 }
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::print_locked_stakes(const std::vector<std::string>& /*args*/)
+bool simple_wallet::print_locked_stakes(const std::vector<std::string>& args)
 {
   SCOPED_WALLET_UNLOCK();
-  query_locked_stakes(true/*print_result*/);
+  bool print_key_images = std::find(args.begin(), args.end(), "key_images") != args.end();
+  query_locked_stakes(true/*print_result*/, print_key_images);
   return true;
 }
 
@@ -6703,10 +6697,11 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     if (type == bns::mapping_type::bchat)
       fmt::print(fmt::format(tr("Bchat Name:     {}\n"), name));
     else if (bns::is_belnet_type(type))
-      fmt::print(fmt::format(tr("Belnet Name:     {}\n"), name)); 
+      fmt::print(fmt::format(tr("Belnet Name:     {}\n"), name));
     else if (type == bns::mapping_type::wallet)
-      fmt::print(fmt::format(tr("Wallet Name:     {}\n"), name)); 
-      fmt::print(fmt::format(tr("Name:             {}\n"), name)); 
+      fmt::print(fmt::format(tr("Wallet Name:     {}\n"), name));
+    else
+      fmt::print(fmt::format(tr("Name:             {}\n"), name));
 
     if(value.size()) {
       fmt::print(fmt::format(tr("Old Value:        {}\n"), mval.to_readable_value(m_wallet->nettype(), type)));
