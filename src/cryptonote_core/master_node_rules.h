@@ -129,6 +129,9 @@ namespace master_nodes {
   constexpr size_t   STATE_CHANGE_NTH_OF_THE_NETWORK_TO_TEST = 100;
   constexpr size_t   STATE_CHANGE_MIN_NODES_TO_TEST          = 50;
 
+    // Small Stake prevented from unlocking stake until a certain number of blocks have passed
+  constexpr uint64_t SMALL_CONTRIBUTOR_UNLOCK_TIMER =  2880 * 30;
+  constexpr uint64_t SMALL_CONTRIBUTOR_THRESHOLD = 2500;
 
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
   constexpr size_t STATE_CHANGE_QUORUM_SIZE               = 5;
