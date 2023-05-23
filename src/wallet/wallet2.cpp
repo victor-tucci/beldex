@@ -33,6 +33,7 @@
 #include <tuple>
 #include <optional>
 #include <mutex>
+#include <fmt/core.h>
 #include <boost/format.hpp>
 #include <type_traits>
 #include <cpr/parameters.h>
@@ -6356,90 +6357,50 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   });
 }
 
-std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view>& transfers, bool formatting) const
+std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view> &transfers, bool formatting) const
 {
   uint64_t running_balance = 0;
-  auto data_formatter  = boost::format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'%s',%s");
-  auto title_formatter = boost::format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s");
+  auto title_formatter = "{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n";
+  auto data_formatter = "{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n";
   if (formatting)
   {
-    title_formatter = boost::format("%8.8s,%9.9s,%8.8s,%14.14s,%16.16s,%20.20s,%20.20s,%64.64s,%16.16s,%14.14s,%100.100s,%20.20s,%s,%s");
-    data_formatter  = boost::format("%8.8s,%9.9s,%8.8s,%14.14s,%16.16s,%20.20s,%20.20s,%64.64s,%16.16s,%14.14s,%100.100s,%20.20s,\"%s\",%s");
+    title_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:^23s}, {:^21s}, {:>21s}, {:^64s}, {:^16s}, {:^21s}, {:^97s}, {:>21s}, {:>5s}, {:s}\n";
+    data_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:>23s}, {:>21s}, {:>21s}, {:>64s}, {:^16s}, {:>21s}, {:>97s}, {:^21s}, {:^5s}, {:s}\n";
   }
-
-  auto new_line = [&](std::stringstream& output){
-    if (formatting)
-    {
-      output << std::endl;
-    } else
-    {
-      output << "\r\n";
-    }
-  };
-
-
   std::stringstream output;
-  output << title_formatter
-    % tr("block")
-    % tr("type")
-    % tr("lock")
-    % tr("checkpointed")
-    % tr("timestamp")
-    % tr("amount")
-    % tr("running balance")
-    % tr("hash")
-    % tr("payment ID")
-    % tr("fee")
-    % tr("destination")
-    % tr("amount")
-    % tr("index")
-    % tr("note");
-  new_line(output);
-
-  for (const auto& transfer : transfers)
+  output << fmt::format(title_formatter, tr("block"), tr("type"), tr("lock"), tr("checkpointed"), tr("timestamp"), tr("amount"), tr("running balance"), tr("hash"), tr("payment ID"), tr("fee"), tr("destination"), tr("amount"), tr("index"), tr("note"));
+  for (const auto &transfer : transfers)
   {
     switch (transfer.pay_type)
     {
-      case wallet::pay_type::in:
-      case wallet::pay_type::miner:
-      case wallet::pay_type::master_node:
-      case wallet::pay_type::governance:
-        running_balance += transfer.amount;
-        break;
-      case wallet::pay_type::stake:
-      case wallet::pay_type::bns:
-        running_balance -= transfer.fee;
-        break;
-      case wallet::pay_type::out:
-        running_balance -= transfer.amount + transfer.fee;
-        break;
-      default:
-        MERROR("Warning: Unhandled pay type, this is most likely a developer error, please report it to the Beldex developers.");
-        break;
+    case wallet::pay_type::in:
+    case wallet::pay_type::miner:
+    case wallet::pay_type::master_node:
+    case wallet::pay_type::governance:
+      running_balance += transfer.amount;
+      break;
+    case wallet::pay_type::stake:
+    case wallet::pay_type::bns:
+      running_balance -= transfer.fee;
+      break;
+    case wallet::pay_type::out:
+      running_balance -= transfer.amount + transfer.fee;
+      break;
+    default:
+      MERROR("Warning: Unhandled pay type, this is most likely a developer error, please report it to the Beldex developers.");
+      break;
     }
 
     std::string indices;
-    for (auto &index : transfer.subaddr_indices) {
-      if (!indices.empty()) indices += ", ";
+    for (auto &index : transfer.subaddr_indices)
+    {
+      if (!indices.empty())
+        indices += ",";
       indices += std::to_string(index.minor);
     }
-
-    output << data_formatter
-      % (transfer.type.size() ? transfer.type : std::to_string(transfer.height))
-      % pay_type_string(transfer.pay_type)
-      % transfer.lock_msg
-      % (transfer.checkpointed ? "checkpointed" : "no")
-      % tools::get_human_readable_timestamp(transfer.timestamp)
-      % cryptonote::print_money(transfer.amount)
-      % cryptonote::print_money(running_balance)
-      % transfer.txid
-      % transfer.payment_id
-      % cryptonote::print_money(transfer.fee)
-      % (transfer.destinations.size() ? transfer.destinations.front().address : "-")
-      % (transfer.destinations.size() ? cryptonote::print_money(transfer.destinations.front().amount) : "")
-      % indices
-      % transfer.note;
-    new_line(output);
+    if (transfer.subaddr_indices.size() > 1)
+      indices = '"' + indices + '"';
+    output << fmt::format(data_formatter, (transfer.type.size() ? transfer.type : std::to_string(transfer.height)), pay_type_string(transfer.pay_type), transfer.lock_msg, (transfer.checkpointed ? "checkpointed" : "no"), tools::get_human_readable_timestamp(transfer.timestamp), cryptonote::print_money(transfer.amount), cryptonote::print_money(running_balance), transfer.txid, transfer.payment_id, cryptonote::print_money(transfer.fee), (transfer.destinations.size() ? transfer.destinations.front().address : "-"), (transfer.destinations.size() ? cryptonote::print_money(transfer.destinations.front().amount) : ""), indices, transfer.note);
 
     if (transfer.destinations.size() <= 1)
       continue;
@@ -6448,22 +6409,7 @@ std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view>& 
     // (start at begin + 1 with std::next)
     for (auto it = std::next(transfer.destinations.cbegin()); it != transfer.destinations.cend(); ++it)
     {
-      output << data_formatter
-        % ""
-        % ""
-        % ""
-        % ""
-        % ""
-        % ""
-        % ""
-        % ""
-        % ""
-        % ""
-        % it->address
-        % cryptonote::print_money(it->amount)
-        % ""
-        % "";
-      new_line(output);
+      output << fmt::format(data_formatter, "", "", "", "", "", "", "", "", "", "", it->address, cryptonote::print_money(it->amount), "", "");
     }
   }
   return output.str();
