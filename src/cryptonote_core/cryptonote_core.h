@@ -824,7 +824,7 @@ namespace cryptonote
       * requested range.  The optional value will be empty only if requesting the full chain *and*
       * another thread is already calculating it.
       */
-     std::optional<std::tuple<uint64_t, uint64_t, uint64_t>> get_coinbase_tx_sum(uint64_t start_offset, size_t count);
+     std::optional<std::tuple<int64_t, int64_t, int64_t>> get_coinbase_tx_sum(uint64_t start_offset, size_t count);
 
      /**
       * @brief get the network type we're on
@@ -1238,7 +1238,8 @@ namespace cryptonote
      struct {
        std::shared_mutex mutex;
        bool building = false;
-       uint64_t height = 0, emissions = 0, fees = 0, burnt = 0;
+       uint64_t height = 0;
+       int64_t emissions = 0, fees = 0, burnt = 0;
      } m_coinbase_cache;
 
      std::optional<oxenmq::TaggedThreadID> m_POS_thread_id;
