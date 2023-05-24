@@ -137,7 +137,7 @@ local android_build_steps(android_abi, android_platform=21, jobs=6, cmake_extra=
         '-DCMAKE_BUILD_TYPE=Release ' +
         '-DCMAKE_TOOLCHAIN_FILE=/usr/lib/android-sdk/ndk-bundle/build/cmake/android.toolchain.cmake ' +
         '-DANDROID_PLATFORM=' + android_platform + ' -DANDROID_ABI=' + android_abi + ' ' +
-        '-DMONERO_SLOW_HASH=ON'+'-DWARNINGS_AS_ERRORS=OFF'+'-DBUILD_TESTS=OFF' +
+        '-DMONERO_SLOW_HASH=ON'+' -DWARNINGS_AS_ERRORS=OFF'+' -DBUILD_TESTS=OFF ' +
         '-DLOCAL_MIRROR=https://builds.belnet.dev/deps ' +
         '-DBUILD_STATIC_DEPS=ON -DSTATIC=ON -G Ninja ' + cmake_extra,
     'ninja -j' + jobs + ' -v wallet_merged',
@@ -228,11 +228,11 @@ local gui_wallet_step_darwin = {
     {   name: 'Android wallet_api', kind: 'pipeline', type: 'docker', platform: { arch: 'amd64' },
         steps: [submodules, {
                 name: 'build',
-                image: 'debian:sid',
+                image: 'debian:bullseye',
                 environment: { SSH_KEY: { from_secret: "SSH_KEY" } },
                 commands: [
                     'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
-                    'echo deb http://deb.debian.org/debian sid contrib >/etc/apt/sources.list.d/sid-contrib.list',
+                    'echo deb http://deb.debian.org/debian bullseye contrib >/etc/apt/sources.list.d/bullseye-contrib.list',
                     apt_get_quiet + ' update',
                     apt_get_quiet + ' install -y eatmydata',
                     'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
