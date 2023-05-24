@@ -1736,13 +1736,13 @@ namespace cryptonote
     return m_mempool.check_for_key_images(key_im, spent);
   }
   //-----------------------------------------------------------------------------------------------
-  std::optional<std::tuple<uint64_t, uint64_t, uint64_t>> core::get_coinbase_tx_sum(uint64_t start_offset, size_t count)
+  std::optional<std::tuple<int64_t, int64_t, int64_t>> core::get_coinbase_tx_sum(uint64_t start_offset, size_t count)
   {
-    std::tuple<uint64_t, uint64_t, uint64_t> result{0, 0, 0};
+    std::optional<std::tuple<int64_t, int64_t, int64_t>> result{{0, 0, 0}};
     if (count == 0)
       return result;
 
-    auto& [emission_amount, total_fee_amount, burnt_beldex] = result;
+    auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
 
     // Caching.
     //
@@ -1813,18 +1813,18 @@ namespace cryptonote
     const uint64_t end = start_offset + count - 1;
     m_blockchain_storage.for_blocks_range(start_offset, end,
       [this, &cache_to, &result, &cache_build_started](uint64_t height, const crypto::hash& hash, const block& b){
-      auto& [emission_amount, total_fee_amount, burnt_beldex] = result;
+      auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
       std::vector<transaction> txs;
       std::vector<crypto::hash> missed_txs;
-      uint64_t coinbase_amount = get_outs_money_amount(b.miner_tx);
+      auto coinbase_amount = static_cast<int64_t>(get_outs_money_amount(b.miner_tx));
       get_transactions(b.tx_hashes, txs, missed_txs);
-      uint64_t tx_fee_amount = 0;
+      int64_t tx_fee_amount = 0;
       for(const auto& tx: txs)
       {
-        tx_fee_amount += get_tx_miner_fee(tx, b.major_version >= HF_VERSION_FEE_BURNING);
+        tx_fee_amount += static_cast<int64_t>(get_tx_miner_fee(tx, b.major_version >= feature::FEE_BURNING));
         if(b.major_version >= HF_VERSION_FEE_BURNING)
         {
-          burnt_beldex += get_burned_amount_from_tx_extra(tx.extra);
+          burnt_beldex += static_cast<int64_t>(get_burned_amount_from_tx_extra(tx.extra));y
         }
       }
 
