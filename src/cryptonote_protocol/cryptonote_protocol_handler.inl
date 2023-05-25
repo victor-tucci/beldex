@@ -2646,17 +2646,17 @@ skip:
   bool t_cryptonote_protocol_handler<t_core>::relay_transactions(NOTIFY_NEW_TRANSACTIONS::request& arg, cryptonote_connection_context& exclude_context)
   {
     MTRACE("relay_transactions");
-    for(auto& tx_blob : arg.txs)
-      m_core.on_transaction_relayed(tx_blob);
 
     // no check for success, so tell core they're relayed unconditionally and snag a copy of the
     // hash so that we can look up any associated flash data we should include.
+
     std::vector<crypto::hash> relayed_txes;
     relayed_txes.reserve(arg.txs.size());
     for (auto &tx_blob : arg.txs)
-      relayed_txes.push_back(
-          m_core.on_transaction_relayed(tx_blob)
-      );
+  {
+      if (auto hash = m_core.on_transaction_relayed(tx_blob))
+        relayed_txes.push_back(hash);
+  }
 
     // Rebuild arg.flashes from flash data that we have because we don't necessarily have the same
     // flash data that got sent to us (we may have additional flash info, or may have rejected some
@@ -2788,8 +2788,10 @@ skip:
     m_p2p->for_each_connection([&](const connection_context& cntxt, nodetool::peerid_type peer_id, uint32_t support_flags) {
       MINFO("DEBUGconnection state:" << cntxt.m_state  << " cntxtId:" << cntxt.m_connection_id << " context:"<<context.m_connection_id);
       if (cntxt.m_state >= cryptonote_connection_context::state_synchronizing && cntxt.m_connection_id != context.m_connection_id)
+      {
         target = std::max(target, cntxt.m_remote_blockchain_height);
         MINFO("Target found:" << target);
+      }
       return true;
     });
     const uint64_t previous_target = m_core.get_target_blockchain_height();

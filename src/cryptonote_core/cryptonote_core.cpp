@@ -1156,7 +1156,13 @@ namespace cryptonote
       tx_info.tvc.m_too_big = true;
       return;
     }
-
+    else if (tx_info.blob->empty())
+    {
+      LOG_PRINT_L1("WRONG TRANSACTION BLOB, blob is empty, rejected");
+      tx_info.tvc.m_verifivation_failed = true;
+      return;
+    }
+    
     tx_info.parsed = parse_and_validate_tx_from_blob(*tx_info.blob, tx_info.tx, tx_info.tx_hash);
     if(!tx_info.parsed)
     {
