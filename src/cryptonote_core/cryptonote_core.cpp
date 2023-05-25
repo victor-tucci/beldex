@@ -1821,10 +1821,10 @@ namespace cryptonote
       int64_t tx_fee_amount = 0;
       for(const auto& tx: txs)
       {
-        tx_fee_amount += static_cast<int64_t>(get_tx_miner_fee(tx, b.major_version >= feature::FEE_BURNING));
+        tx_fee_amount += static_cast<int64_t>(get_tx_miner_fee(tx, b.major_version >= HF_VERSION_FEE_BURNING));
         if(b.major_version >= HF_VERSION_FEE_BURNING)
         {
-          burnt_beldex += static_cast<int64_t>(get_burned_amount_from_tx_extra(tx.extra));y
+          burnt_beldex += static_cast<int64_t>(get_burned_amount_from_tx_extra(tx.extra));
         }
       }
 
