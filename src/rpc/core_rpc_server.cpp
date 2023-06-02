@@ -3065,9 +3065,21 @@ namespace cryptonote { namespace rpc {
     entry.decommission_count            = info.decommission_count;
     entry.last_decommission_reason_consensus_all      = info.last_decommission_reason_consensus_all;
     entry.last_decommission_reason_consensus_any      = info.last_decommission_reason_consensus_any;
-
-    auto& netconf = m_core.get_net_config();
-    m_core.get_master_node_list().access_proof(mn_info.pubkey, [&entry, &netconf](const auto &proof) {
+    m_core.get_master_node_list().access_proof(mn_info.pubkey, [
+            this, &entry, is_me = (m_core.master_node() && m_core.get_master_keys().pub == mn_info.pubkey)
+    ](const auto &proof) {
+      if (is_me) {
+        entry.master_node_version = BELDEX_VERSION;
+        entry.belnet_version = m_core.belnet_version;
+        entry.storage_server_version = m_core.ss_version;
+        entry.public_ip = epee::string_tools::get_ip_string_from_int32(m_core.mn_public_ip());
+        entry.storage_port = m_core.storage_https_port();
+        entry.storage_lmq_port = m_core.storage_omq_port();
+        entry.quorumnet_port = m_core.quorumnet_port();
+        entry.pubkey_ed25519 = tools::type_to_hex(m_core.get_master_keys().pub_ed25519);
+        entry.pubkey_x25519 = tools::type_to_hex(m_core.get_master_keys().pub_x25519);
+      }
+      else{
         entry.master_node_version     = proof.proof->version;
         entry.belnet_version          = proof.proof->belnet_version;
         entry.storage_server_version   = proof.proof->storage_server_version;
@@ -3077,11 +3089,12 @@ namespace cryptonote { namespace rpc {
         entry.pubkey_ed25519           = proof.proof->pubkey_ed25519 ? tools::type_to_hex(proof.proof->pubkey_ed25519) : "";
         entry.pubkey_x25519            = proof.pubkey_x25519 ? tools::type_to_hex(proof.pubkey_x25519) : "";
         entry.quorumnet_port           = proof.proof->qnet_port;
-
+      } 
         // NOTE: Master Node Testing
         entry.last_uptime_proof                  = proof.timestamp;
         auto system_now = std::chrono::system_clock::now();
         auto steady_now = std::chrono::steady_clock::now();
+        auto& netconf = m_core.get_net_config();
         entry.storage_server_reachable = !proof.ss_reachable.unreachable_for(netconf.UPTIME_PROOF_VALIDITY - netconf.UPTIME_PROOF_FREQUENCY, steady_now);
         entry.storage_server_first_unreachable = reachable_to_time_t(proof.ss_reachable.first_unreachable, system_now, steady_now);
         entry.storage_server_last_unreachable = reachable_to_time_t(proof.ss_reachable.last_unreachable, system_now, steady_now);

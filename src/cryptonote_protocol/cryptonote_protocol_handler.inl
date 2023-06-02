@@ -2788,10 +2788,8 @@ skip:
     m_p2p->for_each_connection([&](const connection_context& cntxt, nodetool::peerid_type peer_id, uint32_t support_flags) {
       MINFO("DEBUGconnection state:" << cntxt.m_state  << " cntxtId:" << cntxt.m_connection_id << " context:"<<context.m_connection_id);
       if (cntxt.m_state >= cryptonote_connection_context::state_synchronizing && cntxt.m_connection_id != context.m_connection_id)
-      {
         target = std::max(target, cntxt.m_remote_blockchain_height);
         MINFO("Target found:" << target);
-      }
       return true;
     });
     const uint64_t previous_target = m_core.get_target_blockchain_height();
