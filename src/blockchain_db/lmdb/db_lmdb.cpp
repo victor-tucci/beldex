@@ -1999,6 +1999,9 @@ bool BlockchainLMDB::get_txpool_tx_blob(const crypto::hash& txid, cryptonote::bl
   if (result != 0)
       throw1(DB_ERROR(lmdb_error("Error finding txpool tx blob: ", result).c_str()));
 
+  if (v.mv_size == 0)
+      throw1(DB_ERROR("Error finding txpool tx blob: tx is present, but data is empty"));
+
   bd.assign(reinterpret_cast<const char*>(v.mv_data), v.mv_size);
   return true;
 }
