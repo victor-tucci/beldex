@@ -1835,7 +1835,8 @@ namespace cryptonote { namespace rpc {
     response.cumulative_difficulty = m_core.get_blockchain_storage().get_db().get_block_cumulative_difficulty(height);
     response.block_weight = m_core.get_blockchain_storage().get_db().get_block_weight(height);
     response.reward = get_block_reward(blk);
-    response.miner_reward = blk.miner_tx.vout[0].amount;
+    if(blk.nonce != 0)
+      response.miner_reward = blk.miner_tx.vout[0].amount;
     response.block_size = response.block_weight = m_core.get_blockchain_storage().get_db().get_block_weight(height);
     response.num_txes = blk.tx_hashes.size();
     if (fill_pow_hash)
