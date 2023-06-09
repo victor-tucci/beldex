@@ -37,7 +37,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <iomanip>
-#include <oxenmq/base32z.h>
+#include <oxenc/base32z.h>
 
 extern "C" {
 #include <sodium.h>
@@ -56,12 +56,10 @@ extern "C" {
 #include "common/command_line.h"
 #include "common/hex.h"
 #include "common/base58.h"
-#include "common/dns_utils.h"
 #include "epee/warnings.h"
 #include "crypto/crypto.h"
 #include "cryptonote_config.h"
 #include "cryptonote_basic/hardfork.h"
-#include "epee/misc_language.h"
 #include <csignal>
 #include "checkpoints/checkpoints.h"
 #include "ringct/rctTypes.h"
@@ -980,7 +978,7 @@ namespace cryptonote
       MGINFO_YELLOW("- primary: " << tools::type_to_hex(keys.pub));
       MGINFO_YELLOW("- ed25519: " << tools::type_to_hex(keys.pub_ed25519));
       // .mnode address is the ed25519 pubkey, encoded with base32z and with .mnode appended:
-      MGINFO_YELLOW("- belnet: " << oxenmq::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
+      MGINFO_YELLOW("- belnet: " << oxenc::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
@@ -1158,7 +1156,13 @@ namespace cryptonote
       tx_info.tvc.m_too_big = true;
       return;
     }
-
+    else if (tx_info.blob->empty())
+    {
+      LOG_PRINT_L1("WRONG TRANSACTION BLOB, blob is empty, rejected");
+      tx_info.tvc.m_verifivation_failed = true;
+      return;
+    }
+    
     tx_info.parsed = parse_and_validate_tx_from_blob(*tx_info.blob, tx_info.tx, tx_info.tx_hash);
     if(!tx_info.parsed)
     {
@@ -1351,7 +1355,6 @@ namespace cryptonote
     //auto lock = incoming_tx_lock();
     uint8_t version      = m_blockchain_storage.get_network_version();
     bool ok              = true;
-    bool tx_pool_changed = false;
     if (flash_rollback_height)
       *flash_rollback_height = 0;
     tx_pool_options tx_opts;
@@ -1378,7 +1381,6 @@ namespace cryptonote
       }
       if (m_mempool.add_tx(info.tx, info.tx_hash, *info.blob, weight, info.tvc, *local_opts, version, flash_rollback_height))
       {
-        tx_pool_changed |= info.tvc.m_added_to_pool;
         MDEBUG("tx added: " << info.tx_hash);
       }
       else
@@ -1740,13 +1742,13 @@ namespace cryptonote
     return m_mempool.check_for_key_images(key_im, spent);
   }
   //-----------------------------------------------------------------------------------------------
-  std::optional<std::tuple<uint64_t, uint64_t, uint64_t>> core::get_coinbase_tx_sum(uint64_t start_offset, size_t count)
+  std::optional<std::tuple<int64_t, int64_t, int64_t>> core::get_coinbase_tx_sum(uint64_t start_offset, size_t count)
   {
-    std::tuple<uint64_t, uint64_t, uint64_t> result{0, 0, 0};
+    std::optional<std::tuple<int64_t, int64_t, int64_t>> result{{0, 0, 0}};
     if (count == 0)
       return result;
 
-    auto& [emission_amount, total_fee_amount, burnt_beldex] = result;
+    auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
 
     // Caching.
     //
@@ -1817,18 +1819,18 @@ namespace cryptonote
     const uint64_t end = start_offset + count - 1;
     m_blockchain_storage.for_blocks_range(start_offset, end,
       [this, &cache_to, &result, &cache_build_started](uint64_t height, const crypto::hash& hash, const block& b){
-      auto& [emission_amount, total_fee_amount, burnt_beldex] = result;
+      auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
       std::vector<transaction> txs;
       std::vector<crypto::hash> missed_txs;
-      uint64_t coinbase_amount = get_outs_money_amount(b.miner_tx);
+      auto coinbase_amount = static_cast<int64_t>(get_outs_money_amount(b.miner_tx));
       get_transactions(b.tx_hashes, txs, missed_txs);
-      uint64_t tx_fee_amount = 0;
+      int64_t tx_fee_amount = 0;
       for(const auto& tx: txs)
       {
-        tx_fee_amount += get_tx_miner_fee(tx, b.major_version >= HF_VERSION_FEE_BURNING);
+        tx_fee_amount += static_cast<int64_t>(get_tx_miner_fee(tx, b.major_version >= HF_VERSION_FEE_BURNING));
         if(b.major_version >= HF_VERSION_FEE_BURNING)
         {
-          burnt_beldex += get_burned_amount_from_tx_extra(tx.extra);
+          burnt_beldex += static_cast<int64_t>(get_burned_amount_from_tx_extra(tx.extra));
         }
       }
 

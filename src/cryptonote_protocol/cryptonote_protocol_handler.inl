@@ -719,7 +719,7 @@ namespace cryptonote
           LOG_ERROR_CCONTEXT
           (
             "sent wrong tx: failed to parse and validate transaction: "
-            << oxenmq::to_hex(tx_blob)
+            << oxenc::to_hex(tx_blob)
             << ", dropping connection"
           );
 
@@ -861,7 +861,7 @@ namespace cryptonote
       LOG_ERROR_CCONTEXT
       (
         "sent wrong block: failed to parse and validate block: "
-        << oxenmq::to_hex(arg.b.block)
+        << oxenc::to_hex(arg.b.block)
         << ", dropping connection"
       );
 
@@ -1314,7 +1314,7 @@ namespace cryptonote
       if(!parse_and_validate_block_from_blob(block_entry.block, b, block_hash))
       {
         LOG_ERROR_CCONTEXT("sent wrong block: failed to parse and validate block: "
-          << oxenmq::to_hex(block_entry.block) << ", dropping connection");
+          << oxenc::to_hex(block_entry.block) << ", dropping connection");
         drop_connection(context, false, false);
         ++m_sync_bad_spans_downloaded;
         return 1;
@@ -1322,7 +1322,7 @@ namespace cryptonote
       if (b.miner_tx.vin.size() != 1 || !std::holds_alternative<txin_gen>(b.miner_tx.vin.front()))
       {
         LOG_ERROR_CCONTEXT("sent wrong block: block: miner tx does not have exactly one txin_gen input"
-          << oxenmq::to_hex(block_entry.block) << ", dropping connection");
+          << oxenc::to_hex(block_entry.block) << ", dropping connection");
         drop_connection(context, false, false);
         ++m_sync_bad_spans_downloaded;
         return 1;
@@ -2646,17 +2646,17 @@ skip:
   bool t_cryptonote_protocol_handler<t_core>::relay_transactions(NOTIFY_NEW_TRANSACTIONS::request& arg, cryptonote_connection_context& exclude_context)
   {
     MTRACE("relay_transactions");
-    for(auto& tx_blob : arg.txs)
-      m_core.on_transaction_relayed(tx_blob);
 
     // no check for success, so tell core they're relayed unconditionally and snag a copy of the
     // hash so that we can look up any associated flash data we should include.
+
     std::vector<crypto::hash> relayed_txes;
     relayed_txes.reserve(arg.txs.size());
     for (auto &tx_blob : arg.txs)
-      relayed_txes.push_back(
-          m_core.on_transaction_relayed(tx_blob)
-      );
+  {
+      if (auto hash = m_core.on_transaction_relayed(tx_blob))
+        relayed_txes.push_back(hash);
+  }
 
     // Rebuild arg.flashes from flash data that we have because we don't necessarily have the same
     // flash data that got sent to us (we may have additional flash info, or may have rejected some

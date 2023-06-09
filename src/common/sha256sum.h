@@ -8,12 +8,6 @@ namespace crypto { struct hash; }
 
 namespace tools {
 
-  // This used to be really dangerously overloaded with very different purposes:
-  //bool sha256sum(const uint8_t* data, size_t len, crypto::hash& hash);
-  //bool sha256sum(const fs::path& filename, crypto::hash& hash);
-  // which is incredibly dangerous if you happen to have a string you want to hash and see that
-  // there is both a pointer+size and std::string overload.  Renamed *both* of these to prevent any
-  // existing code from compiling.
 
   // Calculates sha256 checksum of the given data
   bool sha256sum_str(std::string_view str, crypto::hash& hash);

@@ -33,7 +33,6 @@
 #include <vector>
 #include <string>
 #include "memwipe.h"
-#include "fnv1.h"
 
 namespace epee
 {
@@ -105,7 +104,7 @@ namespace std
   {
     size_t operator()(const epee::wipeable_string &s) const
     {
-      return epee::fnv::FNV1a(s.data(), s.size());
+      return hash<std::string_view>{}(s.view());
     }
   };
 }

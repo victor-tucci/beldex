@@ -283,8 +283,7 @@ if(NOT MANUAL_SUBMODULES)
       endforeach()
     endfunction ()
     
-    message(STATUS "Checking submodules")
-    check_submodule(external/miniupnp)
+    message(STATUS "Checking submodules")    
     check_submodule(external/rapidjson)
     check_submodule(external/trezor-common)
     check_submodule(external/randomx)
@@ -322,7 +321,6 @@ else()
 endif()
 message(STATUS "Building for a ${ARCH_WIDTH}-bit system")
 
-# Check if we're on FreeBSD so we can exclude the local miniupnpc (it should be installed from ports instead)
 # CMAKE_SYSTEM_NAME checks are commonly known, but specifically taken from libsdl's CMakeLists
 if(CMAKE_SYSTEM_NAME MATCHES "kFreeBSD.*|FreeBSD")
   set(FREEBSD TRUE)
@@ -357,6 +355,7 @@ if(APPLE)
 endif()
 
 option(BUILD_STATIC_DEPS "Download, build and statically link against core dependencies" OFF)
+option(HTTPS_AND_SSL "Use https and ssl while statically build" ON)
 if(BUILD_STATIC_DEPS)
   include(StaticBuild)
 endif()
@@ -429,24 +428,6 @@ find_package(Threads)
 
 if (APPLE AND NOT IOS)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=x86-64 -fvisibility=default")
-  if (NOT OpenSSL_DIR)
-      EXECUTE_PROCESS(COMMAND brew --prefix openssl
-        OUTPUT_VARIABLE OPENSSL_ROOT_DIR
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
-    message(STATUS "Using OpenSSL found at ${OPENSSL_ROOT_DIR}")
-  endif()
-endif()
-
-if(BUILD_STATIC_DEPS)
-  # SSL::* targets already set up
-else()
-  find_package(OpenSSL REQUIRED)
-endif()
-message(STATUS "Using OpenSSL include dir at ${OPENSSL_INCLUDE_DIR}")
-
-if(MINGW)
-  # OpenSSL doesn't seem to properly set up its dependencies on Windows, leading to linking errors
-  target_link_libraries(OpenSSL::Crypto INTERFACE ws2_32)
 endif()
 
 add_definition_if_library_exists(c memset_s "string.h" HAVE_MEMSET_S)
@@ -456,7 +437,6 @@ add_definition_if_function_found(strptime HAVE_STRPTIME)
 # Generate header for embedded translations
 add_subdirectory(translations)
 
-add_library(miniupnpc INTERFACE)
 add_library(systemd INTERFACE)  # Will do nothing unless we find and enable systemd support
 
 if(NOT TARGET sodium)
@@ -483,12 +463,6 @@ if(NOT TARGET sodium)
   export(TARGETS sodium NAMESPACE sodium:: FILE sodium-exports.cmake)
 endif()
 
-if (NOT BUILD_STATIC_DEPS)
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(UNBOUND libunbound REQUIRED IMPORTED_TARGET)
-  add_library(libunbound INTERFACE)
-  target_link_libraries(libunbound INTERFACE PkgConfig::UNBOUND)
-endif()
 
 option(WITH_SYSTEMD "Attempts to link against and enable systemd daemon notification support" ON)
 if (WITH_SYSTEMD AND NOT BUILD_STATIC_DEPS)
@@ -560,7 +534,7 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${ARCH_FLAG}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ARCH_FLAG}")
 
-  set(WARNINGS "-Wall -Wextra -Wpointer-arith -Wvla -Wwrite-strings -Wno-error=extra -Wno-error=deprecated-declarations -Wno-unused-parameter -Wno-unused-variable -Wno-error=unused-variable -Wno-error=uninitialized")
+  set(WARNINGS "-Wall -Wextra -Wpointer-arith -Wwrite-strings -Wno-error=extra -Wno-error=deprecated-declarations -Wno-unused-parameter -Wno-unused-variable -Wno-error=unused-variable -Wno-error=uninitialized")
 
   option(WARNINGS_AS_ERRORS "Enable warning as errors" OFF)
   if(NOT MINGW AND WARNINGS_AS_ERRORS)
@@ -790,7 +764,7 @@ set(Boost_USE_MULTITHREADED TRUE) # Needed for macOS, at least, and won't hurt e
 if(BUILD_STATIC_DEPS)
   # StaticBuild.cmake sets Boost targets up for us
 else()
-  find_package(Boost 1.58 QUIET REQUIRED COMPONENTS system thread serialization program_options)
+  find_package(Boost 1.62 QUIET REQUIRED COMPONENTS system thread serialization program_options)
 endif()
 
 set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
@@ -798,12 +772,6 @@ if(NOT Boost_FOUND)
   message(FATAL_ERROR "Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (>=1.58) or the equivalent")
 elseif(Boost_FOUND)
   message(STATUS "Found Boost Version: ${Boost_VERSION}")
-  if (OPENSSL_VERSION VERSION_GREATER_EQUAL 1.1 AND (
-        Boost_VERSION VERSION_LESS 1.62.0 OR (Boost_VERSION VERSION_GREATER 100000 AND Boost_VERSION VERSION_LESS 106200)))
-      message(FATAL_ERROR "Boost ${Boost_VERSION} (older than 1.62) is too old to link with OpenSSL ${OPENSSL_VERSION} (1.1 or newer) found at ${OPENSSL_INCLUDE_DIR} and ${OPENSSL_LIBRARIES}. "
-                          "Update Boost or install OpenSSL 1.0 and set path to it when running cmake: "
-                          "cmake -DOPENSSL_ROOT_DIR='/usr/include/openssl-1.0'")
-  endif()
 endif()
 
 # Interface target for random extra system libraries that we need to link everything against

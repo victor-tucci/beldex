@@ -156,7 +156,6 @@ namespace cryptonote
     bool set_track_uses(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_inactivity_lock_timeout(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_device_name(const std::vector<std::string> &args = std::vector<std::string>());
-    bool set_export_format(const std::vector<std::string> &args = std::vector<std::string>());
     bool help(const std::vector<std::string> &args = std::vector<std::string>());
     bool start_mining(const std::vector<std::string> &args);
     bool stop_mining(const std::vector<std::string> &args);
@@ -182,7 +181,7 @@ namespace cryptonote
     bool register_master_node(const std::vector<std::string> &args_);
     bool request_stake_unlock(const std::vector<std::string> &args_);
     bool print_locked_stakes(const std::vector<std::string>& /*args*/);
-    bool query_locked_stakes(bool print_result);
+    bool query_locked_stakes(bool print_result, bool print_key_images = false);
     bool bns_buy_mapping(std::vector<std::string> args);
     bool bns_renew_mapping(std::vector<std::string> args);
     bool bns_update_mapping(std::vector<std::string> args);

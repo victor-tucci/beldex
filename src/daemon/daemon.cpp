@@ -268,7 +268,7 @@ void daemon::init_options(boost::program_options::options_description& option_sp
   else
     called = true;
   cryptonote::core::init_options(option_spec);
-  node_server::init_options(option_spec);
+  node_server::init_options(option_spec,hidden);
   cryptonote::rpc::core_rpc_server::init_options(option_spec, hidden);
   cryptonote::rpc::http_server::init_options(option_spec, hidden);
   cryptonote::rpc::init_omq_options(option_spec);
@@ -283,7 +283,7 @@ bool daemon::run(bool interactive)
   std::atomic<bool> stop_sig(false), shutdown(false);
   std::thread stop_thread{[&stop_sig, &shutdown, this] {
     while (!stop_sig)
-      epee::misc_utils::sleep_no_w(100);
+      std::this_thread::sleep_for(100ms);
     if (shutdown)
       stop();
   }};
