@@ -728,13 +728,14 @@ namespace master_nodes
       bool process_key_image_unlock_tx(cryptonote::network_type nettype, uint64_t block_height, const cryptonote::transaction &tx,uint8_t version);
       payout get_block_leader() const;
       payout get_block_producer(uint8_t POS_round) const;
+      master_node_info get_master_node_details(crypto::public_key mnode_key);
     };
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
     bool debug_allow_local_ips = false;
     void record_timestamp_participation(crypto::public_key const &pubkey, bool participated);
     void record_timesync_status(crypto::public_key const &pubkey, bool synced);
-
+    master_node_info get_master_node_details(crypto::public_key mnode_key){return m_state.get_master_node_details(mnode_key);}
   private:
     // Note(maxim): private methods don't have to be protected the mutex
     bool m_rescanning = false; /* set to true when doing a rescan so we know not to reset proofs */
