@@ -905,7 +905,7 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
   THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), error::wallet_internal_error, "Bad offset calculation");
   const size_t blocks_in_a_year = BLOCKS_EXPECTED_IN_YEARS(1,hf_version);
   const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
-  const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
+  const double outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
   begin = rct_offsets.data();
   end = rct_offsets.data() + rct_offsets.size() - (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
   num_rct_outputs = *(end - 1);
