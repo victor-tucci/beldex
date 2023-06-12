@@ -10,10 +10,6 @@
 #  include <sys/mman.h>
 #endif
 
-#if defined(__GNUC__) && !defined(__clang__)
-#  pragma GCC target ("aes,sse2")
-#endif
-
 #if defined(_MSC_VER)
 #  define ASM __asm
 #  define STATIC
