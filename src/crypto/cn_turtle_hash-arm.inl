@@ -1,15 +1,3 @@
-void slow_hash_allocate_state(void)
-{
-  // Do nothing, this is just to maintain compatibility with the upgraded slow-hash.c
-  return;
-}
-
-void slow_hash_free_state(void)
-{
-  // As above
-  return;
-}
-
 #if defined(__GNUC__)
 #define RDATA_ALIGN16 __attribute__ ((aligned(16)))
 #define STATIC static
