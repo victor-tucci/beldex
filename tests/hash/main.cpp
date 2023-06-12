@@ -278,7 +278,11 @@ int test_variant2_int_sqrt()
     return 1;
   }
 
-  for (uint64_t i = 1; i <= 3558067407UL; ++i) {
+  const char* full = std::getenv("V2_INT_SQRT_FULL_TEST");
+  const uint64_t incr = full && full == "1"sv
+      ? 1 : 83;
+
+  for (uint64_t i = 1; i <= 3558067407UL; i += incr) {
     // "i" is integer part of "sqrt(2^64 + n) * 2 - 2^33"
     // n = (i/2 + 2^32)^2 - 2^64
 
