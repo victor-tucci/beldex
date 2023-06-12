@@ -85,6 +85,14 @@ if (CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL GNU)
   endif()
 endif()
 
+# GCC 11 LTO and cn_turtle_hash have some serious disagreements; disable LTO for it.
+if(IPO_ENABLED AND (CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo)
+    AND CMAKE_C_COMPILER_ID STREQUAL GNU
+    AND CMAKE_C_COMPILER_VERSION VERSION_GREATER 11 AND CMAKE_C_COMPILER_VERSION VERSION_LESS 12)
+  message(STATUS "GCC-11 detected; disabling LTO for cncrypto")
+  set_target_properties(cncrypto PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+endif()
+
 if (ARCH STREQUAL "armv8-a" AND (CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL GNU))
   # Similarly use +crypto extensions for the arm hash code (it also has a run-time check before
   # enabling).
