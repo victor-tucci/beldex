@@ -6292,7 +6292,15 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
             {
               msg_buf.append(fmt::format("Unlock Height       :{}\n",std::to_string(node_info.requested_unlock_height)));
             }
-            msg_buf.append(fmt::format("Operator's Contribution :{} of {} BDX required\n",cryptonote::print_money(contributor.amount),required));
+            std::string walletaddress = m_wallet->get_account().get_public_address_str(m_wallet->nettype());
+            if(walletaddress == contributor.address)
+            {
+              msg_buf.append(fmt::format("Operator's Contribution :{} of {} BDX required\n",cryptonote::print_money(contributor.amount),required));
+            }
+            else
+            {
+              msg_buf.append(fmt::format("Operator's Contribution :{} of {} BDX required ({})\n",cryptonote::print_money(contributor.amount),required,contributor.address));
+            }
             printed_addresses.insert(contributor.address);
           }
           if(!only_once && printed_addresses.find(contributor.address) == printed_addresses.end())
