@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <string>
 #include "device.hpp"
+#include "io_ledger_tcp.hpp"
 #include "log.hpp"
 #include "io_hid.hpp"
 
@@ -142,7 +143,7 @@ namespace hw::ledger {
         mutable std::mutex command_locker;
 
         //IO
-        hw::io::hid hw_device;
+        std::unique_ptr<io::device> hw_device;
         unsigned int length_send;
         unsigned char buffer_send[BUFFER_SEND_SIZE];
         unsigned int length_recv;
@@ -204,10 +205,17 @@ namespace hw::ledger {
 
     public:
         device_ledger();
+
+        // Constructs a ledger device object that uses a TCP socket to communicate with the ledger
+        // device, typically for use with a Ledger emulator which doesn't emulated the USB layer.
+        explicit device_ledger(io::ledger_tcp&& tcp);
+
         ~device_ledger();
 
-        device_ledger(const device_ledger &device) = delete ;
-        device_ledger& operator=(const device_ledger &device) = delete;
+        device_ledger(const device_ledger&) = delete ;
+        device_ledger(device_ledger&&) = delete ;
+        device_ledger& operator=(const device_ledger&) = delete;
+        device_ledger&& operator=(device_ledger&&) = delete;
 
         bool is_hardware_device() const override {return connected(); }
 
@@ -217,6 +225,8 @@ namespace hw::ledger {
         /*                              SETUP/TEARDOWN                             */
         /* ======================================================================= */
         bool set_name(std::string_view name) override;
+
+        void set_address(std::string_view addr) override;
 
         std::string get_name() const override;
         bool init() override;
