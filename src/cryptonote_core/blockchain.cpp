@@ -374,7 +374,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
             checkpoint_ptr = &checkpoint;
 
         try {
-          m_master_node_list.block_added(blk, txs, checkpoint_ptr);
+          m_master_node_list.block_add(blk, txs, checkpoint_ptr);
         } catch (const std::exception& e) {
           MFATAL("Unable to process block {} for updating master node list: " << e.what());
           return false;
@@ -562,7 +562,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
     return false;
   }
 
-  hook_block_added([this] (const auto& info) { m_checkpoints.block_added(info); });
+  hook_block_add([this] (const auto& info) { m_checkpoints.block_add(info); });
   hook_blockchain_detached([this] (const auto& info) { m_checkpoints.blockchain_detached(info.height); });
   for (const auto& hook : m_init_hooks)
     hook();
@@ -1899,7 +1899,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
   {
     // NOTE: POS blocks don't use PoW. They use Master Node signatures.
     // Delay signature verification until Master Node List adds the block in
-    // the block_added hook.
+    // the block_add hook.
   }
   else
   {
@@ -2026,8 +2026,8 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
       txs.push_back(tx);
     }
 
-    block_added_info hook_data{b, txs, checkpoint};
-    for (const auto& hook : m_alt_block_added_hooks)
+    block_add_info hook_data{b, txs, checkpoint};
+    for (const auto& hook : m_alt_block_add_hooks)
     {
       try{
         hook(hook_data);
@@ -4221,7 +4221,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   {
     // NOTE: POS blocks don't use PoW. They use master Node signatures.
     // Delay signature verification until Master Node List adds the block in
-    // the block_added hook.
+    // the block_add hook.
   }
   else // check proof of work
   {
@@ -4432,7 +4432,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   // TODO(beldex): Not nice, making the hook take in a vector of pair<transaction,
   // blobdata> messes with master_node_list::init which only constructs
-  // a vector of transactions and then subsequently calls block_added, so the
+  // a vector of transactions and then subsequently calls block_add, so the
   // init step would have to intentionally allocate the blobs or retrieve them
   // from the DB.
   // Secondly we don't use the blobs at all in the hooks, so passing it in
@@ -4443,7 +4443,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     only_txs.push_back(tx_pair.first);
 
   try {
-    m_master_node_list.block_added(bl, only_txs, checkpoint);
+    m_master_node_list.block_add(bl, only_txs, checkpoint);
   } catch (const std::exception& e) {
     MGINFO_RED("Failed to add block to Service Node List: " << e.what());
     bvc.m_verifivation_failed = true;
@@ -4457,13 +4457,13 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     return false;
   }
 
-  block_added_info hook_data{bl, only_txs, checkpoint};
-  for (const auto& hook : m_block_added_hooks)
+  block_add_info hook_data{bl, only_txs, checkpoint};
+  for (const auto& hook : m_block_add_hooks)
   {
     try{
       hook(hook_data);
     }catch(const std::exception& e){
-      MGINFO_RED("Block added hook signalled failure"<< e.what());
+      MGINFO_RED("Block add hook signalled failure"<< e.what());
       bvc.m_verifivation_failed = true;
       return false;
     }

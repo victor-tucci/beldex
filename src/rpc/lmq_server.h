@@ -35,7 +35,7 @@
 
 namespace oxenmq { class OxenMQ; }
 
-namespace cryptonote { namespace rpc {
+namespace cryptonote::rpc {
 
 void init_omq_options(boost::program_options::options_description& desc);
 
@@ -70,4 +70,4 @@ public:
   void send_mempool_notifications(const crypto::hash& id, const transaction& tx, const std::string& blob, const tx_pool_options& opts);
 };
 
-}} // namespace cryptonote::rpc
+} // namespace cryptonote::rpc

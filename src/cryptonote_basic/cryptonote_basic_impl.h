@@ -37,12 +37,12 @@
 
 namespace cryptonote {
   struct checkpoint_t;
-  struct block_added_info {
+  struct block_add_info {
     const cryptonote::block& block;
     const std::vector<transaction>& txs;
     const checkpoint_t* const checkpoint;
   };
-  using BlockAddedHook = std::function<void(const block_added_info& info)>;
+  using BlockAddHook = std::function<void(const block_add_info& info)>;
 
   struct detached_info {
     uint64_t height;

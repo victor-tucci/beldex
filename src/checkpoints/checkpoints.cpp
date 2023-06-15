@@ -168,7 +168,7 @@ namespace cryptonote
     return result;
   }
   //---------------------------------------------------------------------------
-  void checkpoints::block_added(const block_added_info& info)
+  void checkpoints::block_add(const block_add_info& info)
   {
     uint64_t const height = get_block_height(info.block);
     if (height < master_nodes::CHECKPOINT_STORE_PERSISTENTLY_INTERVAL || info.block.major_version < network_version_13_checkpointing)

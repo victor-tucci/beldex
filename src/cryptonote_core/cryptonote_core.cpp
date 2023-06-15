@@ -808,11 +808,11 @@ namespace cryptonote
       m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_master_node_list.blockchain_detached(info.height);});
       m_blockchain_storage.hook_init([this] { m_master_node_list.init(); });
       m_blockchain_storage.hook_validate_miner_tx([this] (const auto& info) { m_master_node_list.validate_miner_tx(info);});
-      m_blockchain_storage.hook_alt_block_added([this] (const auto& info) { m_master_node_list.alt_block_added(info);});
+      m_blockchain_storage.hook_alt_block_add([this] (const auto& info) { m_master_node_list.alt_block_add(info);});
 
       // NOTE: There is an implicit dependency on master node lists being hooked first!
       m_blockchain_storage.hook_init([this] { m_quorum_cop.init(); });
-      m_blockchain_storage.hook_block_added([this] (const auto& info) { m_quorum_cop.block_added(info.block, info.txs); });
+      m_blockchain_storage.hook_block_add([this] (const auto& info) { m_quorum_cop.block_add(info.block, info.txs); });
       m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_quorum_cop.blockchain_detached(info.height, info.by_pop_blocks); });
     }
 

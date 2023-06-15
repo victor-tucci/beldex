@@ -1591,7 +1591,7 @@ namespace master_nodes
       throw std::runtime_error{fmt::format("Failed to verify block components for incoming {} at height {}",block_type, height)};
   }
 
-  void master_node_list::block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
+  void master_node_list::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
   {
     if (block.major_version < cryptonote::network_version_9_master_nodes)
       return;
@@ -2560,7 +2560,7 @@ namespace master_nodes
     }
   }
 
-  void master_node_list::alt_block_added(const cryptonote::block_added_info& info)
+  void master_node_list::alt_block_add(const cryptonote::block_add_info& info)
   {
     // NOTE: The premise is to search the main list and the alternative list for
     // the parent of the block we just received, generate the new Master Node

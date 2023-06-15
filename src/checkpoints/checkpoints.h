@@ -113,7 +113,7 @@ namespace cryptonote
   class checkpoints
   {
   public:
-    void block_added(const block_added_info& info);
+    void block_add(const block_add_info& info);
     void blockchain_detached(uint64_t height);
 
     bool get_checkpoint(uint64_t height, checkpoint_t &checkpoint) const;

@@ -314,7 +314,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
     }
   });
 
-  core_.get_blockchain_storage().hook_block_added([this] (const auto& info) { send_block_notifications(info.block); return true; });
+  core_.get_blockchain_storage().hook_block_add([this] (const auto& info) { send_block_notifications(info.block); return true; });
   core_.get_pool().add_notify([this](const crypto::hash& id, const transaction& tx, const std::string& blob, const tx_pool_options& opts) {
       send_mempool_notifications(id, tx, blob, opts);
   });
