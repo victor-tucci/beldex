@@ -168,11 +168,11 @@ namespace cryptonote
     return result;
   }
   //---------------------------------------------------------------------------
-  bool checkpoints::block_added(const block_added_info& info)
+  void checkpoints::block_added(const block_added_info& info)
   {
     uint64_t const height = get_block_height(info.block);
     if (height < master_nodes::CHECKPOINT_STORE_PERSISTENTLY_INTERVAL || info.block.major_version < network_version_13_checkpointing)
-      return true;
+      return;
 
     uint64_t end_cull_height = 0;
     {
@@ -206,8 +206,6 @@ namespace cryptonote
 
     if (info.checkpoint)
         update_checkpoint(*info.checkpoint);
-
-    return true;
   }
   //---------------------------------------------------------------------------
   void checkpoints::blockchain_detached(uint64_t height)

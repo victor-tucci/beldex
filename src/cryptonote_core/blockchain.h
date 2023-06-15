@@ -977,14 +977,29 @@ namespace cryptonote
     void on_new_tx_from_block(const cryptonote::transaction &tx);
 
     /**
-     * @brief add a hook for processing new blocks and rollbacks for reorgs
-     *
-     * TODO: replace these with more versatile std::functions
+     * @brief add a hook called during new block handling; should throw to abort adding the block.
      */
     void hook_block_added        (BlockAddedHook hook)         { m_block_added_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook called when blocks are removed from the chain.
+     */
     void hook_blockchain_detached(BlockchainDetachedHook hook) { m_blockchain_detached_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook called during startup and re-initialization
+     */
     void hook_init               (InitHook hook)               { m_init_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook to be called to validate miner txes; should throw if the miner tx is
+     * invalid.
+     */
     void hook_validate_miner_tx  (ValidateMinerTxHook hook)    { m_validate_miner_tx_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook to be called when adding an alt-chain block; should throw to abort adding.
+     */
     void hook_alt_block_added    (BlockAddedHook hook)         { m_alt_block_added_hooks.push_back(std::move(hook)); }
 
     /**

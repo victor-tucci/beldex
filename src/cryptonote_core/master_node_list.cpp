@@ -31,7 +31,7 @@
 #include <functional>
 #include <algorithm>
 #include <chrono>
-
+#include <fmt/core.h>
 #include <boost/endian/conversion.hpp>
 
 extern "C" {
@@ -1465,10 +1465,10 @@ namespace master_nodes
   }
 
 
-  bool master_node_list::verify_block(const cryptonote::block &block, bool alt_block, cryptonote::checkpoint_t const *checkpoint)
+  void master_node_list::verify_block(const cryptonote::block &block, bool alt_block, cryptonote::checkpoint_t const *checkpoint)
   {
     if (block.major_version < cryptonote::network_version_9_master_nodes)
-      return true;
+      return;
 
     std::string_view block_type = alt_block ? "alt block "sv : "block "sv;
 
@@ -1482,8 +1482,7 @@ namespace master_nodes
 
       if (!quorum)
       {
-        MGINFO("Failed to get testing quorum checkpoint for " << block_type << cryptonote::get_block_hash(block));
-        return false;
+        throw std::runtime_error{fmt::format("Failed to get testing quorum checkpoint for {} {}", block_type, cryptonote::get_block_hash(block))};
       }
 
       bool failed_checkpoint_verify = !master_nodes::verify_checkpoint(block.major_version, *checkpoint, *quorum);
@@ -1499,11 +1498,8 @@ namespace master_nodes
         }
       }
 
-      if (failed_checkpoint_verify)
-      {
-        MGINFO("Master node checkpoint failed verification for " << block_type << cryptonote::get_block_hash(block));
-        return false;
-      }
+      if (failed_checkpoint_verify){}
+        throw std::runtime_error{fmt::format("Master node checkpoint failed verification for {} {}", block_type, cryptonote::get_block_hash(block))};
     }
 
     //
@@ -1519,8 +1515,7 @@ namespace master_nodes
         cryptonote::block prev_block;
         if (!find_block_in_db(m_blockchain.get_db(), block.prev_id, prev_block))
         {
-          MGINFO("Alt block " << cryptonote::get_block_hash(block) << " references previous block " << block.prev_id << " not available in DB.");
-          return false;
+          throw std::runtime_error{fmt::format("Alt block {} references previous block {} not available in DB.",cryptonote::get_block_hash(block), block.prev_id)};
         }
 
         prev_timestamp = prev_block.timestamp;
@@ -1533,8 +1528,7 @@ namespace master_nodes
 
       if (!POS::get_round_timings(m_blockchain, height, prev_timestamp, timings))
       {
-        MGINFO("Failed to query the block data for POS timings to validate incoming " << block_type << "at height " << height);
-        return false;
+        throw std::runtime_error{fmt::format("Failed to query the block data for POS timings to validate incoming {} at height {}",block_type, height)};
       }
     }
 
@@ -1593,18 +1587,19 @@ namespace master_nodes
                                        alt_POS_quorums);
     }
 
-    return result;
+    if (!result){}
+      throw std::runtime_error{fmt::format("Failed to verify block components for incoming {} at height {}",block_type, height)};
   }
 
-  bool master_node_list::block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
+  void master_node_list::block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint)
   {
     if (block.major_version < cryptonote::network_version_9_master_nodes)
-      return true;
+      return;
 
     std::lock_guard lock(m_mn_mutex);
     process_block(block, txs);
-    bool result = verify_block(block, false /*alt_block*/, checkpoint);
-    if (result && cryptonote::block_has_POS_components(block))
+    verify_block(block, false /*alt_block*/, checkpoint);
+    if (cryptonote::block_has_POS_components(block))
     {
       // NOTE: Only record participation if its a block we recently received.
       // Otherwise processing blocks in retrospect/re-loading on restart seeds
@@ -1621,8 +1616,7 @@ namespace master_nodes
         std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::POS, block_height, false, nullptr);
         if (!quorum || quorum->validators.empty())
         {
-          MFATAL("Unexpected POS error " << (quorum ? " quorum was not generated" : " quorum was empty"));
-          return false;
+          throw std::runtime_error{fmt::format("Unexpected POS error {}" ,quorum ? " quorum was not generated" : " quorum was empty")};
         }
 
         for (size_t validator_index = 0; validator_index < master_nodes::POS_QUORUM_NUM_VALIDATORS; validator_index++)
@@ -1633,7 +1627,6 @@ namespace master_nodes
         }
       }
     }
-    return result;
   }
 
   static std::mt19937_64 quorum_rng(uint8_t hf_version, crypto::hash const &hash, quorum_type type)
@@ -2331,7 +2324,7 @@ namespace master_nodes
   }
 
   // NOTE: Verify queued master node coinbase or POS block producer rewards
-  static bool verify_coinbase_tx_output(cryptonote::transaction const &miner_tx,
+  static void verify_coinbase_tx_output(cryptonote::transaction const &miner_tx,
                                         uint64_t height,
                                         size_t output_index,
                                         cryptonote::account_public_address const &receiver,
@@ -2339,8 +2332,7 @@ namespace master_nodes
   {
     if (output_index >= miner_tx.vout.size())
     {
-      MGINFO_RED("Output Index: " << output_index << ", indexes out of bounds in vout array with size: " << miner_tx.vout.size());
-      return false;
+      throw std::out_of_range{fmt::format("Output Index: {} , indexes out of bounds in vout array with size: ",output_index, miner_tx.vout.size())};
     }
 
     cryptonote::tx_out const &output = miner_tx.vout[output_index];
@@ -2351,14 +2343,12 @@ namespace master_nodes
     // TODO(beldex): eliminate all FP math from reward calculations
     if (!within_one(output.amount, reward))
     {
-      MGINFO_RED("Master node reward amount incorrect. Should be " << cryptonote::print_money(reward) << ", is: " << cryptonote::print_money(output.amount));
-      return false;
+      throw std::runtime_error{fmt::format("Master node reward amount incorrect. Should be {}, is:{}", cryptonote::print_money(reward) , cryptonote::print_money(output.amount))};
     }
 
     if (!std::holds_alternative<cryptonote::txout_to_key>(output.target))
     {
-      MGINFO_RED("Master node output target type should be txout_to_key");
-      return false;
+      throw std::runtime_error{fmt::format("Master node output target type should be txout_to_key")};
     }
 
     // NOTE: Beldex uses the governance key in the one-time ephemeral key
@@ -2367,27 +2357,25 @@ namespace master_nodes
     crypto::public_key out_eph_public_key{};
     cryptonote::keypair gov_key = cryptonote::get_deterministic_keypair_from_height(height);
 
-    bool r = crypto::generate_key_derivation(receiver.m_view_public_key, gov_key.sec, derivation);
-    CHECK_AND_ASSERT_MES(r, false, "while creating outs: failed to generate_key_derivation(" << receiver.m_view_public_key << ", " << gov_key.sec << ")");
-    r = crypto::derive_public_key(derivation, output_index, receiver.m_spend_public_key, out_eph_public_key);
-    CHECK_AND_ASSERT_MES(r, false, "while creating outs: failed to derive_public_key(" << derivation << ", " << output_index << ", "<< receiver.m_spend_public_key << ")");
+    if (!crypto::generate_key_derivation(receiver.m_view_public_key, gov_key.sec, derivation))
+      throw std::runtime_error{"Failed to generate key derivation"};
+    if (!crypto::derive_public_key(derivation, output_index, receiver.m_spend_public_key, out_eph_public_key))
+      throw std::runtime_error{"Failed derive public key"};
 
     if (var::get<cryptonote::txout_to_key>(output.target).key != out_eph_public_key)
     {
-      MGINFO_RED("Invalid master node reward at output: " << output_index << ", output key, specifies wrong key");
-      return false;
+      throw std::runtime_error{fmt::format("Invalid master node reward at output: {}, output key, specifies wrong key", output_index)};
     }
 
-    return true;
   }
 
-  bool master_node_list::validate_miner_tx(const cryptonote::miner_tx_info& info) const
+  void master_node_list::validate_miner_tx(const cryptonote::miner_tx_info& info) const
   {
     const auto& block = info.block;
     const auto& reward_parts = info.reward_parts;
     uint8_t const hf_version = block.major_version;
     if (hf_version < cryptonote::network_version_9_master_nodes)
-      return true;
+      return;
 
     std::lock_guard lock(m_mn_mutex);
     uint64_t const height                   = cryptonote::get_block_height(block);
@@ -2403,8 +2391,7 @@ namespace master_nodes
       auto const check_block_leader_pubkey = cryptonote::get_master_node_winner_from_tx_extra(miner_tx.extra);
       if (block_leader.key != check_block_leader_pubkey)
       {
-        MGINFO_RED("Master node reward winner is incorrect! Expected " << block_leader.key << ", block has " << check_block_leader_pubkey);
-        return false;
+        throw std::runtime_error{fmt::format("Master node reward winner is incorrect! Expected {}, block has {} " , block_leader.key , check_block_leader_pubkey)};
       }
     }
 
@@ -2427,8 +2414,7 @@ namespace master_nodes
       quorum POS_quorum = generate_POS_quorum(m_blockchain.nettype(), block_leader.key, hf_version, m_state.active_master_nodes_infos(), entropy, block.POS.round);
       if (!verify_POS_quorum_sizes(POS_quorum))
       {
-        MGINFO_RED("POS block received but POS has insufficient nodes for quorum, block hash " << cryptonote::get_block_hash(block) << ", height " << height);
-        return false;
+        throw std::runtime_error{fmt::format("POS block received but POS has insufficient nodes for quorum, block hash {}, height {} " ,cryptonote::get_block_hash(block),height)};
       }
 
       block_producer_key = POS_quorum.workers[0];
@@ -2437,8 +2423,7 @@ namespace master_nodes
 
       if (block.POS.round == 0 && (mode == verify_mode::POS_different_block_producer))
       {
-        MGINFO_RED("The block producer in POS round 0 should be the same node as the block leader: " << block_leader.key << ", actual producer: " << block_producer_key);
-        return false;
+        throw std::runtime_error{fmt::format("The block producer in POS round 0 should be the same node as the block leader: {}, actual producer: {}",block_leader.key, block_producer_key)};
       }
     }
 
@@ -2464,8 +2449,7 @@ namespace master_nodes
       auto info_it = m_state.master_nodes_infos.find(block_producer_key);
       if (info_it == m_state.master_nodes_infos.end())
       {
-        MGINFO_RED("The POS block producer for round: " << +block.POS.round << " is not currently a Master Node: " << block_producer_key);
-        return false;
+            throw std::runtime_error{fmt::format("The POS block producer for round {:d} is not currently a Master Node: {}", block.POS.round, block_producer_key)};
       }
 
       block_producer = info_it->second;
@@ -2486,16 +2470,14 @@ namespace master_nodes
       char const *type = mode == verify_mode::miner
                              ? "miner"
                              : mode == verify_mode::POS_block_leader_is_producer ? "POS" : "POS alt round";
-      MGINFO_RED("Expected " << type << " block, the miner TX specifies a different amount of outputs vs the expected: " << expected_vouts_size << ", miner tx outputs: " << miner_tx.vout.size());
-      return false;
+      throw std::runtime_error{fmt::format("Expected {} block, the miner TX specifies a different amount of outputs vs the expected: {}, miner tx outputs: {}",type ,expected_vouts_size , miner_tx.vout.size())};
     }
 
     if (hf_version >= cryptonote::network_version_17_POS)
     {
       if (reward_parts.base_miner != 0)
       {
-        MGINFO_RED("Miner reward is incorrect expected 0 reward, block specified " << cryptonote::print_money(reward_parts.base_miner));
-        return false;
+        throw std::runtime_error{fmt::format("Miner reward is incorrect expected 0 reward, block specified {}", cryptonote::print_money(reward_parts.base_miner))};
       }
     }
 
@@ -2520,8 +2502,7 @@ namespace master_nodes
           payout_entry const &payout = block_leader.payouts[i];
           if (split_rewards[i])
           {
-            if (!verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]))
-              return false;
+            verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]);
             vout_index++;
           }
         }
@@ -2540,8 +2521,7 @@ namespace master_nodes
           payout_entry const &payout = block_leader.payouts[i];
           if (split_rewards[i])
           {
-            if (!verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]))
-              return false;
+            verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]);
             vout_index++;
           }
         }
@@ -2559,8 +2539,7 @@ namespace master_nodes
             payout_entry const &payout = block_producer_payouts.payouts[i];
             if (split_rewards[i])
             {
-              if (!verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]))
-                return false;
+              verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]);
               vout_index++;
             }
           }
@@ -2572,19 +2551,16 @@ namespace master_nodes
           payout_entry const &payout = block_leader.payouts[i];
           if (split_rewards[i])
           {
-            if (!verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]))
-              return false;
+            verify_coinbase_tx_output(miner_tx, height, vout_index, payout.address, split_rewards[i]);
             vout_index++;
           }
         }
       }
       break;
     }
-
-    return true;
   }
 
-  bool master_node_list::alt_block_added(const cryptonote::block_added_info& info)
+  void master_node_list::alt_block_added(const cryptonote::block_added_info& info)
   {
     // NOTE: The premise is to search the main list and the alternative list for
     // the parent of the block we just received, generate the new Master Node
@@ -2596,14 +2572,14 @@ namespace master_nodes
     // a reorganization (more checkpoints/PoW than the main chain).
     auto& block = info.block;
     if (block.major_version < cryptonote::network_version_9_master_nodes)
-      return true;
+      return;
 
     uint64_t block_height         = cryptonote::get_block_height(block);
     state_t const *starting_state = nullptr;
     crypto::hash const block_hash = get_block_hash(block);
 
     auto it = m_transient.alt_state.find(block_hash);
-    if (it != m_transient.alt_state.end()) return true; // NOTE: Already processed alt-state for this block
+    if (it != m_transient.alt_state.end()) return; // NOTE: Already processed alt-state for this block
 
     // NOTE: Check if alt block forks off some historical state on the canonical chain
     if (!starting_state)
@@ -2622,15 +2598,12 @@ namespace master_nodes
 
     if (!starting_state)
     {
-      LOG_PRINT_L1("Received alt block but couldn't find parent state in historical state");
-      return false;
+      throw std::runtime_error{"Received alt block but couldn't find parent state in historical state"};
     }
 
     if (starting_state->block_hash != block.prev_id)
     {
-      LOG_PRINT_L1("Unexpected state_t's hash: " << starting_state->block_hash
-                                                 << ", does not match the block prev hash: " << block.prev_id);
-      return false;
+      throw std::runtime_error{fmt::format("Unexpected state_t's hash: {}, does not match the block prev hash: {}",starting_state->block_hash, block.prev_id)};
     }
 
     // NOTE: Generate the next Master Node list state from this Alt block.
@@ -2642,7 +2615,7 @@ namespace master_nodes
     else
       m_transient.alt_state.emplace(block_hash, std::move(alt_state));
 
-    return verify_block(block, true /*alt_block*/, info.checkpoint);
+    verify_block(block, true /*alt_block*/, info.checkpoint);
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

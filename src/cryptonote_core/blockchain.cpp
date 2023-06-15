@@ -373,9 +373,10 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
         if (blk.major_version >= cryptonote::network_version_14_enforce_checkpoints && get_checkpoint(block_height, checkpoint))
             checkpoint_ptr = &checkpoint;
 
-        if (!m_master_node_list.block_added(blk, txs, checkpoint_ptr))
-        {
-          MERROR("Unable to process block for updating master node list: " << cryptonote::get_block_hash(blk));
+        try {
+          m_master_node_list.block_added(blk, txs, checkpoint_ptr);
+        } catch (const std::exception& e) {
+          MFATAL("Unable to process block {} for updating master node list: " << e.what());
           return false;
         }
         snl_iteration_duration += clock::now() - snl_start;
@@ -561,7 +562,7 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
     return false;
   }
 
-  hook_block_added([this] (const auto& info) { return m_checkpoints.block_added(info); });
+  hook_block_added([this] (const auto& info) { m_checkpoints.block_added(info); });
   hook_blockchain_detached([this] (const auto& info) { m_checkpoints.blockchain_detached(info.height); });
   for (const auto& hook : m_init_hooks)
     hook();
@@ -1321,8 +1322,13 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   miner_tx_info hook_data{b, reward_parts};
   for (const auto& hook : m_validate_miner_tx_hooks)
   {
-    if (!hook(hook_data))
+    try{
+      hook(hook_data);
+    }
+    catch(const std::exception& e){
+      MGINFO_RED("Miner tx failed validation: " << e.what());
       return false;
+    }
   }
 
   if (already_generated_coins != 0 && block_has_governance_output(nettype(), b))
@@ -2023,8 +2029,13 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
     block_added_info hook_data{b, txs, checkpoint};
     for (const auto& hook : m_alt_block_added_hooks)
     {
-      if (!hook(hook_data))
-          return false;
+      try{
+        hook(hook_data);
+      }
+      catch(const std::exception& e){
+      LOG_PRINT_L1("Failed to add alt block: " << e.what());
+      return false;
+      }
     }
   }
 
@@ -4431,9 +4442,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   for (std::pair<transaction, blobdata> const &tx_pair : txs)
     only_txs.push_back(tx_pair.first);
 
-  if (!m_master_node_list.block_added(bl, only_txs, checkpoint))
-  {
-    MGINFO_RED("Failed to add block to Master Node List.");
+  try {
+    m_master_node_list.block_added(bl, only_txs, checkpoint);
+  } catch (const std::exception& e) {
+    MGINFO_RED("Failed to add block to Service Node List: " << e.what());
     bvc.m_verifivation_failed = true;
     return false;
   }
@@ -4448,9 +4460,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   block_added_info hook_data{bl, only_txs, checkpoint};
   for (const auto& hook : m_block_added_hooks)
   {
-    if (!hook(hook_data))
-    {
-      MGINFO_RED("Block added hook signalled failure");
+    try{
+      hook(hook_data);
+    }catch(const std::exception& e){
+      MGINFO_RED("Block added hook signalled failure"<< e.what());
       bvc.m_verifivation_failed = true;
       return false;
     }
