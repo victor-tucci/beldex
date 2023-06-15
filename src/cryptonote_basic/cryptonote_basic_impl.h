@@ -44,6 +44,13 @@ namespace cryptonote {
   };
   using BlockAddHook = std::function<void(const block_add_info& info)>;
 
+  struct block_post_add_info {
+    const cryptonote::block& block;
+    bool reorg;
+    uint64_t split_height; // Only set when reorg is true
+  };
+  using BlockPostAddHook = std::function<void(const block_post_add_info& info)>;
+
   struct detached_info {
     uint64_t height;
     bool by_pop_blocks;

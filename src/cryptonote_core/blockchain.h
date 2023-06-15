@@ -982,6 +982,13 @@ namespace cryptonote
     void hook_block_add        (BlockAddHook hook)         { m_block_add_hooks.push_back(std::move(hook)); }
     
     /**
+     * @brief add a hook to be called after a new block has been added to the (main) chain.  Unlike
+     * the above, this only fires after addition is complete and successful, while the above hook is
+     * part of the addition process.
+     */
+    void hook_block_post_add(BlockPostAddHook hook) { m_block_post_add_hooks.push_back(std::move(hook)); }
+
+    /**
      * @brief add a hook called when blocks are removed from the chain.
      */
     void hook_blockchain_detached(BlockchainDetachedHook hook) { m_blockchain_detached_hooks.push_back(std::move(hook)); }
@@ -1131,6 +1138,7 @@ namespace cryptonote
     std::set<crypto::hash> m_invalid_blocks;
 
     std::vector<BlockAddHook> m_block_add_hooks;
+    std::vector<BlockPostAddHook> m_block_post_add_hooks;
     std::vector<BlockchainDetachedHook> m_blockchain_detached_hooks;
     std::vector<InitHook> m_init_hooks;
     std::vector<ValidateMinerTxHook> m_validate_miner_tx_hooks;

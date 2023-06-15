@@ -1136,6 +1136,13 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
     for (const auto &bei: alt_chain)
       block_notify->notify("%s", tools::type_to_hex(get_block_hash(bei.bl)).c_str(), NULL);
 
+  for (auto it = alt_chain.begin(); it != alt_chain.end(); ++it) {
+    // Only the first hook gets `reorg=true`, the rest don't count as reorgs
+    block_post_add_info hook_data{it->bl, it == alt_chain.begin(), split_height};
+    for (const auto& hook: m_block_post_add_hooks)
+      hook(hook_data);
+  }
+
   MGINFO_GREEN("REORGANIZE SUCCESS! on height: " << split_height << ", new blockchain size: " << m_db->height());
   return true;
 }
@@ -4521,6 +4528,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   if (notify)
   {
+    block_post_add_info hook_data{bl, /*reorg=*/false};
+    for (const auto& hook : m_block_post_add_hooks)
+      hook(hook_data);
+
     std::shared_ptr<tools::Notify> block_notify = m_block_notify;
     if (block_notify)
       block_notify->notify("%s", tools::type_to_hex(id).c_str(), NULL);

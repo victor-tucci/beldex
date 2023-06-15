@@ -558,9 +558,6 @@ namespace master_nodes
     m_vote_pool.remove_expired_votes(height,block.major_version);
     m_vote_pool.remove_used_votes(txs, block.major_version);
 
-    // These feels out of place here because the hook system sucks: TODO replace it with
-    // std::function hooks instead.
-    m_core.update_omq_mns();
   }
 
   static bool handle_obligations_vote(cryptonote::core &core, const quorum_vote_t& vote, const std::vector<pool_vote_entry>& votes, const quorum& quorum)

@@ -801,20 +801,19 @@ namespace cryptonote
     }
 
     // Master Nodes
-    {
-      m_master_node_list.set_quorum_history_storage(command_line::get_arg(vm, arg_store_quorum_history));
+    m_master_node_list.set_quorum_history_storage(command_line::get_arg(vm, arg_store_quorum_history));
 
-      // NOTE: Implicit dependency. Master node list needs to be hooked before checkpoints.
-      m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_master_node_list.blockchain_detached(info.height);});
-      m_blockchain_storage.hook_init([this] { m_master_node_list.init(); });
-      m_blockchain_storage.hook_validate_miner_tx([this] (const auto& info) { m_master_node_list.validate_miner_tx(info);});
-      m_blockchain_storage.hook_alt_block_add([this] (const auto& info) { m_master_node_list.alt_block_add(info);});
+    // NOTE: Implicit dependency. Master node list needs to be hooked before checkpoints.
+    m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_master_node_list.blockchain_detached(info.height);});
+    m_blockchain_storage.hook_init([this] { m_master_node_list.init(); });
+    m_blockchain_storage.hook_validate_miner_tx([this] (const auto& info) { m_master_node_list.validate_miner_tx(info);});
+    m_blockchain_storage.hook_alt_block_add([this] (const auto& info) { m_master_node_list.alt_block_add(info);});
 
-      // NOTE: There is an implicit dependency on master node lists being hooked first!
-      m_blockchain_storage.hook_init([this] { m_quorum_cop.init(); });
-      m_blockchain_storage.hook_block_add([this] (const auto& info) { m_quorum_cop.block_add(info.block, info.txs); });
-      m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_quorum_cop.blockchain_detached(info.height, info.by_pop_blocks); });
-    }
+    // NOTE: There is an implicit dependency on master node lists being hooked first!
+    m_blockchain_storage.hook_init([this] { m_quorum_cop.init(); });
+    m_blockchain_storage.hook_block_add([this] (const auto& info) { m_quorum_cop.block_add(info.block, info.txs); });
+    m_blockchain_storage.hook_block_post_add([this] (const auto&) { update_omq_mns(); });
+    m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_quorum_cop.blockchain_detached(info.height, info.by_pop_blocks); });
 
     // Checkpoints
     m_checkpoints_path = m_config_folder / fs::u8path(JSON_HASH_FILE_NAME);
