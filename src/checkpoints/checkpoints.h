@@ -111,12 +111,10 @@ namespace cryptonote
    * either from a json file or via DNS from a checkpoint-hosting server.
    */
   class checkpoints
-    : public cryptonote::BlockAddedHook,
-      public cryptonote::BlockchainDetachedHook
   {
   public:
-    bool block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, checkpoint_t const *checkpoint) override;
-    void blockchain_detached(uint64_t height, bool by_pop_blocks) override;
+    bool block_added(const block_added_info& info);
+    void blockchain_detached(uint64_t height);
 
     bool get_checkpoint(uint64_t height, checkpoint_t &checkpoint) const;
     /**

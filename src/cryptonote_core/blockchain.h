@@ -981,11 +981,11 @@ namespace cryptonote
      *
      * TODO: replace these with more versatile std::functions
      */
-    void hook_block_added        (BlockAddedHook& hook)         { m_block_added_hooks.push_back(&hook); }
-    void hook_blockchain_detached(BlockchainDetachedHook& hook) { m_blockchain_detached_hooks.push_back(&hook); }
-    void hook_init               (InitHook& hook)               { m_init_hooks.push_back(&hook); }
-    void hook_validate_miner_tx  (ValidateMinerTxHook& hook)    { m_validate_miner_tx_hooks.push_back(&hook); }
-    void hook_alt_block_added    (AltBlockAddedHook& hook)      { m_alt_block_added_hooks.push_back(&hook); }
+    void hook_block_added        (BlockAddedHook hook)         { m_block_added_hooks.push_back(std::move(hook)); }
+    void hook_blockchain_detached(BlockchainDetachedHook hook) { m_blockchain_detached_hooks.push_back(std::move(hook)); }
+    void hook_init               (InitHook hook)               { m_init_hooks.push_back(std::move(hook)); }
+    void hook_validate_miner_tx  (ValidateMinerTxHook hook)    { m_validate_miner_tx_hooks.push_back(std::move(hook)); }
+    void hook_alt_block_added    (BlockAddedHook hook)         { m_alt_block_added_hooks.push_back(std::move(hook)); }
 
     /**
      * @brief returns the timestamps of the last N blocks
@@ -1115,11 +1115,11 @@ namespace cryptonote
     // some invalid blocks
     std::set<crypto::hash> m_invalid_blocks;
 
-    std::vector<BlockAddedHook*> m_block_added_hooks;
-    std::vector<BlockchainDetachedHook*> m_blockchain_detached_hooks;
-    std::vector<InitHook*> m_init_hooks;
-    std::vector<ValidateMinerTxHook*> m_validate_miner_tx_hooks;
-    std::vector<AltBlockAddedHook*> m_alt_block_added_hooks;
+    std::vector<BlockAddedHook> m_block_added_hooks;
+    std::vector<BlockchainDetachedHook> m_blockchain_detached_hooks;
+    std::vector<InitHook> m_init_hooks;
+    std::vector<ValidateMinerTxHook> m_validate_miner_tx_hooks;
+    std::vector<BlockAddedHook> m_alt_block_added_hooks;
 
     checkpoints m_checkpoints;
 

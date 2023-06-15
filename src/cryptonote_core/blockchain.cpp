@@ -561,10 +561,10 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
     return false;
   }
 
-  hook_block_added(m_checkpoints);
-  hook_blockchain_detached(m_checkpoints);
-  for (InitHook* hook : m_init_hooks)
-    hook->init();
+  hook_block_added([this] (const auto& info) { return m_checkpoints.block_added(info); });
+  hook_blockchain_detached([this] (const auto& info) { m_checkpoints.blockchain_detached(info.height); });
+  for (const auto& hook : m_init_hooks)
+    hook();
 
   if (!m_db->is_read_only() && !load_missing_blocks_into_beldex_subsystems())
   {
@@ -680,9 +680,9 @@ void Blockchain::pop_blocks(uint64_t nblocks)
     return;
   }
 
-  auto split_height = m_db->height();
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(split_height, true /*by_pop_blocks*/);
+  detached_info hook_data{m_db->height(), /*by_pop_blocks=*/true};
+  for (const auto& hook : m_blockchain_detached_hooks)
+    hook(hook_data);
   load_missing_blocks_into_beldex_subsystems();
 
   if (stop_batch)
@@ -772,8 +772,8 @@ bool Blockchain::reset_and_set_genesis_block(const block& b)
   m_db->reset();
   m_db->drop_alt_blocks();
 
-  for (InitHook* hook : m_init_hooks)
-    hook->init();
+  for (const auto& hook : m_init_hooks)
+    hook();
 
   db_wtxn_guard wtxn_guard(m_db);
   block_verification_context bvc{};
@@ -999,8 +999,9 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
   }
 
   // Revert all changes from switching to the alt chain before adding the original chain back in
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(rollback_height, false /*by_pop_blocks*/);
+  detached_info rollback_hook_data{rollback_height, /*by_pop_blocks=*/false};
+  for (const auto& hook : m_blockchain_detached_hooks)
+    hook(rollback_hook_data);
   load_missing_blocks_into_beldex_subsystems();
 
   //return back original chain
@@ -1061,8 +1062,9 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
   }
 
   auto split_height = m_db->height();
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(split_height, false /*by_pop_blocks*/);
+  detached_info split_hook_data{split_height, /*by_pop_blocks=*/false};
+  for (const auto& hook : m_blockchain_detached_hooks)
+    hook(split_hook_data);
   load_missing_blocks_into_beldex_subsystems();
 
   //connecting new alternative chain
@@ -1316,9 +1318,10 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     return false;
   }
 
-  for (ValidateMinerTxHook* hook : m_validate_miner_tx_hooks)
+  miner_tx_info hook_data{b, reward_parts};
+  for (const auto& hook : m_validate_miner_tx_hooks)
   {
-    if (!hook->validate_miner_tx(b, reward_parts))
+    if (!hook(hook_data))
       return false;
   }
 
@@ -2017,9 +2020,10 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
       txs.push_back(tx);
     }
 
-    for (AltBlockAddedHook *hook : m_alt_block_added_hooks)
+    block_added_info hook_data{b, txs, checkpoint};
+    for (const auto& hook : m_alt_block_added_hooks)
     {
-      if (!hook->alt_block_added(b, txs, checkpoint))
+      if (!hook(hook_data))
           return false;
     }
   }
@@ -4410,9 +4414,9 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   auto abort_block = beldex::defer([&]() {
       pop_block_from_blockchain();
-      auto old_height = m_db->height();
-      for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-        hook->blockchain_detached(old_height, false /*by_pop_blocks*/);
+      detached_info hook_data{m_db->height(), false /*by_pop_blocks*/};
+      for (const auto& hook : m_blockchain_detached_hooks)
+        hook(hook_data);
   });
 
   // TODO(beldex): Not nice, making the hook take in a vector of pair<transaction,
@@ -4441,9 +4445,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     return false;
   }
 
-  for (BlockAddedHook* hook : m_block_added_hooks)
+  block_added_info hook_data{bl, only_txs, checkpoint};
+  for (const auto& hook : m_block_added_hooks)
   {
-    if (!hook->block_added(bl, only_txs, checkpoint))
+    if (!hook(hook_data))
     {
       MGINFO_RED("Block added hook signalled failure");
       bvc.m_verifivation_failed = true;

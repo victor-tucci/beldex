@@ -2181,7 +2181,7 @@ namespace master_nodes
     m_state.update_from_block(m_blockchain.get_db(), nettype, m_transient.state_history, m_transient.state_archive, {}, block, txs, m_master_node_keys);
   }
 
-  void master_node_list::blockchain_detached(uint64_t height, bool /*by_pop_blocks*/)
+  void master_node_list::blockchain_detached(uint64_t height)
   {
     std::lock_guard lock(m_mn_mutex);
 
@@ -2381,8 +2381,10 @@ namespace master_nodes
     return true;
   }
 
-  bool master_node_list::validate_miner_tx(cryptonote::block const &block, cryptonote::block_reward_parts const &reward_parts) const
+  bool master_node_list::validate_miner_tx(const cryptonote::miner_tx_info& info) const
   {
+    const auto& block = info.block;
+    const auto& reward_parts = info.reward_parts;
     uint8_t const hf_version = block.major_version;
     if (hf_version < cryptonote::network_version_9_master_nodes)
       return true;
@@ -2582,7 +2584,7 @@ namespace master_nodes
     return true;
   }
 
-  bool master_node_list::alt_block_added(cryptonote::block const &block, std::vector<cryptonote::transaction> const &txs, cryptonote::checkpoint_t const *checkpoint)
+  bool master_node_list::alt_block_added(const cryptonote::block_added_info& info)
   {
     // NOTE: The premise is to search the main list and the alternative list for
     // the parent of the block we just received, generate the new Master Node
@@ -2592,7 +2594,7 @@ namespace master_nodes
     // On success, this function returns true, signifying the block is valid to
     // store into the alt-chain until it gathers enough blocks to cause
     // a reorganization (more checkpoints/PoW than the main chain).
-
+    auto& block = info.block;
     if (block.major_version < cryptonote::network_version_9_master_nodes)
       return true;
 
@@ -2633,14 +2635,14 @@ namespace master_nodes
 
     // NOTE: Generate the next Master Node list state from this Alt block.
     state_t alt_state = *starting_state;
-    alt_state.update_from_block(m_blockchain.get_db(), m_blockchain.nettype(), m_transient.state_history, m_transient.state_archive, m_transient.alt_state, block, txs, m_master_node_keys);
+    alt_state.update_from_block(m_blockchain.get_db(), m_blockchain.nettype(), m_transient.state_history, m_transient.state_archive, m_transient.alt_state, block, info.txs, m_master_node_keys);
     auto alt_it = m_transient.alt_state.find(block_hash);
     if (alt_it != m_transient.alt_state.end())
       alt_it->second = std::move(alt_state);
     else
       m_transient.alt_state.emplace(block_hash, std::move(alt_state));
 
-    return verify_block(block, true /*alt_block*/, checkpoint);
+    return verify_block(block, true /*alt_block*/, info.checkpoint);
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
