@@ -26,8 +26,7 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <boost/algorithm/string.hpp>
-#include <stdarg.h>
+#include "string_util.h"
 #include "epee/misc_log_ex.h"
 #include "spawn.h"
 #include "notify.h"
@@ -43,40 +42,34 @@ namespace tools
   - Improve tokenization to handle paths containing whitespaces, quotes, etc.
   - Windows unicode support (implies implementing unicode command line parsing code)
 */
-Notify::Notify(const char *spec)
+Notify::Notify(std::string_view spec)
 {
-  CHECK_AND_ASSERT_THROW_MES(spec, "Null spec");
+  CHECK_AND_ASSERT_THROW_MES(!spec.empty(), "Empty spec");
 
-  boost::split(args, spec, boost::is_any_of(" \t"), boost::token_compress_on);
-  CHECK_AND_ASSERT_THROW_MES(args.size() > 0, "Failed to parse spec");
-  if (strchr(spec, '\'') || strchr(spec, '\"') || strchr(spec, '\\'))
-    MWARNING("A notification spec contains a quote or backslash: note that these are handled verbatim, which may not be the intent");
-  filename = fs::u8path(args[0]);
+  auto pieces = tools::split_any(spec, " \t", true);
+  CHECK_AND_ASSERT_THROW_MES(pieces.size() > 0, "Failed to parse spec");
+  filename = fs::u8path(pieces[0]);
   CHECK_AND_ASSERT_THROW_MES(fs::exists(filename), "File not found: " << filename);
+  args.reserve(pieces.size());
+  for (const auto& piece : pieces)
+    args.emplace_back(piece);
 }
 
-static void replace(std::vector<std::string> &v, const char *tag, const char *s)
+void Notify::replace_tag(std::vector<std::string>& margs, std::string_view tag, std::string_view value)
 {
-  for (std::string &str: v)
-    boost::replace_all(str, tag, s);
-}
-
-int Notify::notify(const char *tag, const char *s, ...)
-{
-  std::vector<std::string> margs = args;
-
-  replace(margs, tag, s);
-
-  va_list ap;
-  va_start(ap, s);
-  while ((tag = va_arg(ap, const char*)))
-  {
-    s = va_arg(ap, const char*);
-    replace(margs, tag, s);
+  if (tag.empty())
+    return;
+  // Skip margs[0], it's the binary name
+  for (size_t i = 1; i < margs.size(); i++) {
+    size_t pos = 0;
+    while ((pos = margs[i].find(tag, pos)) != std::string::npos) {
+      margs[i].replace(pos, tag.size(), value);
+      pos += value.size();
+    }
   }
-  va_end(ap);
-
-  return tools::spawn(filename, margs, false);
+}
+int Notify::spawn(const std::vector<std::string>& margs) const {
+    return tools::spawn(filename, margs, false);
 }
 
 }

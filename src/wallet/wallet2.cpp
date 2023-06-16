@@ -430,7 +430,7 @@ std::unique_ptr<tools::wallet2> make_basic(const boost::program_options::variabl
   try
   {
     if (!command_line::is_arg_defaulted(vm, opts.tx_notify))
-      wallet->set_tx_notify(std::shared_ptr<tools::Notify>(new tools::Notify(command_line::get_arg(vm, opts.tx_notify).c_str())));
+      wallet->set_tx_notify(std::make_shared<tools::Notify>(command_line::get_arg(vm, opts.tx_notify)));
   }
   catch (const std::exception &e)
   {
@@ -2540,9 +2540,8 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
 
   if (notify)
   {
-    std::shared_ptr<tools::Notify> tx_notify = m_tx_notify;
-    if (tx_notify)
-      tx_notify->notify("%s", tools::type_to_hex(txid).c_str(), NULL);
+    if (auto tx_notify = m_tx_notify)
+      tx_notify->notify("%s", tools::type_to_hex(txid));
   }
 }
 //----------------------------------------------------------------------------------------------------

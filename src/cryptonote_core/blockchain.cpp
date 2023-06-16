@@ -58,7 +58,6 @@
 #include "cryptonote_core.h"
 #include "ringct/rctSigs.h"
 #include "common/perf_timer.h"
-#include "common/notify.h"
 #include "master_node_voting.h"
 #include "master_node_list.h"
 #include "common/varint.h"
@@ -373,9 +372,10 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
         if (blk.major_version >= cryptonote::network_version_14_enforce_checkpoints && get_checkpoint(block_height, checkpoint))
             checkpoint_ptr = &checkpoint;
 
-        if (!m_master_node_list.block_added(blk, txs, checkpoint_ptr))
-        {
-          MERROR("Unable to process block for updating master node list: " << cryptonote::get_block_hash(blk));
+        try {
+          m_master_node_list.block_add(blk, txs, checkpoint_ptr);
+        } catch (const std::exception& e) {
+          MFATAL("Unable to process block {} for updating master node list: " << e.what());
           return false;
         }
         snl_iteration_duration += clock::now() - snl_start;
@@ -561,10 +561,10 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *bns_db, const network_type nett
     return false;
   }
 
-  hook_block_added(m_checkpoints);
-  hook_blockchain_detached(m_checkpoints);
-  for (InitHook* hook : m_init_hooks)
-    hook->init();
+  hook_block_add([this] (const auto& info) { m_checkpoints.block_add(info); });
+  hook_blockchain_detached([this] (const auto& info) { m_checkpoints.blockchain_detached(info.height); });
+  for (const auto& hook : m_init_hooks)
+    hook();
 
   if (!m_db->is_read_only() && !load_missing_blocks_into_beldex_subsystems())
   {
@@ -680,9 +680,9 @@ void Blockchain::pop_blocks(uint64_t nblocks)
     return;
   }
 
-  auto split_height = m_db->height();
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(split_height, true /*by_pop_blocks*/);
+  detached_info hook_data{m_db->height(), /*by_pop_blocks=*/true};
+  for (const auto& hook : m_blockchain_detached_hooks)
+    hook(hook_data);
   load_missing_blocks_into_beldex_subsystems();
 
   if (stop_batch)
@@ -772,8 +772,8 @@ bool Blockchain::reset_and_set_genesis_block(const block& b)
   m_db->reset();
   m_db->drop_alt_blocks();
 
-  for (InitHook* hook : m_init_hooks)
-    hook->init();
+  for (const auto& hook : m_init_hooks)
+    hook();
 
   db_wtxn_guard wtxn_guard(m_db);
   block_verification_context bvc{};
@@ -999,8 +999,9 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
   }
 
   // Revert all changes from switching to the alt chain before adding the original chain back in
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(rollback_height, false /*by_pop_blocks*/);
+  detached_info rollback_hook_data{rollback_height, /*by_pop_blocks=*/false};
+  for (const auto& hook : m_blockchain_detached_hooks)
+    hook(rollback_hook_data);
   load_missing_blocks_into_beldex_subsystems();
 
   //return back original chain
@@ -1061,8 +1062,9 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
   }
 
   auto split_height = m_db->height();
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(split_height, false /*by_pop_blocks*/);
+  detached_info split_hook_data{split_height, /*by_pop_blocks=*/false};
+  for (const auto& hook : m_blockchain_detached_hooks)
+    hook(split_hook_data);
   load_missing_blocks_into_beldex_subsystems();
 
   //connecting new alternative chain
@@ -1123,15 +1125,12 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
 
   get_block_longhash_reorg(split_height);
 
-  std::shared_ptr<tools::Notify> reorg_notify = m_reorg_notify;
-  if (reorg_notify)
-    reorg_notify->notify("%s", std::to_string(split_height).c_str(), "%h", std::to_string(m_db->height()).c_str(),
-        "%n", std::to_string(m_db->height() - split_height).c_str(), NULL);
-
-  std::shared_ptr<tools::Notify> block_notify = m_block_notify;
-  if (block_notify)
-    for (const auto &bei: alt_chain)
-      block_notify->notify("%s", tools::type_to_hex(get_block_hash(bei.bl)).c_str(), NULL);
+  for (auto it = alt_chain.begin(); it != alt_chain.end(); ++it) {
+    // Only the first hook gets `reorg=true`, the rest don't count as reorgs
+    block_post_add_info hook_data{it->bl, it == alt_chain.begin(), split_height};
+    for (const auto& hook: m_block_post_add_hooks)
+      hook(hook_data);
+  }
 
   MGINFO_GREEN("REORGANIZE SUCCESS! on height: " << split_height << ", new blockchain size: " << m_db->height());
   return true;
@@ -1316,10 +1315,16 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     return false;
   }
 
-  for (ValidateMinerTxHook* hook : m_validate_miner_tx_hooks)
+  miner_tx_info hook_data{b, reward_parts};
+  for (const auto& hook : m_validate_miner_tx_hooks)
   {
-    if (!hook->validate_miner_tx(b, reward_parts))
+    try{
+      hook(hook_data);
+    }
+    catch(const std::exception& e){
+      MGINFO_RED("Miner tx failed validation: " << e.what());
       return false;
+    }
   }
 
   if (already_generated_coins != 0 && block_has_governance_output(nettype(), b))
@@ -1890,7 +1895,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
   {
     // NOTE: POS blocks don't use PoW. They use Master Node signatures.
     // Delay signature verification until Master Node List adds the block in
-    // the block_added hook.
+    // the block_add hook.
   }
   else
   {
@@ -2017,10 +2022,16 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
       txs.push_back(tx);
     }
 
-    for (AltBlockAddedHook *hook : m_alt_block_added_hooks)
+    block_add_info hook_data{b, txs, checkpoint};
+    for (const auto& hook : m_alt_block_add_hooks)
     {
-      if (!hook->alt_block_added(b, txs, checkpoint))
-          return false;
+      try{
+        hook(hook_data);
+      }
+      catch(const std::exception& e){
+      LOG_PRINT_L1("Failed to add alt block: " << e.what());
+      return false;
+      }
     }
   }
 
@@ -4206,7 +4217,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   {
     // NOTE: POS blocks don't use PoW. They use master Node signatures.
     // Delay signature verification until Master Node List adds the block in
-    // the block_added hook.
+    // the block_add hook.
   }
   else // check proof of work
   {
@@ -4410,14 +4421,14 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   auto abort_block = beldex::defer([&]() {
       pop_block_from_blockchain();
-      auto old_height = m_db->height();
-      for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-        hook->blockchain_detached(old_height, false /*by_pop_blocks*/);
+      detached_info hook_data{m_db->height(), false /*by_pop_blocks*/};
+      for (const auto& hook : m_blockchain_detached_hooks)
+        hook(hook_data);
   });
 
   // TODO(beldex): Not nice, making the hook take in a vector of pair<transaction,
   // blobdata> messes with master_node_list::init which only constructs
-  // a vector of transactions and then subsequently calls block_added, so the
+  // a vector of transactions and then subsequently calls block_add, so the
   // init step would have to intentionally allocate the blobs or retrieve them
   // from the DB.
   // Secondly we don't use the blobs at all in the hooks, so passing it in
@@ -4427,9 +4438,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   for (std::pair<transaction, blobdata> const &tx_pair : txs)
     only_txs.push_back(tx_pair.first);
 
-  if (!m_master_node_list.block_added(bl, only_txs, checkpoint))
-  {
-    MGINFO_RED("Failed to add block to Master Node List.");
+  try {
+    m_master_node_list.block_add(bl, only_txs, checkpoint);
+  } catch (const std::exception& e) {
+    MGINFO_RED("Failed to add block to Service Node List: " << e.what());
     bvc.m_verifivation_failed = true;
     return false;
   }
@@ -4441,11 +4453,13 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     return false;
   }
 
-  for (BlockAddedHook* hook : m_block_added_hooks)
+  block_add_info hook_data{bl, only_txs, checkpoint};
+  for (const auto& hook : m_block_add_hooks)
   {
-    if (!hook->block_added(bl, only_txs, checkpoint))
-    {
-      MGINFO_RED("Block added hook signalled failure");
+    try{
+      hook(hook_data);
+    }catch(const std::exception& e){
+      MGINFO_RED("Block add hook signalled failure"<< e.what());
       bvc.m_verifivation_failed = true;
       return false;
     }
@@ -4503,9 +4517,9 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   if (notify)
   {
-    std::shared_ptr<tools::Notify> block_notify = m_block_notify;
-    if (block_notify)
-      block_notify->notify("%s", tools::type_to_hex(id).c_str(), NULL);
+    block_post_add_info hook_data{bl, /*reorg=*/false};
+    for (const auto& hook : m_block_post_add_hooks)
+      hook(hook_data);
   }
 
   return true;
