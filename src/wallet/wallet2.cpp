@@ -4977,12 +4977,13 @@ void wallet2::restore_from_device(const fs::path& wallet_, const epee::wipeable_
     m_subaddress_lookahead_major = 5;
     m_subaddress_lookahead_minor = 20;
   }
-  if (hwdev_label) {
-    fs::path hwdev_txt = m_wallet_file;
-    hwdev_txt += ".hwdev.txt";
-    if (!tools::dump_file(hwdev_txt, *hwdev_label))
-      MERROR("failed to write .hwdev.txt comment file");
-  }
+
+  fs::path hwdev_filename = m_wallet_file;
+  hwdev_filename += ".hwdev.txt";
+  std::string hwdev_text = hwdev_label.value_or("");
+  if (!tools::dump_file(hwdev_filename, hwdev_text))
+    MERROR("failed to write .hwdev.txt comment file");
+
   if (progress_callback)
     progress_callback(tr("Setting up account and subaddresses"));
   setup_new_blockchain();
