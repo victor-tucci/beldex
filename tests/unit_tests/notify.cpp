@@ -68,8 +68,8 @@ TEST(notify, works)
 #endif
       + " " + name_template + " %s";
 
-  tools::Notify notify(spec.c_str());
-  notify.notify("%s", "1111111111111111111111111111111111111111111111111111111111111111", NULL);
+  tools::Notify notify(spec);
+  notify.notify("%s", "1111111111111111111111111111111111111111111111111111111111111111");
 
   bool ok = false;
   for (int i = 0; i < 10; ++i)

@@ -58,7 +58,6 @@
 #include "cryptonote_core.h"
 #include "ringct/rctSigs.h"
 #include "common/perf_timer.h"
-#include "common/notify.h"
 #include "master_node_voting.h"
 #include "master_node_list.h"
 #include "common/varint.h"
@@ -1125,16 +1124,6 @@ bool Blockchain::switch_to_alternative_blockchain(const std::list<block_extended
   }
 
   get_block_longhash_reorg(split_height);
-
-  std::shared_ptr<tools::Notify> reorg_notify = m_reorg_notify;
-  if (reorg_notify)
-    reorg_notify->notify("%s", std::to_string(split_height).c_str(), "%h", std::to_string(m_db->height()).c_str(),
-        "%n", std::to_string(m_db->height() - split_height).c_str(), NULL);
-
-  std::shared_ptr<tools::Notify> block_notify = m_block_notify;
-  if (block_notify)
-    for (const auto &bei: alt_chain)
-      block_notify->notify("%s", tools::type_to_hex(get_block_hash(bei.bl)).c_str(), NULL);
 
   for (auto it = alt_chain.begin(); it != alt_chain.end(); ++it) {
     // Only the first hook gets `reorg=true`, the rest don't count as reorgs
@@ -4531,10 +4520,6 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     block_post_add_info hook_data{bl, /*reorg=*/false};
     for (const auto& hook : m_block_post_add_hooks)
       hook(hook_data);
-
-    std::shared_ptr<tools::Notify> block_notify = m_block_notify;
-    if (block_notify)
-      block_notify->notify("%s", tools::type_to_hex(id).c_str(), NULL);
   }
 
   return true;

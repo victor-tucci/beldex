@@ -778,20 +778,6 @@ namespace cryptonote
         blockchain_db_sync_mode sync_mode, bool fast_sync);
 
     /**
-     * @brief sets a block notify object to call for every new block
-     *
-     * @param notify the notify object to call at every new block
-     */
-    void set_block_notify(const std::shared_ptr<tools::Notify> &notify) { m_block_notify = notify; }
-
-    /**
-     * @brief sets a reorg notify object to call for every reorg
-     *
-     * @param notify the notify object to call at every reorg
-     */
-    void set_reorg_notify(const std::shared_ptr<tools::Notify> &notify) { m_reorg_notify = notify; }
-
-    /**
      * @brief Put DB in safe sync mode
      */
     void safesyncmode(const bool onoff);
@@ -1164,9 +1150,6 @@ namespace cryptonote
 
     bool m_batch_success;
 
-    std::shared_ptr<tools::Notify> m_block_notify;
-    std::shared_ptr<tools::Notify> m_reorg_notify;
-
     // for prepare_handle_incoming_blocks
     uint64_t m_prepare_height;
     uint64_t m_prepare_nblocks;
@@ -1273,7 +1256,7 @@ namespace cryptonote
      * @param bl the block to be added
      * @param id the hash of the block
      * @param bvc metadata concerning the block's validity
-     * @param notify if set to true, sends new block notification on success
+     * @param notify if set to true, fires post-add hooks on success
      *
      * @return true if the block was added successfully, otherwise false
      */
