@@ -253,7 +253,7 @@ namespace
   const char* USAGE_REGISTER_MASTER_NODE("register_master_node [index=<N1>[,<N2>,...]] [<priority>] <operator cut> <address1> <fraction1> [<address2> <fraction2> [...]] <expiration timestamp> <pubkey> <signature>");
   const char* USAGE_STAKE("stake [index=<N1>[,<N2>,...]] [<priority>] <master node pubkey> <amount|percent%>");
   const char* USAGE_REQUEST_STAKE_UNLOCK("request_stake_unlock <master_node_pubkey>");
-  const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes");
+  const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes [key_images]");
 
   const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet|belnet_2y|belnet_5y|belnet_10y] [owner=<value>] [backup_owner=<value>] <name> <value>");
   const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=belnet|belnet_2y|belnet_5y|belnet_10y] <name>");
