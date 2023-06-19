@@ -64,6 +64,7 @@
 #include "core_rpc_server_error_codes.h"
 #include "p2p/net_node.h"
 #include "version.h"
+#include <fmt/core.h>
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
@@ -3233,36 +3234,38 @@ namespace cryptonote { namespace rpc {
   }
 
   namespace {
-    struct version_printer { const std::array<uint16_t, 3> &v; };
-    std::ostream &operator<<(std::ostream &o, const version_printer &vp) { return o << vp.v[0] << '.' << vp.v[1] << '.' << vp.v[2]; }
-
     // Handles a ping.  Returns true if the ping was significant (i.e. first ping after startup, or
     // after the ping had expired).  `Success` is a callback that is invoked with a single boolean
     // argument: true if this ping should trigger an immediate proof send (i.e. first ping after
     // startup or after a ping expiry), false for an ordinary ping.
     template <typename RPC, typename Success>
     auto handle_ping(
+            core& core,
             std::array<uint16_t, 3> cur_version,
             std::array<uint16_t, 3> required,
+            std::string_view pubkey_ed25519,
             std::string_view name,
             std::atomic<std::time_t>& update,
             std::chrono::seconds lifetime,
             Success success)
     {
+      std::string our_pubkey_ed25519 = tools::type_to_hex(core.get_master_keys().pub_ed25519);
       typename RPC::response res{};
       if (cur_version < required) {
-        std::ostringstream status;
-        status << "Outdated " << name << ". Current: " << version_printer{cur_version} << " Required: " << version_printer{required};
-        res.status = status.str();
+        res.status = fmt::format("Outdated {}. Current: {}.{}.{}, Required: {}.{}.{}",name, cur_version[0], cur_version[1], cur_version[2], required[0], required[1], required[2]);
+        MERROR(res.status);
+      } else if (!pubkey_ed25519.empty() // TODO: once belnet & ss are always sending this we can remove this empty bypass
+          && pubkey_ed25519 != our_pubkey_ed25519) {
+        res.status = fmt::format("Invalid {} pubkey: expected {}, received {}", name, our_pubkey_ed25519, pubkey_ed25519);
         MERROR(res.status);
       } else {
         auto now = std::time(nullptr);
         auto old = update.exchange(now);
         bool significant = std::chrono::seconds{now - old} > lifetime; // Print loudly for the first ping after startup/expiry
         if (significant)
-          MGINFO_GREEN("Received ping from " << name << " " << version_printer{cur_version});
+          MGINFO_GREEN(fmt::format("Received ping from {} {}.{}.{}", name, cur_version[0], cur_version[1], cur_version[2]));
         else
-          MDEBUG("Accepted ping from " << name << " " << version_printer{cur_version});
+          MDEBUG(fmt::format("Accepted ping from {} {}.{}.{}", name, cur_version[0], cur_version[1], cur_version[2]));
         success(significant);
         res.status = STATUS_OK;
       }
@@ -3274,8 +3277,9 @@ namespace cryptonote { namespace rpc {
   STORAGE_SERVER_PING::response core_rpc_server::invoke(STORAGE_SERVER_PING::request&& req, rpc_context context)
   {
     m_core.ss_version = req.version;
-    return handle_ping<STORAGE_SERVER_PING>(
+    return handle_ping<STORAGE_SERVER_PING>(m_core,
       req.version, master_nodes::MIN_STORAGE_SERVER_VERSION,
+      req.pubkey_ed25519,
       "Storage Server", m_core.m_last_storage_server_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
       [this, &req](bool significant) {
         m_core.m_storage_https_port = req.https_port;
@@ -3288,8 +3292,9 @@ namespace cryptonote { namespace rpc {
   BELNET_PING::response core_rpc_server::invoke(BELNET_PING::request&& req, rpc_context context)
   {
     m_core.belnet_version = req.version;
-    return handle_ping<BELNET_PING>(
+    return handle_ping<BELNET_PING>(m_core,
         req.version, master_nodes::MIN_BELNET_VERSION,
+        req.pubkey_ed25519,
         "Belnet", m_core.m_last_belnet_ping, m_core.get_net_config().UPTIME_PROOF_FREQUENCY,
         [this](bool significant) { if (significant) m_core.reset_proof_interval(); });
   }
