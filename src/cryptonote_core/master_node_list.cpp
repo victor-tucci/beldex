@@ -1504,7 +1504,7 @@ namespace master_nodes
         }
       }
 
-      if (failed_checkpoint_verify){}
+      if (failed_checkpoint_verify)
         throw std::runtime_error{fmt::format("Master node checkpoint failed verification for {} {}", block_type, cryptonote::get_block_hash(block))};
     }
 
@@ -1593,7 +1593,7 @@ namespace master_nodes
                                        alt_POS_quorums);
     }
 
-    if (!result){}
+    if (!result)
       throw std::runtime_error{fmt::format("Failed to verify block components for incoming {} at height {}",block_type, height)};
   }
 
