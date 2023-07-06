@@ -36,35 +36,36 @@
 
 
 namespace cryptonote {
-  class BlockAddedHook
-  {
-  public:
-    virtual bool block_added(const block& block, const std::vector<transaction>& txs, struct checkpoint_t const *checkpoint) = 0;
+  struct checkpoint_t;
+  struct block_add_info {
+    const cryptonote::block& block;
+    const std::vector<transaction>& txs;
+    const checkpoint_t* const checkpoint;
   };
+  using BlockAddHook = std::function<void(const block_add_info& info)>;
 
-  class BlockchainDetachedHook
-  {
-  public:
-    virtual void blockchain_detached(uint64_t height, bool by_pop_blocks) = 0;
+  struct block_post_add_info {
+    const cryptonote::block& block;
+    bool reorg;
+    uint64_t split_height; // Only set when reorg is true
   };
+  using BlockPostAddHook = std::function<void(const block_post_add_info& info)>;
 
-  class InitHook
-  {
-  public:
-    virtual void init() = 0;
+  struct detached_info {
+    uint64_t height;
+    bool by_pop_blocks;
   };
+  using BlockchainDetachedHook = std::function<void(const detached_info& info)>;
 
-  class ValidateMinerTxHook
-  {
-  public:
-    virtual bool validate_miner_tx(cryptonote::block const &block, struct block_reward_parts const &reward_parts) const = 0;
-  };
+  using InitHook = std::function<void()>;
 
-  class AltBlockAddedHook
-  {
-  public:
-    virtual bool alt_block_added(const block &block, const std::vector<transaction>& txs, struct checkpoint_t const *checkpoint) = 0;
+  struct block_reward_parts;
+  struct miner_tx_info {
+    const cryptonote::block& block;
+    const block_reward_parts& reward_parts;
   };
+  using ValidateMinerTxHook = std::function<void(const miner_tx_info& info)>;
+
 
 #pragma pack(push, 1)
   struct public_address_outer_blob

@@ -1233,8 +1233,6 @@ namespace cryptonote
      bool m_offline;
      bool m_pad_transactions;
 
-     std::shared_ptr<tools::Notify> m_block_rate_notify;
-
      struct {
        std::shared_mutex mutex;
        bool building = false;

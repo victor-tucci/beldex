@@ -446,11 +446,6 @@ namespace master_nodes
   };
 
   class master_node_list
-    : public cryptonote::BlockAddedHook,
-      public cryptonote::BlockchainDetachedHook,
-      public cryptonote::InitHook,
-      public cryptonote::ValidateMinerTxHook,
-      public cryptonote::AltBlockAddedHook
   {
   public:
     explicit master_node_list(cryptonote::Blockchain& blockchain);
@@ -458,11 +453,11 @@ namespace master_nodes
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
 
-    bool block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint) override;
-    void blockchain_detached(uint64_t height, bool by_pop_blocks) override;
-    void init() override;
-    bool validate_miner_tx(cryptonote::block const &block, cryptonote::block_reward_parts const &base_reward) const override;
-    bool alt_block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint) override;
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint);
+    void blockchain_detached(uint64_t height);
+    void init();
+    void validate_miner_tx(const cryptonote::miner_tx_info& info) const;
+    void alt_block_add(const cryptonote::block_add_info& info);
     payout get_block_leader() const { std::lock_guard lock{m_mn_mutex}; return m_state.get_block_leader(); }
     bool is_master_node(const crypto::public_key& pubkey, bool require_active = true) const;
     bool is_key_image_locked(crypto::key_image const &check_image, uint64_t *unlock_height = nullptr, master_node_info::contribution_t *the_locked_contribution = nullptr) const;
@@ -742,7 +737,7 @@ namespace master_nodes
     void record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated);
 
     // Verify block against Master Node state that has just been called with 'state.update_from_block(block)'.
-    bool verify_block(const cryptonote::block& block, bool alt_block, cryptonote::checkpoint_t const *checkpoint);
+    void verify_block(const cryptonote::block& block, bool alt_block, cryptonote::checkpoint_t const *checkpoint);
 
     void reset(bool delete_db_entry = false);
     bool load(uint64_t current_height);
