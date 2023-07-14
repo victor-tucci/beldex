@@ -81,7 +81,7 @@ std::string CURRENT_DST_WALLET;
 
 const uint64_t AMOUNT_4BDX  =  4000000000L;
 const uint64_t AMOUNT_2BDX  =  2000000000L;
-const uint64_t AMOUNT_1XMR  =  1000000000L;
+const uint64_t AMOUNT_1BDX  =  1000000000L;
 
 const std::string PAYMENT_ID_EMPTY = "";
 
@@ -545,12 +545,12 @@ TEST_F(WalletTest1, WalletRefresh)
 
 // TEST_F(WalletTest1, WalletConvertsToString)
 // {
-//     std::string strAmount = Wallet::Wallet::displayAmount(AMOUNT_5XMR);
-//     ASSERT_TRUE(AMOUNT_5XMR == Wallet::Wallet::amountFromString(strAmount));
+//     std::string strAmount = Wallet::Wallet::displayAmount(AMOUNT_2BDX);
+//     ASSERT_TRUE(AMOUNT_2BDX == Wallet::Wallet::amountFromString(strAmount));
 
-//     ASSERT_TRUE(AMOUNT_5XMR == Wallet::Wallet::amountFromDouble(0.5));
-//     ASSERT_TRUE(AMOUNT_10XMR == Wallet::Wallet::amountFromDouble(1.0));
-//     ASSERT_TRUE(AMOUNT_1XMR == Wallet::Wallet::amountFromDouble(0.1));
+//     ASSERT_TRUE(AMOUNT_2BDX == Wallet::Wallet::amountFromDouble(2.0));
+//     ASSERT_TRUE(AMOUNT_4BDX == Wallet::Wallet::amountFromDouble(4.0));
+//     ASSERT_TRUE(AMOUNT_1BDX == Wallet::Wallet::amountFromDouble(1.0));
 
 // }
 
@@ -574,13 +574,13 @@ TEST_F(WalletTest1, WalletTransaction)
 
 
     Wallet::PendingTransaction * transaction = wallet1->createTransaction(recepient_address,
-                                                                             AMOUNT_10XMR);
+                                                                             AMOUNT_4BDX);
     ASSERT_TRUE(transaction->good());
     std::cout <<"refresh_started...\n";
     wallet1->refresh();
     std::cout <<"refresh_end...\n";
     ASSERT_TRUE(wallet1->balance(0) == balance);
-    ASSERT_TRUE(transaction->amount() == AMOUNT_10XMR);
+    ASSERT_TRUE(transaction->amount() == AMOUNT_4BDX);
     ASSERT_TRUE(transaction->commit());
     ASSERT_FALSE(wallet1->balance(0) == balance);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
@@ -646,7 +646,7 @@ TEST_F(WalletTest1, BnsBuyTransaction)
 //         std::cerr << "Transaction mixin count: " << mixin << std::endl;
 	
 //         Wallet::PendingTransaction * transaction = wallet1->createTransaction(
-//                     recepient_address,AMOUNT_5XMR);
+//                     recepient_address,AMOUNT_2BDX);
 
 //         std::cerr << "Transaction status: " << transaction->good()<< std::endl;
 //         std::cerr << "Transaction fee: " << Wallet::Wallet::displayAmount(transaction->fee()) << std::endl;
@@ -686,7 +686,7 @@ TEST_F(WalletTest1, BnsBuyTransaction)
 //         std::cerr << "Transaction priority: " << *it << std::endl;
 	
 //         Wallet::PendingTransaction * transaction = wallet1->createTransaction(
-//                     recepient_address, AMOUNT_5XMR, *it);
+//                     recepient_address, AMOUNT_2BDX, *it);
 //         std::cerr << "Transaction status: " << transaction->good()<< std::endl;
 //         std::cerr << "Transaction fee: " << Wallet::Wallet::displayAmount(transaction->fee()) << std::endl;
 //         std::cerr << "Transaction error: " << wmgr->errorString() << std::endl;
@@ -741,7 +741,7 @@ TEST_F(WalletTest1, BnsBuyTransaction)
 
 
 //     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet4_addr,
-//                                                                        AMOUNT_10XMR * 2);
+//                                                                        AMOUNT_4BDX * 2);
 
 //     ASSERT_TRUE(tx->good());
 //     ASSERT_TRUE(tx->commit());
@@ -781,7 +781,7 @@ TEST_F(WalletTest1, BnsBuyTransaction)
 
 
 //     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet4_addr,
-//                                                                        AMOUNT_1XMR);
+//                                                                        AMOUNT_1BDX);
 
 //     ASSERT_TRUE(tx->good());
 //     ASSERT_TRUE(tx->commit());
@@ -943,7 +943,7 @@ struct MyWalletListener : public Wallet::WalletListener
 //     std::cout << "** Balance: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
 //     Wallet::Wallet * wallet_dst = wmgr->openWallet(CURRENT_DST_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
 
-//     uint64_t amount = AMOUNT_1XMR * 5;
+//     uint64_t amount = AMOUNT_1BDX * 5;
 //     std::cout << "** Sending " << Wallet::Wallet::displayAmount(amount) << " to " << wallet_dst->mainAddress();
 
 
@@ -983,7 +983,7 @@ struct MyWalletListener : public Wallet::WalletListener
 //     std::cout << "** Balance dst1: " << wallet_dst->displayAmount(wallet_dst->balance(0)) <<  std::endl;
 //     std::unique_ptr<MyWalletListener> wallet_dst_listener (new MyWalletListener(wallet_dst));
 
-//     uint64_t amount = AMOUNT_1XMR * 5;
+//     uint64_t amount = AMOUNT_1BDX * 5;
 //     std::cout << "** Sending " << Wallet::Wallet::displayAmount(amount) << " to " << wallet_dst->mainAddress();
 //     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet_dst->mainAddress(),
 //                                                                        amount);
