@@ -1720,6 +1720,19 @@ bool WalletImpl::validate_bns_type(std::string mapping,bns::mapping_type *mappin
 {
     LOG_PRINT_L1(__FUNCTION__ << "Check bns type");
     std::optional<bns::mapping_type> mapping_type_;
+    std::optional<uint8_t> hf_version = hardForkVersion();
+    if (!hf_version)
+    {
+        setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
+        return false;
+    }
+
+    //TODO Enable this at the final stage
+    // if(hf_version <= cryptonote::network_version_17_POS)
+    // {
+    //     setStatusError(tr("BNS Support is not available in this version "));
+    //     return false;
+    // }
 
     //TODO wallet bns type check have to add
     if (tools::string_iequal(mapping, "bchat"))
