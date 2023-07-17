@@ -250,6 +250,7 @@ private:
     bool isNewWallet() const;
     void pendingTxPostProcess(PendingTransactionImpl * pending);
     bool doInit(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, bool ssl = false);
+    bool validate_bns_type(std::string mapping,bns::mapping_type *mapping_type);
 
 private:
     friend class PendingTransactionImpl;
