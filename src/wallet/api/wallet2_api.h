@@ -178,6 +178,7 @@ struct TransactionInfo
     virtual bool isMasterNodeReward() const = 0;
     virtual bool isMinerReward() const = 0;
     virtual bool isStake() const =0;
+    virtual bool isBns() const =0;
     virtual int  direction() const = 0;
     virtual bool isPending() const = 0;
     virtual bool isFailed() const = 0;
