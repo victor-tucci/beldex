@@ -881,7 +881,26 @@ struct Wallet
                                                   uint32_t priority                  = 0,
                                                   uint32_t subaddr_account           = 0,
                                                   std::set<uint32_t> subaddr_indices = {}) = 0;
-
+    /*!
+     * \brief createBnsTransaction  creates bns transaction
+     * \param owner                 owner
+     * \param backup_owner          backup_owner
+     * \param value                 bchatid or belnet or wallet address
+     * \param name                  bns name
+     * \param bnstype               type(bchat,belnet,wallet)
+     * \param subaddr_account       subaddress account from which the input funds are taken
+     * \param subaddr_indices       set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
+     * \return                      PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                              after object returned
+     */
+    virtual PendingTransaction* bnsUpdateTransaction(std::string& owner,
+                                                      std::string& backup_owner,
+                                                      std::string& value,
+                                                      std::string& name,
+                                                      std::string& bnstype,
+                                                      uint32_t priority = 0,
+                                                      uint32_t subaddr_account = 0,
+                                                      std::set<uint32_t> subaddr_indices = {}) = 0;
     /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
      * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
