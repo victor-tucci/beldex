@@ -655,6 +655,41 @@ TEST_F(WalletTest1, BnsBuyTransactionWithWrongType)
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
+TEST_F(WalletTest1, BnsBuyTransactionWithOldValue)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string value = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
+    std::string name  ="blackpearl.bdx";
+    std::string type  ="belnet";
+    Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
+                                                                                backup_owner,
+                                                                                value,
+                                                                                name,
+                                                                                type);
+    ASSERT_TRUE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
+    ASSERT_FALSE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
 // TEST_F(WalletTest1, WalletTransactionWithMixin)
 // {
 //     std::vector<int> mixins;

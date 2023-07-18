@@ -1727,7 +1727,7 @@ bool WalletImpl::validate_bns_type(std::string mapping,bns::mapping_type *mappin
         return false;
     }
 
-    //TODO Enable this at the final stage
+    //TODO Enable this validation in the final stage
     // if(hf_version <= cryptonote::network_version_17_POS)
     // {
     //     setStatusError(tr("BNS Support is not available in this version "));
