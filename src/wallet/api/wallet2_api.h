@@ -882,7 +882,7 @@ struct Wallet
                                                   uint32_t subaddr_account           = 0,
                                                   std::set<uint32_t> subaddr_indices = {}) = 0;
     /*!
-     * \brief createBnsTransaction  creates bns transaction
+     * \brief bnsUpdateTransaction  creates bns update transaction
      * \param owner                 owner
      * \param backup_owner          backup_owner
      * \param value                 bchatid or belnet or wallet address
