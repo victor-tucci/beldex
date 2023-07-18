@@ -902,6 +902,21 @@ struct Wallet
                                                       uint32_t subaddr_account = 0,
                                                       std::set<uint32_t> subaddr_indices = {}) = 0;
     /*!
+     * \brief bnsRenewTransaction               creates bns renew transaction
+     * \param name                              bns name
+     * \param bnstype                           type(belnet)
+     * \param m_current_subaddress_account      subaddress account from which the input funds are taken
+     * \param subaddr_indices                   set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
+     * \return                                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                                          after object returned
+     */
+    virtual PendingTransaction *bnsRenewTransaction(std::string &name,
+                                                    std::string &bnstype,
+                                                    uint32_t priority=0,
+                                                    uint32_t m_current_subaddress_account = 0,
+                                                    std::set<uint32_t> subaddr_indices = {}) = 0;
+    
+    /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
      * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
      *                          after object returned

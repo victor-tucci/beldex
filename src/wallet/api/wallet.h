@@ -196,6 +196,11 @@ public:
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
+    PendingTransaction* bnsRenewTransaction(std::string &name,
+                                        std::string &bnstype,
+                                        uint32_t priority=0,
+                                        uint32_t m_current_subaddress_account = 0,
+                                        std::set<uint32_t> subaddr_indices = {}) override;
     PendingTransaction* createSweepUnmixableTransaction() override;
     bool submitTransaction(std::string_view filename) override;
     UnsignedTransaction* loadUnsignedTx(std::string_view unsigned_filename) override;
