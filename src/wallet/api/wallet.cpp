@@ -1793,7 +1793,13 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
                                                      priority,
                                                      subaddr_account,
                                                      subaddr_indices);
-                                                    
+
+            if (transaction->m_pending_tx.empty())
+            {
+                LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+                setStatusError(reason);
+                break;
+            }
             pendingTxPostProcess(transaction);
 
         }catch (const tools::error::daemon_busy&) {
@@ -1856,13 +1862,6 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
             setStatusError(std::string(tr("unexpected error: ")) + e.what());
         } catch (...) {
             setStatusError(tr("unknown error"));
-        }
-
-        if (transaction->m_pending_tx.empty())
-        {
-            LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
-            setStatusError(reason);
-            return transaction;
         }
 
     }while(false);
@@ -1910,6 +1909,13 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
                                                         priority,
                                                         subaddr_account,
                                                         subaddr_indices);
+
+            if (transaction->m_pending_tx.empty())
+            {
+                LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+                setStatusError(reason);
+                break;
+            }
             pendingTxPostProcess(transaction);
 
         }catch (const tools::error::daemon_busy&) {
@@ -1972,13 +1978,6 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
             setStatusError(std::string(tr("unexpected error: ")) + e.what());
         } catch (...) {
             setStatusError(tr("unknown error"));
-        }
-
-        if (transaction->m_pending_tx.empty())
-        {
-            LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
-            setStatusError(reason);
-            return transaction;
         }
 
     }while(false);
