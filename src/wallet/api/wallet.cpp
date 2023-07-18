@@ -2604,7 +2604,7 @@ void WalletImpl::hardForkInfo(uint8_t &version, uint64_t &earliest_height) const
 EXPORT
 std::optional<uint8_t> WalletImpl::hardForkVersion() const
 {
-    m_wallet_ptr->get_hard_fork_version();
+    return m_wallet_ptr->get_hard_fork_version();
 }
 
 EXPORT
