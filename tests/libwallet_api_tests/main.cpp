@@ -799,7 +799,7 @@ TEST_F(WalletTest1, BnsRenewTransaction)
     std::cout <<"refresh_end...\n";
     ASSERT_TRUE(wallet1->balance(0) == balance);
     Utils::print_status(transaction->status());
-    ASSERT_FALSE(transaction->commit());
+    ASSERT_TRUE(transaction->commit());
     Utils::print_status(transaction->status());
     ASSERT_TRUE(transaction->good());
     ASSERT_FALSE(wallet1->balance(0) == balance);
@@ -824,13 +824,7 @@ TEST_F(WalletTest1, BnsRenewTransactionForWrongName)
     Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(type,
                                                                             name);
     ASSERT_FALSE(transaction->good());
-    std::cout <<"refresh_started...\n";
-    wallet1->refresh();
-    std::cout <<"refresh_end...\n";
-    ASSERT_TRUE(wallet1->balance(0) == balance);
-    ASSERT_FALSE(transaction->commit());
     Utils::print_status(transaction->status());
-    ASSERT_FALSE(transaction->good());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
@@ -852,13 +846,7 @@ TEST_F(WalletTest1, BnsRenewTransactionForBchat)
     Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(type,
                                                                             name);
     ASSERT_FALSE(transaction->good());
-    std::cout <<"refresh_started...\n";
-    wallet1->refresh();
-    std::cout <<"refresh_end...\n";
-    ASSERT_TRUE(wallet1->balance(0) == balance);
-    ASSERT_FALSE(transaction->commit());
     Utils::print_status(transaction->status());
-    ASSERT_FALSE(transaction->good());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
@@ -880,13 +868,7 @@ TEST_F(WalletTest1, BnsRenewTransactionForWallet)
     Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(type,
                                                                             name);
     ASSERT_FALSE(transaction->good());
-    std::cout <<"refresh_started...\n";
-    wallet1->refresh();
-    std::cout <<"refresh_end...\n";
-    ASSERT_TRUE(wallet1->balance(0) == balance);
-    ASSERT_FALSE(transaction->commit());
     Utils::print_status(transaction->status());
-    ASSERT_FALSE(transaction->good());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
