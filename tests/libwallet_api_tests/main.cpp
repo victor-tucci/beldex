@@ -780,6 +780,91 @@ TEST_F(WalletTest1, BnsRenewTransaction)
     ASSERT_FALSE(wallet1->balance(0) == balance);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
+
+TEST_F(WalletTest1, BnsRenewTransactionForWrongName)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    std::string name  ="hell";
+    std::string type  ="belnet";
+    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(type,
+                                                                            name);
+    ASSERT_FALSE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
+    ASSERT_FALSE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsRenewTransactionForBchat)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    std::string name  ="boot.bdx";
+    std::string type  ="bchat";
+    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(type,
+                                                                            name);
+    ASSERT_FALSE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
+    ASSERT_FALSE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsRenewTransactionForWallet)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    std::string name  ="hell.bdx";
+    std::string type  ="wallet";
+    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(type,
+                                                                            name);
+    ASSERT_FALSE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
+    ASSERT_FALSE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
 // TEST_F(WalletTest1, WalletTransactionWithMixin)
 // {
 //     std::vector<int> mixins;
