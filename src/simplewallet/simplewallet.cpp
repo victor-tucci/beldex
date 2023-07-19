@@ -6281,6 +6281,7 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
             continue;
           auto required = cryptonote::print_money(node_info.staking_requirement);
           msg_buf.reserve(512);
+          std::string walletaddress = m_wallet->get_account().get_public_address_str(m_wallet->nettype());
           if (only_once)
           {
             if((node_info.contributors.size() - 1)==0)
@@ -6292,7 +6293,6 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
             {
               msg_buf.append(fmt::format("Unlock Height       :{}\n",std::to_string(node_info.requested_unlock_height)));
             }
-            std::string walletaddress = m_wallet->get_account().get_public_address_str(m_wallet->nettype());
             if(walletaddress == contributor.address)
             {
               msg_buf.append(fmt::format("Operator's Contribution :{} of {} BDX required\n",cryptonote::print_money(contributor.amount),required));
@@ -6305,7 +6305,7 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
           }
           if(!only_once && printed_addresses.find(contributor.address) == printed_addresses.end())
           {
-            msg_buf.append(fmt::format(" Total_Contributions:{} ({})\n",cryptonote::print_money(contributor.amount),contributor.address));
+            msg_buf.append(fmt::format(" Total_Contributions:{} ({})\n",cryptonote::print_money(contributor.amount),(walletaddress == contributor.address)? "YOURS" : contributor.address));
             printed_addresses.insert(contributor.address);
           }
           only_once = false;
