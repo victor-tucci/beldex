@@ -1747,6 +1747,8 @@ bool WalletImpl::validate_bns_type(std::string mapping,bns::mapping_type *mappin
         mapping_type_ = bns::mapping_type::belnet_5years;
     else if (tools::string_iequal_any(mapping, "belnet_10y", "belnet_10years"))
         mapping_type_ = bns::mapping_type::belnet_10years;
+    else if (tools::string_iequal(mapping, "wallet"))
+        mapping_type_ = bns::mapping_type::wallet;
     else
         {
             setStatusError(tr("Unsupported BNS type"));
