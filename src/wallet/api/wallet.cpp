@@ -1763,7 +1763,6 @@ bool WalletImpl::validate_bns_type(std::string mapping,bns::mapping_type *mappin
     //     return false;
     // }
 
-    //TODO wallet bns type check have to add
     if (tools::string_iequal(mapping, "bchat"))
         mapping_type_ = bns::mapping_type::bchat;
     else if (tools::string_iequal(mapping, "belnet"))
