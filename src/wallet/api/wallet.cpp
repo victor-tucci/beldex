@@ -1062,6 +1062,35 @@ uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 }
 
 EXPORT
+int WalletImpl::countBns()
+{  
+    clearStatus();
+    auto w = wallet();
+    std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::request> requests(1);
+    int count=0;
+        
+    for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+    {
+        if (requests.back().entries.size() >= cryptonote::rpc::BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES)
+            requests.emplace_back();
+         requests.back().entries.push_back(w->get_subaddress_as_str({0, index}));
+    }
+
+    for (auto const &request : requests)
+    {
+        auto [success, result] = w->bns_owners_to_names(request);
+        if (!success)
+        {
+            LOG_PRINT_L1(__FUNCTION__ << "Connection to daemon failed when requesting BNS names");
+            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+            break;
+        }
+        count += result.size();
+    }    
+    return count;
+}
+
+EXPORT
 std::vector<stakeInfo>* WalletImpl::listCurrentStakes() const
 {
     std::vector<stakeInfo>* stakes = new std::vector<stakeInfo>;

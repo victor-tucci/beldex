@@ -612,6 +612,11 @@ struct Wallet
         return result;
     }
 
+    /**
+    * @brief interface for counting number of BNS
+    */
+    virtual int countBns() = 0;
+
    /**
     * @brief listCurrentStakes - returns a list of the wallets locked stakes, provides both service node address and the staked amount
     * @return
