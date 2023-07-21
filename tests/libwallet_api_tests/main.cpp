@@ -872,6 +872,31 @@ TEST_F(WalletTest1, BnsRenewTransaction)
 //     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 // }
 
+TEST_F(WalletTest1, countForBns)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+
+    int val = wallet1->countBns();
+    std::cout<<"Bns count is :"<<val<<std::endl;
+
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, statusOfCountBns)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);    
+    
+    int val = wallet1->countBns();
+    std::cout<<"Bns count is :"<<val<<std::endl;
+    Utils::print_status(wallet1->status());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
 // TEST_F(WalletTest1, WalletTransactionWithMixin)
 // {
 //     std::vector<int> mixins;
