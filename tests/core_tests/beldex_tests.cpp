@@ -1543,6 +1543,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
                                              char const *reason) -> void {
       uint64_t new_height    = cryptonote::get_block_height(gen.top().block) + 1;
       uint8_t new_hf_version = gen.get_hf_version_at(new_height);
+      //TODO bns-rework have to change the burn-needed
       uint64_t burn_requirement = bns::burn_needed(new_hf_version, static_cast<bns::mapping_type>(data.type));
 
       std::vector<uint8_t> extra;

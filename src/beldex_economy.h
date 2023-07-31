@@ -82,33 +82,70 @@ constexpr bool is_belnet_type(mapping_type t) { return t >= mapping_type::belnet
 // days per registration "year" to allow for some blockchain time drift + leap years.
 constexpr uint64_t REGISTRATION_YEAR_DAYS = 368;
 
-constexpr uint64_t burn_needed(uint8_t hf_version, mapping_type type)
+constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years,mapping_type type)
 {
   uint64_t result = 0;
-
-  // The base amount for bchat/wallet/belnet-1year:
-  const uint64_t basic_fee = (
-      hf_version >= 16 ? 15*COIN :  // cryptonote::network_version_16_POS -- but don't want to add cryptonote_config.h include
-      20*COIN                       // cryptonote::network_version_15_bns
-  );
-  switch (type)
+  
+  // TODO bns-rework have to change the version to v18
+  if (hf_version >= 17)
   {
+    const uint64_t basic_fee = (hf_version >= 16 ? 15 * COIN : // cryptonote::network_version_16_POS -- but don't want to add cryptonote_config.h include
+                                    20 * COIN                  // cryptonote::network_version_15_bns
+    );
+    switch (map_years)
+    {
+    case mapping_years::update_record_internal:
+      result = 0;
+      break;
+
+    case mapping_years::bns_1year: /* FALLTHRU */
+    default:
+      result = basic_fee;
+      break;
+
+    case mapping_years::bns_2years:
+      result = 2 * basic_fee;
+      break;
+    case mapping_years::bns_5years:
+      result = 4 * basic_fee;
+      break;
+    case mapping_years::bns_10years:
+      result = 6 * basic_fee;
+      break;
+    }
+    return result;
+  }
+  else
+  {
+    // The base amount for bchat/wallet/belnet-1year:
+    const uint64_t basic_fee = (hf_version >= 16 ? 15 * COIN : // cryptonote::network_version_16_POS -- but don't want to add cryptonote_config.h include
+                                    20 * COIN                  // cryptonote::network_version_15_bns
+    );
+    switch (type)
+    {
     case mapping_type::update_record_internal:
       result = 0;
       break;
 
     case mapping_type::belnet: /* FALLTHRU */
-    case mapping_type::bchat: /* FALLTHRU */
+    case mapping_type::bchat:  /* FALLTHRU */
     case mapping_type::wallet: /* FALLTHRU */
     default:
       result = basic_fee;
       break;
 
-    case mapping_type::belnet_2years: result = 2 * basic_fee; break;
-    case mapping_type::belnet_5years: result = 4 * basic_fee; break;
-    case mapping_type::belnet_10years: result = 6 * basic_fee; break;
+    case mapping_type::belnet_2years:
+      result = 2 * basic_fee;
+      break;
+    case mapping_type::belnet_5years:
+      result = 4 * basic_fee;
+      break;
+    case mapping_type::belnet_10years:
+      result = 6 * basic_fee;
+      break;
+    }
+    return result;
   }
-  return result;
 }
 }; // namespace bns
 

@@ -1327,7 +1327,8 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   // -----------------------------------------------------------------------------------------------
   {
     uint64_t burn                = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
-    uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.type) : 0;
+    std::cout << "bns_extra.is_buying() : " << bns_extra.is_buying() << std::endl;
+    uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years,bns_extra.type) : 0;
     if (hf_version == cryptonote::network_version_18 && burn > burn_required && blockchain_height < 524'000) {
         // Testnet sync fix: PR #1433 merged that lowered fees for HF18 while testnet was already on
         // HF18, but broke syncing because earlier HF18 blocks have BNS txes at the higher fees, so

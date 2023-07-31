@@ -7790,7 +7790,7 @@ uint64_t wallet2::get_fee_quantization_mask() const
   return 1;
 }
 
-beldex_construct_tx_params wallet2::construct_params(uint8_t hf_version, txtype tx_type, uint32_t priority, uint64_t extra_burn, bns::mapping_type type)
+beldex_construct_tx_params wallet2::construct_params(uint8_t hf_version, txtype tx_type, uint32_t priority, uint64_t extra_burn, bns::mapping_years map_years)
 {
   beldex_construct_tx_params tx_params;
   tx_params.hf_version = hf_version;
@@ -7799,7 +7799,7 @@ beldex_construct_tx_params wallet2::construct_params(uint8_t hf_version, txtype 
   if (tx_type == txtype::beldex_name_system)
   {
     assert(priority != tools::tx_priority_flash);
-    tx_params.burn_fixed = bns::burn_needed(hf_version, type);
+    tx_params.burn_fixed = bns::burn_needed(hf_version, map_years, bns::mapping_type::update_record_internal);
   }
   else if (priority == tools::tx_priority_flash)
   {
@@ -8860,10 +8860,6 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
   if (!prepared_args)
     return {};
 
-  std::cout <<" prepared_args.encrypted_value.to_string() : " << prepared_args.encrypted_value.to_string()<< std::endl;
-  std::cout <<" prepared_args.encrypted_value_wallet.to_string() : " << prepared_args.encrypted_value_wallet.to_string()<< std::endl;
-  std::cout <<" prepared_args.encrypted_value_belnet.to_string() : " << prepared_args.encrypted_value_belnet.to_string()<< std::endl;
-
   std::vector<uint8_t> extra;
   auto entry = cryptonote::tx_extra_beldex_name_system::make_buy(
       prepared_args.owner,
@@ -8884,7 +8880,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
     return {};
   }
 
-  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, type);
+  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, mapping_years);
   auto result = create_transactions_2({} /*dests*/,
                                       CRYPTONOTE_DEFAULT_TX_MIXIN,
                                       0 /*unlock_at_block*/,
@@ -8913,6 +8909,7 @@ std::optional<bns::mapping_type> wallet2::bns_validate_type(std::string_view typ
 
 std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
     bns::mapping_type type,
+    bns::mapping_years map_years,
     std::string name,
     std::string *reason,
     uint32_t priority,
@@ -8941,7 +8938,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
     return {};
   }
 
-  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, type);
+  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, map_years);
   auto result = create_transactions_2({} /*dests*/,
                                       CRYPTONOTE_DEFAULT_TX_MIXIN,
                                       0 /*unlock_at_block*/,
@@ -9000,7 +8997,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(bns::mapp
     if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
     return {};
   }
-  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, bns::mapping_type::update_record_internal);
+  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, bns::mapping_years::update_record_internal);
 
   auto result = create_transactions_2({} /*dests*/,
                                       CRYPTONOTE_DEFAULT_TX_MIXIN,

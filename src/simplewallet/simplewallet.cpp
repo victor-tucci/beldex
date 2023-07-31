@@ -6610,6 +6610,7 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   {
     ptx_vector = m_wallet->bns_create_renewal_tx(
         type,
+        bns::mapping_years::bns_1year,
         name,
         &reason,
         priority,

@@ -3105,8 +3105,9 @@ namespace {
     if (!type)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS renewal type: " + reason};
 
+    //TODO bns-rework have to change this dynamic
     std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_renewal_tx(
-        *type, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
+        *type,bns::mapping_years::bns_1year, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
 
     if (ptx_vector.empty())
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Failed to create BNS renewal transaction: " + reason};

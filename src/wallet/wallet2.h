@@ -1226,7 +1226,7 @@ private:
 
     // params constructor, accumulates the burn amounts if the priority is
     // a flash and, or a bns tx. If it is a flash TX, bns_burn_type is ignored.
-    static cryptonote::beldex_construct_tx_params construct_params(uint8_t hf_version, cryptonote::txtype tx_type, uint32_t priority, uint64_t extra_burn = 0, bns::mapping_type bns_burn_type = static_cast<bns::mapping_type>(0));
+    static cryptonote::beldex_construct_tx_params construct_params(uint8_t hf_version, cryptonote::txtype tx_type, uint32_t priority, uint64_t extra_burn = 0, bns::mapping_years bns_burn_type = static_cast<bns::mapping_years>(0));
 
     bool is_unattended() const { return m_unattended; }
 
@@ -1406,7 +1406,7 @@ private:
     std::vector<pending_tx> bns_create_update_mapping_tx(bns::mapping_type type, std::string name, std::string const *value, std::string const *owner, std::string const *backup_owner, std::string const *signature, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
 
     // BNS renewal (for belnet registrations, not for bchat/wallet)
-    std::vector<pending_tx> bns_create_renewal_tx(bns::mapping_type type, std::string name, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
+    std::vector<pending_tx> bns_create_renewal_tx(bns::mapping_type type,bns::mapping_years map_years, std::string name, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
 
     // Generate just the signature required for putting into bns_update_mapping command in the wallet
     bool bns_make_update_mapping_signature(bns::mapping_type type, std::string name, std::string const *value, std::string const *owner, std::string const *backup_owner, bns::generic_signature &signature, uint32_t account_index = 0, std::string *reason = nullptr);
