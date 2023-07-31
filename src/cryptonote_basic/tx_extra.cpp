@@ -6,8 +6,11 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     bns::generic_owner const& owner,
     bns::generic_owner const* backup_owner,
     bns::mapping_type type,
+    bns::mapping_years mapping_years,
     const crypto::hash& name_hash,
     const std::string& encrypted_value,
+    const std::string& encrypted_value_wallet,
+    const std::string& encrypted_value_belnet,
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
@@ -20,8 +23,27 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     result.fields = bns::extra_field::buy_no_backup;
 
   result.type = type;
+  result.mapping_years = mapping_years;
   result.name_hash = name_hash;
-  result.encrypted_value = encrypted_value;
+  
+  if (encrypted_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_value;
+    result.encrypted_value = encrypted_value;
+  }
+  
+  if (encrypted_value_wallet.size())
+  {
+    result.fields |= bns::extra_field::encrypted_value_wallet;
+    result.encrypted_value_wallet = encrypted_value_wallet;
+  }
+  
+  if (encrypted_value_belnet.size())
+  {
+    result.fields |= bns::extra_field::encrypted_value_belnet;
+    result.encrypted_value_belnet = encrypted_value_belnet;
+  }
+
   result.prev_txid = prev_txid;
   return result;
 }

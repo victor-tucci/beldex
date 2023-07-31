@@ -3058,8 +3058,11 @@ namespace {
                                                                                       req.owner.size() ? &req.owner : nullptr,
                                                                                       req.backup_owner.size() ? &req.backup_owner : nullptr,
                                                                                       req.name,
-                                                                                      req.value,
+                                                                                      req.value.size() ? &req.value : nullptr,
+                                                                                      req.value_wallet.size() ? &req.value_wallet : nullptr,
+                                                                                      req.value_belnet.size() ? &req.value_belnet : nullptr,
                                                                                       &reason,
+                                                                                      bns::mapping_years::bns_1year,
                                                                                       req.priority,
                                                                                       req.account_index,
                                                                                       req.subaddr_indices);

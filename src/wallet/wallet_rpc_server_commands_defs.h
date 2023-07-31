@@ -2236,6 +2236,8 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
       std::string        backup_owner;    // (Optional): The secondary, backup public key that has authority to update the mapping.
       std::string        name;            // The name to purchase via Beldex Name Service
       std::string        value;           // The value that the name maps to via Beldex Name Service, (i.e. For Bchat: [display name->bchat public key],  for wallets: [name->wallet address], for Belnet: [name->domain name]).
+      std::string        value_wallet; 
+      std::string        value_belnet; 
 
       uint32_t           account_index;   // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices; // (Optional) Transfer from this set of subaddresses. (Defaults to 0)

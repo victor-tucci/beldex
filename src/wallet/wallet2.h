@@ -817,6 +817,7 @@ private:
     auto bns_names_to_owners(cryptonote::rpc::BNS_NAMES_TO_OWNERS::request const &request) const { return m_node_rpc_proxy.bns_names_to_owners(request); }
     auto resolve(cryptonote::rpc::BNS_RESOLVE::request const &request) const { return m_node_rpc_proxy.bns_resolve(request); }
 
+    //TODO bns-rework have to change for the catche data
     struct bns_detail
     {
       bns::mapping_type type;
@@ -1397,7 +1398,8 @@ private:
     // nullptr).
     std::optional<bns::mapping_type> bns_validate_type(std::string_view type, bns::bns_tx_type bns_action, std::string *reason);
 
-    std::vector<pending_tx> bns_create_buy_mapping_tx(bns::mapping_type type, std::string const *owner, std::string const *backup_owner, std::string name, std::string const &value, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {});
+    //TODO bns-rework have to rearrange the mapping years
+    std::vector<pending_tx> bns_create_buy_mapping_tx(bns::mapping_type type, std::string const *owner, std::string const *backup_owner, std::string name, std::string const *value_bchat, std::string const *value_wallet, std::string const *value_belnet, std::string *reason,bns::mapping_years mapping_years = bns::mapping_years::bns_1year, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {});
 
     // signature: (Optional) If set, use the signature given, otherwise by default derive the signature from the wallet spend key as an ed25519 key.
     //            The signature is derived from the hash of the previous txid blob and previous value blob of the mapping. By default this is signed using the wallet's spend key as an ed25519 keypair.

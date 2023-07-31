@@ -255,7 +255,7 @@ namespace
   const char* USAGE_REQUEST_STAKE_UNLOCK("request_stake_unlock <master_node_pubkey>");
   const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes");
 
-  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet|belnet_2y|belnet_5y|belnet_10y] [owner=<value>] [backup_owner=<value>] <name> <value>");
+  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet|belnet_2y|belnet_5y|belnet_10y] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] <name>");
   const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=belnet|belnet_2y|belnet_5y|belnet_10y] <name>");
   const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet] [owner=<value>] [backup_owner=<value>] [value=<bns_value>] [signature=<hex_signature>] <name>");
 
@@ -3083,7 +3083,7 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
                            tr(USAGE_PRINT_LOCKED_STAKES),
                            tr("Print stakes currently locked on the Master Node network"));
 
-  /*m_cmd_binder.set_handler("bns_buy_mapping",
+  m_cmd_binder.set_handler("bns_buy_mapping",
                            [this](const auto& x) { return bns_buy_mapping(x); },
                            tr(USAGE_BNS_BUY_MAPPING),
                            tr(tools::wallet_rpc::BNS_BUY_MAPPING::description));
@@ -3116,7 +3116,7 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
   m_cmd_binder.set_handler("bns_make_update_mapping_signature",
                            [this](const auto& x) { return bns_make_update_mapping_signature(x); },
                            tr(USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE),
-                           tr(tools::wallet_rpc::BNS_MAKE_UPDATE_SIGNATURE::description));*/
+                           tr(tools::wallet_rpc::BNS_MAKE_UPDATE_SIGNATURE::description));
 }
 
 simple_wallet::~simple_wallet()
@@ -6398,11 +6398,11 @@ bool simple_wallet::print_locked_stakes(const std::vector<std::string>& args)
 // Parse a user-provided typestring value; if not provided, guess from the provided name and value.
 static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, std::string_view typestr, std::string_view name, std::string_view value)
 {
-  if (typestr.empty())
+  if (true)
   {
-    if (tools::ends_with(name, ".bdx") && (tools::ends_with(value, ".bdx") || value.empty()))
+    if ((tools::ends_with(value, ".bdx") || value.empty()))
       return bns::mapping_type::belnet;
-    if (!tools::ends_with(name, ".bdx") && tools::starts_with(value, "bd") && value.length() == 2*bns::BCHAT_PUBLIC_KEY_BINARY_LENGTH)
+    if (tools::starts_with(value, "bd") && value.length() == 2*bns::BCHAT_PUBLIC_KEY_BINARY_LENGTH)
       return bns::mapping_type::bchat;
     if (cryptonote::is_valid_address(std::string{value}, wallet.nettype()))
       return bns::mapping_type::wallet;
@@ -6426,11 +6426,35 @@ static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, s
   return std::nullopt;
 }
 
+static std::optional<bns::mapping_years> guess_bns_years(std::string_view map_years)
+{
+  if (!map_years.empty())
+  {
+    if (tools::string_iequal_any(map_years, "1y", "1year"))
+      return bns::mapping_years::bns_1year;
+    else if (tools::string_iequal_any(map_years, "2y", "2years"))
+      return bns::mapping_years::bns_2years;
+    else if (tools::string_iequal_any(map_years, "5y", "5years"))
+      return bns::mapping_years::bns_5years;
+    else if (tools::string_iequal_any(map_years, "10y", "10years"))
+      return bns::mapping_years::bns_10years;
+      
+    fail_msg_writer() << tr("Could not infer BNS mapping_years from years; trying using the years= argument or see `help' for more details");
+    return std::nullopt;
+  }
+
+  return bns::mapping_years::bns_1year;
+}
+
 //----------------------------------------------------------------------------------------------------
 static constexpr auto BNS_OWNER_PREFIX        = "owner="sv;
 static constexpr auto BNS_BACKUP_OWNER_PREFIX = "backup_owner="sv;
 static constexpr auto BNS_TYPE_PREFIX         = "type="sv;
+static constexpr auto BNS_YEAR_PREFIX         = "years="sv;
 static constexpr auto BNS_VALUE_PREFIX        = "value="sv;
+static constexpr auto BNS_VALUE_BCHAT_PREFIX         = "bchat_id="sv;
+static constexpr auto BNS_VALUE_WALLET_PREFIX        = "address="sv;
+static constexpr auto BNS_VALUE_BELNET_PREFIX        = "belnet_id="sv;
 static constexpr auto BNS_SIGNATURE_PREFIX    = "signature="sv;
 
 static char constexpr NULL_STR[] = "(none)";
@@ -6440,20 +6464,29 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
   uint32_t priority = 0;
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
+  
+  std::cout <<"args.size = " <<args.size() <<std::endl;
+  auto [owner, backup_owner,value_bchat,value_wallet,value_belnet, typestr,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_TYPE_PREFIX, BNS_YEAR_PREFIX);
+  std::cout <<"args.size (after eat))= " <<args.size() <<std::endl;
+  
+  if (args.size() != 1)
+  {
+    PRINT_USAGE(USAGE_BNS_BUY_MAPPING);
+    return true;
+  }
 
-  auto [owner, backup_owner, typestr] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_TYPE_PREFIX);
-
-  if (args.size() != 2)
+  //TODO bns-rework should be the next if validation
+  if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty())
   {
     PRINT_USAGE(USAGE_BNS_BUY_MAPPING);
     return true;
   }
 
   std::string const &name  = args[0];
-  std::string const &value = args[1];
 
-  std::optional<bns::mapping_type> type = guess_bns_type(*m_wallet, typestr, name, value);
-  if (!type) return false;
+  std::optional<bns::mapping_years> mapping_years;
+  mapping_years = guess_bns_years(map_years);
+  if (!mapping_years) return false;
 
   SCOPED_WALLET_UNLOCK();
   std::string reason;
@@ -6461,12 +6494,15 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
 
   try
   {
-    ptx_vector = m_wallet->bns_create_buy_mapping_tx(*type,
+    ptx_vector = m_wallet->bns_create_buy_mapping_tx(bns::mapping_type::bchat,
                                                      owner.size() ? &owner : nullptr,
                                                      backup_owner.size() ? &backup_owner : nullptr,
                                                      name,
-                                                     value,
+                                                     value_bchat.size() ? &value_bchat : nullptr,
+                                                     value_wallet.size() ? &value_wallet : nullptr,
+                                                     value_belnet.size() ? &value_belnet : nullptr,
                                                      &reason,
+                                                     *mapping_years,
                                                      priority,
                                                      m_current_subaddress_account,
                                                      subaddr_indices);
@@ -6484,17 +6520,17 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     dsts.push_back(info);
 
     std::cout << std::endl << tr("Buying Beldex Name System Record") << std::endl << std::endl;
-    if (*type == bns::mapping_type::bchat)
+    if (value_bchat.size())
       fmt::print(fmt::format(tr("Bchat Name: {:s}\n"), name));
-    else if (*type == bns::mapping_type::wallet)
+    else if (value_wallet.size())
       fmt::print(fmt::format(tr("Wallet Name: {:s}\n"), name));
-    else if (bns::is_belnet_type(*type))
+    else if (value_belnet.size())
     {
       fmt::print(fmt::format(tr("Belnet Name: {:s}\n"), name));
       int years =
-          *type == bns::mapping_type::belnet_10years ? 10 :
-          *type == bns::mapping_type::belnet_5years ? 5 :
-          *type == bns::mapping_type::belnet_2years ? 2 :
+          *mapping_years == bns::mapping_years::bns_10years ? 10 :
+          *mapping_years == bns::mapping_years::bns_5years ? 5 :
+          *mapping_years == bns::mapping_years::bns_2years ? 2 :
           1;
         std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
         if (!hf_version)
@@ -6507,7 +6543,9 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     }
     else
       fmt::print(fmt::format(tr("Name:         {}\n"), name)); 
-    fmt::print(fmt::format(tr("Value:         {}\n"), value));
+    fmt::print(fmt::format(tr("Value_bchat:  {}\n"), value_bchat.empty() ? "NULL" : value_bchat));
+    fmt::print(fmt::format(tr("Value_wallet: {}\n"), value_wallet.empty() ? "NULL" : value_wallet));
+    fmt::print(fmt::format(tr("Value_belnet: {}\n"), value_belnet.empty() ? "NULL" : value_belnet));
     fmt::print(fmt::format(tr("Owner:        {}\n"), owner.empty() ? m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0}) + " (this wallet) " : owner)); 
     if(backup_owner.size()) 
     {
@@ -6525,7 +6563,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     //Save the BNS record to the wallet cache
     std::string name_hash_str = bns::name_to_base64_hash(name);
     tools::wallet2::bns_detail detail = {
-      *type,
+      bns::mapping_type::bchat,
       name,
       name_hash_str};
     m_wallet->set_bns_cache_record(detail);

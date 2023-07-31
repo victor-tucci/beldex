@@ -799,7 +799,7 @@ namespace cryptonote { namespace rpc {
       }
       void operator()(const tx_extra_beldex_name_system& x) {
         auto& bns = entry.bns.emplace();
-          bns.blocks = bns::expiry_blocks(nettype, x.type,hf_version) ;
+          bns.blocks = bns::expiry_blocks(nettype, x.mapping_years, hf_version) ;
         switch (x.type)
         {
           case bns::mapping_type::belnet: [[fallthrough]];
@@ -3537,7 +3537,7 @@ namespace cryptonote { namespace rpc {
         entry.name_hash                                        = record.name_hash;
         entry.owner                                            = record.owner.to_string(nettype());
         if (record.backup_owner) entry.backup_owner            = record.backup_owner.to_string(nettype());
-        entry.encrypted_value                                  = oxenc::to_hex(record.encrypted_value.to_view());
+        entry.encrypted_value                                  = oxenc::to_hex(record.encrypted_value_bchat.to_view());
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);
@@ -3599,7 +3599,7 @@ namespace cryptonote { namespace rpc {
       entry.name_hash       = std::move(record.name_hash);
       if (record.owner) entry.owner = record.owner.to_string(nettype());
       if (record.backup_owner) entry.backup_owner = record.backup_owner.to_string(nettype());
-      entry.encrypted_value = oxenc::to_hex(record.encrypted_value.to_view());
+      entry.encrypted_value = oxenc::to_hex(record.encrypted_value_bchat.to_view());
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);

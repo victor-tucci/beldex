@@ -49,6 +49,8 @@ constexpr char BNS_WALLET_TYPE_INTEGRATED = 0x02;
 struct mapping_value
 {
   static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
+  // static size_t constexpr BUFFER_SIZE_TOTAL = (WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID + BELNET_ADDRESS_BINARY_LENGTH + BCHAT_PUBLIC_KEY_BINARY_LENGTH) + 3*SODIUM_ENCRYPTION_EXTRA_BYTES;
+
   std::array<uint8_t, BUFFER_SIZE> buffer;
   bool encrypted;
   size_t len;
@@ -134,7 +136,7 @@ inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os
 
 constexpr bool mapping_type_allowed(uint8_t hf_version, mapping_type type) {
   return (type == mapping_type::bchat && hf_version >= cryptonote::network_version_16_bns)
-      || (is_belnet_type(type) && hf_version >= cryptonote::network_version_17_POS);
+      || (is_belnet_type(type) && hf_version >= cryptonote::network_version_17_POS) || (type == mapping_type::wallet && hf_version >= cryptonote::network_version_17_POS);
 }
 
 // Returns all mapping types supported for lookup as of the given hardfork.  (Note that this does
@@ -154,7 +156,7 @@ constexpr uint16_t db_mapping_type(bns::mapping_type type) {
 }
 
 // Returns the length of the given mapping type, in blocks, or std::nullopt if the mapping type never expires.
-std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_type type,uint8_t hf_version);
+std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_years map_years, uint8_t hf_version);
 
 // Returns *the* proper representation of a name_hash for querying the database, which is 44 base64
 // characters (43 significant chars + a padding '=').  External input values should always get
@@ -225,7 +227,9 @@ struct mapping_record
   int64_t       id;
   mapping_type  type;
   std::string   name_hash; // name hashed and represented in base64 encoding
-  mapping_value encrypted_value;
+  mapping_value encrypted_value_bchat;
+  mapping_value encrypted_value_wallet;
+  mapping_value encrypted_value_belnet;
   uint64_t      register_height;
   std::optional<uint64_t> expiration_height;
   uint64_t      update_height;
