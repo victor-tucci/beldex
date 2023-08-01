@@ -6778,7 +6778,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     std::string name_hash_str = bns::name_to_base64_hash(name);
     m_wallet->delete_bns_cache_record(name_hash_str);
     tools::wallet2::bns_detail detail = {
-      type,
+      bns::mapping_type::bchat,
       name,
       name_hash_str};
     m_wallet->set_bns_cache_record(detail);
@@ -7001,7 +7001,7 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
 
     tools::wallet2::bns_detail detail =
     {
-      static_cast<bns::mapping_type>(mapping.type),
+      bns::mapping_type::bchat,
       name,
       request.entries[0].name_hash};
     m_wallet->set_bns_cache_record(detail);

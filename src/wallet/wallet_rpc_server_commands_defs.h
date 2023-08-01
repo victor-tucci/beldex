@@ -2450,7 +2450,6 @@ This command is only required if the open wallet is one of the owners of a BNS r
 
     struct record
     {
-      std::string type; // The BNS type (mandatory); currently support values are: "bchat", "belnet"
       std::string name; // The (unhashed) name of the record
 
       KV_MAP_SERIALIZABLE

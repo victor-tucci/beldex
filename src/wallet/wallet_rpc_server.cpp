@@ -3160,7 +3160,7 @@ namespace {
     std::string name_hash_str = bns::name_to_base64_hash(req.name);
     m_wallet->delete_bns_cache_record(name_hash_str);
     tools::wallet2::bns_detail detail = {
-      *type,
+      bns::mapping_type::bchat,
       req.name,
       name_hash_str};
     m_wallet->set_bns_cache_record(detail);
@@ -3355,15 +3355,11 @@ namespace {
     std::string reason;
     for (auto& rec : req.names)
     {
-      bns::mapping_type type;
-      if (!bns::validate_mapping_type(rec.type, *hf_version, bns::bns_tx_type::lookup, &type, &reason))
-        throw wallet_rpc_error{error_code::WRONG_BNS_TYPE, "Invalid BNS type: " + reason};
-
       auto name = tools::lowercase_ascii_string(rec.name);
       if (!bns::validate_bns_name(name, &reason))
         throw wallet_rpc_error{error_code::BNS_BAD_NAME, "Invalid BNS name '" + name + "': " + reason};
 
-      m_wallet->set_bns_cache_record({type, name, bns::name_to_base64_hash(name)});
+      m_wallet->set_bns_cache_record({bns::mapping_type::bchat, name, bns::name_to_base64_hash(name)});
     }
 
     return {};
