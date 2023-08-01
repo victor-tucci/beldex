@@ -786,37 +786,18 @@ static bool check_condition(bool condition, std::string* reason, T&&... args) {
 //TODO bns-rework have to change the bns-name validation by the given name
 bool validate_bns_name(mapping_type type, std::string name, std::string *reason)
 {
-  bool const is_belnet = is_belnet_type(type);
-  size_t max_name_len   = 0;
-
-  if (is_belnet)
-    max_name_len = name.find('-') != std::string::npos
-      ? BELNET_DOMAIN_NAME_MAX
-      : BELNET_DOMAIN_NAME_MAX_NOHYPHEN;
-  else if (type == mapping_type::bchat) max_name_len = bns::BCHAT_DISPLAY_NAME_MAX;
-  else if (type == mapping_type::wallet)  max_name_len = bns::WALLET_NAME_MAX;
-  else
-  {
-    if (reason)
-    {
-      std::stringstream err_stream;
-      err_stream << "BNS type=" << mapping_type_str(type) << ", specifies unhandled mapping type in name validation";
-      *reason = err_stream.str();
-    }
-    return false;
-  }
+  size_t max_name_len = name.find('-') != std::string::npos
+      ? DOMAIN_NAME_MAX
+      : DOMAIN_NAME_MAX_NOHYPHEN;
 
   // NOTE: Validate name length
   name = tools::lowercase_ascii_string(name);
-  if (check_condition((name.empty() || name.size() > max_name_len), reason, "BNS type=", type, ", specifies mapping from name->value where the name's length=", name.size(), " is 0 or exceeds the maximum length=", max_name_len, ", given name=", name))
+  if (check_condition((name.empty() || name.size() > max_name_len), reason, "Specifies mapping from name->value where the name's length=", name.size(), " is 0 or exceeds the maximum length=", max_name_len, ", given name=", name))
     return false;
 
   std::string_view name_view{name}; // Will chop this down as we validate each part
 
   // NOTE: Validate domain specific requirements
-  if (is_belnet)
-  {
-    // BELNET
     // Domain has to start with an alphanumeric, and can have (alphanumeric or hyphens) in between, the character before the suffix <char>'.bdx' must be alphanumeric followed by the suffix '.bdx'
     // It's *approximately* this regex, but there are some extra restrictions below
     // ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.bdx$
@@ -828,71 +809,42 @@ bool validate_bns_name(mapping_type type, std::string name, std::string *reason)
     //   domains (in which case the user looking up "foo.bdx" would try end up trying to resolve
     //   "foo.bdx.bdx").
     for (auto& reserved : {"localhost.bdx"sv, "beldex.bdx"sv, "mnode.bdx"sv})
-      if (check_condition(name == reserved, reason, "BNS type=", type, ", specifies mapping from name->value using protocol reserved name=", name))
+      if (check_condition(name == reserved, reason, "Specifies mapping from name->value using protocol reserved name=", name))
         return false;
 
     auto constexpr SHORTEST_DOMAIN = "a.bdx"sv;
-    if (check_condition(name.size() < SHORTEST_DOMAIN.size(), reason, "BNS type=", type, ", specifies mapping from name->value where the name is shorter than the shortest possible name=", SHORTEST_DOMAIN, ", given name=", name))
+    if (check_condition(name.size() < SHORTEST_DOMAIN.size(), reason, "Specifies mapping from name->value where the name is shorter than the shortest possible name=", SHORTEST_DOMAIN, ", given name=", name))
       return false;
 
     // Must end with .bdx
     auto constexpr SUFFIX = ".bdx"sv;
-    if (check_condition(!tools::ends_with(name_view, SUFFIX), reason, "BNS type=", type, ", specifies mapping from name->value where the name does not end with the domain .bdx, name=", name))
+    if (check_condition(!tools::ends_with(name_view, SUFFIX), reason, "Specifies mapping from name->value where the name does not end with the domain .bdx, name=", name))
       return false;
 
     name_view.remove_suffix(SUFFIX.size());
 
     // All domains containing '--' as 3rd/4th letter are reserved except for xn-- punycode domains
     if (check_condition(name_view.size() >= 4 && name_view.substr(2, 2) == "--"sv && !tools::starts_with(name_view, "xn--"sv),
-          reason, "BNS type=", type, ", specifies reserved name `?\?--*.bdx': ", name))
+          reason, "Specifies reserved name `?\?--*.bdx': ", name))
       return false;
 
     // Must start with alphanumeric
-    if (check_condition(!char_is_alphanum(name_view.front()), reason, "BNS type=", type, ", specifies mapping from name->value where the name does not start with an alphanumeric character, name=", name))
+    if (check_condition(!char_is_alphanum(name_view.front()), reason, "Specifies mapping from name->value where the name does not start with an alphanumeric character, name=", name))
       return false;
 
     name_view.remove_prefix(1);
 
     if (!name_view.empty()) {
       // Character preceding .bdx must be alphanumeric
-      if (check_condition(!char_is_alphanum(name_view.back()), reason, "BNS type=", type ,", specifies mapping from name->value where the character preceding the .bdx is not alphanumeric, char=", name_view.back(), ", name=", name))
+      if (check_condition(!char_is_alphanum(name_view.back()), reason, "Specifies mapping from name->value where the character preceding the .bdx is not alphanumeric, char=", name_view.back(), ", name=", name))
         return false;
       name_view.remove_suffix(1);
     }
 
     // Inbetween start and preceding suffix, (alphanumeric or hyphen) characters permitted
     if (check_condition(!std::all_of(name_view.begin(), name_view.end(), char_is_alphanum_or<'-'>),
-          reason, "BNS type=", type, ", specifies mapping from name->value where the domain name contains more than the permitted alphanumeric or hyphen characters, name=", name))
+          reason, "Specifies mapping from name->value where the domain name contains more than the permitted alphanumeric or hyphen characters, name=", name))
       return false;
-  }
-  else if (type == mapping_type::bchat || type == mapping_type::wallet)
-  {
-    // BCHAT & WALLET
-    // Name has to start with a (alphanumeric or underscore), and can have (alphanumeric, hyphens or underscores) in between and must end with a (alphanumeric or underscore)
-    // ^[a-z0-9_]([a-z0-9-_]*[a-z0-9_])?$
-
-    // Must start with (alphanumeric or underscore)
-    if (check_condition(!char_is_alphanum_or<'_'>(name_view.front()), reason, "BNS type=", type, ", specifies mapping from name->value where the name does not start with an alphanumeric or underscore character, name=", name))
-      return false;
-    name_view.remove_prefix(1);
-
-    if (!name_view.empty()) {
-      // Must NOT end with a hyphen '-'
-      if (check_condition(!char_is_alphanum_or<'_'>(name_view.back()), reason, "BNS type=", type, ", specifies mapping from name->value where the last character is a hyphen '-' which is disallowed, name=", name))
-        return false;
-      name_view.remove_suffix(1);
-    }
-
-    // Inbetween start and preceding suffix, (alphanumeric, hyphen or underscore) characters permitted
-    if (check_condition(!std::all_of(name_view.begin(), name_view.end(), char_is_alphanum_or<'-', '_'>),
-          reason, "BNS type=", type, ", specifies mapping from name->value where the name contains more than the permitted alphanumeric, underscore or hyphen characters, name=", name))
-      return false;
-  }
-  else
-  {
-    MERROR("Type not implemented");
-    return false;
-  }
 
   return true;
 }
@@ -1632,7 +1584,7 @@ bool build_default_tables(name_system_db& bns_db)
     owner_id INTEGER NOT NULL REFERENCES owner(id),
     backup_owner_id INTEGER REFERENCES owner(id),
     update_height INTEGER NOT NULL,
-    expiration_height INTEGER
+    expiration_height INTEGER NOT NULL
 )";
 
   const std::string BUILD_TABLE_SQL = R"(
@@ -1803,7 +1755,7 @@ scoped_db_transaction::~scoped_db_transaction()
 enum struct db_version { v0, v1_track_updates, v2_full_rows };
 auto constexpr DB_VERSION = db_version::v2_full_rows;
 
-constexpr auto EXPIRATION = " (expiration_height IS NULL OR expiration_height >= ?) "sv;
+constexpr auto EXPIRATION = " (expiration_height >= ?) "sv;
 
 } // anon. namespace
 
@@ -2445,7 +2397,7 @@ std::vector<mapping_record> name_system_db::get_mappings_by_owners(std::vector<g
 {
   std::string sql_statement;
   std::vector<std::variant<blob_view, uint64_t>> bind;
-  constexpr auto EXPIRATION_SUB = "(submapping.expiration_height IS NULL OR submapping.expiration_height >= ?)"sv;
+  constexpr auto EXPIRATION_SUB = "(submapping.expiration_height >= ?)"sv;
   // Generate string statement
   {
     constexpr auto SQL_WHERE_OWNER = "WHERE (o1.address IN ("sv;

@@ -1999,7 +1999,7 @@ bool beldex_name_system_name_value_max_lengths::generate(std::vector<test_event_
   // belnet
   if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
   {
-    std::string name(bns::BELNET_DOMAIN_NAME_MAX, 'a');
+    std::string name(bns::DOMAIN_NAME_MAX, 'a');
     name.replace(name.size() - 6, 5, ".bdx");
 
     data.type            = bns::mapping_type::belnet;
