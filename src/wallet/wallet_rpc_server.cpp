@@ -3050,11 +3050,12 @@ namespace {
     BNS_BUY_MAPPING::response res{};
 
     std::string reason;
-    auto type = m_wallet->bns_validate_type(req.type, bns::bns_tx_type::buy, &reason);
-    if (!type)
-      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS buy type: " + reason};
 
-    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_buy_mapping_tx(*type,
+    auto map_years = m_wallet->bns_validate_years(req.years, &reason);
+    if (!map_years)
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS buy years: " + reason};    
+
+    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_buy_mapping_tx(bns::mapping_type::bchat,
                                                                                       req.owner.size() ? &req.owner : nullptr,
                                                                                       req.backup_owner.size() ? &req.backup_owner : nullptr,
                                                                                       req.name,
@@ -3062,7 +3063,7 @@ namespace {
                                                                                       req.value_wallet.size() ? &req.value_wallet : nullptr,
                                                                                       req.value_belnet.size() ? &req.value_belnet : nullptr,
                                                                                       &reason,
-                                                                                      bns::mapping_years::bns_1year,
+                                                                                      *map_years,
                                                                                       req.priority,
                                                                                       req.account_index,
                                                                                       req.subaddr_indices);
@@ -3072,7 +3073,7 @@ namespace {
     //Save the BNS record to the wallet cache
     std::string name_hash_str = bns::name_to_base64_hash(req.name);
     tools::wallet2::bns_detail detail = {
-      *type,
+      bns::mapping_type::bchat,
       req.name,
       name_hash_str};
     m_wallet->set_bns_cache_record(detail);

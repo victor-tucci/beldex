@@ -255,7 +255,7 @@ namespace
   const char* USAGE_REQUEST_STAKE_UNLOCK("request_stake_unlock <master_node_pubkey>");
   const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes");
 
-  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet|belnet_2y|belnet_5y|belnet_10y] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] <name>");
+  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] <name>");
   const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=belnet|belnet_2y|belnet_5y|belnet_10y] <name>");
   const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet] [owner=<value>] [backup_owner=<value>] [value=<bns_value>] [signature=<hex_signature>] <name>");
 
@@ -6465,9 +6465,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
   
-  std::cout <<"args.size = " <<args.size() <<std::endl;
   auto [owner, backup_owner,value_bchat,value_wallet,value_belnet, typestr,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_TYPE_PREFIX, BNS_YEAR_PREFIX);
-  std::cout <<"args.size (after eat))= " <<args.size() <<std::endl;
   
   if (args.size() != 1)
   {

@@ -2217,9 +2217,9 @@ BELDEX_RPC_DOC_INTROSPECT
     static constexpr auto names() { return NAMES("bns_buy_mapping"); }
 
     static constexpr const char *description =
-R"(Buy a Beldex Name System (BNS) mapping that maps a unique name to a Bchat ID or Belnet address.
+R"(Buy a Beldex Name System (BNS) mapping that maps a unique name to a Bchat ID , Belnet, address.
 
-Currently supports Bchat, Belnet and Wallet registrations. Belnet registrations can be for 1, 2, 5, or 10 years by specifying a type value of "belnet", "belnet_2y", "belnet_5y", "belnet_10y". Bchat registrations do not expire.
+Currently supports Bchat, Belnet and Wallet registrations. Registrations can be for 1, 2, 5, or 10 years by specifying a years value of "1y", "2y", "5y", "10y".
 
 The owner of the BNS entry (by default, the purchasing wallet) will be permitted to submit BNS update transactions to the Beldex blockchain (for example to update a Bchat pubkey or the target Belnet address). You may change the primary owner or add a backup owner in the registration and can change them later with update transactions. Owner addresses can be either Beldex wallets, or generic ed25519 pubkeys (for advanced uses).
 
@@ -2232,6 +2232,7 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
     struct request
     {
       std::string        type;            // The mapping type: "bchat", "belnet", "belnet_2y", "belnet_5y", "belnet_10y", "wallet".
+      std::string        years; 
       std::string        owner;           // (Optional): The ed25519 public key or wallet address that has authority to update the mapping.
       std::string        backup_owner;    // (Optional): The secondary, backup public key that has authority to update the mapping.
       std::string        name;            // The name to purchase via Beldex Name Service
@@ -2602,8 +2603,8 @@ This command is only required if the open wallet is one of the owners of a BNS r
     VALIDATE_ADDRESS,
     SET_DAEMON,
     SET_LOG_LEVEL,
-    SET_LOG_CATEGORIES
-    /*BNS_BUY_MAPPING,
+    SET_LOG_CATEGORIES,
+    BNS_BUY_MAPPING,
     BNS_UPDATE_MAPPING,
     BNS_RENEW_MAPPING,
     BNS_MAKE_UPDATE_SIGNATURE,
@@ -2611,7 +2612,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     BNS_KNOWN_NAMES,
     BNS_ADD_KNOWN_NAMES,
     BNS_DECRYPT_VALUE,
-    BNS_ENCRYPT_VALUE*/
+    BNS_ENCRYPT_VALUE
   >;
 
 }

@@ -1140,6 +1140,7 @@ KV_SERIALIZE_MAP_CODE_END()
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_BUY_MAPPING::request)
   KV_SERIALIZE    (type);
+  KV_SERIALIZE    (years);
   KV_SERIALIZE    (owner);
   KV_SERIALIZE    (backup_owner);
   KV_SERIALIZE    (name);

@@ -8907,6 +8907,26 @@ std::optional<bns::mapping_type> wallet2::bns_validate_type(std::string_view typ
   return mapping_type;
 }
 
+std::optional<bns::mapping_years> wallet2::bns_validate_years(std::string_view map_years, std::string *reason)
+{
+  if (!map_years.empty())
+  {
+    if (tools::string_iequal_any(map_years, "1y", "1year"))
+      return bns::mapping_years::bns_1year;
+    else if (tools::string_iequal_any(map_years, "2y", "2years"))
+      return bns::mapping_years::bns_2years;
+    else if (tools::string_iequal_any(map_years, "5y", "5years"))
+      return bns::mapping_years::bns_5years;
+    else if (tools::string_iequal_any(map_years, "10y", "10years"))
+      return bns::mapping_years::bns_10years;
+    
+    if (reason) *reason = "Unsupported BNS mapping_years \"" + std::string{map_years} + "\"; supported years are: 1y, 2y, 5y, 10y";
+    return std::nullopt;
+  }
+
+  return bns::mapping_years::bns_1year;
+}
+
 std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
     bns::mapping_type type,
     bns::mapping_years map_years,

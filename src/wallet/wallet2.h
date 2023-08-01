@@ -1397,6 +1397,7 @@ private:
     // If type isn't valid then returns std::nullopt and sets the failure reason in `reason` (if not
     // nullptr).
     std::optional<bns::mapping_type> bns_validate_type(std::string_view type, bns::bns_tx_type bns_action, std::string *reason);
+    std::optional<bns::mapping_years> bns_validate_years(std::string_view map_years, std::string *reason);
 
     //TODO bns-rework have to rearrange the mapping years
     std::vector<pending_tx> bns_create_buy_mapping_tx(bns::mapping_type type, std::string const *owner, std::string const *backup_owner, std::string name, std::string const *value_bchat, std::string const *value_wallet, std::string const *value_belnet, std::string *reason,bns::mapping_years mapping_years = bns::mapping_years::bns_1year, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {});
