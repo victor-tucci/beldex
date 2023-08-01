@@ -1226,7 +1226,6 @@ KV_SERIALIZE_MAP_CODE_END()
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_HASH_NAME::request)
-  KV_SERIALIZE(type);
   KV_SERIALIZE(name);
 KV_SERIALIZE_MAP_CODE_END()
 
@@ -1248,8 +1247,12 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_KNOWN_NAMES::known_record)
   KV_SERIALIZE(name)
   KV_SERIALIZE(owner)
   KV_SERIALIZE(backup_owner)
-  KV_SERIALIZE(encrypted_value)
-  KV_SERIALIZE(value)
+  KV_SERIALIZE(encrypted_value_bchat)
+  KV_SERIALIZE(encrypted_value_wallet)
+  KV_SERIALIZE(encrypted_value_belnet)
+  KV_SERIALIZE(value_bchat)
+  KV_SERIALIZE(value_wallet)
+  KV_SERIALIZE(value_belnet)
   KV_SERIALIZE(update_height)
   KV_SERIALIZE(expiration_height)
   KV_SERIALIZE(expired)

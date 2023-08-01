@@ -78,7 +78,7 @@ TEST(beldex_name_system, name_tests)
     for (size_t i = 0; i < names_count; i++)
     {
       name_test const &entry = names[i];
-      ASSERT_EQ(bns::validate_bns_name(type, entry.name), entry.allowed) << "Values were {type=" << type << ", name=\"" << entry.name << "\"}";
+      ASSERT_EQ(bns::validate_bns_name(entry.name), entry.allowed) << "Values were {type=" << type << ", name=\"" << entry.name << "\"}";
     }
   }
 }

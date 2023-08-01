@@ -6830,7 +6830,7 @@ bool simple_wallet::bns_encrypt(std::vector<std::string> args)
     return false;
   }
 
-  if (!bns::validate_bns_name(type, name, &reason))
+  if (!bns::validate_bns_name(name, &reason))
   {
     tools::fail_msg_writer() << "Invalid BNS name '" << name << "': " << reason;
     return false;

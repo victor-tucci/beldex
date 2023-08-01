@@ -6483,7 +6483,7 @@ std::optional<std::string> wallet2::resolve_address(std::string address, uint64_
   } else {
     std::string name = tools::lowercase_ascii_string(std::move(address));
     std::string reason;
-    if (bns::validate_bns_name(bns::mapping_type::wallet, name, &reason))
+    if (bns::validate_bns_name(name, &reason))
     {
       std::string b64_hashed_name = bns::name_to_base64_hash(name);
       rpc::BNS_RESOLVE::request lookup_req{1, b64_hashed_name};
@@ -8720,7 +8720,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
   }
 
   name = tools::lowercase_ascii_string(name);
-  if (!bns::validate_bns_name(type, name, reason))
+  if (!bns::validate_bns_name(name, reason))
     return {};
 
   result.name_hash = bns::name_to_hash(name);

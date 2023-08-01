@@ -173,7 +173,7 @@ std::string name_hash_bytes_to_base64(std::string_view bytes);
 // otherwise.
 std::optional<std::string> name_hash_input_to_base64(std::string_view input);
 
-bool validate_bns_name(mapping_type type, std::string name, std::string *reason = nullptr);
+bool validate_bns_name(std::string name, std::string *reason = nullptr);
 
 std::optional<cryptonote::address_parse_info> encrypted_wallet_value_to_info(std::string name, std::string encrypted_value, std::string nonce);
 

@@ -386,7 +386,7 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
   // Copy encrypted_value_bchat
   {
     auto value = get<std::string_view>(statement, mapping_record_column::encrypted_value_bchat);
-    if(value.empty()){
+    if(!value.empty()){
       if (value.size() > result.encrypted_value_bchat.buffer.size())
       {
         MERROR("Unexpected encrypted value blob with size=" << value.size() << ", in BNS db larger than the available size=" << result.encrypted_value_bchat.buffer.size());
@@ -401,7 +401,7 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
   // Copy encrypted_value_wallet
   {
     auto value = get<std::string_view>(statement, mapping_record_column::encrypted_value_wallet);
-    if(value.empty()){
+    if(!value.empty()){
       if (value.size() > result.encrypted_value_wallet.buffer.size())
       {
         MERROR("Unexpected encrypted value blob with size=" << value.size() << ", in BNS db larger than the available size=" << result.encrypted_value_wallet.buffer.size());
@@ -411,11 +411,12 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
       result.encrypted_value_wallet.encrypted = true;
       std::memcpy(&result.encrypted_value_wallet.buffer[0], value.data(), value.size());
     }
+    std::cout << "result.encrypted_value_bchat.len : "<< result.encrypted_value_bchat.len << std::endl;
   }
   // Copy encrypted_value_belnet
   {
     auto value = get<std::string_view>(statement, mapping_record_column::encrypted_value_belnet);
-    if(value.empty()){
+    if(!value.empty()){
       if (value.size() > result.encrypted_value_belnet.buffer.size())
       {
         MERROR("Unexpected encrypted value blob with size=" << value.size() << ", in BNS db larger than the available size=" << result.encrypted_value_belnet.buffer.size());
@@ -425,6 +426,7 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
       result.encrypted_value_belnet.encrypted = true;
       std::memcpy(&result.encrypted_value_belnet.buffer[0], value.data(), value.size());
     }
+    std::cout << "result.encrypted_value_bchat.len : "<< result.encrypted_value_bchat.len << std::endl;
   }
 
   // Copy name hash
@@ -784,7 +786,7 @@ static bool check_condition(bool condition, std::string* reason, T&&... args) {
 }
 
 //TODO bns-rework have to change the bns-name validation by the given name
-bool validate_bns_name(mapping_type type, std::string name, std::string *reason)
+bool validate_bns_name(std::string name, std::string *reason)
 {
   size_t max_name_len = name.find('-') != std::string::npos
       ? DOMAIN_NAME_MAX

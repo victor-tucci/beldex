@@ -3538,6 +3538,8 @@ namespace cryptonote { namespace rpc {
         entry.owner                                            = record.owner.to_string(nettype());
         if (record.backup_owner) entry.backup_owner            = record.backup_owner.to_string(nettype());
         entry.encrypted_value                                  = oxenc::to_hex(record.encrypted_value_bchat.to_view());
+        entry.encrypted_value_wallet                           = oxenc::to_hex(record.encrypted_value_wallet.to_view());
+        entry.encrypted_value_belnet                           = oxenc::to_hex(record.encrypted_value_belnet.to_view());
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);

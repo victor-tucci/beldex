@@ -2460,6 +2460,8 @@ namespace rpc {
       std::string owner;        // The public key that purchased the Beldex Name Service entry.
       std::optional<std::string> backup_owner; // The backup public key that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.
       std::string encrypted_value; // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::string encrypted_value_wallet; // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::string encrypted_value_belnet; // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       uint64_t update_height;   // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
       std::string txid;                          // The txid of the mapping's most recent update or purchase.
