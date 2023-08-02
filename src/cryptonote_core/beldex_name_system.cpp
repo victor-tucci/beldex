@@ -1888,7 +1888,6 @@ AND NOT EXISTS   (SELECT * FROM mappings WHERE owner.id = mappings.backup_owner_
   if (!get_mappings_by_owner_sql.compile(GET_MAPPINGS_BY_OWNER_STR) ||
       !get_mapping_sql.compile(GET_MAPPING_STR) ||
       !get_mapping_counts_sql.compile(GET_MAPPING_COUNTS_STR) ||
-      !resolve_sql.compile(RESOLVE_STR) ||
       !get_owner_by_id_sql.compile(GET_OWNER_BY_ID_STR) ||
       !get_owner_by_key_sql.compile(GET_OWNER_BY_KEY_STR) ||
       !prune_mappings_sql.compile(PRUNE_MAPPINGS_STR) ||
@@ -2329,7 +2328,15 @@ std::optional<mapping_value> name_system_db::resolve(mapping_type type, std::str
 {
   assert(name_hash_b64.size() == 44 && name_hash_b64.back() == '=' && oxenc::is_base64(name_hash_b64));
   std::optional<mapping_value> result;
-  bind_all(resolve_sql, db_mapping_type(type), name_hash_b64, blockchain_height);
+
+  std::string RESOLVE_QRY = R"(SELECT )" + std::string{db_mapping_value(type)} + R"(, MAX(update_height) FROM mappings
+  WHERE name_hash = ? AND)" + std::string{EXPIRATION};
+
+  if (!resolve_sql.compile(RESOLVE_QRY, false /*optimise_for_multiple_usage*/))
+    return result;
+  
+  bind_all(resolve_sql, name_hash_b64, blockchain_height);
+
   if (step(resolve_sql) == SQLITE_ROW)
   {
     if (auto blob = get<std::optional<blob_view>>(resolve_sql, 0))

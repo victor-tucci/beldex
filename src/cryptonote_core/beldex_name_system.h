@@ -154,7 +154,18 @@ constexpr uint16_t db_mapping_type(bns::mapping_type type) {
     return static_cast<uint16_t>(mapping_type::belnet);
   return static_cast<uint16_t>(type);
 }
-
+constexpr std::string_view db_mapping_value(bns::mapping_type type) {
+  switch(type)
+  {
+    case mapping_type::bchat: return "encrypted_value_bchat"sv;
+    case mapping_type::wallet: return "encrypted_value_wallet"sv;
+    case mapping_type::belnet: return "encrypted_value_belnet"sv;
+    case mapping_type::belnet_2years:  return "encrypted_value_belnet"sv;  
+    case mapping_type::belnet_5years:  return "encrypted_value_belnet"sv;
+    case mapping_type::belnet_10years: return "encrypted_value_belnet"sv;
+    default: assert(false);             return "xx_unhandled_type"sv;
+  }
+}
 // Returns the length of the given mapping type, in blocks, or std::nullopt if the mapping type never expires.
 std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_years map_years, uint8_t hf_version);
 
