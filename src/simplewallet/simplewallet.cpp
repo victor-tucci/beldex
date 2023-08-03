@@ -7126,12 +7126,15 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
         << "\n    Last updated height: " << entry.update_height;
       if (entry.expiration_height) writer
         << "\n    Expiration height: " << *entry.expiration_height;
-      if (!entry.encrypted_value.empty()) writer
-        << "\n    Encrypted value: " << entry.encrypted_value;
-      if (!entry.encrypted_value_wallet.empty()) writer
-        << "\n    Encrypted value wallet: " << entry.encrypted_value_wallet;
-      if (!entry.encrypted_value_belnet.empty()) writer
-        << "\n    Encrypted value belnet: " << entry.encrypted_value_belnet;
+      // if (!entry.encrypted_value.empty()) 
+      writer
+        << "\n    Encrypted value bchat: " << (entry.encrypted_value.empty() ? "NULL" : entry.encrypted_value);
+      // if (!entry.encrypted_value_wallet.empty()) 
+      writer
+        << "\n    Encrypted value wallet: " << (entry.encrypted_value_wallet.empty() ? "NULL" : entry.encrypted_value_wallet);
+      // if (!entry.encrypted_value_belnet.empty()) 
+      writer
+        << "\n    Encrypted value belnet: " << (entry.encrypted_value_belnet.empty() ? "NULL" : entry.encrypted_value_belnet);
       writer
         << "\n";
     }
