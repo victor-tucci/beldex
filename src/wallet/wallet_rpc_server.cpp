@@ -3137,14 +3137,12 @@ namespace {
     BNS_UPDATE_MAPPING::response res{};
 
     std::string reason;
-    auto type = m_wallet->bns_validate_type(req.type, bns::bns_tx_type::update, &reason);
-    if (!type)
-      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS update type: " + reason};
-
     std::vector<wallet2::pending_tx> ptx_vector =
-        m_wallet->bns_create_update_mapping_tx(*type,
+        m_wallet->bns_create_update_mapping_tx(bns::mapping_type::bchat,
                                                req.name,
                                                req.value.empty()        ? nullptr : &req.value,
+                                               req.value_wallet.empty() ? nullptr : &req.value_wallet,
+                                               req.value_belnet.empty() ? nullptr : &req.value_belnet,
                                                req.owner.empty()        ? nullptr : &req.owner,
                                                req.backup_owner.empty() ? nullptr : &req.backup_owner,
                                                req.signature.empty()    ? nullptr : &req.signature,

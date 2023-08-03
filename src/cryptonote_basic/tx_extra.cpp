@@ -67,6 +67,8 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     bns::mapping_type type,
     const crypto::hash& name_hash,
     std::string_view encrypted_value,
+    std::string_view encrypted_value_wallet,
+    std::string_view encrypted_value_belnet,
     const bns::generic_owner* owner,
     const bns::generic_owner* backup_owner,
     const crypto::hash& prev_txid)
@@ -81,6 +83,18 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
   {
     result.fields |= bns::extra_field::encrypted_value;
     result.encrypted_value = std::string{encrypted_value};
+  }
+
+  if (encrypted_value_wallet.size())
+  {
+    result.fields |= bns::extra_field::encrypted_value_wallet;
+    result.encrypted_value_wallet = std::string{encrypted_value_wallet};
+  }
+  
+  if (encrypted_value_belnet.size())
+  {
+    result.fields |= bns::extra_field::encrypted_value_belnet;
+    result.encrypted_value_belnet = std::string{encrypted_value_belnet};
   }
 
   if (owner)

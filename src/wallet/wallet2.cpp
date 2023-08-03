@@ -8975,6 +8975,8 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
 std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(bns::mapping_type type,
                                                                        std::string name,
                                                                        std::string const *value,
+                                                                       std::string const *value_wallet,
+                                                                       std::string const *value_belnet,
                                                                        std::string const *owner,
                                                                        std::string const *backup_owner,
                                                                        std::string const *signature,
@@ -8984,14 +8986,14 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(bns::mapp
                                                                        std::set<uint32_t> subaddr_indices,
                                                                        std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response)
 {
-  if (!value && !owner && !backup_owner)
+  if (!value && !value_wallet && !value_belnet && !owner && !backup_owner)
   {
-    if (reason) *reason = "Value, owner and backup owner are not specified. Atleast one field must be specified for updating the BNS record";
+    if (reason) *reason = "Value_bchat, Value_wallet, Value_belnet, owner and backup owner are not specified. Atleast one field must be specified for updating the BNS record";
     return {};
   }
 
   bool make_signature = signature == nullptr;
-  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, type, priority, name, value, value, value, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, response);
+  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, type, priority, name, value, value_wallet, value_belnet, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, response);
   if (!prepared_args) return {};
 
   if (!make_signature)
@@ -9008,6 +9010,8 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(bns::mapp
                                                                   type,
                                                                   prepared_args.name_hash,
                                                                   prepared_args.encrypted_value.to_view(),
+                                                                  prepared_args.encrypted_value_wallet.to_view(),
+                                                                  prepared_args.encrypted_value_belnet.to_view(),
                                                                   owner ? &prepared_args.owner : nullptr,
                                                                   backup_owner ? &prepared_args.backup_owner : nullptr,
                                                                   prepared_args.prev_txid);

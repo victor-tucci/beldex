@@ -587,6 +587,8 @@ namespace cryptonote
         bns::mapping_type type,
         const crypto::hash& name_hash,
         std::string_view encrypted_value,
+        std::string_view encrypted_value_wallet,
+        std::string_view encrypted_value_belnet,
         const bns::generic_owner* owner,
         const bns::generic_owner* backup_owner,
         const crypto::hash& prev_txid);

@@ -2016,7 +2016,7 @@ SELECT                type, name_hash, ?,    ?)";
   {
     // Updating
 
-    sql += ", expiration_height";
+    sql += ", expiration_height";  
 
     if (entry.field_is_set(bns::extra_field::owner))
     {
@@ -2048,14 +2048,29 @@ SELECT                type, name_hash, ?,    ?)";
     }
     else
       sql += ", backup_owner_id";
-
     if (entry.field_is_set(bns::extra_field::encrypted_value))
     {
       sql += ", ?";
       bind.emplace_back(blob_view{entry.encrypted_value});
     }
     else
-      sql += ", encrypted_value";
+      sql += ", encrypted_value_bchat";
+
+    if (entry.field_is_set(bns::extra_field::encrypted_value_wallet))
+    {
+      sql += ", ?";
+      bind.emplace_back(blob_view{entry.encrypted_value_wallet});
+    }
+    else
+      sql += ", encrypted_value_wallet";
+    
+    if (entry.field_is_set(bns::extra_field::encrypted_value_belnet))
+    {
+      sql += ", ?";
+      bind.emplace_back(blob_view{entry.encrypted_value_belnet});
+    }
+    else
+      sql += ", encrypted_value_belnet";  
   }
 
   sql += suffix;
@@ -2187,7 +2202,7 @@ struct bns_update_history
 
 void bns_update_history::update(uint64_t height, cryptonote::tx_extra_beldex_name_system const &bns_extra)
 {
-  if (bns_extra.field_is_set(bns::extra_field::encrypted_value))
+  if (bns_extra.field_is_set(bns::extra_field::encrypted_value) || bns_extra.field_is_set(bns::extra_field::encrypted_value_wallet) || bns_extra.field_is_set(bns::extra_field::encrypted_value_belnet))
     value_last_update_height = height;
 
   if (bns_extra.field_is_set(bns::extra_field::owner))
