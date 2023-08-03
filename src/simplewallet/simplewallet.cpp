@@ -256,7 +256,7 @@ namespace
   const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes");
 
   const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] <name>");
-  const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=belnet|belnet_2y|belnet_5y|belnet_10y] <name>");
+  const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] <name>");
   const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [type=bchat|belnet] [owner=<value>] [backup_owner=<value>] [value=<bns_value>] [signature=<hex_signature>] <name>");
 
   const char* USAGE_BNS_ENCRYPT("bns_encrypt [type=bchat|belnet] <name> <value>");
@@ -6587,7 +6587,8 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
 
-  std::string typestr = eat_named_argument(args, BNS_TYPE_PREFIX);
+  auto [typestr,map_years] = eat_named_arguments(args, BNS_TYPE_PREFIX, BNS_YEAR_PREFIX);
+  
   if (args.empty())
   {
     PRINT_USAGE(USAGE_BNS_RENEW_MAPPING);
@@ -6595,10 +6596,14 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   }
   std::string const &name = args[0];
 
-  bns::mapping_type type;
-  if (auto t = guess_bns_type(*m_wallet, typestr, name, ""))
-    type = *t;
-  else return false;
+  bns::mapping_type type=bns::mapping_type::bchat;
+  // if (auto t = guess_bns_type(*m_wallet, typestr, name, ""))
+  //   type = *t;
+  // else return false;
+
+  std::optional<bns::mapping_years> mapping_years;
+  mapping_years = guess_bns_years(map_years);
+  if (!mapping_years) return false;
 
   SCOPED_WALLET_UNLOCK();
   std::string reason;
@@ -6607,8 +6612,8 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   try
   {
     ptx_vector = m_wallet->bns_create_renewal_tx(
-        type,
-        bns::mapping_years::bns_1year,
+        bns::mapping_type::bchat,
+        *mapping_years,
         name,
         &reason,
         priority,
@@ -6632,11 +6637,10 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
       fmt::print(fmt::format(tr("Belnet Name:  {}\n"), name)); 
     else
       fmt::print(fmt::format(tr("Name:          {}\n"), name)); 
-
     int years = 1;
-    if (type == bns::mapping_type::belnet_2years) years = 2;
-    else if (type == bns::mapping_type::belnet_5years) years = 5;
-    else if (type == bns::mapping_type::belnet_10years) years = 10;
+    if (mapping_years == bns::mapping_years::bns_2years) years = 2;
+    else if (mapping_years == bns::mapping_years::bns_5years) years = 5;
+    else if (mapping_years == bns::mapping_years::bns_10years) years = 10;
 
     std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
     if (!hf_version)

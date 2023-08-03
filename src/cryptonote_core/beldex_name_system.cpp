@@ -1999,7 +1999,7 @@ std::pair<std::string, std::vector<update_variant>> update_record_query(name_sys
 
   sql.reserve(500);
   sql += R"(
-INSERT INTO mappings (type, name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_value)
+INSERT INTO mappings (type, name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_value_bchat,encrypted_value_wallet,encrypted_value_belnet)
 SELECT                type, name_hash, ?,    ?)";
 
   bind.emplace_back(blob_view{tx_hash.data, sizeof(tx_hash)});
@@ -2009,7 +2009,7 @@ SELECT                type, name_hash, ?,    ?)";
 
   if (entry.is_renewing())
   {
-    sql += ", expiration_height + ?, owner_id, backup_owner_id, encrypted_value";
+    sql += ", expiration_height + ?, owner_id, backup_owner_id, encrypted_value_bchat, encrypted_value_wallet, encrypted_value_belnet";
     bind.emplace_back(expiry_blocks(bns_db.network_type(), entry.mapping_years, hf_version).value_or(0));
   }
   else

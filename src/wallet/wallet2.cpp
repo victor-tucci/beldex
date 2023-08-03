@@ -8947,6 +8947,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
   std::vector<uint8_t> extra;
   auto entry = cryptonote::tx_extra_beldex_name_system::make_renew(
       type,
+      map_years,
       prepared_args.name_hash,
       prepared_args.prev_txid);
   add_beldex_name_system_to_tx_extra(extra, entry);
