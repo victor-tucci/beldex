@@ -802,10 +802,7 @@ namespace cryptonote { namespace rpc {
           bns.blocks = bns::expiry_blocks(nettype, x.mapping_years, hf_version) ;
         switch (x.type)
         {
-          case bns::mapping_type::belnet: [[fallthrough]];
-          case bns::mapping_type::belnet_2years: [[fallthrough]];
-          case bns::mapping_type::belnet_5years: [[fallthrough]];
-          case bns::mapping_type::belnet_10years: bns.type = "belnet"; break;
+          case bns::mapping_type::belnet: bns.type = "belnet"; break;
 
           case bns::mapping_type::bchat: bns.type = "bchat"; break;
           case bns::mapping_type::wallet:  bns.type = "wallet"; break;

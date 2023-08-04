@@ -6630,10 +6630,7 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
     dsts.push_back(info);
 
     std::cout << "\n" << tr("Renew Beldex Name System Record") << "\n\n";
-    if (bns::is_belnet_type(type))
-      fmt::print(fmt::format(tr("Belnet Name:  {}\n"), name)); 
-    else
-      fmt::print(fmt::format(tr("Name:          {}\n"), name)); 
+    fmt::print(fmt::format(tr("Name:          {}\n"), name)); 
     int years = 1;
     if (mapping_years == bns::mapping_years::bns_2years) years = 2;
     else if (mapping_years == bns::mapping_years::bns_5years) years = 5;

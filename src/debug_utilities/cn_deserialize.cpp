@@ -81,9 +81,6 @@ struct extra_printer {
     switch (x.type)
     {
       case bns::mapping_type::belnet: std::cout << " - belnet (1y)"; break;
-      case bns::mapping_type::belnet_2years: std::cout << " - belnet (2y)"; break;
-      case bns::mapping_type::belnet_5years: std::cout << " - belnet (5y)"; break;
-      case bns::mapping_type::belnet_10years: std::cout << " - Belnet (10y)"; break;
       case bns::mapping_type::bchat: std::cout << " - Bchat address"; break;
       case bns::mapping_type::wallet: std::cout << " - Wallet address"; break;
       case bns::mapping_type::update_record_internal:

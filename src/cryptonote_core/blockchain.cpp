@@ -3535,6 +3535,7 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
     }
     if (tx.type == txtype::beldex_name_system)
     {
+      //TODO bns-rework have to validate the old bns
       cryptonote::tx_extra_beldex_name_system data;
       std::string fail_reason;
       if (!m_bns_db.validate_bns_tx(hf_version, get_current_blockchain_height(), tx, data, &fail_reason))

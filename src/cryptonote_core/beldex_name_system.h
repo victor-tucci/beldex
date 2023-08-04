@@ -124,9 +124,6 @@ inline std::string_view mapping_type_str(mapping_type type)
   switch(type)
   {
     case mapping_type::belnet:         return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
-    case mapping_type::belnet_2years:  return "belnet_2years"sv;  // Only used in a buy tx, not in the DB
-    case mapping_type::belnet_5years:  return "belnet_5years"sv;  // "
-    case mapping_type::belnet_10years: return "belnet_10years"sv; // "
     case mapping_type::bchat:         return "bchat"sv;
     case mapping_type::wallet:          return "wallet"sv;
     default: assert(false);             return "xx_unhandled_type"sv;
@@ -136,12 +133,10 @@ inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os
 
 constexpr bool mapping_type_allowed(uint8_t hf_version, mapping_type type) {
   return (type == mapping_type::bchat && hf_version >= cryptonote::network_version_16_bns)
-      || (is_belnet_type(type) && hf_version >= cryptonote::network_version_17_POS) || (type == mapping_type::wallet && hf_version >= cryptonote::network_version_17_POS);
+      || (type == mapping_type::belnet && hf_version >= cryptonote::network_version_17_POS) || (type == mapping_type::wallet && hf_version >= cryptonote::network_version_17_POS);
 }
 
-// Returns all mapping types supported for lookup as of the given hardfork.  (Note that this does
-// not return the dedicated length types such as mapping_type::belnet_5years as those are only
-// relevant within a BNS buy tx).
+// Returns all mapping types supported for lookup as of the given hardfork.
 std::vector<mapping_type> all_mapping_types(uint8_t hf_version);
 
 sqlite3 *init_beldex_name_system(const fs::path& file_path, bool read_only);
@@ -150,8 +145,6 @@ sqlite3 *init_beldex_name_system(const fs::path& file_path, bool read_only);
 /// type.  In particularly this maps all mapping_type::belnet_Xyears values to the underlying value
 /// of mapping_type::belnet.
 constexpr uint16_t db_mapping_type(bns::mapping_type type) {
-  if (is_belnet_type(type))
-    return static_cast<uint16_t>(mapping_type::belnet);
   return static_cast<uint16_t>(type);
 }
 constexpr std::string_view db_mapping_value(bns::mapping_type type) {
@@ -160,9 +153,6 @@ constexpr std::string_view db_mapping_value(bns::mapping_type type) {
     case mapping_type::bchat: return "encrypted_value_bchat"sv;
     case mapping_type::wallet: return "encrypted_value_wallet"sv;
     case mapping_type::belnet: return "encrypted_value_belnet"sv;
-    case mapping_type::belnet_2years:  return "encrypted_value_belnet"sv;  
-    case mapping_type::belnet_5years:  return "encrypted_value_belnet"sv;
-    case mapping_type::belnet_10years: return "encrypted_value_belnet"sv;
     default: assert(false);             return "xx_unhandled_type"sv;
   }
 }

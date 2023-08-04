@@ -2231,7 +2231,8 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
 
     struct request
     {
-      std::string        type;            // The mapping type: "bchat", "belnet", "belnet_2y", "belnet_5y", "belnet_10y", "wallet".
+      //TODO bns-rework have to remove the type
+      std::string        type;            // The mapping type: "bchat", "belnet", "wallet".
       std::string        years; 
       std::string        owner;           // (Optional): The ed25519 public key or wallet address that has authority to update the mapping.
       std::string        backup_owner;    // (Optional): The secondary, backup public key that has authority to update the mapping.

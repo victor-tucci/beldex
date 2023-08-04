@@ -58,10 +58,7 @@ enum struct mapping_type : uint16_t
 {
   bchat = 0,
   wallet = 1,
-  belnet = 2, // the type value stored in the database; counts as 1-year when used in a buy tx.
-  belnet_2years,
-  belnet_5years,
-  belnet_10years,
+  belnet = 2,
   _count,
   update_record_internal,
 };
@@ -76,7 +73,6 @@ enum struct mapping_years : uint16_t
   update_record_internal,
 };
 
-constexpr bool is_belnet_type(mapping_type t) { return t >= mapping_type::belnet && t <= mapping_type::belnet_10years; }
 constexpr bool is_renewal_type(mapping_years y) { return y >= mapping_years::bns_1year && y <= mapping_years::bns_10years; }
 
 // How many days we add per "year" of BNS belnet registration.  We slightly extend this to the 368
@@ -133,16 +129,6 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years,mappi
     case mapping_type::wallet: /* FALLTHRU */
     default:
       result = basic_fee;
-      break;
-
-    case mapping_type::belnet_2years:
-      result = 2 * basic_fee;
-      break;
-    case mapping_type::belnet_5years:
-      result = 4 * basic_fee;
-      break;
-    case mapping_type::belnet_10years:
-      result = 6 * basic_fee;
       break;
     }
     return result;

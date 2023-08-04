@@ -51,7 +51,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
 tx_extra_beldex_name_system tx_extra_beldex_name_system::make_renew(
     bns::mapping_type type, bns::mapping_years mapping_years, crypto::hash const &name_hash, crypto::hash const &prev_txid)
 {
-  assert(is_belnet_type(type) && prev_txid);
+  assert(is_renewal_type(mapping_years) && prev_txid);
 
   tx_extra_beldex_name_system result{};
   result.fields = bns::extra_field::none;

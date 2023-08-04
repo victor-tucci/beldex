@@ -3106,7 +3106,6 @@ namespace {
     if (!mapping_years)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS renewal years: " + reason};
 
-    //TODO bns-rework have to change this dynamic
     std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_renewal_tx(
         bns::mapping_type::bchat,*mapping_years, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
 
@@ -3230,8 +3229,7 @@ namespace {
     {
       auto& entry = res.known_names.emplace_back();
       auto& type = entry_types.emplace_back(details.type);
-      if (type > bns::mapping_type::belnet && type <= bns::mapping_type::belnet_10years)
-        type = bns::mapping_type::belnet;
+      //TODO bns-rework have to remove the type for the request
       entry.type = bns::mapping_type_str(type);
       entry.hashed = details.hashed_name;
       entry.name = details.name;

@@ -109,7 +109,7 @@ std::pair<std::basic_string_view<unsigned char>, std::basic_string_view<unsigned
 std::string bns::mapping_value::to_readable_value(cryptonote::network_type nettype, bns::mapping_type type) const
 {
   std::string result;
-  if (is_belnet_type(type))
+  if (type == bns::mapping_type::belnet)
   {
     result = oxenc::to_base32z(to_view()) + ".bdx";
   } else if (type == bns::mapping_type::wallet) {
@@ -782,7 +782,6 @@ static bool check_condition(bool condition, std::string* reason, T&&... args) {
   return condition;
 }
 
-//TODO bns-rework have to change the bns-name validation by the given name
 bool validate_bns_name(std::string name, std::string *reason)
 {
   size_t max_name_len = name.find('-') != std::string::npos
@@ -932,7 +931,7 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
       blob->len = counter;
     }
   }
-  else if (is_belnet_type(type))
+  else if (type == bns::mapping_type::belnet)
   {
     // We need a 52 char base32z string that decodes to a 32-byte value, which really means we need
     // 51 base32z chars (=255 bits) followed by a 1-bit value ('y'=0, or 'o'=0b10000); anything else
@@ -982,7 +981,7 @@ bool mapping_value::validate_encrypted(mapping_type type, std::string_view value
 
   int value_len = crypto_aead_xchacha20poly1305_ietf_ABYTES + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
 
-  if (is_belnet_type(type))
+  if (type == bns::mapping_type::belnet)
     value_len += BELNET_ADDRESS_BINARY_LENGTH;
   else if (type == mapping_type::wallet)
   {
