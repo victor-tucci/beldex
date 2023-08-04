@@ -396,7 +396,6 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
       result.encrypted_value_bchat.encrypted = true;
       std::memcpy(&result.encrypted_value_bchat.buffer[0], value.data(), value.size());
     }
-    std::cout << "result.encrypted_value_bchat.len : "<< result.encrypted_value_bchat.len << std::endl;
   }
   // Copy encrypted_value_wallet
   {
@@ -411,7 +410,6 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
       result.encrypted_value_wallet.encrypted = true;
       std::memcpy(&result.encrypted_value_wallet.buffer[0], value.data(), value.size());
     }
-    std::cout << "result.encrypted_value_bchat.len : "<< result.encrypted_value_bchat.len << std::endl;
   }
   // Copy encrypted_value_belnet
   {
@@ -426,7 +424,6 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
       result.encrypted_value_belnet.encrypted = true;
       std::memcpy(&result.encrypted_value_belnet.buffer[0], value.data(), value.size());
     }
-    std::cout << "result.encrypted_value_bchat.len : "<< result.encrypted_value_bchat.len << std::endl;
   }
 
   // Copy name hash
@@ -1301,29 +1298,18 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   return true;
 }
 
-bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version, bns_tx_type txtype, bns::mapping_type *mapping_type, std::string *reason)
+bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version, bns::mapping_type *mapping_type, std::string *reason)
 {
   std::string mapping = tools::lowercase_ascii_string(mapping_type_str);
   std::optional<bns::mapping_type> mapping_type_;
-  if (txtype != bns_tx_type::renew && tools::string_iequal(mapping, "bchat"))
+  if (tools::string_iequal(mapping, "bchat"))
     mapping_type_ = bns::mapping_type::bchat;
   else if (hf_version >= cryptonote::network_version_17_POS)
   {
     if (tools::string_iequal(mapping, "belnet"))
       mapping_type_ = bns::mapping_type::belnet;
-    else if (txtype == bns_tx_type::buy || txtype == bns_tx_type::renew)
-    {
-      if (tools::string_iequal_any(mapping, "belnet_1y", "belnet_1years")) // Can also specify "belnet"
-        mapping_type_ = bns::mapping_type::belnet;
-      else if (tools::string_iequal_any(mapping, "belnet_2y", "belnet_2years"))
-        mapping_type_ = bns::mapping_type::belnet_2years;
-      else if (tools::string_iequal_any(mapping, "belnet_5y", "belnet_5years"))
-        mapping_type_ = bns::mapping_type::belnet_5years;
-      else if (tools::string_iequal_any(mapping, "belnet_10y", "belnet_10years"))
-        mapping_type_ = bns::mapping_type::belnet_10years;
-    }
   }
-  if (hf_version >= cryptonote::network_version_17_POS)
+  else if (hf_version >= cryptonote::network_version_17_POS)
   {
     if (tools::string_iequal(mapping, "wallet"))
       mapping_type_ = bns::mapping_type::wallet;
@@ -1331,11 +1317,7 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
 
   if (!mapping_type_)
   {
-    if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported " + (
-        txtype == bns_tx_type::update ? "update types are: bchat, belnet, wallet" :
-        txtype == bns_tx_type::renew  ? "renew types are: belnet_1y, belnet_2y, belnet_5y, belnet_10y" :
-        txtype == bns_tx_type::buy    ? "buy types are bchat, belnet_1y, belnet_2y, belnet_5y, belnet_10y"
-                                      : "lookup types are bchat, belnet, wallet");
+    if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported types are: bchat, belnet, wallet";
     return false;
   }
 

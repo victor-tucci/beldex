@@ -262,7 +262,7 @@ namespace
   const char* USAGE_BNS_ENCRYPT("bns_encrypt [type=bchat|belnet] <name> <value>");
   const char* USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE("bns_make_update_mapping_signature [owner=<value>] [backup_owner=<value>] <name>");
   const char* USAGE_BNS_BY_OWNER("bns_by_owner [<owner> ...]");
-  const char* USAGE_BNS_LOOKUP("bns_lookup [type=bchat|wallet|belnet] <name> [<name> ...]");
+  const char* USAGE_BNS_LOOKUP("bns_lookup <name> [<name> ...]");
 
 #if defined (BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
   std::string input_line(const std::string &prompt, bool yesno = false)
@@ -6398,11 +6398,11 @@ bool simple_wallet::print_locked_stakes(const std::vector<std::string>& args)
 // Parse a user-provided typestring value; if not provided, guess from the provided name and value.
 static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, std::string_view typestr, std::string_view name, std::string_view value)
 {
-  if (true)
+  if (typestr.empty())
   {
-    if ((tools::ends_with(value, ".bdx") || value.empty()))
+    if (tools::ends_with(name, ".bdx") && (tools::ends_with(value, ".bdx") || value.empty()))
       return bns::mapping_type::belnet;
-    if (tools::starts_with(value, "bd") && value.length() == 2*bns::BCHAT_PUBLIC_KEY_BINARY_LENGTH)
+    if (tools::ends_with(name, ".bdx") && tools::starts_with(value, "bd") && value.length() == 2*bns::BCHAT_PUBLIC_KEY_BINARY_LENGTH)
       return bns::mapping_type::bchat;
     if (cryptonote::is_valid_address(std::string{value}, wallet.nettype()))
       return bns::mapping_type::wallet;
@@ -6419,7 +6419,7 @@ static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, s
   }
 
   std::string reason;
-  if (bns::mapping_type type; bns::validate_mapping_type(typestr, *hf_version, bns::bns_tx_type::buy, &type, &reason))
+  if (bns::mapping_type type; bns::validate_mapping_type(typestr, *hf_version, &type, &reason))
     return type;
 
   fail_msg_writer() << reason;
@@ -6597,9 +6597,6 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   std::string const &name = args[0];
 
   bns::mapping_type type=bns::mapping_type::bchat;
-  // if (auto t = guess_bns_type(*m_wallet, typestr, name, ""))
-  //   type = *t;
-  // else return false;
 
   std::optional<bns::mapping_years> mapping_years;
   mapping_years = guess_bns_years(map_years);
@@ -7010,7 +7007,8 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     {
       bns::mapping_type mapping_type;
       std::string reason;
-      if (!bns::validate_mapping_type(type, *hf_version, bns::bns_tx_type::lookup, &mapping_type, &reason))
+      //TODO bns-rework have to remove when lookup is updated
+      if (!bns::validate_mapping_type(type, *hf_version, &mapping_type, &reason))
       {
         fail_msg_writer() << reason;
         return false;

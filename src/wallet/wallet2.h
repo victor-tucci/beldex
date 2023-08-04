@@ -1393,10 +1393,9 @@ private:
     };
     request_stake_unlock_result can_request_stake_unlock(const crypto::public_key &mn_key);
 
-    // Attempts to convert the BNS type string to a mapping type (checking the current hard fork).
-    // If type isn't valid then returns std::nullopt and sets the failure reason in `reason` (if not
+    // Attempts to convert the BNS years string to a mapping years.
+    // If years isn't valid then returns std::nullopt and sets the failure reason in `reason` (if not
     // nullptr).
-    std::optional<bns::mapping_type> bns_validate_type(std::string_view type, bns::bns_tx_type bns_action, std::string *reason);
     std::optional<bns::mapping_years> bns_validate_years(std::string_view map_years, std::string *reason);
 
     //TODO bns-rework have to rearrange the mapping years

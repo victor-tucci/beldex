@@ -199,7 +199,7 @@ enum struct bns_tx_type { lookup, buy, update, renew };
 // Currently accepts "bchat" or "belnet" for lookups, buys, updates, and renewals; for buys and renewals also accepts "belnet_Ny[ear]" for N=2,5,10
 // Lookups are implied by none of buy/update/renew.
 // mapping_type: (optional) if function returns true, the uint16_t value of the 'type' will be set
-bool         validate_mapping_type(std::string_view type, uint8_t hf_version, bns_tx_type txtype, mapping_type *mapping_type, std::string *reason);
+bool         validate_mapping_type(std::string_view type, uint8_t hf_version, mapping_type *mapping_type, std::string *reason);
 
 // Hashes an BNS name.  The name must already be lower-case (but this is only checked in debug builds).
 crypto::hash name_to_hash(std::string_view name, const std::optional<crypto::hash>& key = std::nullopt); // Takes a human readable name and hashes it.  Takes an optional value to use as a key to produce a keyed hash.

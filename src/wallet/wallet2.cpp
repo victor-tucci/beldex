@@ -8892,21 +8892,6 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
   return result;
 }
 
-std::optional<bns::mapping_type> wallet2::bns_validate_type(std::string_view type, bns::bns_tx_type bns_action, std::string *reason)
-{
-  std::optional<uint8_t> hf_version = get_hard_fork_version();
-  if (!hf_version)
-  {
-    if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-    return std::nullopt;
-  }
-  bns::mapping_type mapping_type;
-  if (!bns::validate_mapping_type(type, *hf_version, bns_action, &mapping_type, reason))
-    return std::nullopt;
-
-  return mapping_type;
-}
-
 std::optional<bns::mapping_years> wallet2::bns_validate_years(std::string_view map_years, std::string *reason)
 {
   if (!map_years.empty())

@@ -3187,14 +3187,9 @@ namespace {
     BNS_MAKE_UPDATE_SIGNATURE::response res{};
 
     std::string reason;
-    bns::mapping_type type;
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
-    if (!bns::validate_mapping_type(req.type, *hf_version, bns::bns_tx_type::update, &type, &reason))
-      throw wallet_rpc_error{error_code::WRONG_BNS_TYPE, "Wrong bns type given=" + reason};
-
     bns::generic_signature signature;
-    if (!m_wallet->bns_make_update_mapping_signature(type,
+
+    if (!m_wallet->bns_make_update_mapping_signature(bns::mapping_type::bchat,
                                                      req.name,
                                                      req.encrypted_value.size() ? &req.encrypted_value : nullptr,
                                                      req.owner.size() ? &req.owner : nullptr,
@@ -3393,7 +3388,7 @@ namespace {
     std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
     if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
     {
-      if (!bns::validate_mapping_type(req.type, *hf_version, bns::bns_tx_type::lookup, &type, &reason))
+      if (!bns::validate_mapping_type(req.type, *hf_version, &type, &reason))
         throw wallet_rpc_error{error_code::WRONG_BNS_TYPE, "Invalid BNS type: " + reason};
 
       if (!bns::validate_bns_name(req.name, &reason))
@@ -3429,7 +3424,7 @@ namespace {
     if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
 
     bns::mapping_type type;
-    if (!bns::validate_mapping_type(req.type, *hf_version, bns::bns_tx_type::lookup, &type, &reason))
+    if (!bns::validate_mapping_type(req.type, *hf_version, &type, &reason))
       throw wallet_rpc_error{error_code::WRONG_BNS_TYPE, "Wrong bns type given=" + reason};
 
     if (!bns::validate_bns_name(req.name, &reason))
