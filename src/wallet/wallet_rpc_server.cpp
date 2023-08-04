@@ -3102,13 +3102,13 @@ namespace {
     BNS_RENEW_MAPPING::response res{};
 
     std::string reason;
-    auto type = m_wallet->bns_validate_type(req.type, bns::bns_tx_type::renew, &reason);
-    if (!type)
-      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS renewal type: " + reason};
+    std::optional<bns::mapping_years> mapping_years = m_wallet->bns_validate_years(req.years, &reason);
+    if (!mapping_years)
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS renewal years: " + reason};
 
     //TODO bns-rework have to change this dynamic
     std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_renewal_tx(
-        *type,bns::mapping_years::bns_1year, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
+        bns::mapping_type::bchat,*mapping_years, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
 
     if (ptx_vector.empty())
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Failed to create BNS renewal transaction: " + reason};

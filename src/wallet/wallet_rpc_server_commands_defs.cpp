@@ -1171,6 +1171,7 @@ KV_SERIALIZE_MAP_CODE_END()
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_RENEW_MAPPING::request)
   KV_SERIALIZE    (type);
+  KV_SERIALIZE    (years);
   KV_SERIALIZE    (name);
   KV_SERIALIZE_OPT(account_index,   (uint32_t)0);
   KV_SERIALIZE    (subaddr_indices);

@@ -2280,6 +2280,7 @@ The renewal can be for 1, 2, 5, or 10 years by specifying a `type` value of "bel
     struct request
     {
       std::string        type;      // The mapping type, "belnet" (1-year), or "belnet_2y", "belnet_5y", "belnet_10y" for multi-year registrations.
+      std::string        years;     //The mapping year "bns_1year or "bns_2years", "bns_5years", "bns_10years" for multi-year registrations
       std::string        name;      // The name to update
 
       uint32_t           account_index;    // (Optional) Transfer from this account index. (Defaults to 0)
