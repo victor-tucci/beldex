@@ -1186,6 +1186,8 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_UPDATE_MAPPING::request)
   KV_SERIALIZE    (type);
   KV_SERIALIZE    (name);
   KV_SERIALIZE    (value);
+  KV_SERIALIZE    (value_wallet);
+  KV_SERIALIZE    (value_belnet);
   KV_SERIALIZE    (owner);
   KV_SERIALIZE    (backup_owner);
   KV_SERIALIZE    (signature);
