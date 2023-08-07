@@ -309,7 +309,9 @@ namespace rpc {
         std::optional<uint64_t> blocks;          // The registration length in blocks (only applies to belnet registrations; bchat/wallet registrations do not expire)
         std::string name_hash;                   // The hashed name of the record being purchased/updated, in hex (the actual name is not provided on the blockchain).
         std::optional<std::string> prev_txid;    // For an update, this points at the txid of the previous bns update transaction.
-        std::optional<std::string> value;        // The encrypted value of the record, in hex.  Note that this is encrypted using the actual name itself (*not* the hashed name).
+        std::optional<std::string> value_bchat;  // The encrypted value of the record, in hex for the bchat.  Note that this is encrypted using the actual name itself (*not* the hashed name).
+        std::optional<std::string> value_wallet; // The encrypted value of the record, in hex for the wallet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
+        std::optional<std::string> value_belnet; // The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> owner;        // The owner of this record; this can be a main wallet, wallet subaddress, or a plain public key.
         std::optional<std::string> backup_owner; // Backup owner wallet/pubkey of the record, if provided.
         KV_MAP_SERIALIZABLE
@@ -2454,17 +2456,17 @@ namespace rpc {
 
     struct response_entry
     {
-      uint64_t entry_index;     // The index in request_entry's `entries` array that was resolved via Beldex Name Service.
-      bns::mapping_type type;   // The type of Beldex Name Service entry that the owner owns: currently supported values are 0 (bchat), 1 (wallet) and 2 (belnet)
-      std::string name_hash;    // The hash of the name that was queried, in base64
-      std::string owner;        // The public key that purchased the Beldex Name Service entry.
-      std::optional<std::string> backup_owner; // The backup public key that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.
-      std::string encrypted_value; // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      std::string encrypted_value_wallet; // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      std::string encrypted_value_belnet; // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
-      uint64_t update_height;   // The last height that this Beldex Name Service entry was updated on the Blockchain.
-      std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
-      std::string txid;                          // The txid of the mapping's most recent update or purchase.
+      uint64_t entry_index;                     // The index in request_entry's `entries` array that was resolved via Beldex Name Service.
+      bns::mapping_type type;                   // The type of Beldex Name Service entry that the owner owns: currently supported values are 0 (bchat), 1 (wallet) and 2 (belnet)
+      std::string name_hash;                    // The hash of the name that was queried, in base64
+      std::string owner;                        // The public key that purchased the Beldex Name Service entry.
+      std::optional<std::string> backup_owner;  // The backup public key that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.
+      std::string encrypted_bchat_value;        // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::string encrypted_wallet_value;       // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::string encrypted_belnet_value;       // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
+      std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
+      std::string txid;                         // The txid of the mapping's most recent update or purchase.
 
       KV_MAP_SERIALIZABLE
     };
@@ -2496,17 +2498,17 @@ namespace rpc {
 
     struct response_entry
     {
-      uint64_t    request_index;   // (Deprecated) The index in request's `entries` array that was resolved via Beldex Name Service.
-      bns::mapping_type type;      // The category the Beldex Name Service entry belongs to; currently 0 for Bchat, 1 for Wallet and 2 for Belnet.
-      std::string name_hash;       // The hash of the name that the owner purchased via Beldex Name Service in base64
-      std::string owner;           // The backup public key specified by the owner that purchased the Beldex Name Service entry.
-      std::optional<std::string> backup_owner; // The backup public key specified by the owner that purchased the Beldex Name Service entry. Omitted if no backup owner.
-      std::string encrypted_value; // The encrypted value that the name maps to, in hex. This value is encrypted using the name (not the hash) as the secret.
-      std::string encrypted_value_wallet; // The encrypted value that the name maps to, in hex. This value is encrypted using the name (not the hash) as the secret.
-      std::string encrypted_value_belnet; // The encrypted value that the name maps to, in hex. This value is encrypted using the name (not the hash) as the secret.
-      uint64_t    update_height;   // The last height that this Beldex Name Service entry was updated on the Blockchain.
-      std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
-      std::string txid;                     // The txid of the mapping's most recent update or purchase.
+      uint64_t    request_index;                // (Deprecated) The index in request's `entries` array that was resolved via Beldex Name Service.
+      bns::mapping_type type;                   // The category the Beldex Name Service entry belongs to; currently 0 for Bchat, 1 for Wallet and 2 for Belnet.
+      std::string name_hash;                    // The hash of the name that the owner purchased via Beldex Name Service in base64
+      std::string owner;                        // The backup public key specified by the owner that purchased the Beldex Name Service entry.
+      std::optional<std::string> backup_owner;  // The backup public key specified by the owner that purchased the Beldex Name Service entry. Omitted if no backup owner.
+      std::string encrypted_bchat_value;        // The bchat encrypted value that the name maps to, in hex. This value of bchat is encrypted using the name (not the hash) as the secret.
+      std::string encrypted_wallet_value;       // The wallet encrypted value that the name maps to, in hex. This value of wallet is encrypted using the name (not the hash) as the secret.
+      std::string encrypted_belnet_value;       // The belnet encrypted value that the name maps to, in hex. This value of belnet is encrypted using the name (not the hash) as the secret.
+      uint64_t    update_height;                // The last height that this Beldex Name Service entry was updated on the Blockchain.
+      std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
+      std::string txid;                         // The txid of the mapping's most recent update or purchase.
 
       KV_MAP_SERIALIZABLE
     };

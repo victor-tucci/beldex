@@ -2233,13 +2233,13 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
     {
       //TODO bns-rework have to remove the type
       std::string        type;            // The mapping type: "bchat", "belnet", "wallet".
-      std::string        years; 
+      std::string        years;           //The mapping years "1year || 1y" , "2years || 2y" , "5years || 5y" , "10years || 10y".
       std::string        owner;           // (Optional): The ed25519 public key or wallet address that has authority to update the mapping.
       std::string        backup_owner;    // (Optional): The secondary, backup public key that has authority to update the mapping.
       std::string        name;            // The name to purchase via Beldex Name Service
-      std::string        value;           // The value that the name maps to via Beldex Name Service, (i.e. For Bchat: [display name->bchat public key],  for wallets: [name->wallet address], for Belnet: [name->domain name]).
-      std::string        value_wallet; 
-      std::string        value_belnet; 
+      std::string        value_bchat;     // The value of bchat that the name maps to via Beldex Name Service, (i.e. For Bchat: [display name->bchat public key]).
+      std::string        value_wallet;    // The value of wallet that the name maps to via Beldex Name Service, (i.e, For wallets: [name->wallet address]).
+      std::string        value_belnet;    // The value of wallet that the name maps to via Beldex Name Service, (i.e, For Belnet: [name->domain name]).
 
       uint32_t           account_index;   // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices; // (Optional) Transfer from this set of subaddresses. (Defaults to 0)
@@ -2280,9 +2280,9 @@ The renewal can be for 1, 2, 5, or 10 years by specifying a `type` value of "bel
 
     struct request
     {
-      std::string        type;      // The mapping type, "belnet" (1-year), or "belnet_2y", "belnet_5y", "belnet_10y" for multi-year registrations.
-      std::string        years;     //The mapping year "bns_1year or "bns_2years", "bns_5years", "bns_10years" for multi-year registrations
-      std::string        name;      // The name to update
+      std::string        type;             // The mapping type, "belnet" (1-year), or "belnet_2y", "belnet_5y", "belnet_10y" for multi-year registrations.
+      std::string        years;            //The mapping years "1year || 1y" , "2years || 2y" , "5years || 5y" , "10years || 10y".
+      std::string        name;             // The name to update
 
       uint32_t           account_index;    // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices;  // (Optional) Transfer from this set of subaddresses. (Defaults to 0)
@@ -2315,14 +2315,14 @@ If signing is performed externally then you must first encrypt the `value` (if b
 
     struct request
     {
-      std::string        type;      // The mapping type, "bchat", "belnet", or "wallet".
-      std::string        name;      // The name to update via Beldex Name Service
-      std::string        value;     // (Optional): The new value that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value (if non-empty) must be already encrypted.
-      std::string        value_wallet; // (Optional): The new value that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value (if non-empty) must be already encrypted.
-      std::string        value_belnet; // (Optional): The new value that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value (if non-empty) must be already encrypted.
-      std::string        owner;     // (Optional): The new owner of the mapping. If not specified or given the empty string "", then the mapping's owner remains unchanged.
-      std::string        backup_owner; // (Optional): The new backup owner of the mapping. If not specified or given the empty string "", then the mapping's backup owner remains unchanged.
-      std::string        signature; // (Optional): Signature derived using libsodium generichash on {current txid blob, new value blob} of the mapping to update. By default the hash is signed using the wallet's spend key as an ed25519 keypair, if signature is specified.
+      std::string        type;          // The mapping type, "bchat", "belnet", or "wallet".
+      std::string        name;          // The name to update via Beldex Name Service
+      std::string        value_bchat;   // (Optional): The new value of bchat that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value bchat (if non-empty) must be already encrypted.
+      std::string        value_wallet;  // (Optional): The new value of wallet that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value wallet(if non-empty) must be already encrypted.
+      std::string        value_belnet;  // (Optional): The new value of belnet that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value belnet (if non-empty) must be already encrypted.
+      std::string        owner;         // (Optional): The new owner of the mapping. If not specified or given the empty string "", then the mapping's owner remains unchanged.
+      std::string        backup_owner;  // (Optional): The new backup owner of the mapping. If not specified or given the empty string "", then the mapping's backup owner remains unchanged.
+      std::string        signature;     // (Optional): Signature derived using libsodium generichash on {current txid blob, new value blob} of the mapping to update. By default the hash is signed using the wallet's spend key as an ed25519 keypair, if signature is specified.
 
       uint32_t           account_index;    // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices;  // (Optional) Transfer from this set of subaddresses. (Defaults to 0)
@@ -2360,12 +2360,12 @@ If signing is performed externally then you must first encrypt the `value` (if b
 R"(Generate the signature necessary for updating the requested record using the wallet's active [sub]address's spend key. The signature is only valid if the queried wallet is one of the owners of the BNS record.
 
 This command is only required if the open wallet is one of the owners of a BNS record but wants the update transaction to occur via another non-owning wallet. By default, if no signature is specified to the update transaction, the open wallet is assumed the owner and it's active [sub]address's spend key will automatically be used.)";
-
+    
+    //TODO bns-rework add value as a argument in the future when updating value with the signature.
     struct request
     {
       std::string type;  // The mapping type, currently we support "bchat", "belnet" and "wallet" mappings.
       std::string name;  // The desired name to update via Beldex Name Service
-      std::string encrypted_value; // (Optional): The new encrypted value that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged.
       std::string owner;     // (Optional): The new owner of the mapping. If not specified or given the empty string "", then the mapping's owner remains unchanged.
       std::string backup_owner; // (Optional): The new backup owner of the mapping. If not specified or given the empty string "", then the mapping's backup owner remains unchanged.
       uint32_t account_index; // (Optional) Use this wallet's subaddress account for generating the signature
@@ -2417,12 +2417,12 @@ This command is only required if the open wallet is one of the owners of a BNS r
       std::string name;                          // The plaintext name
       std::string owner;                         // The public key that purchased the Beldex Name Service entry.
       std::optional<std::string> backup_owner;   // The backup public key or wallet that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.
-      std::string encrypted_value_bchat;               // The encrypted value that the name maps to, in hex.
-      std::string encrypted_value_wallet;               // The encrypted value that the name maps to, in hex.
-      std::string encrypted_value_belnet;               // The encrypted value that the name maps to, in hex.
-      std::optional<std::string> value_bchat;          // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
-      std::optional<std::string> value_wallet;          // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
-      std::optional<std::string> value_belnet;          // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
+      std::string encrypted_bchat_value;         // The encrypted value of bchat that the name maps to, in hex.
+      std::string encrypted_wallet_value;        // The encrypted value of wallet that the name maps to, in hex.
+      std::string encrypted_belnet_value;        // The encrypted value of belnet that the name maps to, in hex.
+      std::optional<std::string> value_bchat;    // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
+      std::optional<std::string> value_wallet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
+      std::optional<std::string> value_belnet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       uint64_t update_height;                    // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
       std::optional<bool> expired;               // Indicates whether the record has expired. Only included in the response if "include_expired" is specified in the request.

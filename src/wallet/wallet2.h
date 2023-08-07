@@ -1409,7 +1409,7 @@ private:
     std::vector<pending_tx> bns_create_renewal_tx(bns::mapping_type type,bns::mapping_years map_years, std::string name, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
 
     // Generate just the signature required for putting into bns_update_mapping command in the wallet
-    bool bns_make_update_mapping_signature(bns::mapping_type type, std::string name, std::string const *value, std::string const *owner, std::string const *backup_owner, bns::generic_signature &signature, uint32_t account_index = 0, std::string *reason = nullptr);
+    bool bns_make_update_mapping_signature(bns::mapping_type type, std::string name, std::string const *value_bchat, std::string const *value_wallet, std::string const *value_belnet, std::string const *owner, std::string const *backup_owner, bns::generic_signature &signature, uint32_t account_index = 0, std::string *reason = nullptr);
 
     void freeze(size_t idx);
     void thaw(size_t idx);

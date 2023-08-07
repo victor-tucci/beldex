@@ -8,9 +8,9 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     bns::mapping_type type,
     bns::mapping_years mapping_years,
     const crypto::hash& name_hash,
-    const std::string& encrypted_value,
-    const std::string& encrypted_value_wallet,
-    const std::string& encrypted_value_belnet,
+    const std::string& encrypted_bchat_value,
+    const std::string& encrypted_wallet_value,
+    const std::string& encrypted_belnet_value,
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
@@ -26,22 +26,22 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
   result.mapping_years = mapping_years;
   result.name_hash = name_hash;
   
-  if (encrypted_value.size())
+  if (encrypted_bchat_value.size())
   {
-    result.fields |= bns::extra_field::encrypted_value;
-    result.encrypted_value = encrypted_value;
+    result.fields |= bns::extra_field::encrypted_bchat_value;
+    result.encrypted_bchat_value = encrypted_bchat_value;
   }
   
-  if (encrypted_value_wallet.size())
+  if (encrypted_wallet_value.size())
   {
-    result.fields |= bns::extra_field::encrypted_value_wallet;
-    result.encrypted_value_wallet = encrypted_value_wallet;
+    result.fields |= bns::extra_field::encrypted_wallet_value;
+    result.encrypted_wallet_value = encrypted_wallet_value;
   }
   
-  if (encrypted_value_belnet.size())
+  if (encrypted_belnet_value.size())
   {
-    result.fields |= bns::extra_field::encrypted_value_belnet;
-    result.encrypted_value_belnet = encrypted_value_belnet;
+    result.fields |= bns::extra_field::encrypted_belnet_value;
+    result.encrypted_belnet_value = encrypted_belnet_value;
   }
 
   result.prev_txid = prev_txid;
@@ -66,9 +66,9 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     const bns::generic_signature& signature,
     bns::mapping_type type,
     const crypto::hash& name_hash,
-    std::string_view encrypted_value,
-    std::string_view encrypted_value_wallet,
-    std::string_view encrypted_value_belnet,
+    std::string_view encrypted_bchat_value,
+    std::string_view encrypted_wallet_value,
+    std::string_view encrypted_belnet_value,
     const bns::generic_owner* owner,
     const bns::generic_owner* backup_owner,
     const crypto::hash& prev_txid)
@@ -79,22 +79,22 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
   result.name_hash = name_hash;
   result.fields |= bns::extra_field::signature;
 
-  if (encrypted_value.size())
+  if (encrypted_bchat_value.size())
   {
-    result.fields |= bns::extra_field::encrypted_value;
-    result.encrypted_value = std::string{encrypted_value};
+    result.fields |= bns::extra_field::encrypted_bchat_value;
+    result.encrypted_bchat_value = std::string{encrypted_bchat_value};
   }
 
-  if (encrypted_value_wallet.size())
+  if (encrypted_wallet_value.size())
   {
-    result.fields |= bns::extra_field::encrypted_value_wallet;
-    result.encrypted_value_wallet = std::string{encrypted_value_wallet};
+    result.fields |= bns::extra_field::encrypted_wallet_value;
+    result.encrypted_wallet_value = std::string{encrypted_wallet_value};
   }
   
-  if (encrypted_value_belnet.size())
+  if (encrypted_belnet_value.size())
   {
-    result.fields |= bns::extra_field::encrypted_value_belnet;
-    result.encrypted_value_belnet = std::string{encrypted_value_belnet};
+    result.fields |= bns::extra_field::encrypted_belnet_value;
+    result.encrypted_belnet_value = std::string{encrypted_belnet_value};
   }
 
   if (owner)

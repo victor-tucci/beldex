@@ -3059,7 +3059,7 @@ namespace {
                                                                                       req.owner.size() ? &req.owner : nullptr,
                                                                                       req.backup_owner.size() ? &req.backup_owner : nullptr,
                                                                                       req.name,
-                                                                                      req.value.size() ? &req.value : nullptr,
+                                                                                      req.value_bchat.size() ? &req.value_bchat : nullptr,
                                                                                       req.value_wallet.size() ? &req.value_wallet : nullptr,
                                                                                       req.value_belnet.size() ? &req.value_belnet : nullptr,
                                                                                       &reason,
@@ -3139,7 +3139,7 @@ namespace {
     std::vector<wallet2::pending_tx> ptx_vector =
         m_wallet->bns_create_update_mapping_tx(bns::mapping_type::bchat,
                                                req.name,
-                                               req.value.empty()        ? nullptr : &req.value,
+                                               req.value_bchat.empty()  ? nullptr : &req.value_bchat,
                                                req.value_wallet.empty() ? nullptr : &req.value_wallet,
                                                req.value_belnet.empty() ? nullptr : &req.value_belnet,
                                                req.owner.empty()        ? nullptr : &req.owner,
@@ -3190,7 +3190,9 @@ namespace {
 
     if (!m_wallet->bns_make_update_mapping_signature(bns::mapping_type::bchat,
                                                      req.name,
-                                                     req.encrypted_value.size() ? &req.encrypted_value : nullptr,
+                                                     nullptr,
+                                                     nullptr,
+                                                     nullptr,
                                                      req.owner.size() ? &req.owner : nullptr,
                                                      req.backup_owner.size() ? &req.backup_owner : nullptr,
                                                      signature,
@@ -3271,9 +3273,9 @@ namespace {
           auto& res_e = *(it + rec.entry_index);
           res_e.owner = std::move(rec.owner);
           res_e.backup_owner = std::move(rec.backup_owner);
-          res_e.encrypted_value_bchat = std::move(rec.encrypted_value);
-          res_e.encrypted_value_wallet = std::move(rec.encrypted_value_wallet);
-          res_e.encrypted_value_belnet = std::move(rec.encrypted_value_belnet);
+          res_e.encrypted_bchat_value = std::move(rec.encrypted_bchat_value);
+          res_e.encrypted_wallet_value = std::move(rec.encrypted_wallet_value);
+          res_e.encrypted_belnet_value = std::move(rec.encrypted_belnet_value);
           res_e.update_height = rec.update_height;
           res_e.expiration_height = rec.expiration_height;
           if (req.include_expired && res_e.expiration_height)
@@ -3281,12 +3283,12 @@ namespace {
           res_e.txid = std::move(rec.txid);
 
           //BCHAT
-          if (req.decrypt && !res_e.encrypted_value_bchat.empty() && oxenc::is_hex(res_e.encrypted_value_bchat))
+          if (req.decrypt && !res_e.encrypted_bchat_value.empty() && oxenc::is_hex(res_e.encrypted_bchat_value))
           {
             bns::mapping_value value;
             const auto type = bns::mapping_type::bchat;
             std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_value_bchat), &value, &errmsg)
+            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_bchat_value), &value, &errmsg)
                 && value.decrypt(res_e.name, type))
               res_e.value_bchat = value.to_readable_value(nettype, type);
             else
@@ -3294,12 +3296,12 @@ namespace {
           }
 
           //WALLET
-          if (req.decrypt && !res_e.encrypted_value_wallet.empty() && oxenc::is_hex(res_e.encrypted_value_wallet))
+          if (req.decrypt && !res_e.encrypted_wallet_value.empty() && oxenc::is_hex(res_e.encrypted_wallet_value))
           {
             bns::mapping_value value;
             const auto type = bns::mapping_type::wallet;
             std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_value_wallet), &value, &errmsg)
+            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_wallet_value), &value, &errmsg)
                 && value.decrypt(res_e.name, type))
               res_e.value_wallet = value.to_readable_value(nettype, type);
             else
@@ -3307,12 +3309,12 @@ namespace {
           }
 
           //BELNET
-          if (req.decrypt && !res_e.encrypted_value_belnet.empty() && oxenc::is_hex(res_e.encrypted_value_belnet))
+          if (req.decrypt && !res_e.encrypted_belnet_value.empty() && oxenc::is_hex(res_e.encrypted_belnet_value))
           {
             bns::mapping_value value;
             const auto type = bns::mapping_type::belnet;
             std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_value_belnet), &value, &errmsg)
+            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_belnet_value), &value, &errmsg)
                 && value.decrypt(res_e.name, type))
               res_e.value_belnet = value.to_readable_value(nettype, type);
             else
@@ -3413,7 +3415,6 @@ namespace {
   BNS_ENCRYPT_VALUE::response wallet_rpc_server::invoke(BNS_ENCRYPT_VALUE::request&& req)
   {
     require_open();
-
     if (req.value.size() > bns::mapping_value::BUFFER_SIZE)
       throw wallet_rpc_error{error_code::BNS_VALUE_TOO_LONG, "BNS value '" + req.value + "' is too long"};
 
