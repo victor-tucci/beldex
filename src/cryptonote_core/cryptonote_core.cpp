@@ -37,7 +37,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <iomanip>
-#include <oxenmq/base32z.h>
+#include <oxenc/base32z.h>
 
 extern "C" {
 #include <sodium.h>
@@ -56,12 +56,10 @@ extern "C" {
 #include "common/command_line.h"
 #include "common/hex.h"
 #include "common/base58.h"
-#include "common/dns_utils.h"
 #include "epee/warnings.h"
 #include "crypto/crypto.h"
 #include "cryptonote_config.h"
 #include "cryptonote_basic/hardfork.h"
-#include "epee/misc_language.h"
 #include <csignal>
 #include "checkpoints/checkpoints.h"
 #include "ringct/rctTypes.h"
@@ -234,16 +232,6 @@ namespace cryptonote
     "replaced by the number of new blocks in the new chain"
   , ""
   };
-  static const command_line::arg_descriptor<std::string> arg_block_rate_notify = {
-    "block-rate-notify"
-  , "Run a program when the block rate undergoes large fluctuations. This might "
-    "be a sign of large amounts of hash rate going on and off the Beldex network, "
-    "or could be a sign that beldexd is not properly synchronizing with the network. %t will be replaced "
-    "by the number of minutes for the observation window, %b by the number of "
-    "blocks observed within that window, and %e by the number of blocks that was "
-    "expected in that window."
-  , ""
-  };
   static const command_line::arg_descriptor<bool> arg_keep_alt_blocks  = {
     "keep-alt-blocks"
   , "Keep alternative blocks on restart"
@@ -359,7 +347,6 @@ namespace cryptonote
     command_line::add_arg(desc, arg_prune_blockchain);
 #endif
     command_line::add_arg(desc, arg_reorg_notify);
-    command_line::add_arg(desc, arg_block_rate_notify);
     command_line::add_arg(desc, arg_keep_alt_blocks);
 
     command_line::add_arg(desc, arg_store_quorum_history);
@@ -763,20 +750,21 @@ namespace cryptonote
     m_blockchain_storage.set_user_options(blocks_threads,
         sync_on_blocks, sync_threshold, sync_mode, fast_sync);
 
-    try
-    {
-      if (!command_line::is_arg_defaulted(vm, arg_block_notify))
-        m_blockchain_storage.set_block_notify(std::shared_ptr<tools::Notify>(new tools::Notify(command_line::get_arg(vm, arg_block_notify).c_str())));
-    }
-    catch (const std::exception &e)
-    {
-      MERROR("Failed to parse block notify spec");
-    }
+    // We need this hook to get added before the block hook below, so that it fires first and
+    // catches the start of a reorg before the block hook fires for the block in the reorg.
 
     try
     {
       if (!command_line::is_arg_defaulted(vm, arg_reorg_notify))
-        m_blockchain_storage.set_reorg_notify(std::shared_ptr<tools::Notify>(new tools::Notify(command_line::get_arg(vm, arg_reorg_notify).c_str())));
+      m_blockchain_storage.hook_block_post_add([this, notify=tools::Notify(command_line::get_arg(vm, arg_reorg_notify))](const auto& info) {
+              if (!info.reorg)
+                return;
+              auto h = get_current_blockchain_height();
+              notify.notify(
+                  "%s", info.split_height,
+                  "%h", h,
+                  "%n", h - info.split_height);
+            });
     }
     catch (const std::exception &e)
     {
@@ -785,12 +773,16 @@ namespace cryptonote
 
     try
     {
-      if (!command_line::is_arg_defaulted(vm, arg_block_rate_notify))
-        m_block_rate_notify.reset(new tools::Notify(command_line::get_arg(vm, arg_block_rate_notify).c_str()));
+      if (!command_line::is_arg_defaulted(vm, arg_block_notify))
+        m_blockchain_storage.hook_block_post_add(
+            [notify=tools::Notify(command_line::get_arg(vm, arg_block_notify))]
+            (const auto& info) {
+              notify.notify("%s", tools::type_to_hex(get_block_hash(info.block)));
+            });
     }
     catch (const std::exception &e)
     {
-      MERROR("Failed to parse block rate notify spec");
+      MERROR("Failed to parse block notify spec");
     }
 
 
@@ -803,20 +795,19 @@ namespace cryptonote
     }
 
     // Master Nodes
-    {
-      m_master_node_list.set_quorum_history_storage(command_line::get_arg(vm, arg_store_quorum_history));
+    m_master_node_list.set_quorum_history_storage(command_line::get_arg(vm, arg_store_quorum_history));
 
-      // NOTE: Implicit dependency. Master node list needs to be hooked before checkpoints.
-      m_blockchain_storage.hook_blockchain_detached(m_master_node_list);
-      m_blockchain_storage.hook_init(m_master_node_list);
-      m_blockchain_storage.hook_validate_miner_tx(m_master_node_list);
-      m_blockchain_storage.hook_alt_block_added(m_master_node_list);
+    // NOTE: Implicit dependency. Master node list needs to be hooked before checkpoints.
+    m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_master_node_list.blockchain_detached(info.height);});
+    m_blockchain_storage.hook_init([this] { m_master_node_list.init(); });
+    m_blockchain_storage.hook_validate_miner_tx([this] (const auto& info) { m_master_node_list.validate_miner_tx(info);});
+    m_blockchain_storage.hook_alt_block_add([this] (const auto& info) { m_master_node_list.alt_block_add(info);});
 
-      // NOTE: There is an implicit dependency on master node lists being hooked first!
-      m_blockchain_storage.hook_init(m_quorum_cop);
-      m_blockchain_storage.hook_block_added(m_quorum_cop);
-      m_blockchain_storage.hook_blockchain_detached(m_quorum_cop);
-    }
+    // NOTE: There is an implicit dependency on master node lists being hooked first!
+    m_blockchain_storage.hook_init([this] { m_quorum_cop.init(); });
+    m_blockchain_storage.hook_block_add([this] (const auto& info) { m_quorum_cop.block_add(info.block, info.txs); });
+    m_blockchain_storage.hook_block_post_add([this] (const auto&) { update_omq_mns(); });
+    m_blockchain_storage.hook_blockchain_detached([this] (const auto& info) { m_quorum_cop.blockchain_detached(info.height, info.by_pop_blocks); });
 
     // Checkpoints
     m_checkpoints_path = m_config_folder / fs::u8path(JSON_HASH_FILE_NAME);
@@ -980,7 +971,7 @@ namespace cryptonote
       MGINFO_YELLOW("- primary: " << tools::type_to_hex(keys.pub));
       MGINFO_YELLOW("- ed25519: " << tools::type_to_hex(keys.pub_ed25519));
       // .mnode address is the ed25519 pubkey, encoded with base32z and with .mnode appended:
-      MGINFO_YELLOW("- belnet: " << oxenmq::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
+      MGINFO_YELLOW("- belnet: " << oxenc::to_base32z(tools::view_guts(keys.pub_ed25519)) << ".mnode");
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
@@ -1158,7 +1149,13 @@ namespace cryptonote
       tx_info.tvc.m_too_big = true;
       return;
     }
-
+    else if (tx_info.blob->empty())
+    {
+      LOG_PRINT_L1("WRONG TRANSACTION BLOB, blob is empty, rejected");
+      tx_info.tvc.m_verifivation_failed = true;
+      return;
+    }
+    
     tx_info.parsed = parse_and_validate_tx_from_blob(*tx_info.blob, tx_info.tx, tx_info.tx_hash);
     if(!tx_info.parsed)
     {
@@ -1351,7 +1348,6 @@ namespace cryptonote
     //auto lock = incoming_tx_lock();
     uint8_t version      = m_blockchain_storage.get_network_version();
     bool ok              = true;
-    bool tx_pool_changed = false;
     if (flash_rollback_height)
       *flash_rollback_height = 0;
     tx_pool_options tx_opts;
@@ -1378,7 +1374,6 @@ namespace cryptonote
       }
       if (m_mempool.add_tx(info.tx, info.tx_hash, *info.blob, weight, info.tvc, *local_opts, version, flash_rollback_height))
       {
-        tx_pool_changed |= info.tvc.m_added_to_pool;
         MDEBUG("tx added: " << info.tx_hash);
       }
       else
@@ -1740,13 +1735,13 @@ namespace cryptonote
     return m_mempool.check_for_key_images(key_im, spent);
   }
   //-----------------------------------------------------------------------------------------------
-  std::optional<std::tuple<uint64_t, uint64_t, uint64_t>> core::get_coinbase_tx_sum(uint64_t start_offset, size_t count)
+  std::optional<std::tuple<int64_t, int64_t, int64_t>> core::get_coinbase_tx_sum(uint64_t start_offset, size_t count)
   {
-    std::tuple<uint64_t, uint64_t, uint64_t> result{0, 0, 0};
+    std::optional<std::tuple<int64_t, int64_t, int64_t>> result{{0, 0, 0}};
     if (count == 0)
       return result;
 
-    auto& [emission_amount, total_fee_amount, burnt_beldex] = result;
+    auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
 
     // Caching.
     //
@@ -1817,18 +1812,18 @@ namespace cryptonote
     const uint64_t end = start_offset + count - 1;
     m_blockchain_storage.for_blocks_range(start_offset, end,
       [this, &cache_to, &result, &cache_build_started](uint64_t height, const crypto::hash& hash, const block& b){
-      auto& [emission_amount, total_fee_amount, burnt_beldex] = result;
+      auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
       std::vector<transaction> txs;
       std::vector<crypto::hash> missed_txs;
-      uint64_t coinbase_amount = get_outs_money_amount(b.miner_tx);
+      auto coinbase_amount = static_cast<int64_t>(get_outs_money_amount(b.miner_tx));
       get_transactions(b.tx_hashes, txs, missed_txs);
-      uint64_t tx_fee_amount = 0;
+      int64_t tx_fee_amount = 0;
       for(const auto& tx: txs)
       {
-        tx_fee_amount += get_tx_miner_fee(tx, b.major_version >= HF_VERSION_FEE_BURNING);
+        tx_fee_amount += static_cast<int64_t>(get_tx_miner_fee(tx, b.major_version >= HF_VERSION_FEE_BURNING));
         if(b.major_version >= HF_VERSION_FEE_BURNING)
         {
-          burnt_beldex += get_burned_amount_from_tx_extra(tx.extra);
+          burnt_beldex += static_cast<int64_t>(get_burned_amount_from_tx_extra(tx.extra));
         }
       }
 
@@ -2516,14 +2511,6 @@ bool core::handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof
       if (p < threshold)
       {
         MTRACE("There were " << b << (b == max_blocks_checked ? " or more" : "") << " blocks in the last " << seconds[n] / 60 << " minutes");
-
-        std::shared_ptr<tools::Notify> block_rate_notify = m_block_rate_notify;
-        if (block_rate_notify)
-        {
-          auto expected = seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
-          block_rate_notify->notify("%t", std::to_string(seconds[n] / 60).c_str(), "%b", std::to_string(b).c_str(), "%e", std::to_string(expected).c_str(), NULL);
-        }
-
         break; // no need to look further
       }
     }

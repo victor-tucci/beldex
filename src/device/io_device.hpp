@@ -1,4 +1,4 @@
-// Copyright (c) 2018, The Monero Project
+// Copyright (c) 2017-2019, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -25,21 +25,29 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+
+
+
 
 #pragma once
 
-namespace epee
-{
 
-namespace fnv
-{
-  inline uint64_t FNV1a(const char *ptr, size_t sz)
-  {
-    uint64_t h = 0xcbf29ce484222325;
-    for (size_t i = 0; i < sz; ++i)
-      h = (h ^ *(const uint8_t*)ptr++) * 0x100000001b3;
-    return h;
-  }
-}
+namespace hw::io {
+
+  class device {
+
+  public:
+
+    virtual ~device() = default;
+
+    virtual void init()  = 0;
+    virtual void release() = 0;
+
+    virtual void disconnect() = 0;
+    virtual bool connected() const = 0;
+
+    virtual int  exchange(const unsigned char *command, unsigned int cmd_len, unsigned char *response, unsigned int max_resp_len, bool user_input) = 0;
+  };
 
 }

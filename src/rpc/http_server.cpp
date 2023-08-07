@@ -2,7 +2,7 @@
 #include "http_server.h"
 #include <chrono>
 #include <exception>
-#include <oxenmq/base64.h>
+#include <oxenc/base64.h>
 #include <boost/endian/conversion.hpp>
 #include <oxenmq/variant.h>
 #include "common/command_line.h"

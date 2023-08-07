@@ -1617,9 +1617,9 @@ namespace rpc {
     struct response
     {
       std::string status;       // General RPC error code. "OK" means everything looks good.
-      uint64_t emission_amount; // Amount of coinbase reward in atomic units.
-      uint64_t fee_amount;      // Amount of fees in atomic units.
-      uint64_t burn_amount;      // Amount of burnt beldex.
+      int64_t emission_amount; // Amount of coinbase reward in atomic units.
+      int64_t fee_amount;      // Amount of fees in atomic units.
+      int64_t burn_amount;      // Amount of burnt beldex.
 
       KV_MAP_SERIALIZABLE
     };
@@ -2189,6 +2189,7 @@ namespace rpc {
       std::array<uint16_t, 3> version; // Storage server version
       uint16_t https_port; // Storage server https port to include in uptime proofs
       uint16_t omq_port; // Storage Server oxenmq port to include in uptime proofs
+      std::string pubkey_ed25519; // Master node Ed25519 pubkey for verifying that storage server is using the right one
       KV_MAP_SERIALIZABLE
     };
 
@@ -2203,6 +2204,7 @@ namespace rpc {
     struct request
     {
       std::array<uint16_t, 3> version; // Belnet version
+      std::string pubkey_ed25519; // Master node Ed25519 pubkey for verifying that belnet is using the right one
       KV_MAP_SERIALIZABLE
     };
 

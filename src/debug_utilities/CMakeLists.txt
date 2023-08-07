@@ -48,17 +48,3 @@ target_link_libraries(object_sizes
     cpr::cpr
     extra
     )
-
-set(dns_checks_sources
-  dns_checks.cpp
-  )
-
-beldex_add_executable(dns_checks "beldex-utils-dns-checks" dns_checks.cpp)
-
-target_link_libraries(dns_checks
-    PRIVATE
-    common
-    epee
-    version
-    Boost::program_options
-    Boost::thread)

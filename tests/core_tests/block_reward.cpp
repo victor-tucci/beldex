@@ -42,7 +42,7 @@ namespace
     const account_public_address& miner_address, std::vector<uint64_t>& block_weights, size_t target_tx_weight,
     size_t target_block_weight, uint64_t fee = 0)
   {
-    if (!construct_miner_tx(height, misc_utils::median(block_weights), already_generated_coins, target_block_weight, fee, miner_tx, cryptonote::beldex_miner_tx_context::miner_block(cryptonote::FAKECHAIN, miner_address)))
+    if (!construct_miner_tx(height, tools::median(block_weights.begin(), block_weights.end()), already_generated_coins, target_block_weight, fee, miner_tx, cryptonote::beldex_miner_tx_context::miner_block(cryptonote::FAKECHAIN, miner_address)))
       return false;
 
     size_t current_weight = get_transaction_weight(miner_tx);
@@ -79,7 +79,7 @@ namespace
     std::vector<uint64_t> block_weights;
     generator.get_last_n_block_weights(block_weights, get_block_hash(blk_prev), median_block_count);
 
-    size_t median = misc_utils::median(block_weights);
+    size_t median = tools::median(block_weights.begin(), block_weights.end());
     median = std::max(median, static_cast<size_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1));
 
     transaction miner_tx;
@@ -194,7 +194,7 @@ bool gen_block_reward::generate(std::vector<test_event_entry>& events) const
 
     std::vector<uint64_t> block_weights;
     generator.get_last_n_block_weights(block_weights, get_block_hash(blk_7), CRYPTONOTE_REWARD_BLOCKS_WINDOW);
-    size_t median = misc_utils::median(block_weights);
+    size_t median = tools::median(block_weights.begin(), block_weights.end());
 
     transaction miner_tx;
     bool r = construct_miner_tx_by_weight(miner_tx, get_block_height(blk_7) + 1, generator.get_already_generated_coins(blk_7),

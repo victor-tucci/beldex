@@ -28,6 +28,7 @@
 
 #include "common/command_line.h"
 #include "common/varint.h"
+#include "common/median.h"
 #include "cryptonote_core/cryptonote_core.h"
 #include "blockchain_objects.h"
 #include "blockchain_db/blockchain_db.h"
@@ -305,7 +306,7 @@ done:
   for (uint64_t depth: depths)
     cumulative_depth += depth;
   LOG_PRINT_L0("Average min depth for " << start_txids.size() << " transaction(s): " << cumulative_depth/(float)depths.size());
-  LOG_PRINT_L0("Median min depth for " << start_txids.size() << " transaction(s): " << epee::misc_utils::median(depths));
+  LOG_PRINT_L0("Median min depth for " << start_txids.size() << " transaction(s): " << tools::median(std::move(depths)));
 
   core_storage->deinit();
   return 0;

@@ -80,8 +80,17 @@ if (CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL GNU)
     if(COMPILER_SUPPORTS_AES)
       set_source_files_properties(cn_heavy_hash_hard_intel.cpp PROPERTIES COMPILE_FLAGS "-maes -msse2")
       set_source_files_properties(cn_monero_slow_hash.c PROPERTIES COMPILE_FLAGS "-maes -msse2")
+      set_source_files_properties(cn_turtle_hash.c PROPERTIES COMPILE_FLAGS "-maes -msse2")
     endif()
   endif()
+endif()
+
+# GCC 11 LTO and cn_turtle_hash have some serious disagreements; disable LTO for it.
+if(IPO_ENABLED AND (CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo)
+    AND CMAKE_C_COMPILER_ID STREQUAL GNU
+    AND CMAKE_C_COMPILER_VERSION VERSION_GREATER 11 AND CMAKE_C_COMPILER_VERSION VERSION_LESS 12)
+  message(STATUS "GCC-11 detected; disabling LTO for cncrypto")
+  set_target_properties(cncrypto PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
 endif()
 
 if (ARCH STREQUAL "armv8-a" AND (CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL GNU))

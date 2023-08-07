@@ -16,9 +16,9 @@
 #include "cryptonote_core/blockchain.h"
 #include "beldex_economy.h"
 
-#include <oxenmq/hex.h>
-#include <oxenmq/base32z.h>
-#include <oxenmq/base64.h>
+#include <oxenc/hex.h>
+#include <oxenc/base32z.h>
+#include <oxenc/base64.h>
 
 #include <sqlite3.h>
 
@@ -109,17 +109,17 @@ std::string bns::mapping_value::to_readable_value(cryptonote::network_type netty
   std::string result;
   if (is_belnet_type(type))
   {
-    result = oxenmq::to_base32z(to_view()) + ".bdx";
+    result = oxenc::to_base32z(to_view()) + ".bdx";
   } else if (type == bns::mapping_type::wallet) {
     std::optional<cryptonote::address_parse_info> addr = get_wallet_address_info();
     if(addr)
     {
       result = cryptonote::get_account_address_as_str(nettype, (*addr).is_subaddress, (*addr).address);
     } else {
-      result = oxenmq::to_hex(to_view());
+      result = oxenc::to_hex(to_view());
     }
   } else {
-    result = oxenmq::to_hex(to_view());
+    result = oxenc::to_hex(to_view());
   }
 
   return result;
@@ -707,9 +707,9 @@ bool parse_owner_to_generic_owner(cryptonote::network_type nettype, std::string_
   {
     result = bns::make_monero_owner(parsed_addr.address, parsed_addr.is_subaddress);
   }
-  else if (owner.size() == 2*sizeof(ed_owner.data) && oxenmq::is_hex(owner))
+  else if (owner.size() == 2*sizeof(ed_owner.data) && oxenc::is_hex(owner))
   {
-    oxenmq::from_hex(owner.begin(), owner.end(), ed_owner.data);
+    oxenc::from_hex(owner.begin(), owner.end(), ed_owner.data);
     result = bns::make_ed25519_owner(ed_owner);
   }
   else
@@ -864,7 +864,7 @@ bool validate_bns_name(mapping_type type, std::string name, std::string *reason)
 std::optional<cryptonote::address_parse_info> encrypted_wallet_value_to_info(std::string name, std::string encrypted_value, std::string nonce)
 {
   std::string lower_name = tools::lowercase_ascii_string(std::move(name));
-  mapping_value record(oxenmq::from_hex(encrypted_value), oxenmq::from_hex(nonce));
+  mapping_value record(oxenc::from_hex(encrypted_value), oxenc::from_hex(nonce));
   record.decrypt(lower_name, mapping_type::wallet);
   return record.get_wallet_address_info();
 }
@@ -884,7 +884,7 @@ static bool check_lengths(mapping_type type, std::string_view value, size_t max,
     {
       std::stringstream err_stream;
       err_stream << "BNS type=" << type << ", specifies mapping from name_hash->encrypted_value where the value's length=" << value.size() << ", does not equal the required length=" << max << ", given value=";
-      if (binary_val) err_stream << oxenmq::to_hex(value);
+      if (binary_val) err_stream << oxenc::to_hex(value);
       else            err_stream << value;
       *reason = err_stream.str();
     }
@@ -950,14 +950,14 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
     // We need a 52 char base32z string that decodes to a 32-byte value, which really means we need
     // 51 base32z chars (=255 bits) followed by a 1-bit value ('y'=0, or 'o'=0b10000); anything else
     // in the last spot isn't a valid belnet address.
-    if (check_condition(value.size() != 56 || !tools::ends_with(value, ".bdx") || !oxenmq::is_base32z(value.substr(0, 52)) || !(value[51] == 'y' || value[51] == 'o'),
+    if (check_condition(value.size() != 56 || !tools::ends_with(value, ".bdx") || !oxenc::is_base32z(value.substr(0, 52)) || !(value[51] == 'y' || value[51] == 'o'),
                 reason, "'", value, "' is not a valid belnet address"))
       return false;
 
     if (blob)
     {
       blob->len = sizeof(crypto::ed25519_public_key);
-      oxenmq::from_base32z(value.begin(), value.begin() + 52, blob->buffer.begin());
+      oxenc::from_base32z(value.begin(), value.begin() + 52, blob->buffer.begin());
     }
   }
   else
@@ -967,7 +967,7 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
     if (check_condition(value.size() != 2*BCHAT_PUBLIC_KEY_BINARY_LENGTH, reason, "The value=", value, " is not the required ", 2*BCHAT_PUBLIC_KEY_BINARY_LENGTH, "-character hex string bchat public key, length=", value.size()))
       return false;
 
-    if (check_condition(!oxenmq::is_hex(value), reason, ", specifies name -> value mapping where the value is not a hex string given value="))
+    if (check_condition(!oxenc::is_hex(value), reason, ", specifies name -> value mapping where the value is not a hex string given value="))
       return false;
 
     // NOTE: Bchat public keys are 33 bytes, with the first byte being 0xbd and the remaining 32 being the public key.
@@ -978,7 +978,7 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
     {
       blob->len = value.size() / 2;
       assert(blob->len <= blob->buffer.size());
-      oxenmq::from_hex(value.begin(), value.end(), blob->buffer.begin());
+      oxenc::from_hex(value.begin(), value.end(), blob->buffer.begin());
 
     }
   }
@@ -1048,17 +1048,17 @@ std::string name_hash_bytes_to_base64(std::string_view bytes)
 {
   if (bytes.size() != NAME_HASH_SIZE)
     throw std::runtime_error{"Invalid name hash: expected exactly 32 bytes"};
-  return oxenmq::to_base64(bytes);
+  return oxenc::to_base64(bytes);
 }
 
 std::optional<std::string> name_hash_input_to_base64(std::string_view input)
 {
   if (input.size() == NAME_HASH_SIZE)
     return name_hash_bytes_to_base64(input);
-  if (input.size() == 2*NAME_HASH_SIZE && oxenmq::is_hex(input))
-    return name_hash_bytes_to_base64(oxenmq::from_hex(input));
-  if (input.size() >= NAME_HASH_SIZE_B64_MIN && input.size() <= NAME_HASH_SIZE_B64_MAX && oxenmq::is_base64(input)) {
-    std::string tmp = oxenmq::from_base64(input);
+  if (input.size() == 2*NAME_HASH_SIZE && oxenc::is_hex(input))
+    return name_hash_bytes_to_base64(oxenc::from_hex(input));
+  if (input.size() >= NAME_HASH_SIZE_B64_MIN && input.size() <= NAME_HASH_SIZE_B64_MAX && oxenc::is_base64(input)) {
+    std::string tmp = oxenc::from_base64(input);
     if (tmp.size() == NAME_HASH_SIZE) // Could still be off from too much/too little padding
       return name_hash_bytes_to_base64(tmp);
   }
@@ -1536,7 +1536,7 @@ std::optional<cryptonote::address_parse_info> mapping_value::get_wallet_address_
   assert(!encrypted);
   if (encrypted) return std::nullopt;
 
-  cryptonote::address_parse_info addr_info{0};
+  cryptonote::address_parse_info addr_info{};
   auto* bufpos = &buffer[1];
   std::memcpy(&addr_info.address.m_spend_public_key.data, bufpos, 32);
   bufpos += 32;
@@ -2267,7 +2267,7 @@ bool name_system_db::get_wallet_mapping(std::string str, uint64_t blockchain_hei
 
 mapping_record name_system_db::get_mapping(mapping_type type, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height)
 {
-  assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenmq::is_base64(name_base64_hash));
+  assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenc::is_base64(name_base64_hash));
   mapping_record result = {};
   result.loaded         = bind_and_run(bns_sql_type::get_mapping, get_mapping_sql, &result,
       db_mapping_type(type), name_base64_hash);
@@ -2278,7 +2278,7 @@ mapping_record name_system_db::get_mapping(mapping_type type, std::string_view n
 
 std::optional<mapping_value> name_system_db::resolve(mapping_type type, std::string_view name_hash_b64, uint64_t blockchain_height)
 {
-  assert(name_hash_b64.size() == 44 && name_hash_b64.back() == '=' && oxenmq::is_base64(name_hash_b64));
+  assert(name_hash_b64.size() == 44 && name_hash_b64.back() == '=' && oxenc::is_base64(name_hash_b64));
   std::optional<mapping_value> result;
   bind_all(resolve_sql, db_mapping_type(type), name_hash_b64, blockchain_height);
   if (step(resolve_sql) == SQLITE_ROW)
@@ -2299,7 +2299,7 @@ std::optional<mapping_value> name_system_db::resolve(mapping_type type, std::str
 
 std::vector<mapping_record> name_system_db::get_mappings(std::vector<mapping_type> const &types, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height)
 {
-  assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenmq::is_base64(name_base64_hash));
+  assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenc::is_base64(name_base64_hash));
   std::vector<mapping_record> result;
   if (types.empty())
     return result;

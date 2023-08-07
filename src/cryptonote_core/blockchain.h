@@ -46,6 +46,7 @@
 #include <boost/multi_index/member.hpp>
 #include <atomic>
 #include <functional>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -777,20 +778,6 @@ namespace cryptonote
         blockchain_db_sync_mode sync_mode, bool fast_sync);
 
     /**
-     * @brief sets a block notify object to call for every new block
-     *
-     * @param notify the notify object to call at every new block
-     */
-    void set_block_notify(const std::shared_ptr<tools::Notify> &notify) { m_block_notify = notify; }
-
-    /**
-     * @brief sets a reorg notify object to call for every reorg
-     *
-     * @param notify the notify object to call at every reorg
-     */
-    void set_reorg_notify(const std::shared_ptr<tools::Notify> &notify) { m_reorg_notify = notify; }
-
-    /**
      * @brief Put DB in safe sync mode
      */
     void safesyncmode(const bool onoff);
@@ -976,15 +963,37 @@ namespace cryptonote
     void on_new_tx_from_block(const cryptonote::transaction &tx);
 
     /**
-     * @brief add a hook for processing new blocks and rollbacks for reorgs
-     *
-     * TODO: replace these with more versatile std::functions
+     * @brief add a hook called during new block handling; should throw to abort adding the block.
      */
-    void hook_block_added        (BlockAddedHook& hook)         { m_block_added_hooks.push_back(&hook); }
-    void hook_blockchain_detached(BlockchainDetachedHook& hook) { m_blockchain_detached_hooks.push_back(&hook); }
-    void hook_init               (InitHook& hook)               { m_init_hooks.push_back(&hook); }
-    void hook_validate_miner_tx  (ValidateMinerTxHook& hook)    { m_validate_miner_tx_hooks.push_back(&hook); }
-    void hook_alt_block_added    (AltBlockAddedHook& hook)      { m_alt_block_added_hooks.push_back(&hook); }
+    void hook_block_add        (BlockAddHook hook)         { m_block_add_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook to be called after a new block has been added to the (main) chain.  Unlike
+     * the above, this only fires after addition is complete and successful, while the above hook is
+     * part of the addition process.
+     */
+    void hook_block_post_add(BlockPostAddHook hook) { m_block_post_add_hooks.push_back(std::move(hook)); }
+
+    /**
+     * @brief add a hook called when blocks are removed from the chain.
+     */
+    void hook_blockchain_detached(BlockchainDetachedHook hook) { m_blockchain_detached_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook called during startup and re-initialization
+     */
+    void hook_init               (InitHook hook)               { m_init_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook to be called to validate miner txes; should throw if the miner tx is
+     * invalid.
+     */
+    void hook_validate_miner_tx  (ValidateMinerTxHook hook)    { m_validate_miner_tx_hooks.push_back(std::move(hook)); }
+    
+    /**
+     * @brief add a hook to be called when adding an alt-chain block; should throw to abort adding.
+     */
+    void hook_alt_block_add    (BlockAddHook hook)         { m_alt_block_add_hooks.push_back(std::move(hook)); }
 
     /**
      * @brief returns the timestamps of the last N blocks
@@ -1114,11 +1123,12 @@ namespace cryptonote
     // some invalid blocks
     std::set<crypto::hash> m_invalid_blocks;
 
-    std::vector<BlockAddedHook*> m_block_added_hooks;
-    std::vector<BlockchainDetachedHook*> m_blockchain_detached_hooks;
-    std::vector<InitHook*> m_init_hooks;
-    std::vector<ValidateMinerTxHook*> m_validate_miner_tx_hooks;
-    std::vector<AltBlockAddedHook*> m_alt_block_added_hooks;
+    std::vector<BlockAddHook> m_block_add_hooks;
+    std::vector<BlockPostAddHook> m_block_post_add_hooks;
+    std::vector<BlockchainDetachedHook> m_blockchain_detached_hooks;
+    std::vector<InitHook> m_init_hooks;
+    std::vector<ValidateMinerTxHook> m_validate_miner_tx_hooks;
+    std::vector<BlockAddHook> m_alt_block_add_hooks;
 
     checkpoints m_checkpoints;
 
@@ -1139,9 +1149,6 @@ namespace cryptonote
 
 
     bool m_batch_success;
-
-    std::shared_ptr<tools::Notify> m_block_notify;
-    std::shared_ptr<tools::Notify> m_reorg_notify;
 
     // for prepare_handle_incoming_blocks
     uint64_t m_prepare_height;
@@ -1249,7 +1256,7 @@ namespace cryptonote
      * @param bl the block to be added
      * @param id the hash of the block
      * @param bvc metadata concerning the block's validity
-     * @param notify if set to true, sends new block notification on success
+     * @param notify if set to true, fires post-add hooks on success
      *
      * @return true if the block was added successfully, otherwise false
      */
@@ -1415,8 +1422,8 @@ namespace cryptonote
      *
      * @return true if the block's timestamp is valid, otherwise false
      */
-    bool check_block_timestamp(std::vector<uint64_t>& timestamps, const block& b, uint64_t& median_ts) const;
-    bool check_block_timestamp(std::vector<uint64_t>& timestamps, const block& b) const { uint64_t median_ts; return check_block_timestamp(timestamps, b, median_ts); }
+    bool check_block_timestamp(std::vector<uint64_t> timestamps, const block& b, uint64_t& median_ts) const;
+    bool check_block_timestamp(std::vector<uint64_t> timestamps, const block& b) const { uint64_t median_ts; return check_block_timestamp(std::move(timestamps), b, median_ts); }
 
     /**
      * @brief get the "adjusted time"

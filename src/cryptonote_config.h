@@ -226,8 +226,8 @@ namespace config
   // Used to estimate the blockchain height from a timestamp, with some grace time.  This can drift
   // slightly over time (because average block time is not typically *exactly*
   // DIFFICULTY_TARGET_V2).
-  inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 582088;
-  inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1595359932;
+  inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 742421;
+  inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1639187815;
 
   inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 0xd1;
   inline constexpr uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 19;
@@ -505,7 +505,7 @@ namespace cryptonote
 }
 
 constexpr uint64_t BLOCKS_EXPECTED_IN_HOURS(int hours, uint8_t hf_version) { return (1h / (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)) * hours; }
-constexpr uint64_t BLOCKS_EXPECTED_IN_DAYS(int days, uint8_t hf_version)   { return BLOCKS_EXPECTED_IN_HOURS(24,hf_version) * days; }
+constexpr uint64_t BLOCKS_EXPECTED_IN_DAYS(int days, uint8_t hf_version=17)   { return BLOCKS_EXPECTED_IN_HOURS(24,hf_version) * days; }
 constexpr uint64_t BLOCKS_EXPECTED_IN_YEARS(int years, uint8_t hf_version) { return BLOCKS_EXPECTED_IN_DAYS(365,hf_version) * years; }
 
 constexpr uint64_t BLOCKS_PER_CREDIT_EARNED = 30;

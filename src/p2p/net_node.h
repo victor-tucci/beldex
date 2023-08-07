@@ -211,12 +211,6 @@ namespace nodetool
       }
     };
 
-    enum igd_t
-    {
-      no_igd,
-      igd,
-      delayed_igd,
-    };
 
   public:
     typedef t_payload_net_handler payload_net_handler;
@@ -227,14 +221,13 @@ namespace nodetool
         m_rpc_port(0),
         m_allow_local_ip(false),
         m_hide_my_port(false),
-        m_igd(no_igd),
         m_offline(false),
         is_closing(false),
         m_network_id()
     {}
     virtual ~node_server();
 
-    static void init_options(boost::program_options::options_description& desc);
+    static void init_options(boost::program_options::options_description& desc, boost::program_options::options_description& hidden);
 
     bool run();
     network_zone& add_zone(epee::net_utils::zone zone);
@@ -273,15 +266,6 @@ namespace nodetool
     virtual void clear_used_stripe_peers();
 
   private:
-    const std::vector<std::string> m_seed_nodes_list =
-    {
-      // TODO(beldex): "seeds.beldexcoin.com"
-	    "34.85.44.103:19090",
-      "35.211.123.115:19090",
-      "35.228.216.218:19090",
-      "35.228.9.140:19090",
-      "35.229.161.161:19090"
-    };
 
     bool islimitup=false;
     bool islimitdown=false;
@@ -353,14 +337,6 @@ namespace nodetool
     bool is_peer_used(const peerlist_entry& peer);
     bool is_peer_used(const anchor_peerlist_entry& peer);
     bool is_addr_connected(const epee::net_utils::network_address& peer);
-    void add_upnp_port_mapping_impl(uint32_t port, bool ipv6=false);
-    void add_upnp_port_mapping_v4(uint32_t port);
-    void add_upnp_port_mapping_v6(uint32_t port);
-    void add_upnp_port_mapping(uint32_t port, bool ipv4=true, bool ipv6=false);
-    void delete_upnp_port_mapping_impl(uint32_t port, bool ipv6=false);
-    void delete_upnp_port_mapping_v4(uint32_t port);
-    void delete_upnp_port_mapping_v6(uint32_t port);
-    void delete_upnp_port_mapping(uint32_t port);
     template<class t_callback>
     bool try_ping(basic_node_data& node_data, p2p_connection_context& context, const t_callback &cb);
     bool try_get_support_flags(const p2p_connection_context& context, std::function<void(p2p_connection_context&, const uint32_t&)> f);
@@ -433,7 +409,6 @@ namespace nodetool
     uint16_t m_rpc_port;
     bool m_allow_local_ip;
     bool m_hide_my_port;
-    igd_t m_igd;
     bool m_offline;
     bool m_use_ipv6;
     bool m_require_ipv4;

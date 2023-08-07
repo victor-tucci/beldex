@@ -32,7 +32,7 @@
 #include <atomic>
 #include <boost/algorithm/string.hpp>
 #include <limits>
-#include <oxenmq/hex.h>
+#include <oxenc/hex.h>
 #include <variant>
 #include "common/hex.h"
 #include "epee/wipeable_string.h"
@@ -54,11 +54,6 @@
 #define BELDEX_DEFAULT_LOG_CATEGORY "cn"
 
 using namespace crypto;
-
-static std::atomic<uint64_t> tx_hashes_calculated_count(0);
-static std::atomic<uint64_t> tx_hashes_cached_count(0);
-static std::atomic<uint64_t> block_hashes_calculated_count(0);
-static std::atomic<uint64_t> block_hashes_cached_count(0);
 
 #define CHECK_AND_ASSERT_THROW_MES_L1(expr, message) {if(!(expr)) {MWARNING(message); throw std::runtime_error(message);}}
 
@@ -546,7 +541,7 @@ namespace cryptonote
     try {
       serialization::deserialize_all(ar, tx_extra_fields);
     } catch (const std::exception& e) {
-      MWARNING(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << oxenmq::to_hex(tx_extra.begin(), tx_extra.end()));
+      MWARNING(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << oxenc::to_hex(tx_extra.begin(), tx_extra.end()));
       return false;
     }
 
@@ -865,7 +860,7 @@ namespace cryptonote
           value(newar, field);
       } while (ar.remaining_bytes() > 0);
     } catch (const std::exception& e) {
-      LOG_PRINT_L1(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << oxenmq::to_hex(tx_extra.begin(), tx_extra.end()));
+      LOG_PRINT_L1(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << oxenc::to_hex(tx_extra.begin(), tx_extra.end()));
       return false;
     }
 
@@ -1027,7 +1022,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   std::string short_hash_str(const crypto::hash& h)
   {
-    return oxenmq::to_hex(tools::view_guts(h).substr(0, 4)) + "....";
+    return oxenc::to_hex(tools::view_guts(h).substr(0, 4)) + "....";
   }
   //---------------------------------------------------------------
   bool is_out_to_acc(const account_keys& acc, const txout_to_key& out_key, const crypto::public_key& tx_pub_key, const std::vector<crypto::public_key>& additional_tx_pub_keys, size_t output_index)
@@ -1430,10 +1425,8 @@ namespace cryptonote
         }
         *blob_size = t.blob_size;
       }
-      ++tx_hashes_cached_count;
       return true;
     }
-    ++tx_hashes_calculated_count;
     bool ret = calculate_transaction_hash(t, res, blob_size);
     if (!ret)
       return false;
@@ -1472,10 +1465,8 @@ namespace cryptonote
     if (b.is_hash_valid())
     {
       res = b.hash;
-      ++block_hashes_cached_count;
       return true;
     }
-    ++block_hashes_calculated_count;
     bool ret = calculate_block_hash(b, res);
     if (!ret)
       return false;
@@ -1525,7 +1516,6 @@ namespace cryptonote
     if (block_hash)
     {
       calculate_block_hash(b, *block_hash);
-      ++block_hashes_calculated_count;
       b.hash = *block_hash;
       b.set_hash_valid(true);
     }
@@ -1585,14 +1575,6 @@ namespace cryptonote
     for(auto& th: b.tx_hashes)
       txs_ids.push_back(th);
     return get_tx_tree_hash(txs_ids);
-  }
-  //---------------------------------------------------------------
-  void get_hash_stats(uint64_t &tx_hashes_calculated, uint64_t &tx_hashes_cached, uint64_t &block_hashes_calculated, uint64_t & block_hashes_cached)
-  {
-    tx_hashes_calculated = tx_hashes_calculated_count;
-    tx_hashes_cached = tx_hashes_cached_count;
-    block_hashes_calculated = block_hashes_calculated_count;
-    block_hashes_cached = block_hashes_cached_count;
   }
   //---------------------------------------------------------------
   crypto::secret_key encrypt_key(crypto::secret_key key, const epee::wipeable_string &passphrase)
