@@ -371,6 +371,8 @@ namespace nodetool
     bool check_connection_and_handshake_with_peer(const epee::net_utils::network_address& na, uint64_t last_seen_stamp);
     bool gray_peerlist_housekeeping();
     bool check_incoming_connections();
+    bool m_connection_timeout_started;
+    std::chrono::steady_clock::time_point m_connection_timeout_timer;
 
     void kill() { ///< will be called e.g. from deinit()
       MINFO("Killing the net_node");

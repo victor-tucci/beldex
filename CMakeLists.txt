@@ -356,6 +356,7 @@ endif()
 
 option(BUILD_STATIC_DEPS "Download, build and statically link against core dependencies" OFF)
 option(HTTPS_AND_SSL "Use https and ssl while statically build" ON)
+
 if(BUILD_STATIC_DEPS)
   include(StaticBuild)
 endif()

@@ -129,6 +129,7 @@ WORKDIR /src
 COPY . .
 
 RUN set -ex && \
+    apt-get install libsystemd-dev -y && \
     git submodule update --init --recursive && \
     rm -rf build/release && mkdir -p build/release && cd build/release && \
     cmake -DSTATIC=ON -DARCH=x86-64 -DHTTPS_AND_SSL=OFF -DCMAKE_BUILD_TYPE=Release ../.. && \
