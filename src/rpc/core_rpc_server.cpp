@@ -799,7 +799,7 @@ namespace cryptonote { namespace rpc {
       }
       void operator()(const tx_extra_beldex_name_system& x) {
         auto& bns = entry.bns.emplace();
-        //TODO bns-rework have to update this function when it is bns_updating
+        if (x.is_buying() || x.is_renewing())
           bns.blocks = bns::expiry_blocks(nettype, x.mapping_years, hf_version) ;
         switch (x.type)
         {

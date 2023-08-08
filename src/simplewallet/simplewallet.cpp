@@ -6531,12 +6531,12 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
 
     std::cout << std::endl << tr("Buying Beldex Name System Record") << std::endl << std::endl;
     if (value_bchat.size())
-      fmt::print(fmt::format(tr("Bchat Name: {:s}\n"), name));
+      fmt::print(fmt::format(tr("Bchat Name   : {:s}\n"), name));
     else if (value_wallet.size())
-      fmt::print(fmt::format(tr("Wallet Name: {:s}\n"), name));
+      fmt::print(fmt::format(tr("Wallet Name  : {:s}\n"), name));
     else if (value_belnet.size())
     {
-      fmt::print(fmt::format(tr("Belnet Name: {:s}\n"), name));
+      fmt::print(fmt::format(tr("Belnet Name  : {:s}\n"), name));
       int years =
           *mapping_years == bns::mapping_years::bns_10years ? 10 :
           *mapping_years == bns::mapping_years::bns_5years ? 5 :
@@ -6549,21 +6549,21 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
             return false;
         }
       int blocks = BLOCKS_EXPECTED_IN_DAYS((years * bns::REGISTRATION_YEAR_DAYS),*hf_version);
-      std::cout << fmt::format(tr("Registration: {} years ({} blocks)\n"), years, blocks);
+      std::cout << fmt::format(tr("Registration : {} years ({} blocks)\n"), years, blocks);
     }
     else
-      fmt::print(fmt::format(tr("Name:         {}\n"), name)); 
-    fmt::print(fmt::format(tr("Value bchat:  {}\n"), value_bchat.empty() ? "NULL" : value_bchat));
-    fmt::print(fmt::format(tr("Value wallet: {}\n"), value_wallet.empty() ? "NULL" : value_wallet));
-    fmt::print(fmt::format(tr("Value belnet: {}\n"), value_belnet.empty() ? "NULL" : value_belnet));
-    fmt::print(fmt::format(tr("Owner:        {}\n"), owner.empty() ? m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0}) + " (this wallet) " : owner)); 
+      fmt::print(fmt::format(tr("Name       : {}\n"), name)); 
+    fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "NULL" : value_bchat));
+    fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "NULL" : value_wallet));
+    fmt::print(fmt::format(tr("Value belnet : {}\n"), value_belnet.empty() ? "NULL" : value_belnet));
+    fmt::print(fmt::format(tr("Owner        : {}\n"), owner.empty() ? m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0}) + " (this wallet) " : owner)); 
     if(backup_owner.size()) 
     {
-      fmt::print(fmt::format(tr("Backup Owner: {}\n"), backup_owner));
+      fmt::print(fmt::format(tr("Backup Owner : {}\n"), backup_owner));
     } 
     else 
     {
-      std::cout << tr("Backup Owner: (none)") << std::endl;
+      std::cout << tr("Backup Owner : (none)") << std::endl;
     }
 
     if (!confirm_and_send_tx(dsts, ptx_vector, priority == tools::tx_priority_flash))
@@ -6640,7 +6640,7 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
     dsts.push_back(info);
 
     std::cout << "\n" << tr("Renew Beldex Name System Record") << "\n\n";
-    fmt::print(fmt::format(tr("Name:          {}\n"), name)); 
+    fmt::print(fmt::format(tr("Name          : {}\n"), name)); 
     int years = 1;
     if (mapping_years == bns::mapping_years::bns_2years) years = 2;
     else if (mapping_years == bns::mapping_years::bns_5years) years = 5;
@@ -6653,8 +6653,8 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
       return false;
     }
     int blocks = BLOCKS_EXPECTED_IN_DAYS(years * bns::REGISTRATION_YEAR_DAYS,*hf_version);
-    fmt::print(fmt::format(tr("Renewal years: {} ({} blocks)\n"), years, blocks)); 
-    fmt::print(fmt::format(tr("New expiry:    Block {}\n"), (*response[0].expiration_height + blocks))); 
+    fmt::print(fmt::format(tr("Renewal years : {} ({} blocks)\n"), years, blocks)); 
+    fmt::print(fmt::format(tr("New expiry    : Block {}\n"), (*response[0].expiration_height + blocks))); 
     std::cout << std::flush;
 
     if (!confirm_and_send_tx(dsts, ptx_vector, false /*flash*/))
@@ -6799,64 +6799,64 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
               << std::endl;
 
     if (value_bchat.size())
-      fmt::print(fmt::format(tr("Bchat Name:     {}\n"), name));
+      fmt::print(fmt::format(tr("Bchat Name       : {}\n"), name));
     else if (value_wallet.size())
-      fmt::print(fmt::format(tr("Wallet Name:     {}\n"), name));
+      fmt::print(fmt::format(tr("Wallet Name      : {}\n"), name));
     else if (value_belnet.size())
     {
-      fmt::print(fmt::format(tr("Belnet Name: {:s}\n"), name));
+      fmt::print(fmt::format(tr("Belnet Name      : {}\n"), name));
     }
     else
-      fmt::print(fmt::format(tr("Name:         {}\n"), name));
+      fmt::print(fmt::format(tr("Name             : {}\n"), name));
     
     if (value_bchat.size())
     {
-      fmt::print(fmt::format(tr("Old Value bchat:  {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "NULL"));
-      fmt::print(fmt::format(tr("New Value bchat:  {}\n"), value_bchat));
+      fmt::print(fmt::format(tr("Old Value bchat  : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "NULL"));
+      fmt::print(fmt::format(tr("New Value bchat  : {}\n"), value_bchat));
     }
     else
     {
-      fmt::print(fmt::format(tr("Value bchat:      {} (unchanged)\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
+      fmt::print(fmt::format(tr("Value bchat      : {} (unchanged)\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
     }
 
     if (value_wallet.size())
     {
-      fmt::print(fmt::format(tr("Old Value wallet: {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "NULL"));
-      fmt::print(fmt::format(tr("New Value wallet: {}\n"), value_wallet));
+      fmt::print(fmt::format(tr("Old Value wallet : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "NULL"));
+      fmt::print(fmt::format(tr("New Value wallet : {}\n"), value_wallet));
     }
     else
     {
-      fmt::print(fmt::format(tr("Value wallet:     {} (unchanged)\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
+      fmt::print(fmt::format(tr("Value wallet     : {} (unchanged)\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
     }
     
     if (value_belnet.size())
     {
-      fmt::print(fmt::format(tr("Old Value belnet: {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "NULL"));
-      fmt::print(fmt::format(tr("New Value belnet: {}\n"), value_belnet));
+      fmt::print(fmt::format(tr("Old Value belnet : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "NULL"));
+      fmt::print(fmt::format(tr("New Value belnet : {}\n"), value_belnet));
     }
     else
     {
-      fmt::print(fmt::format(tr("Value belnet:     {} (unchanged)\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
+      fmt::print(fmt::format(tr("Value belnet     : {} (unchanged)\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
     }
 
     if (owner.size())
     {
-      fmt::print(fmt::format(tr("Old Owner:        {}\n"), response[0].owner));
-      fmt::print(fmt::format(tr("New Owner:        {}\n"), owner));
+      fmt::print(fmt::format(tr("Old Owner        : {}\n"), response[0].owner));
+      fmt::print(fmt::format(tr("New Owner        : {}\n"), owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Owner:            {} (unchanged)\n"), response[0].owner));
+      fmt::print(fmt::format(tr("Owner            : {} (unchanged)\n"), response[0].owner));
     }
 
     if (backup_owner.size())
     {
-      fmt::print(fmt::format(tr("Old Backup Owner: {}\n"), response[0].backup_owner.value_or(NULL_STR)));
-      fmt::print(fmt::format(tr("New Backup Owner: {}\n"), backup_owner));
+      fmt::print(fmt::format(tr("Old Backup Owner : {}\n"), response[0].backup_owner.value_or(NULL_STR)));
+      fmt::print(fmt::format(tr("New Backup Owner : {}\n"), backup_owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Backup Owner:     {} (unchanged)\n"), response[0].backup_owner.value_or(NULL_STR)));
+      fmt::print(fmt::format(tr("Backup Owner     : {} (unchanged)\n"), response[0].backup_owner.value_or(NULL_STR)));
     }
 
     if (value_bchat.size() && (value_bchat == bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat)))
