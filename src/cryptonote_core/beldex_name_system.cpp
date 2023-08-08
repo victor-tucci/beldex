@@ -1685,15 +1685,15 @@ const std::string sql_select_current_mappings_and_owners_prefix = R"(
 SELECT submapping.*, o1.address, o2.address
 FROM (SELECT *
   FROM mappings
-  WHERE (name_hash, type, update_height) IN (
-    SELECT name_hash, type, MAX(update_height)
+  WHERE (name_hash, update_height) IN (
+    SELECT name_hash, MAX(update_height)
     FROM mappings
-    GROUP BY name_hash, type
+    GROUP BY name_hash
   )) as submapping
   JOIN owner o1 ON submapping.owner_id = o1.id
   LEFT JOIN owner o2 ON submapping.backup_owner_id = o2.id
 )"s;
-const std::string sql_select_mappings_and_owners_suffix = " GROUP BY name_hash, type";
+const std::string sql_select_mappings_and_owners_suffix = " GROUP BY name_hash";
 
 struct scoped_db_transaction
 {
@@ -1764,19 +1764,15 @@ bool name_system_db::init(cryptonote::Blockchain const *blockchain, cryptonote::
     + "WHERE ? IN (o1.address, o2.address)"
     + sql_select_mappings_and_owners_suffix;
   std::string const GET_MAPPING_STR           = sql_select_mappings_and_owners_prefix
-    + "WHERE type = ? AND name_hash = ?"
+    + "WHERE name_hash = ?"
     + sql_select_mappings_and_owners_suffix;
 
+  //TODO bns-rework have to chenge the query for count
   const std::string GET_MAPPING_COUNTS_STR = R"(
     SELECT type, COUNT(*) FROM (
       SELECT DISTINCT type, name_hash FROM mappings WHERE )" + std::string{EXPIRATION} + R"(
     )
     GROUP BY type)";
-
-  std::string const RESOLVE_STR = R"(
-SELECT encrypted_bchat_value, MAX(update_height)
-FROM mappings
-WHERE type = ? AND name_hash = ? AND)" + std::string{EXPIRATION};
 
   constexpr auto GET_SETTINGS_STR     = "SELECT * FROM settings WHERE id = 1"sv;
   constexpr auto GET_OWNER_BY_ID_STR  = "SELECT * FROM owner WHERE id = ?"sv;
@@ -1998,7 +1994,7 @@ SELECT                type, name_hash, ?,    ?)";
   bind.emplace_back(blob_view{tx_hash.data, sizeof(tx_hash)});
   bind.emplace_back(height);
 
-  constexpr auto suffix = " FROM mappings WHERE type = ? AND name_hash = ? ORDER BY update_height DESC LIMIT 1"sv;
+  constexpr auto suffix = " FROM mappings WHERE name_hash = ? ORDER BY update_height DESC LIMIT 1"sv;
 
   if (entry.is_renewing())
   {
@@ -2067,7 +2063,6 @@ SELECT                type, name_hash, ?,    ?)";
   }
 
   sql += suffix;
-  bind.emplace_back(db_mapping_type(entry.type));
   bind.emplace_back(hash_to_base64(entry.name_hash));
   std::cout <<"record query for update/renew:\n" << sql <<"\n";
   return result;
@@ -2325,8 +2320,7 @@ mapping_record name_system_db::get_mapping(mapping_type type, std::string_view n
 {
   assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenc::is_base64(name_base64_hash));
   mapping_record result = {};
-  result.loaded         = bind_and_run(bns_sql_type::get_mapping, get_mapping_sql, &result,
-      db_mapping_type(type), name_base64_hash);
+  result.loaded         = bind_and_run(bns_sql_type::get_mapping, get_mapping_sql, &result, name_base64_hash);
   if (blockchain_height && !result.active(*blockchain_height))
     result.loaded = false;
   return result;
@@ -2377,18 +2371,6 @@ std::vector<mapping_record> name_system_db::get_mappings(std::vector<mapping_typ
   bind.emplace_back(name_base64_hash);
 
   // Generate string statement
-  if (types.size())
-  {
-    sql_statement += " AND type IN (";
-
-    for (size_t i = 0; i < types.size(); i++)
-    {
-      sql_statement += i > 0 ? ", ?" : "?";
-      bind.emplace_back(db_mapping_type(types[i]));
-    }
-    sql_statement += ")";
-  }
-
   if (blockchain_height)
   {
     sql_statement += " AND ";
@@ -2452,8 +2434,7 @@ std::vector<mapping_record> name_system_db::get_mappings_by_owners(std::vector<g
     bind.emplace_back(*blockchain_height);
   }
 
-  // sql_statement += sql_select_mappings_and_owners_suffix;
-  std::cout <<"sql_statement : " << sql_statement << std::endl;
+  std::cout <<"get_mappings_by_owners : " << sql_statement << std::endl;
   // Compile Statement
   std::vector<mapping_record> result;
   sql_compiled_statement statement{*this};

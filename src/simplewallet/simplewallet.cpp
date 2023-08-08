@@ -6426,6 +6426,18 @@ static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, s
   return std::nullopt;
 }
 
+static bool confirmAction() {
+    std::string accepted = input_line("The new value entered is same as the old value, do you want to proceed?", true);
+    if (std::cin.eof()) {
+        return false;
+    }
+    if (!command_line::is_yes(accepted)) {
+        fail_msg_writer() << tr("transaction cancelled.");
+        return false;
+    }
+    return true;
+}
+
 static std::optional<bns::mapping_years> guess_bns_years(std::string_view map_years)
 {
   if (!map_years.empty())
@@ -6587,7 +6599,7 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
 
-  auto [typestr,map_years] = eat_named_arguments(args, BNS_TYPE_PREFIX, BNS_YEAR_PREFIX);
+  auto [map_years] = eat_named_arguments(args, BNS_YEAR_PREFIX);
   
   if (args.empty())
   {
@@ -6595,8 +6607,6 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
     return false;
   }
   std::string const &name = args[0];
-
-  bns::mapping_type type=bns::mapping_type::bchat;
 
   std::optional<bns::mapping_years> mapping_years;
   mapping_years = guess_bns_years(map_years);
@@ -6849,20 +6859,17 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
       fmt::print(fmt::format(tr("Backup Owner:     {} (unchanged)\n"), response[0].backup_owner.value_or(NULL_STR)));
     }
 
-    if (value_bchat.size() || value_wallet.size() || value_belnet.size())
-    {
-      if (value_bchat == bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) || value_wallet == wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) || value_belnet == belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet))
-      {
-            std::string accepted = input_line("The new value entered is same as the old value, do you want to proceed?", true);
-            if (std::cin.eof())
-            return false;
-            if (!command_line::is_yes(accepted))
-            {
-            fail_msg_writer() << tr("transaction cancelled.");
-            return false;
-            }
-      }
-    }
+    if (value_bchat.size() && (value_bchat == bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat)))
+      if (!confirmAction())
+        return false;
+
+    if (value_wallet.size() && (value_wallet == wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet)))
+      if (!confirmAction())
+        return false;
+    
+    if (value_belnet.size() && (value_belnet == belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet)))
+      if (!confirmAction())
+        return false;
 
     if (!confirm_and_send_tx(dsts, ptx_vector, false /*flash*/))
       return false;
