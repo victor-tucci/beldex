@@ -2010,7 +2010,7 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
 }
 
 EXPORT
-PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::string &bnstype,uint32_t priority,
+PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::string &bnsyear,uint32_t priority,
                                                     uint32_t m_current_subaddress_account,std::set<uint32_t> subaddr_indices)
 
 {
@@ -2020,9 +2020,11 @@ PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::strin
 
     PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
 
-do {
-    auto w = wallet();
+    do {
+        auto w = wallet();
         bns::mapping_years map_year;
+        if(!bns_validate_years(bnsyear, &map_year))
+            break;
 
         // Getting subaddress for create a transaction from this subaddress
         if (subaddr_indices.empty()) {
@@ -2030,25 +2032,25 @@ do {
                 subaddr_indices.insert(index);
         }
 
-std::string reason;
-try
-  {
-    LOG_PRINT_L1(__FUNCTION__ << "Create bns_renew is start...");
-    transaction->m_pending_tx = w->bns_create_renewal_tx(bns::mapping_type::bchat,
-                                                map_year,
-                                                name, 
-                                                &reason, 
-                                                priority, 
-                                                m_current_subaddress_account, 
-                                                subaddr_indices);
-    
-        if (transaction->m_pending_tx.empty())
+        std::string reason;
+        try
         {
-            LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
-            setStatusError(reason);
-            break;
-        }
-        pendingTxPostProcess(transaction);
+            LOG_PRINT_L1(__FUNCTION__ << "Create bns_renew is start...");
+            transaction->m_pending_tx = w->bns_create_renewal_tx(bns::mapping_type::bchat,
+                                                                map_year,
+                                                                name, 
+                                                                &reason, 
+                                                                priority,       
+                                                                m_current_subaddress_account, 
+                                                                subaddr_indices);
+    
+            if (transaction->m_pending_tx.empty())
+            {   
+                LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+                setStatusError(reason);
+                break;
+            }
+            pendingTxPostProcess(transaction);
 
         }catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?
