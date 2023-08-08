@@ -2489,7 +2489,6 @@ namespace rpc {
     struct response_entry
     {
       uint64_t    request_index;                // (Deprecated) The index in request's `entries` array that was resolved via Beldex Name Service.
-      bns::mapping_type type;                   // The category the Beldex Name Service entry belongs to; currently 0 for Bchat, 1 for Wallet and 2 for Belnet.
       std::string name_hash;                    // The hash of the name that the owner purchased via Beldex Name Service in base64
       std::string owner;                        // The backup public key specified by the owner that purchased the Beldex Name Service entry.
       std::optional<std::string> backup_owner;  // The backup public key specified by the owner that purchased the Beldex Name Service entry. Omitted if no backup owner.

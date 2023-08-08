@@ -7233,8 +7233,6 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
         << "    Name (hashed)          : " << entry.name_hash;
       if (!name.empty()) writer
         << "\n    Name                   : " << name;
-      writer
-        << "\n    Type                   : " << entry.type;
       if (!value_bchat.empty()) writer
         << "\n    Value bchat            : " << value_bchat;
       if (!value_wallet.empty()) writer

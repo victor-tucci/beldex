@@ -3586,7 +3586,6 @@ namespace cryptonote { namespace rpc {
 
       auto& entry = res.entries.emplace_back();
       entry.request_index   = it->second;
-      entry.type            = record.type;
       entry.name_hash       = std::move(record.name_hash);
       if (record.owner) entry.owner = record.owner.to_string(nettype());
       if (record.backup_owner) entry.backup_owner = record.backup_owner.to_string(nettype());
