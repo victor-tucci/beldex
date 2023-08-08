@@ -3073,7 +3073,6 @@ namespace {
     //Save the BNS record to the wallet cache
     std::string name_hash_str = bns::name_to_base64_hash(req.name);
     tools::wallet2::bns_detail detail = {
-      bns::mapping_type::bchat,
       req.name,
       name_hash_str};
     m_wallet->set_bns_cache_record(detail);
@@ -3157,7 +3156,6 @@ namespace {
     std::string name_hash_str = bns::name_to_base64_hash(req.name);
     m_wallet->delete_bns_cache_record(name_hash_str);
     tools::wallet2::bns_detail detail = {
-      bns::mapping_type::bchat,
       req.name,
       name_hash_str};
     m_wallet->set_bns_cache_record(detail);
@@ -3346,7 +3344,7 @@ namespace {
       if (!bns::validate_bns_name(name, &reason))
         throw wallet_rpc_error{error_code::BNS_BAD_NAME, "Invalid BNS name '" + name + "': " + reason};
 
-      m_wallet->set_bns_cache_record({bns::mapping_type::bchat, name, bns::name_to_base64_hash(name)});
+      m_wallet->set_bns_cache_record({name, bns::name_to_base64_hash(name)});
     }
 
     return {};

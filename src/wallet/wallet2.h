@@ -820,7 +820,6 @@ private:
     //TODO bns-rework have to change for the catche data
     struct bns_detail
     {
-      bns::mapping_type type;
       std::string name;
       std::string hashed_name;
     };
@@ -1727,7 +1726,6 @@ namespace boost::serialization
     template <class Archive>
     void serialize(Archive &a, tools::wallet2::bns_detail &x, const unsigned int ver)
     {
-      a & x.type;
       a & x.name;
       a & x.hashed_name;
       if (ver < 1)
