@@ -3510,32 +3510,19 @@ namespace cryptonote { namespace rpc {
     bns::name_system_db &db = m_core.get_blockchain_storage().name_system_db();
     for (size_t request_index = 0; request_index < req.entries.size(); request_index++)
     {
-      BNS_NAMES_TO_OWNERS::request_entry const &request = req.entries[request_index];
-      if (!context.admin)
-        check_quantity_limit(request.types.size(), BNS_NAMES_TO_OWNERS::MAX_TYPE_REQUEST_ENTRIES, "types");
-
-      types.clear();
-      if (types.capacity() < request.types.size())
-        types.reserve(request.types.size());
-      for (auto type : request.types)
-      {
-        types.push_back(static_cast<bns::mapping_type>(type));
-        if (!bns::mapping_type_allowed(hf_version, types.back()))
-          throw rpc_error{ERROR_WRONG_PARAM, "Invalid belnet type '" + std::to_string(type) + "'"};
-      }
+      std::string const &req_name_hash = req.entries[request_index];
 
       // This also takes 32 raw bytes, but that is undocumented (because it is painful to pass
       // through json).
-      auto name_hash = bns::name_hash_input_to_base64(request.name_hash);
+      auto name_hash = bns::name_hash_input_to_base64(req_name_hash);
       if (!name_hash)
         throw rpc_error{ERROR_WRONG_PARAM, "Invalid name_hash: expected hash as 64 hex digits or 43/44 base64 characters"};
 
-      std::vector<bns::mapping_record> records = db.get_mappings(types, *name_hash, height);
+      std::vector<bns::mapping_record> records = db.get_mappings(*name_hash, height);
       for (auto const &record : records)
       {
         auto& entry = res.entries.emplace_back();
         entry.entry_index                                      = request_index;
-        entry.type                                             = record.type;
         entry.name_hash                                        = record.name_hash;
         entry.owner                                            = record.owner.to_string(nettype());
         if (record.backup_owner) entry.backup_owner            = record.backup_owner.to_string(nettype());

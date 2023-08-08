@@ -6553,9 +6553,9 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     }
     else
       fmt::print(fmt::format(tr("Name       : {}\n"), name)); 
-    fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "NULL" : value_bchat));
-    fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "NULL" : value_wallet));
-    fmt::print(fmt::format(tr("Value belnet : {}\n"), value_belnet.empty() ? "NULL" : value_belnet));
+    fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "(none)" : value_bchat));
+    fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "(none)" : value_wallet));
+    fmt::print(fmt::format(tr("Value belnet : {}\n"), value_belnet.empty() ? "(none)" : value_belnet));
     fmt::print(fmt::format(tr("Owner        : {}\n"), owner.empty() ? m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0}) + " (this wallet) " : owner)); 
     if(backup_owner.size()) 
     {
@@ -6811,7 +6811,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     
     if (value_bchat.size())
     {
-      fmt::print(fmt::format(tr("Old Value bchat  : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "NULL"));
+      fmt::print(fmt::format(tr("Old Value bchat  : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
       fmt::print(fmt::format(tr("New Value bchat  : {}\n"), value_bchat));
     }
     else
@@ -6821,7 +6821,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (value_wallet.size())
     {
-      fmt::print(fmt::format(tr("Old Value wallet : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "NULL"));
+      fmt::print(fmt::format(tr("Old Value wallet : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
       fmt::print(fmt::format(tr("New Value wallet : {}\n"), value_wallet));
     }
     else
@@ -6831,7 +6831,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     
     if (value_belnet.size())
     {
-      fmt::print(fmt::format(tr("Old Value belnet : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "NULL"));
+      fmt::print(fmt::format(tr("Old Value belnet : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
       fmt::print(fmt::format(tr("New Value belnet : {}\n"), value_belnet));
     }
     else
@@ -7000,55 +7000,11 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     return true;
   }
 
-  std::string typestr = eat_named_argument(args, BNS_TYPE_PREFIX);
-
-  std::vector<uint16_t> requested_types;
-  // Parse BNS Types
-  if (!typestr.empty()) {
-    auto hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version)
-    {
-      fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-      return false;
-    }
-
-    for (auto type : tools::split(typestr, ","))
-    {
-      bns::mapping_type mapping_type;
-      std::string reason;
-      //TODO bns-rework have to remove when lookup is updated
-      if (!bns::validate_mapping_type(type, *hf_version, &mapping_type, &reason))
-      {
-        fail_msg_writer() << reason;
-        return false;
-      }
-      requested_types.push_back(bns::db_mapping_type(mapping_type));
-    }
-  }
-
-  if (requested_types.empty())
-  {
-    auto hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version)
-    {
-      fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-      return false;
-    }
-    auto all_types = bns::all_mapping_types(*hf_version);
-    std::transform(all_types.begin(), all_types.end(), std::back_inserter(requested_types), bns::db_mapping_type);
-  }
-
-  if (args.empty())
-  {
-    PRINT_USAGE(USAGE_BNS_LOOKUP);
-    return true;
-  }
-
   rpc::BNS_NAMES_TO_OWNERS::request request = {};
   for (auto& name : args)
   {
     name = tools::lowercase_ascii_string(std::move(name));
-    request.entries.push_back({bns::name_to_base64_hash(name), requested_types});
+    request.entries.push_back(bns::name_to_base64_hash(name));
   }
 
   auto [success, response] = m_wallet->bns_names_to_owners(request);
@@ -7142,13 +7098,12 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
 
     auto writer = tools::msg_writer();
     writer
-      << "    Name                   : " << name
-      << "\n    Type                   : " << static_cast<bns::mapping_type>(mapping.type);
-      if(!enc_bchat_hex.empty()) writer
+      << "    Name                   : " << name;
+    if(!enc_bchat_hex.empty()) writer
       << "\n    Value bchat            : " << value_bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat);
-      if(!enc_wallet_hex.empty()) writer
+    if(!enc_wallet_hex.empty()) writer
       << "\n    Value wallet           : " << value_wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet);      
-      if(!enc_belnet_hex.empty()) writer
+    if(!enc_belnet_hex.empty()) writer
       << "\n    Value belnet           : " << value_belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet);
     writer
       << "\n    Owner                  : " << mapping.owner;
@@ -7159,11 +7114,11 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     if (mapping.expiration_height) writer
       << "\n    Expiration height      : " << *mapping.expiration_height;
     writer
-      << "\n    Encrypted bchat value  : " << (enc_bchat_hex.empty() ? "NULL" :enc_bchat_hex);
+      << "\n    Encrypted bchat value  : " << (enc_bchat_hex.empty() ? "(none)" :enc_bchat_hex);
     writer
-      << "\n    Encrypted wallet value : " << (enc_wallet_hex.empty() ? "NULL" :enc_wallet_hex);
+      << "\n    Encrypted wallet value : " << (enc_wallet_hex.empty() ? "(none)" :enc_wallet_hex);
     writer
-      << "\n    Encrypted belnet value : " << (enc_belnet_hex.empty() ? "NULL" :enc_belnet_hex);
+      << "\n    Encrypted belnet value : " << (enc_belnet_hex.empty() ? "(none)" :enc_belnet_hex);
     writer
       << "\n";
 
@@ -7171,7 +7126,7 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     {
       bns::mapping_type::bchat,
       name,
-      request.entries[0].name_hash};
+      mapping.name_hash};
     m_wallet->set_bns_cache_record(detail);
   }
   for (size_t i = last_index + 1; i < args.size(); i++)
@@ -7295,11 +7250,11 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
       if (entry.expiration_height) writer
         << "\n    Expiration height      : " << *entry.expiration_height;
       writer
-        << "\n    Encrypted bchat value  : " << (entry.encrypted_bchat_value.empty() ? "NULL" : entry.encrypted_bchat_value);
+        << "\n    Encrypted bchat value  : " << (entry.encrypted_bchat_value.empty() ? "(none)" : entry.encrypted_bchat_value);
       writer
-        << "\n    Encrypted wallet value : " << (entry.encrypted_wallet_value.empty() ? "NULL" : entry.encrypted_wallet_value);
+        << "\n    Encrypted wallet value : " << (entry.encrypted_wallet_value.empty() ? "(none)" : entry.encrypted_wallet_value);
       writer
-        << "\n    Encrypted belnet value : " << (entry.encrypted_belnet_value.empty() ? "NULL" : entry.encrypted_belnet_value);
+        << "\n    Encrypted belnet value : " << (entry.encrypted_belnet_value.empty() ? "(none)" : entry.encrypted_belnet_value);
       writer
         << "\n";
     }

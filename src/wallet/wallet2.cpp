@@ -8728,7 +8728,6 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
   result.name_hash = bns::name_to_hash(name);
   if (value_bchat)
   {
-    std::cout << " value_bchat : " << *value_bchat << std::endl;
     if (!bns::mapping_value::validate(wallet.nettype(), bns::mapping_type::bchat, *value_bchat, &result.encrypted_bchat_value, reason))
       return {};
 
@@ -8741,7 +8740,6 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
 
   if (value_wallet)
   {
-    std::cout << " value_wallet : " << *value_wallet << std::endl;
     if (!bns::mapping_value::validate(wallet.nettype(), bns::mapping_type::wallet, *value_wallet, &result.encrypted_wallet_value, reason))
       return {};
 
@@ -8754,7 +8752,6 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
 
   if (value_belnet)
   {
-    std::cout << " value_belnet : " << *value_belnet << std::endl;
     if (!bns::mapping_value::validate(wallet.nettype(), bns::mapping_type::belnet, *value_belnet, &result.encrypted_belnet_value, reason))
       return {};
 
@@ -8774,9 +8771,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
   {
     cryptonote::rpc::BNS_NAMES_TO_OWNERS::request request = {};
     {
-      auto &request_entry = request.entries.emplace_back();
-      request_entry.name_hash = oxenc::to_base64(tools::view_guts(result.name_hash));
-      request_entry.types.push_back(bns::db_mapping_type(type));
+      request.entries.push_back(oxenc::to_base64(tools::view_guts(result.name_hash)));
     }
 
     auto [success, response_] = wallet.bns_names_to_owners(request);

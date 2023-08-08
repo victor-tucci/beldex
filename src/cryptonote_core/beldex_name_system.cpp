@@ -2355,12 +2355,10 @@ std::optional<mapping_value> name_system_db::resolve(mapping_type type, std::str
   return result;
 }
 
-std::vector<mapping_record> name_system_db::get_mappings(std::vector<mapping_type> const &types, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height)
+std::vector<mapping_record> name_system_db::get_mappings(std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height)
 {
   assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenc::is_base64(name_base64_hash));
   std::vector<mapping_record> result;
-  if (types.empty())
-    return result;
 
   std::string sql_statement;
   std::vector<std::variant<uint16_t, uint64_t, std::string_view>> bind;

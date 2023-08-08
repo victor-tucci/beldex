@@ -2437,18 +2437,9 @@ namespace rpc {
     static constexpr auto names() { return NAMES("bns_names_to_owners", "lns_names_to_owners"); }
 
     static constexpr size_t MAX_REQUEST_ENTRIES      = 256;
-    static constexpr size_t MAX_TYPE_REQUEST_ENTRIES = 8;
-    struct request_entry
-    {
-      std::string name_hash; // The 32-byte BLAKE2b hash of the name to resolve to a public key via Beldex Name Service. The value must be provided either in hex (64 hex digits) or base64 (44 characters with padding, or 43 characters without).
-      std::vector<uint16_t> types; // If empty, query all types. Currently supported types are 0 (bchat) and 2 (belnet). In future updates more mapping types will be available.
-
-      KV_MAP_SERIALIZABLE
-    };
-
     struct request
     {
-      std::vector<request_entry> entries; // Entries to look up
+      std::vector<std::string> entries; // Entries to look up
       bool include_expired;               // Optional: if provided and true, include entries in the results even if they are expired
 
       KV_MAP_SERIALIZABLE
@@ -2457,7 +2448,6 @@ namespace rpc {
     struct response_entry
     {
       uint64_t entry_index;                     // The index in request_entry's `entries` array that was resolved via Beldex Name Service.
-      bns::mapping_type type;                   // The type of Beldex Name Service entry that the owner owns: currently supported values are 0 (bchat), 1 (wallet) and 2 (belnet)
       std::string name_hash;                    // The hash of the name that was queried, in base64
       std::string owner;                        // The public key that purchased the Beldex Name Service entry.
       std::optional<std::string> backup_owner;  // The backup public key that the owner specified when purchasing the Beldex Name Service entry. Omitted if no backup owner.

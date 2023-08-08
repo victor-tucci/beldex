@@ -2412,7 +2412,6 @@ This command is only required if the open wallet is one of the owners of a BNS r
 
     struct known_record
     {
-      std::string type;                          // The mapping type, "bchat" or "belnet".
       std::string hashed;                        // The hashed name (in base64)
       std::string name;                          // The plaintext name
       std::string owner;                         // The public key that purchased the Beldex Name Service entry.

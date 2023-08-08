@@ -3223,16 +3223,11 @@ namespace {
     require_open();
     BNS_KNOWN_NAMES::response res{};
 
-    std::vector<bns::mapping_type> entry_types;
     auto cache = m_wallet->get_bns_cache();
     res.known_names.reserve(cache.size());
-    entry_types.reserve(cache.size());
     for (auto& [name, details] : m_wallet->get_bns_cache())
     {
       auto& entry = res.known_names.emplace_back();
-      auto& type = entry_types.emplace_back(details.type);
-      //TODO bns-rework have to remove the type for the request
-      entry.type = bns::mapping_type_str(type);
       entry.hashed = details.hashed_name;
       entry.name = details.name;
     }
@@ -3254,9 +3249,8 @@ namespace {
       lookup_req.entries.reserve(std::distance(it, end));
       for (auto it2 = it; it2 != end; it2++)
       {
-        auto& e = lookup_req.entries.emplace_back();
-        e.name_hash = it2->hashed;
-        e.types.push_back(static_cast<uint16_t>(entry_types[std::distance(res.known_names.begin(), it2)]));
+        auto& name_hash = lookup_req.entries.emplace_back();
+        name_hash = it2->hashed;
       }
 
       if (auto [success, records] = m_wallet->bns_names_to_owners(lookup_req); success)
@@ -3333,7 +3327,7 @@ namespace {
 
     // Now sort whatever we got back
     std::sort(res.known_names.begin(), res.known_names.end(),
-        [](const auto& a, const auto& b) { return std::make_pair(a.name, a.type) < std::make_pair(b.name, b.type); });
+        [](const auto& a, const auto& b) { return a.name < b.name; });
 
     return res;
   }

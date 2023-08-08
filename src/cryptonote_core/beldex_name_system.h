@@ -304,7 +304,7 @@ struct name_system_db
   // mappings, pass in the blockchain height.  If you omit it (or explicitly pass std::nullopt) then
   // you will get the latest mappingsvalues regardless of whether expired or not they are expired.
   mapping_record              get_mapping           (mapping_type type, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
-  std::vector<mapping_record> get_mappings          (std::vector<mapping_type> const &types, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
+  std::vector<mapping_record> get_mappings          (std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
   std::vector<mapping_record> get_mappings_by_owner (generic_owner const &key, std::optional<uint64_t> blockchain_height = std::nullopt);
   std::vector<mapping_record> get_mappings_by_owners(std::vector<generic_owner> const &keys, std::optional<uint64_t> blockchain_height = std::nullopt);
   settings_record             get_settings          ();
