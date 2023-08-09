@@ -546,7 +546,6 @@ namespace cryptonote
   struct tx_extra_beldex_name_system
   {
     uint8_t                 version = 0;
-    bns::mapping_type       type;
     bns::mapping_years      mapping_years;
     crypto::hash            name_hash;
     crypto::hash            prev_txid = crypto::null_hash;  // previous txid that purchased the mapping
@@ -572,7 +571,6 @@ namespace cryptonote
     static tx_extra_beldex_name_system make_buy(
         bns::generic_owner const& owner,
         bns::generic_owner const* backup_owner,
-        bns::mapping_type type,
         bns::mapping_years mapping_years,
         const crypto::hash& name_hash,
         const std::string& encrypted_bchat_value,
@@ -580,11 +578,10 @@ namespace cryptonote
         const std::string& encrypted_belnet_value,
         const crypto::hash& prev_txid);
 
-    static tx_extra_beldex_name_system make_renew(bns::mapping_type type, bns::mapping_years mapping_years, const crypto::hash& name_hash, const crypto::hash& prev_txid);
+    static tx_extra_beldex_name_system make_renew(bns::mapping_years mapping_years, const crypto::hash& name_hash, const crypto::hash& prev_txid);
 
     static tx_extra_beldex_name_system make_update(
         const bns::generic_signature& signature,
-        bns::mapping_type type,
         const crypto::hash& name_hash,
         std::string_view encrypted_bchat_value,
         std::string_view encrypted_wallet_value,
@@ -595,7 +592,6 @@ namespace cryptonote
 
     BEGIN_SERIALIZE()
       FIELD(version)
-      ENUM_FIELD(type, type < bns::mapping_type::_count)
       ENUM_FIELD(mapping_years, mapping_years < bns::mapping_years::_count)
       FIELD(name_hash)
       FIELD(prev_txid)

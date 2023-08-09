@@ -188,6 +188,7 @@ namespace cryptonote
     }
     else if (tx.type == txtype::beldex_name_system)
     {
+      //TODO bns-rework have to validate the old bns
       tx_extra_beldex_name_system data;
       if (!cryptonote::get_field_from_tx_extra(tx.extra, data))
       {
@@ -209,7 +210,7 @@ namespace cryptonote
           return true;
         }
 
-        if (data.type == pool_data.type && data.name_hash == pool_data.name_hash)
+        if (data.name_hash == pool_data.name_hash)
         {
           LOG_PRINT_L1("New TX: " << get_transaction_hash(tx) << ", has TX: " << get_transaction_hash(pool_tx) << " from the pool that is requesting the same BNS entry already.");
           return true;

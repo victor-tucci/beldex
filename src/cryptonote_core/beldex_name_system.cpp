@@ -76,7 +76,6 @@ enum struct owner_record_column
 enum struct mapping_record_column
 {
   id,
-  type,
   name_hash,
   encrypted_bchat_value,
   encrypted_wallet_value,
@@ -143,7 +142,7 @@ std::string bns_extra_string(cryptonote::network_type nettype, cryptonote::tx_ex
   else
     stream << "signature=" << tools::type_to_hex(data.signature.data);
 
-  stream << ", type=" << data.type << ", name_hash=" << data.name_hash << "}";
+  stream << ", name_hash=" << data.name_hash << "}";
   return stream.str();
 }
 
@@ -372,11 +371,7 @@ bool sql_copy_blob(sql_compiled_statement& statement, I column, void *dest, size
 mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
 {
   mapping_record result = {};
-  // auto type_int = get<uint16_t>(statement, mapping_record_column::type);
-  // if (type_int >= tools::enum_count<mapping_type>)
-  //   return result;
 
-  // result.type = static_cast<mapping_type>(type_int);
   get(statement, mapping_record_column::id, result.id);
   get(statement, mapping_record_column::update_height, result.update_height);
   get(statement, mapping_record_column::expiration_height, result.expiration_height);
@@ -506,12 +501,9 @@ bool sql_run_statement(bns_sql_type type, sql_compiled_statement& statement, voi
 
           case bns_sql_type::get_mapping_counts:
           {
-            auto& counts = *static_cast<std::map<mapping_type, int>*>(context);
-            std::underlying_type_t<mapping_type> type_val;
             int count;
-            get(statement, 0, type_val);
-            get(statement, 1, count);
-            counts.emplace(static_cast<mapping_type>(type_val), count);
+            get(statement, 0, count);
+            *static_cast<int *>(context) = count;
             data_loaded = true;
           }
         }
@@ -1216,8 +1208,9 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
     if (check_condition(bns_extra.version != 0, reason, tx, ", ", bns_extra_string(nettype, bns_extra), " unexpected version=", std::to_string(bns_extra.version), ", expected=0"))
       return false;
 
-    if (check_condition(!bns::mapping_type_allowed(hf_version, bns_extra.type), reason, tx, ", ", bns_extra_string(nettype, bns_extra), " specifying type=", bns_extra.type, " that is disallowed in hardfork ", hf_version))
-      return false;
+    //TODO bns-rework we have to remove this if not necessory replace with year validation
+    // if (check_condition(!bns::mapping_type_allowed(hf_version, bns_extra.type), reason, tx, ", ", bns_extra_string(nettype, bns_extra), " specifying type=", bns_extra.type, " that is disallowed in hardfork ", hf_version))
+    //   return false;
 
     // -----------------------------------------------------------------------------------------------
     // Serialized Values Check
@@ -1275,7 +1268,7 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   {
     uint64_t burn                = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
     std::cout << "bns_extra.is_buying() : " << bns_extra.is_buying() << std::endl;
-    uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years,bns_extra.type) : 0;
+    uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years) : 0;
     if (hf_version == cryptonote::network_version_18 && burn > burn_required && blockchain_height < 524'000) {
         // Testnet sync fix: PR #1433 merged that lowered fees for HF18 while testnet was already on
         // HF18, but broke syncing because earlier HF18 blocks have BNS txes at the higher fees, so
@@ -1552,7 +1545,6 @@ bool build_default_tables(name_system_db& bns_db)
   std::cout <<"-------build_default_tables-------------\n";
   std::string mappings_columns = R"(
     id INTEGER PRIMARY KEY NOT NULL,
-    type INTEGER NOT NULL,
     name_hash VARCHAR NOT NULL,
     encrypted_bchat_value BLOB,
     encrypted_wallet_value BLOB,
@@ -1582,8 +1574,8 @@ CREATE TABLE IF NOT EXISTS mappings ()" + mappings_columns + R"();
 CREATE INDEX IF NOT EXISTS owner_id_index ON mappings(owner_id);
 DROP INDEX IF EXISTS backup_owner_id_index;
 CREATE INDEX IF NOT EXISTS backup_owner_index ON mappings(backup_owner_id);
-CREATE UNIQUE INDEX IF NOT EXISTS name_type_update ON mappings (name_hash, type, update_height DESC);
-CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (type, name_hash, expiration_height DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS name_type_update ON mappings (name_hash, update_height DESC);
+CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expiration_height DESC);
 )";
 
   char *table_err_msg = nullptr;
@@ -1626,13 +1618,13 @@ BEGIN TRANSACTION;
 ALTER TABLE mappings RENAME TO mappings_old;
 CREATE TABLE mappings ()" + mappings_columns + R"();
 INSERT INTO mappings
-  SELECT id, type, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, NULL
+  SELECT id, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, NULL
   FROM mappings_old;
 DROP TABLE mappings_old;
-CREATE UNIQUE INDEX name_type_update ON mappings(name_hash, type, update_height DESC);
+CREATE UNIQUE INDEX name_type_update ON mappings(name_hash, update_height DESC);
 CREATE INDEX owner_id_index ON mappings(owner_id);
 CREATE INDEX backup_owner_index ON mappings(backup_owner_id);
-CREATE INDEX mapping_type_name_exp ON mappings(type, name_hash, expiration_height DESC);
+CREATE INDEX mapping_type_name_exp ON mappings(name_hash, expiration_height DESC);
 COMMIT TRANSACTION;
 )";
 
@@ -1751,10 +1743,9 @@ bool name_system_db::init(cryptonote::Blockchain const *blockchain, cryptonote::
 
   //TODO bns-rework have to chenge the query for count
   const std::string GET_MAPPING_COUNTS_STR = R"(
-    SELECT type, COUNT(*) FROM (
-      SELECT DISTINCT type, name_hash FROM mappings WHERE )" + std::string{EXPIRATION} + R"(
-    )
-    GROUP BY type)";
+    SELECT COUNT(*) FROM (
+      SELECT DISTINCT name_hash FROM mappings WHERE )" + std::string{EXPIRATION} + R"(
+    ))";
 
   constexpr auto GET_SETTINGS_STR     = "SELECT * FROM settings WHERE id = 1"sv;
   constexpr auto GET_OWNER_BY_ID_STR  = "SELECT * FROM owner WHERE id = ?"sv;
@@ -1767,7 +1758,7 @@ DELETE FROM owner
 WHERE NOT EXISTS (SELECT * FROM mappings WHERE owner.id = mappings.owner_id)
 AND NOT EXISTS   (SELECT * FROM mappings WHERE owner.id = mappings.backup_owner_id))"sv;
 
-  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (type, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, expiration_height) VALUES (?,?,?,?,?,?,?,?,?,?)"sv;
+  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, expiration_height) VALUES (?,?,?,?,?,?,?,?,?)"sv;
   constexpr auto SAVE_OWNER_STR    = "INSERT INTO owner (address) VALUES (?)"sv;
   constexpr auto SAVE_SETTINGS_STR = "INSERT OR REPLACE INTO settings (id, top_height, top_hash, version) VALUES (1,?,?,?)"sv;
 
@@ -1949,7 +1940,7 @@ std::optional<int64_t> add_or_get_owner_id(bns::name_system_db &bns_db, crypto::
   {
     if (!bns_db.save_owner(key, &result))
     {
-      LOG_PRINT_L1("Failed to save BNS owner to DB tx: " << tx_hash << ", type: " << entry.type << ", name_hash: " << entry.name_hash << ", owner: " << entry.owner.to_string(bns_db.network_type()));
+      LOG_PRINT_L1("Failed to save BNS owner to DB tx: " << tx_hash << ", name_hash: " << entry.name_hash << ", owner: " << entry.owner.to_string(bns_db.network_type()));
       return std::nullopt;
     }
   }
@@ -1970,8 +1961,8 @@ std::pair<std::string, std::vector<update_variant>> update_record_query(name_sys
 
   sql.reserve(500);
   sql += R"(
-INSERT INTO mappings (type, name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_bchat_value,encrypted_wallet_value,encrypted_belnet_value)
-SELECT                type, name_hash, ?,    ?)";
+INSERT INTO mappings (name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_bchat_value,encrypted_wallet_value,encrypted_belnet_value)
+SELECT                name_hash, ?,    ?)";
 
   bind.emplace_back(blob_view{tx_hash.data, sizeof(tx_hash)});
   bind.emplace_back(height);
@@ -2081,7 +2072,7 @@ bool add_bns_entry(bns::name_system_db &bns_db, uint64_t height, cryptonote::tx_
     if (expiry) *expiry += height;
     if (!bns_db.save_mapping(tx_hash, entry, height, expiry, *owner_id, backup_owner_id))
     {
-      LOG_PRINT_L1("Failed to save BNS entry to DB tx: " << tx_hash << ", type: " << entry.type << ", name_hash: " << entry.name_hash << ", owner: " << entry.owner.to_string(bns_db.network_type()));
+      LOG_PRINT_L1("Failed to save BNS entry to DB tx: " << tx_hash << ", name_hash: " << entry.name_hash << ", owner: " << entry.owner.to_string(bns_db.network_type()));
       return false;
     }
   }
@@ -2217,7 +2208,6 @@ bool name_system_db::save_mapping(crypto::hash const &tx_hash, cryptonote::tx_ex
   std::string name_hash = hash_to_base64(src.name_hash);
   auto& statement = save_mapping_sql;
   clear_bindings(statement);
-  bind(statement, mapping_record_column::type, db_mapping_type(src.type));
   bind(statement, mapping_record_column::name_hash, name_hash);
 
   if(src.encrypted_bchat_value.empty())

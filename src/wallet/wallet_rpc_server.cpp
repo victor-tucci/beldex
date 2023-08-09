@@ -3055,8 +3055,7 @@ namespace {
     if (!map_years)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS buy years: " + reason};    
 
-    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_buy_mapping_tx(bns::mapping_type::bchat,
-                                                                                      req.owner.size() ? &req.owner : nullptr,
+    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_buy_mapping_tx(req.owner.size() ? &req.owner : nullptr,
                                                                                       req.backup_owner.size() ? &req.backup_owner : nullptr,
                                                                                       req.name,
                                                                                       req.value_bchat.size() ? &req.value_bchat : nullptr,
@@ -3106,7 +3105,7 @@ namespace {
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS renewal years: " + reason};
 
     std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_renewal_tx(
-        bns::mapping_type::bchat,*mapping_years, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
+        *mapping_years, req.name, &reason, req.priority, req.account_index, req.subaddr_indices);
 
     if (ptx_vector.empty())
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Failed to create BNS renewal transaction: " + reason};
@@ -3136,8 +3135,7 @@ namespace {
 
     std::string reason;
     std::vector<wallet2::pending_tx> ptx_vector =
-        m_wallet->bns_create_update_mapping_tx(bns::mapping_type::bchat,
-                                               req.name,
+        m_wallet->bns_create_update_mapping_tx(req.name,
                                                req.value_bchat.empty()  ? nullptr : &req.value_bchat,
                                                req.value_wallet.empty() ? nullptr : &req.value_wallet,
                                                req.value_belnet.empty() ? nullptr : &req.value_belnet,
@@ -3186,8 +3184,7 @@ namespace {
     std::string reason;
     bns::generic_signature signature;
 
-    if (!m_wallet->bns_make_update_mapping_signature(bns::mapping_type::bchat,
-                                                     req.name,
+    if (!m_wallet->bns_make_update_mapping_signature(req.name,
                                                      nullptr,
                                                      nullptr,
                                                      nullptr,

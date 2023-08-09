@@ -6504,8 +6504,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
 
   try
   {
-    ptx_vector = m_wallet->bns_create_buy_mapping_tx(bns::mapping_type::bchat,
-                                                     owner.size() ? &owner : nullptr,
+    ptx_vector = m_wallet->bns_create_buy_mapping_tx(owner.size() ? &owner : nullptr,
                                                      backup_owner.size() ? &backup_owner : nullptr,
                                                      name,
                                                      value_bchat.size() ? &value_bchat : nullptr,
@@ -6618,7 +6617,6 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
   try
   {
     ptx_vector = m_wallet->bns_create_renewal_tx(
-        bns::mapping_type::bchat,
         *mapping_years,
         name,
         &reason,
@@ -6696,8 +6694,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
   std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> response;
   try
   {
-    ptx_vector = m_wallet->bns_create_update_mapping_tx(bns::mapping_type::bchat,
-                                                        name,
+    ptx_vector = m_wallet->bns_create_update_mapping_tx(name,
                                                         value_bchat.size() ? &value_bchat : nullptr,
                                                         value_wallet.size() ? &value_wallet : nullptr,
                                                         value_belnet.size() ? &value_belnet : nullptr,
@@ -6970,8 +6967,7 @@ bool simple_wallet::bns_make_update_mapping_signature(std::vector<std::string> a
   SCOPED_WALLET_UNLOCK();
   bns::generic_signature signature_binary;
   std::string reason;
-  if (m_wallet->bns_make_update_mapping_signature(bns::mapping_type::bchat,
-                                                  name,
+  if (m_wallet->bns_make_update_mapping_signature(name,
                                                   nullptr,
                                                   nullptr,
                                                   nullptr,

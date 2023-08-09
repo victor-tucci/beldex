@@ -5,7 +5,6 @@ namespace cryptonote {
 tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     bns::generic_owner const& owner,
     bns::generic_owner const* backup_owner,
-    bns::mapping_type type,
     bns::mapping_years mapping_years,
     const crypto::hash& name_hash,
     const std::string& encrypted_bchat_value,
@@ -22,7 +21,6 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
   else
     result.fields = bns::extra_field::buy_no_backup;
 
-  result.type = type;
   result.mapping_years = mapping_years;
   result.name_hash = name_hash;
   
@@ -49,13 +47,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
 }
 
 tx_extra_beldex_name_system tx_extra_beldex_name_system::make_renew(
-    bns::mapping_type type, bns::mapping_years mapping_years, crypto::hash const &name_hash, crypto::hash const &prev_txid)
+    bns::mapping_years mapping_years, crypto::hash const &name_hash, crypto::hash const &prev_txid)
 {
   assert(is_renewal_type(mapping_years) && prev_txid);
 
   tx_extra_beldex_name_system result{};
   result.fields = bns::extra_field::none;
-  result.type = type;
   result.mapping_years=mapping_years;
   result.name_hash = name_hash;
   result.prev_txid = prev_txid;
@@ -64,7 +61,6 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_renew(
 
 tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     const bns::generic_signature& signature,
-    bns::mapping_type type,
     const crypto::hash& name_hash,
     std::string_view encrypted_bchat_value,
     std::string_view encrypted_wallet_value,
@@ -75,7 +71,6 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
 {
   tx_extra_beldex_name_system result{};
   result.signature = signature;
-  result.type = type;
   result.name_hash = name_hash;
   result.fields |= bns::extra_field::signature;
 

@@ -1802,8 +1802,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
         std::string reason;
         try {
             LOG_PRINT_L1(__FUNCTION__ << "Create bns_buy is start...");
-            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(bns::mapping_type::bchat,
-                                                     owner.size() ? &owner : nullptr,
+            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(owner.size() ? &owner : nullptr,
                                                      backup_owner.size() ? &backup_owner : nullptr,
                                                      name,
                                                      value_bchat.size() ? &value_bchat : nullptr,
@@ -1917,8 +1916,7 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
         std::string reason;
         try {
             LOG_PRINT_L1(__FUNCTION__ << "Create bns_update is start...");
-            transaction->m_pending_tx = w->bns_create_update_mapping_tx(bns::mapping_type::bchat,
-                                                        name,
+            transaction->m_pending_tx = w->bns_create_update_mapping_tx(name,
                                                         value_bchat.size() ? &value_bchat : nullptr,
                                                         value_wallet.size() ? &value_wallet : nullptr,
                                                         value_belnet.size() ? &value_belnet : nullptr,
@@ -2036,8 +2034,7 @@ PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::strin
         try
         {
             LOG_PRINT_L1(__FUNCTION__ << "Create bns_renew is start...");
-            transaction->m_pending_tx = w->bns_create_renewal_tx(bns::mapping_type::bchat,
-                                                                map_year,
+            transaction->m_pending_tx = w->bns_create_renewal_tx(map_year,
                                                                 name, 
                                                                 &reason, 
                                                                 priority,       

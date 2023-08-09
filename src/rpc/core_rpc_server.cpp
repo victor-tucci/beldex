@@ -801,17 +801,6 @@ namespace cryptonote { namespace rpc {
         auto& bns = entry.bns.emplace();
         if (x.is_buying() || x.is_renewing())
           bns.blocks = bns::expiry_blocks(nettype, x.mapping_years, hf_version) ;
-        switch (x.type)
-        {
-          case bns::mapping_type::belnet: bns.type = "belnet"; break;
-
-          case bns::mapping_type::bchat: bns.type = "bchat"; break;
-          case bns::mapping_type::wallet:  bns.type = "wallet"; break;
-
-          case bns::mapping_type::update_record_internal: [[fallthrough]];
-          case bns::mapping_type::_count:
-                                           break;
-        }
         if (x.is_buying())
           bns.buy = true;
         else if (x.is_updating())

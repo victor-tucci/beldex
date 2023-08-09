@@ -79,7 +79,7 @@ constexpr bool is_renewal_type(mapping_years y) { return y >= mapping_years::bns
 // days per registration "year" to allow for some blockchain time drift + leap years.
 constexpr uint64_t REGISTRATION_YEAR_DAYS = 368;
 
-constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years,mapping_type type)
+constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
 {
   uint64_t result = 0;
   
@@ -110,29 +110,8 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years,mappi
       result = 6 * basic_fee;
       break;
     }
-    return result;
   }
-  else
-  {
-    // The base amount for bchat/wallet/belnet-1year:
-    const uint64_t basic_fee = (hf_version >= 16 ? 15 * COIN : // cryptonote::network_version_16_POS -- but don't want to add cryptonote_config.h include
-                                    20 * COIN                  // cryptonote::network_version_15_bns
-    );
-    switch (type)
-    {
-    case mapping_type::update_record_internal:
-      result = 0;
-      break;
-
-    case mapping_type::belnet: /* FALLTHRU */
-    case mapping_type::bchat:  /* FALLTHRU */
-    case mapping_type::wallet: /* FALLTHRU */
-    default:
-      result = basic_fee;
-      break;
-    }
-    return result;
-  }
+  return result;
 }
 }; // namespace bns
 
