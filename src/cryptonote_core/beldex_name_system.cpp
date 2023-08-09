@@ -1208,10 +1208,6 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
     if (check_condition(bns_extra.version != 0, reason, tx, ", ", bns_extra_string(nettype, bns_extra), " unexpected version=", std::to_string(bns_extra.version), ", expected=0"))
       return false;
 
-    //TODO bns-rework we have to remove this if not necessory replace with year validation
-    // if (check_condition(!bns::mapping_type_allowed(hf_version, bns_extra.type), reason, tx, ", ", bns_extra_string(nettype, bns_extra), " specifying type=", bns_extra.type, " that is disallowed in hardfork ", hf_version))
-    //   return false;
-
     // -----------------------------------------------------------------------------------------------
     // Serialized Values Check
     // -----------------------------------------------------------------------------------------------
@@ -2117,6 +2113,7 @@ bool name_system_db::add_block(const cryptonote::block &block, const std::vector
    return false;
 
   bool bns_parsed_from_block = false;
+  //TODO bns-rework have to validate the old bns
   if (block.major_version >= cryptonote::network_version_16_bns)
   {
     for (cryptonote::transaction const &tx : txs)
@@ -2431,8 +2428,8 @@ std::vector<mapping_record> name_system_db::get_mappings_by_owner(generic_owner 
   return result;
 }
 
-std::map<mapping_type, int> name_system_db::get_mapping_counts(uint64_t blockchain_height) {
-  std::map<mapping_type, int> result;
+int name_system_db::get_mapping_counts(uint64_t blockchain_height) {
+  int result;
   bind_and_run(bns_sql_type::get_mapping_counts, get_mapping_counts_sql, &result, blockchain_height);
   return result;
 }

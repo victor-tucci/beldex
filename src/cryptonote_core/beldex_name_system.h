@@ -309,7 +309,7 @@ struct name_system_db
   settings_record             get_settings          ();
 
   // Returns the count of each type of BNS registration that is currently active.
-  std::map<mapping_type, int> get_mapping_counts(uint64_t blockchain_height);
+  int get_mapping_counts(uint64_t blockchain_height);
 
   // Resolves a mapping of the given type and name hash. Returns a null optional if the value was
   // not found or expired, otherwise returns the encrypted value.

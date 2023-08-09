@@ -426,10 +426,7 @@ namespace cryptonote { namespace rpc {
     res.block_size_median = res.block_weight_median = m_core.get_blockchain_storage().get_current_cumulative_block_weight_median();
 
     auto bns_counts = m_core.get_blockchain_storage().name_system_db().get_mapping_counts(res.height);
-    res.bns_counts = {
-      bns_counts[bns::mapping_type::bchat],
-      bns_counts[bns::mapping_type::wallet],
-      bns_counts[bns::mapping_type::belnet]};
+    res.bns_counts = bns_counts;
 
     if (context.admin)
     {
