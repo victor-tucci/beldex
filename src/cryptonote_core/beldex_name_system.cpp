@@ -372,11 +372,11 @@ bool sql_copy_blob(sql_compiled_statement& statement, I column, void *dest, size
 mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
 {
   mapping_record result = {};
-  auto type_int = get<uint16_t>(statement, mapping_record_column::type);
-  if (type_int >= tools::enum_count<mapping_type>)
-    return result;
+  // auto type_int = get<uint16_t>(statement, mapping_record_column::type);
+  // if (type_int >= tools::enum_count<mapping_type>)
+  //   return result;
 
-  result.type = static_cast<mapping_type>(type_int);
+  // result.type = static_cast<mapping_type>(type_int);
   get(statement, mapping_record_column::id, result.id);
   get(statement, mapping_record_column::update_height, result.update_height);
   get(statement, mapping_record_column::expiration_height, result.expiration_height);
@@ -1090,7 +1090,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
 
   crypto::hash expected_prev_txid = crypto::null_hash;
   std::string name_hash           = hash_to_base64(bns_extra.name_hash);
-  bns::mapping_record mapping     = bns_db.get_mapping(bns_extra.type, name_hash);
+  bns::mapping_record mapping     = bns_db.get_mapping(name_hash);
 
   if (bns_extra.is_updating())
   {
@@ -1142,28 +1142,10 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
   {
     // If buying a new name then the existing name must not be active
     if (check_condition(mapping.active(blockchain_height), reason,
-          "Cannot buy an BNS name that is already registered: name_hash=", mapping.name_hash, ", type=", mapping.type,
+          "Cannot buy an BNS name that is already registered: name_hash=", mapping.name_hash,
           "; TX: ", tx, "; ", bns_extra_string(bns_db.network_type(), bns_extra)))
         return false;
 
-    // If buying a new wallet name then the existing bchat name must not be active and vice versa
-    // The owner of an existing name but different type is allowed to register but the owner and backup owners
-    // of the new mapping must be from the same owners and backup owners of the previous mapping ie no
-    // new addresses are allowed to be added as owner or backup owner.
-    if (bns_extra.type == mapping_type::wallet)
-    {
-      bns::mapping_record bchat_mapping = bns_db.get_mapping(mapping_type::bchat, name_hash);
-      if (check_condition(bchat_mapping.active(blockchain_height) && (!(bchat_mapping.owner == bns_extra.owner || bchat_mapping.backup_owner == bns_extra.owner) || !(!bns_extra.field_is_set(bns::extra_field::backup_owner) || bchat_mapping.backup_owner == bns_extra.backup_owner || bchat_mapping.owner == bns_extra.backup_owner)), reason,
-            "Cannot buy an BNS wallet name that has an already registered bchat name: name_hash=", mapping.name_hash, ", type=", mapping.type,
-            "; TX: ", tx, "; ", bns_extra_string(bns_db.network_type(), bns_extra)))
-          return false;
-    } else if (bns_extra.type == mapping_type::bchat) {
-      bns::mapping_record wallet_mapping = bns_db.get_mapping(mapping_type::wallet, name_hash);
-      if (check_condition(wallet_mapping.active(blockchain_height) && (!(wallet_mapping.owner == bns_extra.owner || wallet_mapping.backup_owner == bns_extra.owner) || !(!bns_extra.field_is_set(bns::extra_field::backup_owner) || wallet_mapping.backup_owner == bns_extra.backup_owner || wallet_mapping.owner == bns_extra.backup_owner)), reason,
-            "Cannot buy an BNS bchat name that has an already registered wallet name: name_hash=", mapping.name_hash, ", type=", mapping.type,
-            "; TX: ", tx, "; ", bns_extra_string(bns_db.network_type(), bns_extra)))
-          return false;
-    }
   }
   else if (bns_extra.is_renewing())
   {
@@ -1262,7 +1244,7 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
     if (bns_extra.field_is_set(bns::extra_field::encrypted_bchat_value))
     {
       std::cout << "data in bns_extra.encrypted_bchat_value : " << bns_extra.encrypted_bchat_value << std::endl;
-      if (!mapping_value::validate_encrypted(bns_extra.type, bns_extra.encrypted_bchat_value, nullptr, reason))
+      if (!mapping_value::validate_encrypted(mapping_type::bchat, bns_extra.encrypted_bchat_value, nullptr, reason))
         return false;
     }
 
@@ -2316,7 +2298,7 @@ bool name_system_db::get_wallet_mapping(std::string str, uint64_t blockchain_hei
 
 
 
-mapping_record name_system_db::get_mapping(mapping_type type, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height)
+mapping_record name_system_db::get_mapping(std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height)
 {
   assert(name_base64_hash.size() == 44 && name_base64_hash.back() == '=' && oxenc::is_base64(name_base64_hash));
   mapping_record result = {};

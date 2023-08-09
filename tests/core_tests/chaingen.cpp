@@ -629,7 +629,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
   crypto::hash name_hash       = bns::name_to_hash(lcname);
   std::string name_base64_hash = bns::name_to_base64_hash(lcname);
   crypto::hash prev_txid = crypto::null_hash;
-  if (bns::mapping_record mapping = bns_db_->get_mapping(type, name_base64_hash, new_height))
+  if (bns::mapping_record mapping = bns_db_->get_mapping(name_base64_hash, new_height))
     prev_txid = mapping.txid;
 
   bns::mapping_value encrypted_value = value;
@@ -665,7 +665,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
   crypto::hash prev_txid = {};
   {
     std::string name_base64_hash = bns::name_to_base64_hash(lcname);
-    bns::mapping_record mapping  = bns_db_->get_mapping(type, name_base64_hash);
+    bns::mapping_record mapping  = bns_db_->get_mapping(name_base64_hash);
     if (use_asserts) assert(mapping);
     prev_txid = mapping.txid;
   }
@@ -742,7 +742,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_ren
   crypto::hash prev_txid = {};
   {
     std::string name_base64_hash = bns::name_to_base64_hash(lcname);
-    bns::mapping_record mapping  = bns_db_->get_mapping(type, name_base64_hash);
+    bns::mapping_record mapping  = bns_db_->get_mapping(name_base64_hash);
     prev_txid = mapping.txid;
   }
 

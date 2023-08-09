@@ -1041,7 +1041,6 @@ static bool verify_bns_mapping_record(char const *perr_context,
                                       bns::generic_owner const &backup_owner)
 {
   CHECK_EQ(record.loaded,          true);
-  CHECK_EQ(record.type,            type);
   auto lcname = tools::lowercase_ascii_string(name);
   CHECK_EQ(record.name_hash,       bns::name_to_base64_hash(lcname));
   bns::mapping_value decrypted{record.encrypted_value};
@@ -1145,7 +1144,7 @@ bool beldex_name_system_expiration::generate(std::vector<test_event_entry> &even
                                  miner_key.owner.to_string(cryptonote::FAKECHAIN)
                                      << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
-        bns::mapping_record record = bns_db.get_mapping(mapping_type, name_hash);
+        bns::mapping_record record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_bns_entry, height_of_bns_entry + belnet_expiry(mapping_type), tx_hash, miner_key.owner, {} /*backup_owner*/));
         return true;
       });
@@ -1166,7 +1165,7 @@ bool beldex_name_system_expiration::generate(std::vector<test_event_entry> &even
                                  miner_key.owner.to_string(cryptonote::FAKECHAIN)
                                      << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
-        bns::mapping_record record = bns_db.get_mapping(mapping_type, name_hash);
+        bns::mapping_record record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_bns_entry, height_of_bns_entry + belnet_expiry(mapping_type), tx_hash, miner_key.owner, {} /*backup_owner*/));
         CHECK_EQ(record.active(blockchain_height), false);
         return true;
@@ -1469,14 +1468,14 @@ bool beldex_name_system_handles_duplicate_in_bns_db::generate(std::vector<test_e
                                  << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
     std::string bchat_name_hash = bns::name_to_base64_hash(bchat_name);
-    bns::mapping_record record1 = bns_db.get_mapping(bns::mapping_type::bchat, bchat_name_hash);
+    bns::mapping_record record1 = bns_db.get_mapping(bchat_name_hash);
     CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record1, bns::mapping_type::bchat, bchat_name, bob_key.bchat_value, height_of_ons_entry, std::nullopt, bchat_tx_hash, miner_key.owner, {} /*backup_owner*/));
     CHECK_EQ(record1.owner_id, owner.id);
 
     auto netv = get_network_version(c.get_nettype(), c.get_current_blockchain_height());
     if (bns::mapping_type_allowed(netv, bns::mapping_type::belnet))
     {
-      bns::mapping_record record2 = bns_db.get_mapping(bns::mapping_type::belnet, bchat_name_hash);
+      bns::mapping_record record2 = bns_db.get_mapping(bchat_name_hash);
       CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record2, bns::mapping_type::belnet, belnet_name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet_2years), belnet_tx_hash, miner_key.owner, {} /*backup_owner*/));
       CHECK_EQ(record2.owner_id, owner.id);
       CHECK_EQ(record2.active(blockchain_height), true);
@@ -1902,7 +1901,7 @@ bool beldex_name_system_name_renewal::generate(std::vector<test_event_entry> &ev
                                  << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
     std::string name_hash = bns::name_to_base64_hash(name);
-    bns::mapping_record record = bns_db.get_mapping(bns::mapping_type::belnet, name_hash);
+    bns::mapping_record record = bns_db.get_mapping(name_hash);
     CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet), prev_txid, miner_key.owner, {} /*backup_owner*/));
     return true;
   });
@@ -1934,7 +1933,7 @@ bool beldex_name_system_name_renewal::generate(std::vector<test_event_entry> &ev
                                  << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
     std::string name_hash = bns::name_to_base64_hash(name);
-    bns::mapping_record record = bns_db.get_mapping(bns::mapping_type::belnet, name_hash);
+    bns::mapping_record record = bns_db.get_mapping(name_hash);
     CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, renewal_height,
           // Original registration:
           height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet)
@@ -2062,7 +2061,7 @@ bool beldex_name_system_update_mapping_after_expiry_fails::generate(std::vector<
                                    << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
       std::string name_hash        = bns::name_to_base64_hash(name);
-      bns::mapping_record record = bns_db.get_mapping(bns::mapping_type::belnet, name_hash);
+      bns::mapping_record record = bns_db.get_mapping(name_hash);
       CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet), tx_hash, miner_key.owner, {} /*backup_owner*/));
       CHECK_EQ(record.active(blockchain_height), false);
       CHECK_EQ(record.owner_id, owner.id);
@@ -2187,7 +2186,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     {
       const char* perr_context = "check_update0";
       bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-      bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+      bns::mapping_record const record = bns_db.get_mapping(name_hash);
       CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, miner_key.bchat_value, height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
       return true;
     });
@@ -2207,7 +2206,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update1";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2228,7 +2227,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update2";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2264,7 +2263,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update3";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2285,7 +2284,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update3";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2325,7 +2324,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update4";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2346,7 +2345,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update5";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2386,7 +2385,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update6";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
@@ -2408,7 +2407,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       {
         const char* perr_context = "check_update7";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
-        bns::mapping_record const record = bns_db.get_mapping(bns::mapping_type::bchat, name_hash);
+        bns::mapping_record const record = bns_db.get_mapping(name_hash);
         CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
