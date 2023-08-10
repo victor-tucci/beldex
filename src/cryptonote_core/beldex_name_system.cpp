@@ -1583,9 +1583,9 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
     return false;
   }
 
-  // In Beldex 8 we dropped some columns that are no longer needed, but SQLite can't do this easily:
-  // instead we have to manually recreate the table, so check it and see if the prev_txid or
-  // register_height columns still exist: if so, we need to recreate.
+  // In Beldex v5.0.0 we dropped some columns that are no longer needed, but SQLite can't do this easily:
+  // instead we have to manually recreate the table, so check it and see if the type or
+  // encrypted_value columns still exist: if so, we need to recreate.
   bool need_mappings_migration = false;
   {
     sql_compiled_statement mappings_info{bns_db};
@@ -1593,7 +1593,7 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
     while (step(mappings_info) == SQLITE_ROW)
     {
       auto name = get<std::string_view>(mappings_info, 1);
-      if (name == "prev_txid" || name == "register_height")
+      if (name == "type" || name == "encrypted_value")
       {
         need_mappings_migration = true;
         break;
@@ -1603,20 +1603,13 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
 
   if (need_mappings_migration)
   {
-    // Earlier version migration: we need "update_height" to exist (if this fails it's fine).
-    sqlite3_exec(bns_db.db,
-        "ALTER TABLE mappings ADD COLUMN update_height INTEGER NOT NULL DEFAULT register_height",
-        nullptr /*callback*/, nullptr /*callback ctx*/, nullptr /*errstr*/);
-
     LOG_PRINT_L1("Migrating BNS mappings database to new format");
     const std::string migrate = R"(
 BEGIN TRANSACTION;
 ALTER TABLE mappings RENAME TO mappings_old;
 CREATE TABLE mappings ()" + mappings_columns + R"();
-INSERT INTO mappings
-  SELECT id, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, NULL
-  FROM mappings_old;
 DROP TABLE mappings_old;
+DELETE FROM owner;
 CREATE UNIQUE INDEX name_type_update ON mappings(name_hash, update_height DESC);
 CREATE INDEX owner_id_index ON mappings(owner_id);
 CREATE INDEX backup_owner_index ON mappings(backup_owner_id);
