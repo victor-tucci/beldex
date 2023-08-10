@@ -1538,7 +1538,6 @@ namespace {
 
 bool build_default_tables(name_system_db& bns_db)
 {
-  std::cout <<"-------build_default_tables-------------\n";
   std::string mappings_columns = R"(
     id INTEGER PRIMARY KEY NOT NULL,
     name_hash VARCHAR NOT NULL,
@@ -1624,6 +1623,7 @@ COMMIT TRANSACTION;
       sqlite3_free(table_err_msg);
       return false;
     }
+    MGINFO_GREEN("Migrated BNS mappings database to new format");
   }
 
   // Updates to add columns; we ignore errors on these since they will fail if the column already
