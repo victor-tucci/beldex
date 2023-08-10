@@ -2231,8 +2231,6 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
 
     struct request
     {
-      //TODO bns-rework have to remove the type
-      std::string        type;            // The mapping type: "bchat", "belnet", "wallet".
       std::string        years;           //The mapping years "1year || 1y" , "2years || 2y" , "5years || 5y" , "10years || 10y".
       std::string        owner;           // (Optional): The ed25519 public key or wallet address that has authority to update the mapping.
       std::string        backup_owner;    // (Optional): The secondary, backup public key that has authority to update the mapping.
@@ -2280,7 +2278,6 @@ The renewal can be for 1, 2, 5, or 10 years by specifying a `type` value of "bel
 
     struct request
     {
-      std::string        type;             // The mapping type, "belnet" (1-year), or "belnet_2y", "belnet_5y", "belnet_10y" for multi-year registrations.
       std::string        years;            //The mapping years "1year || 1y" , "2years || 2y" , "5years || 5y" , "10years || 10y".
       std::string        name;             // The name to update
 
@@ -2315,7 +2312,6 @@ If signing is performed externally then you must first encrypt the `value` (if b
 
     struct request
     {
-      std::string        type;          // The mapping type, "bchat", "belnet", or "wallet".
       std::string        name;          // The name to update via Beldex Name Service
       std::string        value_bchat;   // (Optional): The new value of bchat that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value bchat (if non-empty) must be already encrypted.
       std::string        value_wallet;  // (Optional): The new value of wallet that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value wallet(if non-empty) must be already encrypted.
@@ -2364,7 +2360,6 @@ This command is only required if the open wallet is one of the owners of a BNS r
     //TODO bns-rework add value as a argument in the future when updating value with the signature.
     struct request
     {
-      std::string type;  // The mapping type, currently we support "bchat", "belnet" and "wallet" mappings.
       std::string name;  // The desired name to update via Beldex Name Service
       std::string owner;     // (Optional): The new owner of the mapping. If not specified or given the empty string "", then the mapping's owner remains unchanged.
       std::string backup_owner; // (Optional): The new backup owner of the mapping. If not specified or given the empty string "", then the mapping's backup owner remains unchanged.

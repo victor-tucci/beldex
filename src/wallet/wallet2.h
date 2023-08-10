@@ -817,7 +817,6 @@ private:
     auto bns_names_to_owners(cryptonote::rpc::BNS_NAMES_TO_OWNERS::request const &request) const { return m_node_rpc_proxy.bns_names_to_owners(request); }
     auto resolve(cryptonote::rpc::BNS_RESOLVE::request const &request) const { return m_node_rpc_proxy.bns_resolve(request); }
 
-    //TODO bns-rework have to change for the catche data
     struct bns_detail
     {
       std::string name;

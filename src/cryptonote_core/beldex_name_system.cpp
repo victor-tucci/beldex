@@ -1232,22 +1232,18 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
 
     if (bns_extra.field_is_set(bns::extra_field::encrypted_bchat_value))
     {
-      std::cout << "data in bns_extra.encrypted_bchat_value : " << bns_extra.encrypted_bchat_value << std::endl;
       if (!mapping_value::validate_encrypted(mapping_type::bchat, bns_extra.encrypted_bchat_value, nullptr, reason))
         return false;
     }
 
     if (bns_extra.field_is_set(bns::extra_field::encrypted_wallet_value))
     {
-      std::cout << "data in bns_extra.encrypted_wallet_value : " << bns_extra.encrypted_wallet_value<< std::endl;
       if (!mapping_value::validate_encrypted(mapping_type::wallet, bns_extra.encrypted_wallet_value, nullptr, reason))
         return false;
     }
 
     if (bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value))
     {
-      std::cout << "data in bns_extra.encrypted_belnet_value : " << bns_extra.encrypted_belnet_value << std::endl;
-
       if (!mapping_value::validate_encrypted(mapping_type::belnet, bns_extra.encrypted_belnet_value, nullptr, reason))
         return false;
     }
@@ -1263,7 +1259,6 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   // -----------------------------------------------------------------------------------------------
   {
     uint64_t burn                = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
-    std::cout << "bns_extra.is_buying() : " << bns_extra.is_buying() << std::endl;
     uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years) : 0;
     if (hf_version == cryptonote::network_version_18 && burn > burn_required && blockchain_height < 524'000) {
         // Testnet sync fix: PR #1433 merged that lowered fees for HF18 while testnet was already on
@@ -1730,7 +1725,6 @@ bool name_system_db::init(cryptonote::Blockchain const *blockchain, cryptonote::
     + "WHERE name_hash = ?"
     + sql_select_mappings_and_owners_suffix;
 
-  //TODO bns-rework have to chenge the query for count
   const std::string GET_MAPPING_COUNTS_STR = R"(
     SELECT COUNT(*) FROM (
       SELECT DISTINCT name_hash FROM mappings WHERE )" + std::string{EXPIRATION} + R"(
@@ -2026,7 +2020,6 @@ SELECT                name_hash, ?,    ?)";
 
   sql += suffix;
   bind.emplace_back(hash_to_base64(entry.name_hash));
-  std::cout <<"record query for update/renew:\n" << sql <<"\n";
   return result;
 }
 
@@ -2339,7 +2332,6 @@ std::vector<mapping_record> name_system_db::get_mappings(std::string_view name_b
   }
 
   sql_statement += sql_select_mappings_and_owners_suffix;
-  std::cout <<"get mapping: \n" << sql_statement << std::endl;
   // Compile Statement
   sql_compiled_statement statement{*this};
   if (!statement.compile(sql_statement, false /*optimise_for_multiple_usage*/)
@@ -2370,9 +2362,6 @@ std::vector<mapping_record> name_system_db::get_mappings_by_owners(std::vector<g
     if (owners.size() > 0)
       placeholders.resize(placeholders.size() - 2);
 
-    // sql_statement.reserve(sql_select_mappings_and_owners_prefix.size() + SQL_WHERE_OWNER.size() + SQL_OR_BACKUP_OWNER.size()
-    //     + SQL_SUFFIX.size() + 2*placeholders.size() + 5 + EXPIRATION.size() + sql_select_mappings_and_owners_suffix.size());
-    // sql_statement += sql_select_mappings_and_owners_prefix;
     sql_statement.reserve(sql_select_current_mappings_and_owners_prefix.size() + SQL_WHERE_OWNER.size() + SQL_OR_BACKUP_OWNER.size()
         + SQL_SUFFIX.size() + 2*placeholders.size() + 5 + EXPIRATION_SUB.size());
     sql_statement += sql_select_current_mappings_and_owners_prefix;
@@ -2394,7 +2383,6 @@ std::vector<mapping_record> name_system_db::get_mappings_by_owners(std::vector<g
     bind.emplace_back(*blockchain_height);
   }
 
-  std::cout <<"get_mappings_by_owners : " << sql_statement << std::endl;
   // Compile Statement
   std::vector<mapping_record> result;
   sql_compiled_statement statement{*this};

@@ -6787,8 +6787,8 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     
     if (value_bchat.size())
     {
-      fmt::print(fmt::format(tr("Old Value bchat  : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
-      fmt::print(fmt::format(tr("New Value bchat  : {}\n"), value_bchat));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value bchat  : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value bchat  : {}\n"), value_bchat));
     }
     else
     {
@@ -6797,8 +6797,8 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (value_wallet.size())
     {
-      fmt::print(fmt::format(tr("Old Value wallet : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
-      fmt::print(fmt::format(tr("New Value wallet : {}\n"), value_wallet));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value wallet : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value wallet : {}\n"), value_wallet));
     }
     else
     {
@@ -6807,8 +6807,8 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     
     if (value_belnet.size())
     {
-      fmt::print(fmt::format(tr("Old Value belnet : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
-      fmt::print(fmt::format(tr("New Value belnet : {}\n"), value_belnet));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value belnet : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value belnet : {}\n"), value_belnet));
     }
     else
     {
@@ -7071,10 +7071,9 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     }
 
     auto writer = tools::msg_writer();
-    writer
-      << "    Name                   : " << name;
+    fmt::print(fmt::fg(fmt::color::sky_blue),fmt::format( "\n    Name                   : {}\n",name));
     if(!enc_bchat_hex.empty()) writer
-      << "\n    Value bchat            : " << value_bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat);
+      << "    Value bchat            : " << value_bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat);
     if(!enc_wallet_hex.empty()) writer
       << "\n    Value wallet           : " << value_wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet);      
     if(!enc_belnet_hex.empty()) writer
@@ -7202,12 +7201,11 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
       }
 
       auto writer = tools::msg_writer();
-      writer
-        << "    Name (hashed)          : " << entry.name_hash;
-      if (!name.empty()) writer
-        << "\n    Name                   : " << name;
+      fmt::print(fmt::fg(fmt::color::sky_blue),fmt::format( "\n    Name (hashed)          : {}\n",entry.name_hash));
+      if (!name.empty())
+        fmt::print(fmt::fg(fmt::color::sky_blue),fmt::format( "    Name                   : {}\n",name));
       if (!value_bchat.empty()) writer
-        << "\n    Value bchat            : " << value_bchat;
+        << "    Value bchat            : " << value_bchat;
       if (!value_wallet.empty()) writer
         << "\n    Value wallet           : " << value_wallet;
       if (!value_belnet.empty()) writer
