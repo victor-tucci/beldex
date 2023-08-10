@@ -6529,29 +6529,18 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     dsts.push_back(info);
 
     std::cout << std::endl << tr("Buying Beldex Name System Record") << std::endl << std::endl;
-    if (value_bchat.size())
-      fmt::print(fmt::format(tr("Bchat Name   : {:s}\n"), name));
-    else if (value_wallet.size())
-      fmt::print(fmt::format(tr("Wallet Name  : {:s}\n"), name));
-    else if (value_belnet.size())
+    int years =
+        *mapping_years == bns::mapping_years::bns_10years ? 10 :
+        *mapping_years == bns::mapping_years::bns_5years ? 5 :
+        *mapping_years == bns::mapping_years::bns_2years ? 2 :1;
+    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+    if (!hf_version)
     {
-      fmt::print(fmt::format(tr("Belnet Name  : {:s}\n"), name));
-      int years =
-          *mapping_years == bns::mapping_years::bns_10years ? 10 :
-          *mapping_years == bns::mapping_years::bns_5years ? 5 :
-          *mapping_years == bns::mapping_years::bns_2years ? 2 :
-          1;
-        std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-        if (!hf_version)
-        {
-            tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-            return false;
-        }
-      int blocks = BLOCKS_EXPECTED_IN_DAYS((years * bns::REGISTRATION_YEAR_DAYS),*hf_version);
-      std::cout << fmt::format(tr("Registration : {} years ({} blocks)\n"), years, blocks);
+      tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+      return false;
     }
-    else
-      fmt::print(fmt::format(tr("Name       : {}\n"), name)); 
+    std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years, *hf_version);
+    fmt::print(fmt::format(tr("Name         : {}\n"), name)); 
     fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "(none)" : value_bchat));
     fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "(none)" : value_wallet));
     fmt::print(fmt::format(tr("Value belnet : {}\n"), value_belnet.empty() ? "(none)" : value_belnet));
@@ -6564,7 +6553,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     {
       std::cout << tr("Backup Owner : (none)") << std::endl;
     }
-
+    fmt::print(fmt::format(tr("Registration : {} {} ({} blocks)\n"), years, (years > 1) ? "years" : "year", *blocks));
     if (!confirm_and_send_tx(dsts, ptx_vector, priority == tools::tx_priority_flash))
       return false;
 
@@ -6638,10 +6627,10 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
 
     std::cout << "\n" << tr("Renew Beldex Name System Record") << "\n\n";
     fmt::print(fmt::format(tr("Name          : {}\n"), name)); 
-    int years = 1;
-    if (mapping_years == bns::mapping_years::bns_2years) years = 2;
-    else if (mapping_years == bns::mapping_years::bns_5years) years = 5;
-    else if (mapping_years == bns::mapping_years::bns_10years) years = 10;
+    int years =
+        *mapping_years == bns::mapping_years::bns_10years ? 10 :
+        *mapping_years == bns::mapping_years::bns_5years ? 5 :
+        *mapping_years == bns::mapping_years::bns_2years ? 2 :1;
 
     std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
     if (!hf_version)
@@ -6649,9 +6638,9 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
       tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
       return false;
     }
-    int blocks = BLOCKS_EXPECTED_IN_DAYS(years * bns::REGISTRATION_YEAR_DAYS,*hf_version);
-    fmt::print(fmt::format(tr("Renewal years : {} ({} blocks)\n"), years, blocks)); 
-    fmt::print(fmt::format(tr("New expiry    : Block {}\n"), (*response[0].expiration_height + blocks))); 
+    std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years, *hf_version);
+    fmt::print(fmt::format(tr("Renewal {} {} ({} blocks)\n"),(years > 1) ? "years :" : "year  :", years, *blocks)); 
+    fmt::print(fmt::format(tr("New expiry    : Block {}\n"), (*response[0].expiration_height + *blocks))); 
     std::cout << std::flush;
 
     if (!confirm_and_send_tx(dsts, ptx_vector, false /*flash*/))
@@ -6794,16 +6783,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
               << tr("Updating Beldex Name System Record") << std::endl
               << std::endl;
 
-    if (value_bchat.size())
-      fmt::print(fmt::format(tr("Bchat Name       : {}\n"), name));
-    else if (value_wallet.size())
-      fmt::print(fmt::format(tr("Wallet Name      : {}\n"), name));
-    else if (value_belnet.size())
-    {
-      fmt::print(fmt::format(tr("Belnet Name      : {}\n"), name));
-    }
-    else
-      fmt::print(fmt::format(tr("Name             : {}\n"), name));
+    fmt::print(fmt::format(tr("Name             : {}\n"), name));
     
     if (value_bchat.size())
     {
