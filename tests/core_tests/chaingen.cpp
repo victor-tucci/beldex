@@ -331,14 +331,16 @@ void beldex_chain_generator::add_tx(cryptonote::transaction const &tx, bool can_
 cryptonote::transaction
 beldex_chain_generator::create_and_add_beldex_name_system_tx(cryptonote::account_base const &src,
                                                          uint8_t hf_version,
-                                                         bns::mapping_type type,
+                                                         bns::mapping_years mapping_years,
                                                          std::string const &name,
-                                                         bns::mapping_value const &value,
+                                                         bns::mapping_value const &value_bchat,
+                                                         bns::mapping_value const &value_wallet,
+                                                         bns::mapping_value const &value_belnet,
                                                          bns::generic_owner const *owner,
                                                          bns::generic_owner const *backup_owner,
                                                          bool kept_by_block)
 {
-  cryptonote::transaction t = create_beldex_name_system_tx(src, hf_version, type, name, value, owner, backup_owner);
+  cryptonote::transaction t = create_beldex_name_system_tx(src, hf_version, mapping_years, name, value_bchat, value_wallet, value_belnet, owner, backup_owner);
   add_tx(t, true /*can_be_added_to_blockchain*/, ""/*fail_msg*/, kept_by_block);
   return t;
 }
@@ -348,13 +350,15 @@ beldex_chain_generator::create_and_add_beldex_name_system_tx_update(cryptonote::
                                                                 uint8_t hf_version,
                                                                 bns::mapping_type type,
                                                                 std::string const &name,
-                                                                bns::mapping_value const *value,
+                                                                bns::mapping_value const *value_bchat,
+                                                                bns::mapping_value const *value_wallet,
+                                                                bns::mapping_value const *value_belnet,
                                                                 bns::generic_owner const *owner,
                                                                 bns::generic_owner const *backup_owner,
                                                                 bns::generic_signature *signature,
                                                                 bool kept_by_block)
 {
-  cryptonote::transaction t = create_beldex_name_system_tx_update(src, hf_version, type, name, value, owner, backup_owner, signature);
+  cryptonote::transaction t = create_beldex_name_system_tx_update(src, hf_version, type, name, value_bchat, value_wallet, value_belnet, owner, backup_owner, signature);
   add_tx(t, true /*can_be_added_to_blockchain*/, ""/*fail_msg*/, kept_by_block);
   return t;
 }
@@ -362,11 +366,11 @@ beldex_chain_generator::create_and_add_beldex_name_system_tx_update(cryptonote::
 cryptonote::transaction
 beldex_chain_generator::create_and_add_beldex_name_system_tx_renew(cryptonote::account_base const &src,
                                                                uint8_t hf_version,
-                                                               bns::mapping_type type,
+                                                               bns::mapping_years mapping_years,
                                                                std::string const &name,
                                                                bool kept_by_block)
 {
-  cryptonote::transaction t = create_beldex_name_system_tx_renew(src, hf_version, type, name);
+  cryptonote::transaction t = create_beldex_name_system_tx_renew(src, hf_version, mapping_years, name);
   add_tx(t, true /*can_be_added_to_blockchain*/, ""/*fail_msg*/, kept_by_block);
   return t;
 }
@@ -603,9 +607,11 @@ cryptonote::checkpoint_t beldex_chain_generator::create_master_node_checkpoint(u
 
 cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cryptonote::account_base const &src,
                                                                          uint8_t hf_version,
-                                                                         bns::mapping_type type,
+                                                                         bns::mapping_years mapping_years,
                                                                          std::string const &name,
-                                                                         bns::mapping_value const &value,
+                                                                         bns::mapping_value const &value_bchat,
+                                                                         bns::mapping_value const &value_wallet,
+                                                                         bns::mapping_value const &value_belnet,
                                                                          bns::generic_owner const *owner,
                                                                          bns::generic_owner const *backup_owner,
                                                                          std::optional<uint64_t> burn_override) const
@@ -623,7 +629,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
   cryptonote::block const &head = top().block;
   uint64_t new_height           = get_block_height(top().block) + 1;
   uint8_t new_hf_version        = get_hf_version_at(new_height);
-  uint64_t burn = burn_override.value_or(bns::burn_needed(new_hf_version, type));
+  uint64_t burn = burn_override.value_or(bns::burn_needed(new_hf_version,mapping_years));
 
   auto lcname = tools::lowercase_ascii_string(name);
   crypto::hash name_hash       = bns::name_to_hash(lcname);
@@ -632,12 +638,20 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
   if (bns::mapping_record mapping = bns_db_->get_mapping(name_base64_hash, new_height))
     prev_txid = mapping.txid;
 
-  bns::mapping_value encrypted_value = value;
-  bool encrypted = encrypted_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
-  assert(encrypted);
+  bns::mapping_value encrypted_bchat_value = value_bchat;
+  bool encrypted_bchat = encrypted_bchat_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+  assert(encrypted_bchat);
+
+  bns::mapping_value encrypted_wallet_value = value_wallet;
+  bool encrypted_wallet = encrypted_wallet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+  assert(encrypted_wallet);
+
+  bns::mapping_value encrypted_belnet_value = value_belnet;
+  bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+  assert(encrypted_belnet);
 
   std::vector<uint8_t> extra;
-  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_buy(generic_owner, backup_owner, type, name_hash, encrypted_value.to_string(), prev_txid);
+  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_buy(generic_owner, backup_owner, mapping_years, name_hash, encrypted_bchat_value.to_string(), encrypted_wallet_value.to_string(), encrypted_belnet_value.to_string(), prev_txid);
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
   cryptonote::add_burned_amount_to_tx_extra(extra, burn);
   cryptonote::transaction result = {};
@@ -654,7 +668,9 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
                                                                                 uint8_t hf_version,
                                                                                 bns::mapping_type type,
                                                                                 std::string const &name,
-                                                                                bns::mapping_value const *value,
+                                                                                bns::mapping_value const *value_bchat,
+                                                                                bns::mapping_value const *value_wallet,
+                                                                                bns::mapping_value const *value_belnet,
                                                                                 bns::generic_owner const *owner,
                                                                                 bns::generic_owner const *backup_owner,
                                                                                 bns::generic_signature *signature,
@@ -670,15 +686,39 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
     prev_txid = mapping.txid;
   }
 
-  bns::mapping_value encrypted_value = {};
-  if (value)
+  bns::mapping_value encrypted_bchat_value = {};
+  if (value_bchat)
   {
-    encrypted_value = *value;
-    if (!encrypted_value.encrypted)
+    encrypted_bchat_value = *value_bchat;
+    if (!encrypted_bchat_value.encrypted)
     {
       assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
-      bool encrypted = encrypted_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
-      if (use_asserts) assert(encrypted);
+      bool encrypted_bchat = encrypted_bchat_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+      if (use_asserts) assert(encrypted_bchat);
+    }
+  }
+
+  bns::mapping_value encrypted_wallet_value = {};
+  if (value_wallet)
+  {
+    encrypted_wallet_value = *value_wallet;
+    if (!encrypted_wallet_value.encrypted)
+    {
+      assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
+      bool encrypted_wallet = encrypted_wallet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+      if (use_asserts) assert(encrypted_wallet);
+    }
+  }
+
+  bns::mapping_value encrypted_belnet_value = {};
+  if (value_belnet)
+  {
+    encrypted_belnet_value = *value_belnet;
+    if (!encrypted_belnet_value.encrypted)
+    {
+      assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
+      bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+      if (use_asserts) assert(encrypted_belnet);
     }
   }
 
@@ -686,7 +726,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
   if (!signature)
   {
     signature = &signature_;
-    auto data = bns::tx_extra_signature(encrypted_value.to_view(), owner, backup_owner, prev_txid);
+    auto data = bns::tx_extra_signature(encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), owner, backup_owner, prev_txid);
     crypto::hash hash{};
     if (!data.empty())
         crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
@@ -695,7 +735,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
   }
 
   std::vector<uint8_t> extra;
-  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_update(*signature, type, name_hash, encrypted_value.to_view(), owner, backup_owner, prev_txid);
+  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_update(*signature, name_hash, encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), owner, backup_owner, prev_txid);
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
 
   cryptonote::block const &head = top().block;
@@ -733,7 +773,7 @@ beldex_chain_generator::create_beldex_name_system_tx_update_w_extra(cryptonote::
 
 cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_renew(cryptonote::account_base const &src,
                                                                                uint8_t hf_version,
-                                                                               bns::mapping_type type,
+                                                                               bns::mapping_years mapping_years,
                                                                                std::string const &name,
                                                                                std::optional<uint64_t> burn_override) const
 {
@@ -747,10 +787,10 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_ren
   }
 
   uint8_t new_hf_version = get_hf_version_at(get_block_height(top().block) + 1);
-  uint64_t burn = burn_override.value_or(bns::burn_needed(new_hf_version, type));
+  uint64_t burn = burn_override.value_or(bns::burn_needed(new_hf_version, mapping_years));
 
   std::vector<uint8_t> extra;
-  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_renew(type, name_hash, prev_txid);
+  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_renew(mapping_years, name_hash, prev_txid);
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
   cryptonote::add_burned_amount_to_tx_extra(extra, burn);
 

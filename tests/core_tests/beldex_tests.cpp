@@ -1032,6 +1032,7 @@ bool beldex_core_test_state_change_ip_penalty_disallow_dupes::generate(std::vect
 static bool verify_bns_mapping_record(char const *perr_context,
                                       bns::mapping_record const &record,
                                       bns::mapping_type type,
+                                      bns::mapping_value encrypted_value,
                                       std::string const &name,
                                       bns::mapping_value const &value,
                                       uint64_t update_height,
@@ -1043,7 +1044,7 @@ static bool verify_bns_mapping_record(char const *perr_context,
   CHECK_EQ(record.loaded,          true);
   auto lcname = tools::lowercase_ascii_string(name);
   CHECK_EQ(record.name_hash,       bns::name_to_base64_hash(lcname));
-  bns::mapping_value decrypted{record.encrypted_value};
+  bns::mapping_value decrypted{encrypted_value};
   CHECK_EQ(decrypted.decrypt(lcname, type), true);
   CHECK_EQ(decrypted, value);
   CHECK_EQ(record.update_height,   update_height);
@@ -1065,12 +1066,19 @@ bool beldex_name_system_disallow_reserved_type::generate(std::vector<test_event_
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
-  bns::mapping_value mapping_value = {};
-  mapping_value.len                = 20;
+  bns::mapping_value mapping_value_bchat = {};
+  mapping_value_bchat.len                = 20;
+
+   bns::mapping_value mapping_value_wallet = {};
+  mapping_value_wallet.len                = 20;
+
+   bns::mapping_value mapping_value_belnet = {};
+  mapping_value_belnet.len                = 20;
 
   auto unusable_type = static_cast<bns::mapping_type>(-1);
+  bns::mapping_years mapping_years;
   assert(!bns::mapping_type_allowed(gen.hardfork(), unusable_type));
-  cryptonote::transaction tx1 = gen.create_beldex_name_system_tx(miner, gen.hardfork(), unusable_type, "FriendlyName", mapping_value);
+  cryptonote::transaction tx1 = gen.create_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, "FriendlyName", mapping_value_bchat, mapping_value_wallet, mapping_value_belnet);
   gen.add_tx(tx1, false /*can_be_added_to_blockchain*/, "Can't create a BNS TX that requests a BNS type that is unused but reserved by the protocol");
   return true;
 }
@@ -1102,9 +1110,9 @@ static bns_keys_t make_bns_keys(cryptonote::account_base const &src)
 }
 
 // belnet FAKECHAIN BNS expiry blocks
-uint64_t belnet_expiry(bns::mapping_type type) {
-  auto exp = bns::expiry_blocks(cryptonote::FAKECHAIN, type,0);
-  if (!exp) throw std::logic_error{"test suite bug: belnet_expiry called with non-belnet mapping type"};
+uint64_t bns_expiry(bns::mapping_years map_years) {
+  auto exp = bns::expiry_blocks(cryptonote::FAKECHAIN, map_years, 17);
+  if (!exp) throw std::logic_error{"test suite bug: bns_expiry called with non-mapping years"};
   return *exp;
 }
 
@@ -1118,19 +1126,20 @@ bool beldex_name_system_expiration::generate(std::vector<test_event_entry> &even
   gen.add_mined_money_unlock_blocks();
 
   bns_keys_t miner_key = make_bns_keys(miner);
+  bns::mapping_years mapping_years;
   for (auto mapping_type = bns::mapping_type::belnet;
-       mapping_type     <= bns::mapping_type::belnet_10years;
+       mapping_type     <= bns::mapping_type::belnet;
        mapping_type      = static_cast<bns::mapping_type>(static_cast<uint16_t>(mapping_type) + 1))
   {
     std::string const name     = "mydomain.bdx";
     if (bns::mapping_type_allowed(gen.hardfork(), mapping_type))
     {
-      cryptonote::transaction tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_type, name, miner_key.belnet_value);
+      cryptonote::transaction tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
       gen.create_and_add_next_block({tx});
       crypto::hash tx_hash = cryptonote::get_transaction_hash(tx);
 
       uint64_t height_of_bns_entry   = gen.height();
-      uint64_t expected_expiry_block = height_of_bns_entry + belnet_expiry(mapping_type);
+      uint64_t expected_expiry_block = height_of_bns_entry + bns_expiry(mapping_years);
       std::string name_hash = bns::name_to_base64_hash(name);
 
       beldex_register_callback(events, "check_bns_entries", [=](cryptonote::core &c, size_t ev_index)
@@ -1145,7 +1154,7 @@ bool beldex_name_system_expiration::generate(std::vector<test_event_entry> &even
                                      << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
         bns::mapping_record record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_bns_entry, height_of_bns_entry + belnet_expiry(mapping_type), tx_hash, miner_key.owner, {} /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, name, miner_key.belnet_value, height_of_bns_entry, height_of_bns_entry + bns_expiry(mapping_years), tx_hash, miner_key.owner, {} /*backup_owner*/));
         return true;
       });
 
@@ -1166,14 +1175,14 @@ bool beldex_name_system_expiration::generate(std::vector<test_event_entry> &even
                                      << " == " << owner.address.to_string(cryptonote::FAKECHAIN));
 
         bns::mapping_record record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_bns_entry, height_of_bns_entry + belnet_expiry(mapping_type), tx_hash, miner_key.owner, {} /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, name, miner_key.belnet_value, height_of_bns_entry, height_of_bns_entry + bns_expiry(mapping_years), tx_hash, miner_key.owner, {} /*backup_owner*/));
         CHECK_EQ(record.active(blockchain_height), false);
         return true;
       });
     }
     else
     {
-      cryptonote::transaction tx = gen.create_beldex_name_system_tx(miner, gen.hardfork(), mapping_type, name, miner_key.belnet_value);
+      cryptonote::transaction tx = gen.create_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
       gen.add_tx(tx, false /*can_be_added_to_blockchain*/, "Can not add BNS TX that uses disallowed type");
     }
   }
@@ -1202,6 +1211,7 @@ bool beldex_name_system_get_mappings_by_owner::generate(std::vector<test_event_e
     gen.add_transfer_unlock_blocks(gen.hardfork());
   }
 
+  bns::mapping_years mapping_years;
   bns_keys_t bob_key = make_bns_keys(bob);
   // NB: we sort the results later by (height, name hash), so our test values need to be in sorted order:
   std::string bchat_name1       = "AnotherName";
@@ -1210,8 +1220,8 @@ bool beldex_name_system_get_mappings_by_owner::generate(std::vector<test_event_e
   std::string bchat_name_hash2  = "pwlWkoJq8LXb6Y2ILlCXNvfyBQBt71XWz3c7rkt6myM=";
   crypto::hash bchat_name1_txid = {}, bchat_name2_txid = {};
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value);
-    cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name2, bob_key.bchat_value, &bob_key.owner);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bchat_name1, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
+    cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name2, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value, &bob_key.owner);
     gen.create_and_add_next_block({tx1, tx2});
     bchat_name1_txid = get_transaction_hash(tx1);
     bchat_name2_txid = get_transaction_hash(tx2);
@@ -1226,8 +1236,8 @@ bool beldex_name_system_get_mappings_by_owner::generate(std::vector<test_event_e
   crypto::hash belnet_name1_txid = {}, belnet_name2_txid = {};
   if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::belnet, belnet_name1, bob_key.belnet_value);
-    cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::belnet_5years, belnet_name2, bob_key.belnet_value, &bob_key.owner);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, belnet_name1, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
+    cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, belnet_name2, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value, &bob_key.owner);
     gen.create_and_add_next_block({tx1, tx2});
     belnet_name1_txid = get_transaction_hash(tx1);
     belnet_name2_txid = get_transaction_hash(tx2);
@@ -1243,8 +1253,8 @@ bool beldex_name_system_get_mappings_by_owner::generate(std::vector<test_event_e
   if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::wallet))
   {
     std::string bob_addr = cryptonote::get_account_address_as_str(cryptonote::FAKECHAIN, false, bob.get_keys().m_account_address);
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::wallet, wallet_name1, bob_key.wallet_value);
-    cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::wallet, wallet_name2, bob_key.wallet_value, &bob_key.owner);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, wallet_name1, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
+    cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, wallet_name2, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value, &bob_key.owner);
     gen.create_and_add_next_block({tx1, tx2});
     wallet_name1_txid = get_transaction_hash(tx1);
     wallet_name2_txid = get_transaction_hash(tx2);
@@ -1272,25 +1282,25 @@ bool beldex_name_system_get_mappings_by_owner::generate(std::vector<test_event_e
     if (bns::mapping_type_allowed(netv, bns::mapping_type::bchat))
     {
       CHECK_EQ(records[0].name_hash, bchat_name_hash1);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value, bchat_height, std::nullopt, bchat_name1_txid, bob_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, records[0].encrypted_bchat_value, bchat_name1, bob_key.bchat_value, bchat_height, bchat_height + bns_expiry(mapping_years), bchat_name1_txid, bob_key.owner, {} /*backup_owner*/));
       CHECK_EQ(records[1].name_hash, bchat_name_hash2);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[1], bns::mapping_type::bchat, bchat_name2, bob_key.bchat_value, bchat_height, std::nullopt, bchat_name2_txid, bob_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[1], bns::mapping_type::bchat, records[1].encrypted_bchat_value, bchat_name2, bob_key.bchat_value, bchat_height, bchat_height + bns_expiry(mapping_years), bchat_name2_txid, bob_key.owner, {} /*backup_owner*/));
     }
 
     if (bns::mapping_type_allowed(netv, bns::mapping_type::belnet))
     {
       CHECK_EQ(records[2].name_hash, belnet_name_hash1);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[2], bns::mapping_type::belnet, belnet_name1, bob_key.belnet_value, belnet_height, belnet_height + belnet_expiry(bns::mapping_type::belnet), belnet_name1_txid, bob_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[2], bns::mapping_type::belnet, records[2].encrypted_belnet_value, belnet_name1, bob_key.belnet_value, belnet_height, belnet_height + bns_expiry(mapping_years), belnet_name1_txid, bob_key.owner, {} /*backup_owner*/));
       CHECK_EQ(records[3].name_hash, belnet_name_hash2);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[3], bns::mapping_type::belnet, belnet_name2, bob_key.belnet_value, belnet_height, belnet_height + belnet_expiry(bns::mapping_type::belnet_5years), belnet_name2_txid, bob_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[3], bns::mapping_type::belnet, records[3].encrypted_belnet_value, belnet_name2, bob_key.belnet_value, belnet_height, belnet_height + bns_expiry(mapping_years), belnet_name2_txid, bob_key.owner, {} /*backup_owner*/));
     }
 
     if (bns::mapping_type_allowed(netv, bns::mapping_type::wallet))
     {
       CHECK_EQ(records[4].name_hash, wallet_name_hash1);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[4], bns::mapping_type::wallet, wallet_name1, bob_key.wallet_value, wallet_height, std::nullopt, wallet_name1_txid, bob_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[4], bns::mapping_type::wallet, records[4].encrypted_wallet_value, wallet_name1, bob_key.wallet_value, wallet_height, wallet_height + bns_expiry(mapping_years), wallet_name1_txid, bob_key.owner, {} /*backup_owner*/));
       CHECK_EQ(records[5].name_hash, wallet_name_hash2);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[5], bns::mapping_type::wallet, wallet_name2, bob_key.wallet_value, wallet_height, std::nullopt, wallet_name2_txid, bob_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[5], bns::mapping_type::wallet, records[5].encrypted_wallet_value, wallet_name2, bob_key.wallet_value, wallet_height, wallet_height + bns_expiry(mapping_years), wallet_name2_txid, bob_key.owner, {} /*backup_owner*/));
     }
     return true;
   });
@@ -1314,14 +1324,14 @@ bool beldex_name_system_get_mappings_by_owners::generate(std::vector<test_event_
     gen.create_and_add_next_block({transfer});
     gen.add_transfer_unlock_blocks(gen.hardfork());
   }
-
+  bns::mapping_years mapping_years;
   bns_keys_t bob_key   = make_bns_keys(bob);
   bns_keys_t miner_key = make_bns_keys(miner);
 
   std::string bchat_name1 = "MyName";
   crypto::hash bchat_tx_hash1;
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bchat_name1, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
     bchat_tx_hash1 = cryptonote::get_transaction_hash(tx1);
     gen.create_and_add_next_block({tx1});
   }
@@ -1331,7 +1341,7 @@ bool beldex_name_system_get_mappings_by_owners::generate(std::vector<test_event_
   std::string bchat_name2 = "MyName2";
   crypto::hash bchat_tx_hash2;
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bchat_name2, bob_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bchat_name2, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
     bchat_tx_hash2 = cryptonote::get_transaction_hash(tx1);
     gen.create_and_add_next_block({tx1});
   }
@@ -1341,7 +1351,7 @@ bool beldex_name_system_get_mappings_by_owners::generate(std::vector<test_event_
   std::string bchat_name3 = "MyName3";
   crypto::hash bchat_tx_hash3;
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name3, miner_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(),mapping_years, bchat_name3, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
     bchat_tx_hash3 = cryptonote::get_transaction_hash(tx1);
     gen.create_and_add_next_block({tx1});
   }
@@ -1359,9 +1369,9 @@ bool beldex_name_system_get_mappings_by_owners::generate(std::vector<test_event_
     });
 
     int index = 0;
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[index++], bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value, bchat_height1, std::nullopt, bchat_tx_hash1, bob_key.owner, {}));
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[index++], bns::mapping_type::bchat, bchat_name2, bob_key.bchat_value, bchat_height2, std::nullopt, bchat_tx_hash2, bob_key.owner, {}));
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[index++], bns::mapping_type::bchat, bchat_name3, miner_key.bchat_value, bchat_height3, std::nullopt, bchat_tx_hash3, miner_key.owner, {}));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[index++], bns::mapping_type::bchat, records[index++].encrypted_bchat_value, bchat_name1, bob_key.bchat_value, bchat_height1, bchat_height1 + bns_expiry(mapping_years), bchat_tx_hash1, bob_key.owner, {}));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[index++], bns::mapping_type::bchat, records[index++].encrypted_bchat_value, bchat_name2, bob_key.bchat_value, bchat_height2, bchat_height2 + bns_expiry(mapping_years), bchat_tx_hash2, bob_key.owner, {}));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[index++], bns::mapping_type::bchat, records[index++].encrypted_bchat_value, bchat_name3, miner_key.bchat_value, bchat_height3, bchat_height3 + bns_expiry(mapping_years), bchat_tx_hash3, miner_key.owner, {}));
     return true;
   });
 
@@ -1385,12 +1395,12 @@ bool beldex_name_system_get_mappings::generate(std::vector<test_event_entry> &ev
     gen.create_and_add_next_block({transfer});
     gen.add_transfer_unlock_blocks(gen.hardfork());
   }
-
+  bns::mapping_years mapping_years;
   bns_keys_t bob_key = make_bns_keys(bob);
   std::string bchat_name1 = "MyName";
   crypto::hash bchat_tx_hash;
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bchat_name1, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
     bchat_tx_hash = cryptonote::get_transaction_hash(tx1);
     gen.create_and_add_next_block({tx1});
   }
@@ -1399,11 +1409,12 @@ bool beldex_name_system_get_mappings::generate(std::vector<test_event_entry> &ev
   beldex_register_callback(events, "check_bns_entries", [bob_key, bchat_height, bchat_name1, bchat_tx_hash](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_bns_entries");
+    bns::mapping_years mapping_years;
     bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
     std::string bchat_name_hash = bns::name_to_base64_hash(tools::lowercase_ascii_string(bchat_name1));
-    std::vector<bns::mapping_record> records = bns_db.get_mappings({bns::mapping_type::bchat}, bchat_name_hash);
+    std::vector<bns::mapping_record> records = bns_db.get_mappings(bchat_name_hash);
     CHECK_EQ(records.size(), 1);
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value, bchat_height, std::nullopt, bchat_tx_hash, bob_key.owner, {} /*backup_owner*/));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, records[0].encrypted_bchat_value, bchat_name1, bob_key.bchat_value, bchat_height, bchat_height + bns_expiry(mapping_years), bchat_tx_hash, bob_key.owner, {} /*backup_owner*/));
     return true;
   });
 
@@ -1425,6 +1436,7 @@ bool beldex_name_system_handles_duplicate_in_bns_db::generate(std::vector<test_e
   gen.create_and_add_next_block({transfer});
   gen.add_transfer_unlock_blocks(gen.hardfork());
 
+  bns::mapping_years mapping_years;
   bns_keys_t miner_key     = make_bns_keys(miner);
   bns_keys_t bob_key       = make_bns_keys(bob);
   std::string bchat_name = "myfriendlydisplayname.bdx";
@@ -1433,7 +1445,7 @@ bool beldex_name_system_handles_duplicate_in_bns_db::generate(std::vector<test_e
   crypto::hash bchat_tx_hash = {}, belnet_tx_hash = {};
   {
     // NOTE: Allow duplicates with the same name but different type
-    cryptonote::transaction bar = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name, bob_key.bchat_value);
+    cryptonote::transaction bar = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
     bchat_tx_hash = get_transaction_hash(bar);
 
     std::vector<cryptonote::transaction> txs;
@@ -1441,7 +1453,7 @@ bool beldex_name_system_handles_duplicate_in_bns_db::generate(std::vector<test_e
 
     if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
     {
-      cryptonote::transaction bar3 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::belnet_2years, bchat_name, miner_key.belnet_value);
+      cryptonote::transaction bar3 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
       txs.push_back(bar3);
       belnet_tx_hash = get_transaction_hash(bar3);
     }
@@ -1451,7 +1463,7 @@ bool beldex_name_system_handles_duplicate_in_bns_db::generate(std::vector<test_e
   uint64_t height_of_ons_entry = gen.height();
 
   {
-    cryptonote::transaction bar6 = gen.create_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bchat_name, bob_key.bchat_value);
+    cryptonote::transaction bar6 = gen.create_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bchat_name, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
     gen.add_tx(bar6, false /*can_be_added_to_blockchain*/, "Duplicate name requested by new owner: original already exists in bns db");
   }
 
@@ -1469,14 +1481,14 @@ bool beldex_name_system_handles_duplicate_in_bns_db::generate(std::vector<test_e
 
     std::string bchat_name_hash = bns::name_to_base64_hash(bchat_name);
     bns::mapping_record record1 = bns_db.get_mapping(bchat_name_hash);
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record1, bns::mapping_type::bchat, bchat_name, bob_key.bchat_value, height_of_ons_entry, std::nullopt, bchat_tx_hash, miner_key.owner, {} /*backup_owner*/));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record1, bns::mapping_type::bchat, record1.encrypted_bchat_value, bchat_name, bob_key.bchat_value, height_of_ons_entry, height_of_ons_entry + bns_expiry(mapping_years), bchat_tx_hash, miner_key.owner, {} /*backup_owner*/));
     CHECK_EQ(record1.owner_id, owner.id);
 
     auto netv = get_network_version(c.get_nettype(), c.get_current_blockchain_height());
     if (bns::mapping_type_allowed(netv, bns::mapping_type::belnet))
     {
       bns::mapping_record record2 = bns_db.get_mapping(bchat_name_hash);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record2, bns::mapping_type::belnet, belnet_name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet_2years), belnet_tx_hash, miner_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record2, bns::mapping_type::belnet, record2.encrypted_belnet_value, belnet_name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + bns_expiry(mapping_years), belnet_tx_hash, miner_key.owner, {} /*backup_owner*/));
       CHECK_EQ(record2.owner_id, owner.id);
       CHECK_EQ(record2.active(blockchain_height), true);
     }
@@ -1503,20 +1515,20 @@ bool beldex_name_system_handles_duplicate_in_tx_pool::generate(std::vector<test_
     gen.create_and_add_next_block({transfer});
     gen.add_transfer_unlock_blocks(gen.hardfork());
   }
-
+  bns::mapping_years mapping_years;
   bns_keys_t bob_key       = make_bns_keys(bob);
   std::string bchat_name = "myfriendlydisplayname.bdx";
 
   auto custom_type = static_cast<bns::mapping_type>(3928);
   {
     // NOTE: Allow duplicates with the same name but different type
-    cryptonote::transaction bar = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name, bob_key.bchat_value);
+    cryptonote::transaction bar = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
 
     if (bns::mapping_type_allowed(gen.hardfork(), custom_type))
-      cryptonote::transaction bar2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), custom_type, bchat_name, bob_key.bchat_value);
+      cryptonote::transaction bar2 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
 
     // NOTE: Make duplicate in the TX pool, this should be rejected
-    cryptonote::transaction bar4 = gen.create_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bchat_name, bob_key.bchat_value);
+    cryptonote::transaction bar4 = gen.create_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bchat_name, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value);
     gen.add_tx(bar4, false /*can_be_added_to_blockchain*/, "Duplicate name requested by new owner: original already exists in tx pool");
   }
   return true;
@@ -1530,7 +1542,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
   cryptonote::account_base miner = gen.first_miner_;
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
-
+  bns::mapping_years mapping_years;
   bns_keys_t miner_key = make_bns_keys(miner);
   // Manually construct transaction with invalid tx extra
   {
@@ -1542,8 +1554,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
                                              char const *reason) -> void {
       uint64_t new_height    = cryptonote::get_block_height(gen.top().block) + 1;
       uint8_t new_hf_version = gen.get_hf_version_at(new_height);
-      //TODO bns-rework have to change the burn-needed
-      uint64_t burn_requirement = bns::burn_needed(new_hf_version, static_cast<bns::mapping_type>(data.type));
+      uint64_t burn_requirement = bns::burn_needed(new_hf_version, mapping_years);
 
       std::vector<uint8_t> extra;
       cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
@@ -1559,87 +1570,82 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
       gen.add_tx(tx, valid /*can_be_added_to_blockchain*/, reason, false /*kept_by_block*/);
     };
 
-    std::string name = "my_bns_name";
+    std::string name = "my_bns_name.bdx";
     cryptonote::tx_extra_beldex_name_system valid_data = {};
     valid_data.fields |= bns::extra_field::buy_no_backup;
     valid_data.owner = miner_key.owner;
-    valid_data.type  = bns::mapping_type::wallet;
-    valid_data.encrypted_value = miner_key.wallet_value.make_encrypted(name).to_string();
+    valid_data.encrypted_wallet_value = miner_key.wallet_value.make_encrypted(name).to_string();
     valid_data.name_hash       = bns::name_to_hash(name);
 
     if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::wallet))
     {
-      valid_data.type = bns::mapping_type::wallet;
       // Blockchain name empty
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
         data.name_hash                             = {};
-        data.encrypted_value                       = miner_key.wallet_value.make_encrypted("").to_string();
+        data.encrypted_wallet_value                = miner_key.wallet_value.make_encrypted("").to_string();
         make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Blockchain) Empty wallet name in BNS is invalid");
       }
 
       // Blockchain value (wallet address) is invalid, too short
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
-        data.encrypted_value                       = miner_key.wallet_value.make_encrypted(name).to_string();
-        data.encrypted_value.resize(data.encrypted_value.size() - 1);
-        make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Blockchain) Wallet value in BNS too long");
+        data.encrypted_wallet_value                       = miner_key.wallet_value.make_encrypted(name).to_string();
+        data.encrypted_wallet_value.resize(data.encrypted_wallet_value.size() - 1);
+        make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Blockchain) Wallet value in BNS too short");
       }
 
       // Blockchain value (wallet address) is invalid, too long
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
-        data.encrypted_value                       = miner_key.wallet_value.make_encrypted(name).to_string();
-        data.encrypted_value.resize(data.encrypted_value.size() + 1);
+        data.encrypted_wallet_value                       = miner_key.wallet_value.make_encrypted(name).to_string();
+        data.encrypted_wallet_value.resize(data.encrypted_wallet_value.size() + 1);
         make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Blockchain) Wallet value in BNS too long");
       }
     }
 
     if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
     {
-      valid_data.type = bns::mapping_type::belnet;
       // belnet name empty
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
         data.name_hash                             = {};
-        data.encrypted_value                       = miner_key.belnet_value.make_encrypted("").to_string();
+        data.encrypted_belnet_value                = miner_key.belnet_value.make_encrypted("").to_string();
         make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(belnet) Empty domain name in BNS is invalid");
       }
 
       // belnet value too short
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
-        data.encrypted_value                       = miner_key.belnet_value.make_encrypted(name).to_string();
-        data.encrypted_value.resize(data.encrypted_value.size() - 1);
-        make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(belnet) Domain value in BNS too long");
+        data.encrypted_belnet_value                       = miner_key.belnet_value.make_encrypted(name).to_string();
+        data.encrypted_belnet_value.resize(data.encrypted_belnet_value.size() - 1);
+        make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(belnet) Domain value in BNS too short");
       }
 
       // belnet value too long
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
-        data.encrypted_value                       = miner_key.belnet_value.make_encrypted(name).to_string();
-        data.encrypted_value.resize(data.encrypted_value.size() + 1);
+        data.encrypted_belnet_value                       = miner_key.belnet_value.make_encrypted(name).to_string();
+        data.encrypted_belnet_value.resize(data.encrypted_belnet_value.size() + 1);
         make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(belnet) Domain value in BNS too long");
       }
     }
 
     // Bchat value too short
     // We added valid tx prior, we should update name to avoid conflict names in bchat land and test other invalid params
-    valid_data.type      = bns::mapping_type::bchat;
-    name                 = "new_friendly_name";
     valid_data.name_hash = bns::name_to_hash(name);
     {
       cryptonote::tx_extra_beldex_name_system data = valid_data;
-      data.encrypted_value                       = miner_key.bchat_value.make_encrypted(name).to_string();
-      data.encrypted_value.resize(data.encrypted_value.size() - 1);
+      data.encrypted_bchat_value                       = miner_key.bchat_value.make_encrypted(name).to_string();
+      data.encrypted_bchat_value.resize(data.encrypted_bchat_value.size() - 1);
       make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Bchat) User id, value too short");
     }
 
     // Bchat value too long
     {
       cryptonote::tx_extra_beldex_name_system data = valid_data;
-      data.encrypted_value                       = miner_key.bchat_value.make_encrypted(name).to_string();
-      data.encrypted_value.resize(data.encrypted_value.size() + 1);
+      data.encrypted_bchat_value                       = miner_key.bchat_value.make_encrypted(name).to_string();
+      data.encrypted_bchat_value.resize(data.encrypted_bchat_value.size() + 1);
       make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Bchat) User id, value too long");
     }
 
@@ -1647,7 +1653,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
     {
       cryptonote::tx_extra_beldex_name_system data = valid_data;
       data.name_hash                             = {};
-      data.encrypted_value                       = miner_key.bchat_value.make_encrypted("").to_string();
+      data.encrypted_bchat_value                 = miner_key.bchat_value.make_encrypted("").to_string();
       make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Bchat) Name empty");
     }
   }
@@ -1672,6 +1678,7 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
     gen.add_transfer_unlock_blocks(gen.hardfork());
   }
 
+  bns::mapping_years mapping_years;
   // NOTE: Generate the first round of BNS transactions belonging to miner
   uint64_t first_ons_height                 = 0;
   std::string const belnet_name1           = "website.bdx";
@@ -1682,20 +1689,20 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
     // NOTE: Generate and add the (transactions + block) to the blockchain
     {
       std::vector<cryptonote::transaction> txs;
-      cryptonote::transaction bchat_tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, miner_key.bchat_value);
+      cryptonote::transaction bchat_tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name1, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
       bchat_tx_hash1 = get_transaction_hash(bchat_tx);
       txs.push_back(bchat_tx);
 
       if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::wallet))
       {
-        cryptonote::transaction wallet_tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::wallet, wallet_name1, miner_key.wallet_value);
+        cryptonote::transaction wallet_tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, wallet_name1, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
         txs.push_back(wallet_tx);
         wallet_tx_hash1 = get_transaction_hash(wallet_tx);
       }
 
-      if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet_10years))
+      if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
       {
-        cryptonote::transaction belnet_tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::belnet_10years, belnet_name1, miner_key.belnet_value);
+        cryptonote::transaction belnet_tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, belnet_name1, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
         txs.push_back(belnet_tx);
         belnet_tx_hash1 = get_transaction_hash(belnet_tx);
       }
@@ -1718,16 +1725,14 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
 
       for (bns::mapping_record const &record : records)
       {
-        if (record.type == bns::mapping_type::bchat)
-          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, bchat_name1, miner_key.bchat_value, first_ons_height, std::nullopt, bchat_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-        else if (record.type == bns::mapping_type::belnet)
-          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, belnet_name1, miner_key.belnet_value, first_ons_height, first_ons_height + belnet_expiry(bns::mapping_type::belnet_10years), belnet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-        else if (record.type == bns::mapping_type::wallet)
-          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::wallet, wallet_name1, miner_key.wallet_value, first_ons_height, std::nullopt, wallet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-        else
-        {
+        if (!oxenc::to_hex(record.encrypted_bchat_value.to_view()).empty())
+          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, bchat_name1, miner_key.bchat_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), bchat_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+        if (!oxenc::to_hex(record.encrypted_belnet_value.to_view()).empty())
+          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, belnet_name1, miner_key.belnet_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), belnet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+        if (!oxenc::to_hex(record.encrypted_wallet_value.to_view()).empty())
+          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::wallet, record.encrypted_wallet_value, wallet_name1, miner_key.wallet_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), wallet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+        if(oxenc::to_hex(record.encrypted_bchat_value.to_view()).empty() && oxenc::to_hex(record.encrypted_belnet_value.to_view()).empty() && oxenc::to_hex(record.encrypted_wallet_value.to_view()).empty())
           assert(false);
-        }
       }
       return true;
     });
@@ -1742,16 +1747,16 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
     crypto::hash bchat_tx_hash2 = {}, belnet_tx_hash2 = {}, bchat_tx_hash3;
     {
       std::vector<cryptonote::transaction> txs;
-      txs.push_back(gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), bns::mapping_type::bchat, bob_bchat_name1, bob_key.bchat_value));
+      txs.push_back(gen.create_and_add_beldex_name_system_tx(bob, gen.hardfork(), mapping_years, bob_bchat_name1, bob_key.bchat_value, bob_key.wallet_value, bob_key.belnet_value));
       bchat_tx_hash2 = cryptonote::get_transaction_hash(txs[0]);
 
       if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
       {
-        txs.push_back(gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), bns::mapping_type::belnet_5years, belnet_name1));
+        txs.push_back(gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), mapping_years, belnet_name1));
         belnet_tx_hash2 = cryptonote::get_transaction_hash(txs.back());
       }
 
-      txs.push_back(gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, &other_key.bchat_value));
+      txs.push_back(gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, &other_key.bchat_value, &other_key.wallet_value, &other_key.belnet_value));
       bchat_tx_hash3 = cryptonote::get_transaction_hash(txs.back());
 
       gen.create_and_add_next_block(txs);
@@ -1769,16 +1774,14 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
         std::vector<bns::mapping_record> records = bns_db.get_mappings_by_owner(miner_key.owner);
         for (bns::mapping_record const &record : records)
         {
-          if (record.type == bns::mapping_type::bchat)
-            CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, bchat_name1, other_key.bchat_value, second_ons_height, std::nullopt, bchat_tx_hash3, miner_key.owner, {} /*backup_owner*/));
-          else if (record.type == bns::mapping_type::belnet)
-            CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, belnet_name1, miner_key.belnet_value, second_ons_height, first_ons_height + belnet_expiry(bns::mapping_type::belnet_5years) + belnet_expiry(bns::mapping_type::belnet_10years), belnet_tx_hash2, miner_key.owner, {} /*backup_owner*/));
-          else if (record.type == bns::mapping_type::wallet)
-            CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::wallet, wallet_name1, miner_key.wallet_value, first_ons_height, std::nullopt, wallet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-          else
-          {
+          if (!oxenc::to_hex(record.encrypted_bchat_value.to_view()).empty())
+            CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, bchat_name1, other_key.bchat_value, second_ons_height, second_ons_height + bns_expiry(mapping_years), bchat_tx_hash3, miner_key.owner, {} /*backup_owner*/));
+          if (!oxenc::to_hex(record.encrypted_belnet_value.to_view()).empty())
+            CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, belnet_name1, miner_key.belnet_value, second_ons_height, second_ons_height + bns_expiry(mapping_years), belnet_tx_hash2, miner_key.owner, {} /*backup_owner*/));
+          if (!oxenc::to_hex(record.encrypted_wallet_value.to_view()).empty())
+            CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::wallet, record.encrypted_wallet_value, wallet_name1, miner_key.wallet_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), wallet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+          if (oxenc::to_hex(record.encrypted_bchat_value.to_view()).empty() && oxenc::to_hex(record.encrypted_belnet_value.to_view()).empty() && oxenc::to_hex(record.encrypted_wallet_value.to_view()).empty())
             assert(false);
-          }
         }
       }
 
@@ -1786,7 +1789,7 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
       {
         std::vector<bns::mapping_record> records = bns_db.get_mappings_by_owner(bob_key.owner);
         CHECK_EQ(records.size(), 1);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, bob_bchat_name1, bob_key.bchat_value, second_ons_height, std::nullopt, bchat_tx_hash2, bob_key.owner, {} /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, records[0].encrypted_bchat_value, bob_bchat_name1, bob_key.bchat_value, second_ons_height, second_ons_height + bns_expiry(mapping_years), bchat_tx_hash2, bob_key.owner, {} /*backup_owner*/));
       }
 
       return true;
@@ -1825,16 +1828,14 @@ bool beldex_name_system_large_reorg::generate(std::vector<test_event_entry> &eve
 
       for (bns::mapping_record const &record : records)
       {
-        if (record.type == bns::mapping_type::bchat)
-          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, bchat_name1, miner_key.bchat_value, first_ons_height, std::nullopt, bchat_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-        else if (record.type == bns::mapping_type::belnet)
-          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, belnet_name1, miner_key.belnet_value, first_ons_height, first_ons_height + belnet_expiry(bns::mapping_type::belnet_10years), belnet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-        else if (record.type == bns::mapping_type::wallet)
-          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::wallet, wallet_name1, miner_key.wallet_value, first_ons_height, std::nullopt, wallet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
-        else
-        {
+        if (!oxenc::to_hex(record.encrypted_bchat_value.to_view()).empty())
+          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, bchat_name1, miner_key.bchat_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), bchat_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+        if (!oxenc::to_hex(record.encrypted_belnet_value.to_view()).empty())
+          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, belnet_name1, miner_key.belnet_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), belnet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+        if (!oxenc::to_hex(record.encrypted_wallet_value.to_view()).empty())
+          CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::wallet, record.encrypted_wallet_value, wallet_name1, miner_key.wallet_value, first_ons_height, first_ons_height + bns_expiry(mapping_years), wallet_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+        if (oxenc::to_hex(record.encrypted_bchat_value.to_view()).empty() && oxenc::to_hex(record.encrypted_belnet_value.to_view()).empty() && oxenc::to_hex(record.encrypted_wallet_value.to_view()).empty())
           assert(false);
-        }
       }
     }
 
@@ -1880,9 +1881,10 @@ bool beldex_name_system_name_renewal::generate(std::vector<test_event_entry> &ev
     gen.add_mined_money_unlock_blocks();
   }
 
+  bns::mapping_years mapping_years;
   bns_keys_t miner_key = make_bns_keys(miner);
   std::string const name    = "mydomain.bdx";
-  cryptonote::transaction tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::belnet, name, miner_key.belnet_value);
+  cryptonote::transaction tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
   gen.create_and_add_next_block({tx});
   crypto::hash prev_txid = get_transaction_hash(tx);
 
@@ -1902,20 +1904,14 @@ bool beldex_name_system_name_renewal::generate(std::vector<test_event_entry> &ev
 
     std::string name_hash = bns::name_to_base64_hash(name);
     bns::mapping_record record = bns_db.get_mapping(name_hash);
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet), prev_txid, miner_key.owner, {} /*backup_owner*/));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + bns_expiry(mapping_years), prev_txid, miner_key.owner, {} /*backup_owner*/));
     return true;
   });
 
   gen.create_and_add_next_block();
 
   // Renew the belnet entry a few times
-  cryptonote::transaction renew_tx = gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), bns::mapping_type::belnet_5years, name);
-  gen.create_and_add_next_block({renew_tx});
-  renew_tx = gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), bns::mapping_type::belnet_10years, name);
-  gen.create_and_add_next_block({renew_tx});
-  renew_tx = gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), bns::mapping_type::belnet_2years, name);
-  gen.create_and_add_next_block({renew_tx});
-  renew_tx = gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), bns::mapping_type::belnet, name);
+  cryptonote::transaction renew_tx = gen.create_and_add_beldex_name_system_tx_renew(miner, gen.hardfork(), mapping_years, name);
   gen.create_and_add_next_block({renew_tx});
   crypto::hash txid       = cryptonote::get_transaction_hash(renew_tx);
   uint64_t renewal_height = gen.height();
@@ -1934,15 +1930,7 @@ bool beldex_name_system_name_renewal::generate(std::vector<test_event_entry> &ev
 
     std::string name_hash = bns::name_to_base64_hash(name);
     bns::mapping_record record = bns_db.get_mapping(name_hash);
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, renewal_height,
-          // Original registration:
-          height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet)
-          // The renewals:
-          + belnet_expiry(bns::mapping_type::belnet_5years)
-          + belnet_expiry(bns::mapping_type::belnet_10years)
-          + belnet_expiry(bns::mapping_type::belnet_2years)
-          + belnet_expiry(bns::mapping_type::belnet),
-          txid, miner_key.owner, {} /*backup_owner*/));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, name, miner_key.belnet_value, renewal_height, renewal_height + bns_expiry(mapping_years), txid, miner_key.owner, {} /*backup_owner*/));
     return true;
   });
 
@@ -1958,6 +1946,7 @@ bool beldex_name_system_name_value_max_lengths::generate(std::vector<test_event_
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
+  bns::mapping_years mapping_years;
   auto make_bns_tx_with_custom_extra = [&](beldex_chain_generator &gen,
                                            std::vector<test_event_entry> &events,
                                            cryptonote::account_base const &src,
@@ -1965,7 +1954,7 @@ bool beldex_name_system_name_value_max_lengths::generate(std::vector<test_event_
 
     uint64_t new_height    = cryptonote::get_block_height(gen.top().block) + 1;
     uint8_t new_hf_version = gen.get_hf_version_at(new_height);
-    uint64_t burn_requirement = bns::burn_needed(new_hf_version, static_cast<bns::mapping_type>(data.type));
+    uint64_t burn_requirement = bns::burn_needed(new_hf_version, mapping_years);
     std::vector<uint8_t> extra;
     cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
     cryptonote::add_burned_amount_to_tx_extra(extra, burn_requirement);
@@ -1989,9 +1978,8 @@ bool beldex_name_system_name_value_max_lengths::generate(std::vector<test_event_
   if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::wallet))
   {
     std::string name(bns::WALLET_NAME_MAX, 'a');
-    data.type            = bns::mapping_type::wallet;
     data.name_hash       = bns::name_to_hash(name);
-    data.encrypted_value = miner_key.wallet_value.make_encrypted(name).to_string();
+    data.encrypted_wallet_value = miner_key.wallet_value.make_encrypted(name).to_string();
     make_bns_tx_with_custom_extra(gen, events, miner, data);
   }
 
@@ -2001,18 +1989,16 @@ bool beldex_name_system_name_value_max_lengths::generate(std::vector<test_event_
     std::string name(bns::DOMAIN_NAME_MAX, 'a');
     name.replace(name.size() - 6, 5, ".bdx");
 
-    data.type            = bns::mapping_type::belnet;
     data.name_hash       = bns::name_to_hash(name);
-    data.encrypted_value = miner_key.belnet_value.make_encrypted(name).to_string();
+    data.encrypted_belnet_value = miner_key.belnet_value.make_encrypted(name).to_string();
     make_bns_tx_with_custom_extra(gen, events, miner, data);
   }
 
   // Bchat
   {
     std::string name(bns::BCHAT_DISPLAY_NAME_MAX, 'a');
-    data.type            = bns::mapping_type::bchat;
     data.name_hash       = bns::name_to_hash(name);
-    data.encrypted_value = miner_key.bchat_value.make_encrypted(name).to_string();
+    data.encrypted_bchat_value = miner_key.bchat_value.make_encrypted(name).to_string();
     make_bns_tx_with_custom_extra(gen, events, miner, data);
   }
 
@@ -2028,23 +2014,24 @@ bool beldex_name_system_update_mapping_after_expiry_fails::generate(std::vector<
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
+  bns::mapping_years mapping_years;
   bns_keys_t miner_key = make_bns_keys(miner);
   if (bns::mapping_type_allowed(gen.hardfork(), bns::mapping_type::belnet))
   {
     std::string const name     = "mydomain.bdx";
-    cryptonote::transaction tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::belnet, name, miner_key.belnet_value);
+    cryptonote::transaction tx = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
     crypto::hash tx_hash = cryptonote::get_transaction_hash(tx);
     gen.create_and_add_next_block({tx});
 
     uint64_t height_of_ons_entry   = gen.height();
-    uint64_t expected_expiry_block = height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet);
+    uint64_t expected_expiry_block = height_of_ons_entry + bns_expiry(mapping_years);
 
     while (gen.height() <= expected_expiry_block)
       gen.create_and_add_next_block();
 
     {
       bns_keys_t bob_key = make_bns_keys(gen.add_account());
-      cryptonote::transaction tx1 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::belnet, name, &bob_key.belnet_value);
+      cryptonote::transaction tx1 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::belnet, name, &bob_key.bchat_value, &bob_key.wallet_value, &bob_key.belnet_value);
       gen.add_tx(tx1, false /*can_be_added_to_blockchain*/, "Can not update a BNS record that is already expired");
     }
 
@@ -2062,7 +2049,7 @@ bool beldex_name_system_update_mapping_after_expiry_fails::generate(std::vector<
 
       std::string name_hash        = bns::name_to_base64_hash(name);
       bns::mapping_record record = bns_db.get_mapping(name_hash);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + belnet_expiry(bns::mapping_type::belnet), tx_hash, miner_key.owner, {} /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::belnet, record.encrypted_belnet_value, name, miner_key.belnet_value, height_of_ons_entry, height_of_ons_entry + bns_expiry(mapping_years), tx_hash, miner_key.owner, {} /*backup_owner*/));
       CHECK_EQ(record.active(blockchain_height), false);
       CHECK_EQ(record.owner_id, owner.id);
       return true;
@@ -2085,10 +2072,11 @@ bool beldex_name_system_update_mapping::generate(std::vector<test_event_entry> &
   bns_keys_t miner_key               = make_bns_keys(miner);
   bns_keys_t bob_key                 = make_bns_keys(bob);
 
+  bns::mapping_years mapping_years;
   crypto::hash bchat_tx_hash1;
   std::string bchat_name1 = "myname";
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, miner_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, bchat_name1, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
     bchat_tx_hash1 = cryptonote::get_transaction_hash(tx1);
     gen.create_and_add_next_block({tx1});
   }
@@ -2100,22 +2088,22 @@ bool beldex_name_system_update_mapping::generate(std::vector<test_event_entry> &
     bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
 
     std::string name_hash = bns::name_to_base64_hash(bchat_name1);
-    std::vector<bns::mapping_record> records = bns_db.get_mappings({bns::mapping_type::bchat}, name_hash);
+    std::vector<bns::mapping_record> records = bns_db.get_mappings(name_hash);
 
     CHECK_EQ(records.size(), 1);
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, bchat_name1, miner_key.bchat_value, register_height, std::nullopt, bchat_tx_hash1, miner_key.owner, {} /*backup_owner*/));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, records[0].encrypted_bchat_value, bchat_name1, miner_key.bchat_value, register_height, register_height + bns_expiry(mapping_years), bchat_tx_hash1, miner_key.owner, {} /*backup_owner*/));
     return true;
   });
 
   // Test update mapping with same name fails
   if (hf() == cryptonote::network_version_16_bns) {
-    cryptonote::transaction tx1 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, &miner_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, &miner_key.bchat_value, &miner_key.wallet_value, &miner_key.belnet_value);
     gen.add_tx(tx1, false /*can_be_added_to_blockchain*/, "Can not add a BNS TX that re-updates the underlying value to same value");
   }
 
   crypto::hash bchat_tx_hash2;
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, &bob_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, bchat_name1, &bob_key.bchat_value, &bob_key.wallet_value, &bob_key.belnet_value);
     bchat_tx_hash2 = cryptonote::get_transaction_hash(tx1);
     gen.create_and_add_next_block({tx1});
   }
@@ -2126,10 +2114,10 @@ bool beldex_name_system_update_mapping::generate(std::vector<test_event_entry> &
     bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
 
     std::string name_hash = bns::name_to_base64_hash(bchat_name1);
-    std::vector<bns::mapping_record> records = bns_db.get_mappings({bns::mapping_type::bchat}, name_hash);
+    std::vector<bns::mapping_record> records = bns_db.get_mappings(name_hash);
 
     CHECK_EQ(records.size(), 1);
-    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, bchat_name1, bob_key.bchat_value, blockchain_height, std::nullopt, bchat_tx_hash2, miner_key.owner, {} /*backup_owner*/));
+    CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, records[0], bns::mapping_type::bchat, records[0].encrypted_bchat_value, bchat_name1, bob_key.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), bchat_tx_hash2, miner_key.owner, {} /*backup_owner*/));
     return true;
   });
 
@@ -2160,6 +2148,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
   gen.add_n_blocks(10); /// generate some outputs and unlock them
   gen.add_mined_money_unlock_blocks();
 
+  bns::mapping_years mapping_years;
   cryptonote::account_base miner = gen.first_miner_;
   bns_keys_t miner_key           = make_bns_keys(miner);
 
@@ -2177,7 +2166,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
 
     std::string name      = "hello_world";
     std::string name_hash = bns::name_to_base64_hash(name);
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, name, miner_key.bchat_value, &owner1, &owner2);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value, &owner1, &owner2);
     gen.create_and_add_next_block({tx1});
     uint64_t height = gen.height();
     crypto::hash txid      = cryptonote::get_transaction_hash(tx1);
@@ -2187,18 +2176,18 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
       const char* perr_context = "check_update0";
       bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
       bns::mapping_record const record = bns_db.get_mapping(name_hash);
-      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, miner_key.bchat_value, height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+      CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, miner_key.bchat_value, height, height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
       return true;
     });
 
     // Update with owner1
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = bns::make_ed25519_signature(hash, owner1_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2207,7 +2196,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update1";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2215,11 +2204,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     // Update with owner2
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = bns::make_ed25519_signature(hash, owner2_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2228,7 +2217,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update2";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2243,7 +2232,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
 
     std::string name            = "hello_sailor";
     std::string name_hash = bns::name_to_base64_hash(name);
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, name, miner_key.bchat_value, &owner1, &owner2);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value, &owner1, &owner2);
     gen.create_and_add_next_block({tx1});
     uint64_t height        = gen.height();
     crypto::hash txid      = cryptonote::get_transaction_hash(tx1);
@@ -2251,11 +2240,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     // Update with owner1
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = ons_monero_signature(hash, owner1.wallet.address.m_spend_public_key, account1.get_keys().m_spend_secret_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2264,7 +2253,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update3";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2272,11 +2261,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     // Update with owner2
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = ons_monero_signature(hash, owner2.wallet.address.m_spend_public_key, account2.get_keys().m_spend_secret_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2285,7 +2274,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update3";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2304,7 +2293,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
 
     std::string name = "hello_driver";
     std::string name_hash = bns::name_to_base64_hash(name);
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, name, miner_key.bchat_value, &owner1, &owner2);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value, &owner1, &owner2);
     gen.create_and_add_next_block({tx1});
     uint64_t height        = gen.height();
     crypto::hash txid      = cryptonote::get_transaction_hash(tx1);
@@ -2312,11 +2301,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     // Update with owner1
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = bns::make_ed25519_signature(hash, owner1_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2325,7 +2314,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update4";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2333,11 +2322,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     // Update with owner2
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = ons_monero_signature(hash, owner2.wallet.address.m_spend_public_key, account2.get_keys().m_spend_secret_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2346,7 +2335,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update5";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2364,7 +2353,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
 
     std::string name = "hello_passenger";
     std::string name_hash = bns::name_to_base64_hash(name);
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, name, miner_key.bchat_value, &owner1, &owner2);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value, &owner1, &owner2);
     gen.create_and_add_next_block({tx1});
     uint64_t height        = gen.height();
     crypto::hash txid      = cryptonote::get_transaction_hash(tx1);
@@ -2373,11 +2362,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
 
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = ons_monero_signature(hash, owner1.wallet.address.m_spend_public_key, account1.get_keys().m_spend_secret_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2386,7 +2375,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update6";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2395,11 +2384,11 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     {
       bns_keys_t temp_keys = make_bns_keys(gen.add_account());
 
-      bns::mapping_value encrypted_value = temp_keys.bchat_value.make_encrypted(name);
-      crypto::hash hash = ons_signature_hash(encrypted_value.to_view(), nullptr /*owner*/, nullptr /*backup_owner*/, txid);
+      bns::mapping_value encrypted_bchat_value = temp_keys.bchat_value.make_encrypted(name);
+      crypto::hash hash = ons_signature_hash(encrypted_bchat_value.to_view(), nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, txid);
       auto signature = bns::make_ed25519_signature(hash, owner2_key);
 
-      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
+      cryptonote::transaction tx2 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &signature);
       gen.create_and_add_next_block({tx2});
       txid      = cryptonote::get_transaction_hash(tx2);
 
@@ -2408,7 +2397,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
         const char* perr_context = "check_update7";
         bns::name_system_db &bns_db = c.get_blockchain_storage().name_system_db();
         bns::mapping_record const record = bns_db.get_mapping(name_hash);
-        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, name, temp_keys.bchat_value, blockchain_height, std::nullopt, txid, owner1, owner2 /*backup_owner*/));
+        CHECK_TEST_CONDITION(verify_bns_mapping_record(perr_context, record, bns::mapping_type::bchat, record.encrypted_bchat_value, name, temp_keys.bchat_value, blockchain_height, blockchain_height + bns_expiry(mapping_years), txid, owner1, owner2 /*backup_owner*/));
         return true;
       });
     }
@@ -2426,7 +2415,7 @@ bool beldex_name_system_update_mapping_non_existent_name_fails::generate(std::ve
   cryptonote::account_base miner = gen.first_miner_;
   bns_keys_t miner_key           = make_bns_keys(miner);
   std::string name               = "hello-world";
-  cryptonote::transaction tx1 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &miner_key.bchat_value, nullptr /*owner*/, nullptr /*backup_owner*/, nullptr /*signature*/, false /*use_asserts*/);
+  cryptonote::transaction tx1 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &miner_key.bchat_value, &miner_key.wallet_value, &miner_key.belnet_value, nullptr /*owner*/, nullptr /*backup_owner*/, nullptr /*signature*/, false /*use_asserts*/);
   gen.add_tx(tx1, false /*can_be_added_to_blockchain*/, "Can not add a updating BNS TX referencing a non-existent BNS entry");
   return true;
 }
@@ -2438,17 +2427,18 @@ bool beldex_name_system_update_mapping_invalid_signature::generate(std::vector<t
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
+  bns::mapping_years mapping_years;
   cryptonote::account_base miner = gen.first_miner_;
   bns_keys_t miner_key           = make_bns_keys(miner);
 
   std::string const name = "hello-world";
-  cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, name, miner_key.bchat_value);
+  cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
   gen.create_and_add_next_block({tx1});
 
   bns_keys_t bob_key = make_bns_keys(gen.add_account());
-  bns::mapping_value encrypted_value = bob_key.bchat_value.make_encrypted(name);
+  bns::mapping_value encrypted_bchat_value = bob_key.bchat_value.make_encrypted(name);
   bns::generic_signature invalid_signature = {};
-  cryptonote::transaction tx2 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_value, nullptr /*owner*/, nullptr /*backup_owner*/, &invalid_signature, false /*use_asserts*/);
+  cryptonote::transaction tx2 = gen.create_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &encrypted_bchat_value, nullptr/*&encrypted_wallet_value*/, nullptr/*&encrypted_belnet_value*/, nullptr /*owner*/, nullptr /*backup_owner*/, &invalid_signature, false /*use_asserts*/);
   gen.add_tx(tx2, false /*can_be_added_to_blockchain*/, "Can not add a updating BNS TX with an invalid signature");
   return true;
 }
@@ -2460,6 +2450,7 @@ bool beldex_name_system_update_mapping_replay::generate(std::vector<test_event_e
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
 
+  bns::mapping_years mapping_years;
   cryptonote::account_base miner = gen.first_miner_;
   bns_keys_t miner_key           = make_bns_keys(miner);
   bns_keys_t bob_key             = make_bns_keys(gen.add_account());
@@ -2468,14 +2459,14 @@ bool beldex_name_system_update_mapping_replay::generate(std::vector<test_event_e
   std::string const name = "hello-world";
   // Make BNS Mapping
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), bns::mapping_type::bchat, name, miner_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, miner_key.bchat_value, miner_key.wallet_value, miner_key.belnet_value);
     gen.create_and_add_next_block({tx1});
   }
 
   // (1) Update BNS Mapping
   cryptonote::tx_extra_beldex_name_system ons_entry = {};
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &bob_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &bob_key.bchat_value, &bob_key.wallet_value, &bob_key.belnet_value);
     gen.create_and_add_next_block({tx1});
     [[maybe_unused]] bool found_tx_extra = cryptonote::get_field_from_tx_extra(tx1.extra, ons_entry);
     assert(found_tx_extra);
@@ -2490,7 +2481,7 @@ bool beldex_name_system_update_mapping_replay::generate(std::vector<test_event_e
   // (2) Update Again
   crypto::hash new_hash = {};
   {
-    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &alice_key.bchat_value);
+    cryptonote::transaction tx1 = gen.create_and_add_beldex_name_system_tx_update(miner, gen.hardfork(), bns::mapping_type::bchat, name, &alice_key.bchat_value, &alice_key.wallet_value, &alice_key.belnet_value);
     gen.create_and_add_next_block({tx1});
     new_hash = cryptonote::get_transaction_hash(tx1);
   }
@@ -2511,6 +2502,7 @@ bool beldex_name_system_wrong_burn::generate(std::vector<test_event_entry> &even
   beldex_chain_generator gen(events, hard_forks);
   cryptonote::account_base miner = gen.first_miner_;
   gen.add_blocks_until_version(hard_forks.back().version);
+  bns::mapping_years mapping_years;
 
   // NOTE: Fund Miner's wallet
   {
@@ -2526,22 +2518,24 @@ bool beldex_name_system_wrong_burn::generate(std::vector<test_event_entry> &even
     {
       if (bns::mapping_type_allowed(gen.hardfork(), type))
       {
-        bns::mapping_value value = {};
+        bns::mapping_value value_bchat = {};
+        bns::mapping_value value_wallet = {};
+        bns::mapping_value value_belnet = {};
         std::string name;
 
         if (type == bns::mapping_type::bchat)
         {
-          value = ons_keys.bchat_value;
+          value_bchat = ons_keys.bchat_value;
           name  = "my-friendly-bchat-name";
         }
         else if (type == bns::mapping_type::wallet)
         {
-          value = ons_keys.wallet_value;
+          value_wallet = ons_keys.wallet_value;
           name = "my-friendly-wallet-name";
         }
         else if (type == bns::mapping_type::belnet)
         {
-          value = ons_keys.belnet_value;
+          value_belnet = ons_keys.belnet_value;
           name  = "myfriendlybelnetname.bdx";
         }
         else
@@ -2549,11 +2543,11 @@ bool beldex_name_system_wrong_burn::generate(std::vector<test_event_entry> &even
 
         uint64_t new_height      = cryptonote::get_block_height(gen.top().block) + 1;
         uint8_t new_hf_version   = gen.get_hf_version_at(new_height);
-        uint64_t burn            = bns::burn_needed(new_hf_version, type);
+        uint64_t burn            = bns::burn_needed(new_hf_version, mapping_years);
         if (under_burn) burn -= 1;
         else            burn += 1;
 
-        cryptonote::transaction tx = gen.create_beldex_name_system_tx(miner, gen.hardfork(), type, name, value, nullptr /*owner*/, nullptr /*backup_owner*/, burn);
+        cryptonote::transaction tx = gen.create_beldex_name_system_tx(miner, gen.hardfork(), mapping_years, name, value_bchat, value_wallet, value_belnet, nullptr /*owner*/, nullptr /*backup_owner*/, burn);
         if (new_hf_version == cryptonote::network_version_18 && !under_burn && new_height < 524'000)
         {
           gen.add_tx(tx, true /*can_be_added_to_blockchain*/, "Wrong burn for a BNS tx but workaround for testnet", true /*kept_by_block*/);
@@ -2571,6 +2565,7 @@ bool beldex_name_system_wrong_version::generate(std::vector<test_event_entry> &e
   auto hard_forks = beldex_generate_hard_fork_table();
   beldex_chain_generator gen(events, hard_forks);
 
+  bns::mapping_years mapping_years;
   cryptonote::account_base miner = gen.first_miner_;
   gen.add_blocks_until_version(hard_forks.back().version);
   gen.add_mined_money_unlock_blocks();
@@ -2580,13 +2575,12 @@ bool beldex_name_system_wrong_version::generate(std::vector<test_event_entry> &e
   cryptonote::tx_extra_beldex_name_system data = {};
   data.version                               = 0xFF;
   data.owner                                 = miner_key.owner;
-  data.type                                  = bns::mapping_type::bchat;
   data.name_hash                             = bns::name_to_hash(name);
-  data.encrypted_value                       = miner_key.bchat_value.make_encrypted(name).to_string();
+  data.encrypted_bchat_value                 = miner_key.bchat_value.make_encrypted(name).to_string();
 
   uint64_t new_height       = cryptonote::get_block_height(gen.top().block) + 1;
   uint8_t new_hf_version    = gen.get_hf_version_at(new_height);
-  uint64_t burn_requirement = bns::burn_needed(new_hf_version, bns::mapping_type::bchat);
+  uint64_t burn_requirement = bns::burn_needed(new_hf_version, mapping_years);
 
   std::vector<uint8_t> extra;
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
