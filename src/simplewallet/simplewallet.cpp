@@ -6477,16 +6477,9 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
   
-  auto [owner, backup_owner,value_bchat,value_wallet,value_belnet, typestr,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_TYPE_PREFIX, BNS_YEAR_PREFIX);
+  auto [owner, backup_owner,value_bchat,value_wallet,value_belnet,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_YEAR_PREFIX);
   
-  if (args.size() != 1)
-  {
-    PRINT_USAGE(USAGE_BNS_BUY_MAPPING);
-    return true;
-  }
-
-  //TODO bns-rework should be the next if validation
-  if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty())
+  if (args.size() != 1 || (value_bchat.empty() && value_wallet.empty() && value_belnet.empty()))
   {
     PRINT_USAGE(USAGE_BNS_BUY_MAPPING);
     return true;
@@ -6504,14 +6497,14 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
 
   try
   {
-    ptx_vector = m_wallet->bns_create_buy_mapping_tx(owner.size() ? &owner : nullptr,
+    ptx_vector = m_wallet->bns_create_buy_mapping_tx(*mapping_years,
+                                                     owner.size() ? &owner : nullptr,
                                                      backup_owner.size() ? &backup_owner : nullptr,
                                                      name,
                                                      value_bchat.size() ? &value_bchat : nullptr,
                                                      value_wallet.size() ? &value_wallet : nullptr,
                                                      value_belnet.size() ? &value_belnet : nullptr,
                                                      &reason,
-                                                     *mapping_years,
                                                      priority,
                                                      m_current_subaddress_account,
                                                      subaddr_indices);
@@ -6669,7 +6662,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account))
     return false;
 
-  auto [owner, backup_owner, value_bchat, value_wallet, value_belnet, signature, typestr] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_VALUE_BCHAT_PREFIX, BNS_VALUE_WALLET_PREFIX, BNS_VALUE_BELNET_PREFIX, BNS_SIGNATURE_PREFIX, BNS_TYPE_PREFIX);
+  auto [owner, backup_owner, value_bchat, value_wallet, value_belnet, signature] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_VALUE_BCHAT_PREFIX, BNS_VALUE_WALLET_PREFIX, BNS_VALUE_BELNET_PREFIX, BNS_SIGNATURE_PREFIX);
   if (args.size() != 1)
   {
     PRINT_USAGE(USAGE_BNS_UPDATE_MAPPING);
@@ -6934,8 +6927,8 @@ bool simple_wallet::bns_make_update_mapping_signature(std::vector<std::string> a
   if (!try_connect_to_daemon())
     return true;
 //TODO bns-rework add value as a argument in the future when updating value with the signature.
-  auto [owner, backup_owner, typestr] =
-    eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_TYPE_PREFIX);
+  auto [owner, backup_owner] =
+    eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX);
 
   if (args.empty())
   {

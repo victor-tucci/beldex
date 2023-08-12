@@ -1788,7 +1788,10 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 
     do {
         auto w = wallet();
-        //todo validation   if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty()){break;}
+        if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty()){
+            setStatusError(tr("Value must be atleast one"));
+            break;
+        }
         bns::mapping_years map_year;
         if(!bns_validate_years(mapping_years, &map_year))
             break;
@@ -1802,14 +1805,14 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
         std::string reason;
         try {
             LOG_PRINT_L1(__FUNCTION__ << "Create bns_buy is start...");
-            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(owner.size() ? &owner : nullptr,
+            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(map_year,
+                                                     owner.size() ? &owner : nullptr,
                                                      backup_owner.size() ? &backup_owner : nullptr,
                                                      name,
                                                      value_bchat.size() ? &value_bchat : nullptr,
                                                      value_wallet.size() ? &value_wallet : nullptr,
                                                      value_belnet.size() ? &value_belnet : nullptr,
                                                      &reason,
-                                                     map_year,
                                                      priority,
                                                      subaddr_account,
                                                      subaddr_indices);

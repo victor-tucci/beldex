@@ -8834,14 +8834,14 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
   return result;
 }
 
-std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(std::string const *owner,
+std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping_years mapping_years,
+                                                                    std::string const *owner,
                                                                     std::string const *backup_owner,
                                                                     std::string name,
                                                                     std::string const *value_bchat,
                                                                     std::string const *value_wallet,
                                                                     std::string const *value_belnet,
                                                                     std::string *reason,
-                                                                    bns::mapping_years mapping_years,
                                                                     uint32_t priority,
                                                                     uint32_t account_index,
                                                                     std::set<uint32_t> subaddr_indices)

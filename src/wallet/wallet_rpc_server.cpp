@@ -3051,18 +3051,21 @@ namespace {
 
     std::string reason;
 
+    if(req.value_bchat.empty() && req.value_wallet.empty() && req.value_belnet.empty())
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid Values : required atleast one of the {value_bchat, value_wallet, value_belnet}"};
+
     auto map_years = m_wallet->bns_validate_years(req.years, &reason);
     if (!map_years)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS buy years: " + reason};    
 
-    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_buy_mapping_tx(req.owner.size() ? &req.owner : nullptr,
+    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->bns_create_buy_mapping_tx(*map_years,
+                                                                                      req.owner.size() ? &req.owner : nullptr,
                                                                                       req.backup_owner.size() ? &req.backup_owner : nullptr,
                                                                                       req.name,
                                                                                       req.value_bchat.size() ? &req.value_bchat : nullptr,
                                                                                       req.value_wallet.size() ? &req.value_wallet : nullptr,
                                                                                       req.value_belnet.size() ? &req.value_belnet : nullptr,
                                                                                       &reason,
-                                                                                      *map_years,
                                                                                       req.priority,
                                                                                       req.account_index,
                                                                                       req.subaddr_indices);
