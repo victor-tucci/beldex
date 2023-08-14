@@ -7064,9 +7064,10 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
     }
 
     auto writer = tools::msg_writer();
-    fmt::print(fmt::fg(fmt::color::sky_blue),fmt::format( "\n    Name                   : {}\n",name));
+    writer
+      << fmt::format(fg(fmt::color::sky_blue), "    Name                   : {}", name);
     if(!enc_bchat_hex.empty()) writer
-      << "    Value bchat            : " << value_bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat);
+      << "\n    Value bchat            : " << value_bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat);
     if(!enc_wallet_hex.empty()) writer
       << "\n    Value wallet           : " << value_wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet);      
     if(!enc_belnet_hex.empty()) writer
@@ -7194,11 +7195,12 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
       }
 
       auto writer = tools::msg_writer();
-      fmt::print(fmt::fg(fmt::color::sky_blue),fmt::format( "\n    Name (hashed)          : {}\n",entry.name_hash));
-      if (!name.empty())
-        fmt::print(fmt::fg(fmt::color::sky_blue),fmt::format( "    Name                   : {}\n",name));
+      writer
+        << fmt::format(fg(fmt::color::sky_blue) , "    Name (hashed)          : {}", entry.name_hash);
+      if (!name.empty()) writer
+        << fmt::format(fg(fmt::color::sky_blue) , "\n    Name                   : {}", name);
       if (!value_bchat.empty()) writer
-        << "    Value bchat            : " << value_bchat;
+        << "\n    Value bchat            : " << value_bchat;
       if (!value_wallet.empty()) writer
         << "\n    Value wallet           : " << value_wallet;
       if (!value_belnet.empty()) writer
