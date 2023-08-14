@@ -1069,10 +1069,10 @@ bool beldex_name_system_disallow_reserved_type::generate(std::vector<test_event_
   bns::mapping_value mapping_value_bchat = {};
   mapping_value_bchat.len                = 20;
 
-   bns::mapping_value mapping_value_wallet = {};
+  bns::mapping_value mapping_value_wallet = {};
   mapping_value_wallet.len                = 20;
 
-   bns::mapping_value mapping_value_belnet = {};
+  bns::mapping_value mapping_value_belnet = {};
   mapping_value_belnet.len                = 20;
 
   auto unusable_type = static_cast<bns::mapping_type>(-1);
