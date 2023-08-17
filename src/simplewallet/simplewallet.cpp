@@ -6810,8 +6810,8 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (owner.size())
     {
-      fmt::print(fmt::format(tr("Old Owner        : {}\n"), response[0].owner));
-      fmt::print(fmt::format(tr("New Owner        : {}\n"), owner));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Owner        : {}\n"), response[0].owner));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Owner        : {}\n"), owner));
     }
     else
     {
@@ -6820,8 +6820,8 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (backup_owner.size())
     {
-      fmt::print(fmt::format(tr("Old Backup Owner : {}\n"), response[0].backup_owner.value_or(NULL_STR)));
-      fmt::print(fmt::format(tr("New Backup Owner : {}\n"), backup_owner));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner : {}\n"), response[0].backup_owner.value_or(NULL_STR)));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Backup Owner : {}\n"), backup_owner));
     }
     else
     {
