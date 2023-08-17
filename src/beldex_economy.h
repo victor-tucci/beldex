@@ -59,6 +59,9 @@ enum struct mapping_type : uint16_t
   bchat = 0,
   wallet = 1,
   belnet = 2,
+  belnet_2years,
+  belnet_5years,
+  belnet_10years,
   _count,
   update_record_internal,
 };

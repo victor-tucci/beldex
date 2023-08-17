@@ -188,7 +188,6 @@ namespace cryptonote
     }
     else if (tx.type == txtype::beldex_name_system)
     {
-      //TODO bns-rework have to validate the old bns
       tx_extra_beldex_name_system data;
       if (!cryptonote::get_field_from_tx_extra(tx.extra, data))
       {

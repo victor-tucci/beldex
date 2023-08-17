@@ -13,6 +13,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
+  result.version = 1;
   result.fields = bns::extra_field::buy;
   result.owner = owner;
 
@@ -52,6 +53,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_renew(
   assert(is_renewal_type(mapping_years) && prev_txid);
 
   tx_extra_beldex_name_system result{};
+  result.version = 1;
   result.fields = bns::extra_field::none;
   result.mapping_years=mapping_years;
   result.name_hash = name_hash;
@@ -70,6 +72,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
+  result.version = 1;
   result.signature = signature;
   result.name_hash = name_hash;
   result.fields |= bns::extra_field::signature;

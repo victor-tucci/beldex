@@ -546,6 +546,7 @@ namespace cryptonote
   struct tx_extra_beldex_name_system
   {
     uint8_t                 version = 0;
+    bns::mapping_type       type;
     bns::mapping_years      mapping_years;
     crypto::hash            name_hash;
     crypto::hash            prev_txid = crypto::null_hash;  // previous txid that purchased the mapping
@@ -592,7 +593,10 @@ namespace cryptonote
 
     BEGIN_SERIALIZE()
       FIELD(version)
-      ENUM_FIELD(mapping_years, mapping_years < bns::mapping_years::_count)
+      if(version >=1)
+        ENUM_FIELD(mapping_years, mapping_years < bns::mapping_years::_count)
+      else
+        ENUM_FIELD(type, type < bns::mapping_type::_count)
       FIELD(name_hash)
       FIELD(prev_txid)
       ENUM_FIELD(fields, fields <= bns::extra_field::all)

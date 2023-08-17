@@ -302,10 +302,11 @@ namespace rpc {
       };
       struct bns_details
       {
+        uint8_t     version;                     // The version which is given when the registrations version = 1 after the hf18
         std::optional<bool> buy;                 // Provided and true iff this is an BNS buy record
         std::optional<bool> update;              // Provided and true iff this is an BNS record update
         std::optional<bool> renew;               // Provided and true iff this is an BNS record renewal
-        std::string type;                        // The BNS request type.  For registrations: "belnet", "bchat", "wallet"; for a record update: "update"
+        std::optional<std::string> type;         // The BNS request type.  For registrations: "belnet", "bchat", "wallet"; for a record update: "update"
         std::optional<uint64_t> blocks;          // The registration length in blocks (only applies to belnet registrations; bchat/wallet registrations do not expire)
         std::string name_hash;                   // The hashed name of the record being purchased/updated, in hex (the actual name is not provided on the blockchain).
         std::optional<std::string> prev_txid;    // For an update, this points at the txid of the previous bns update transaction.

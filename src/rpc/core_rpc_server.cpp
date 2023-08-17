@@ -796,8 +796,24 @@ namespace cryptonote { namespace rpc {
       }
       void operator()(const tx_extra_beldex_name_system& x) {
         auto& bns = entry.bns.emplace();
+        bns.version = x.version;          
         if (x.is_buying() || x.is_renewing())
           bns.blocks = bns::expiry_blocks(nettype, x.mapping_years, hf_version) ;
+        if(x.version == 0)
+          switch (x.type)
+          {
+            case bns::mapping_type::belnet: [[fallthrough]];
+            case bns::mapping_type::belnet_2years: [[fallthrough]];
+            case bns::mapping_type::belnet_5years: [[fallthrough]];
+            case bns::mapping_type::belnet_10years: bns.type = "belnet"; break;
+
+            case bns::mapping_type::bchat: bns.type = "bchat"; break;
+            case bns::mapping_type::wallet:  bns.type = "wallet"; break;
+
+            case bns::mapping_type::update_record_internal: [[fallthrough]];
+            case bns::mapping_type::_count:
+              break;
+          }
         if (x.is_buying())
           bns.buy = true;
         else if (x.is_updating())
@@ -3592,7 +3608,7 @@ namespace cryptonote { namespace rpc {
   {
     BNS_RESOLVE::response res{};
 
-    if (req.type >= tools::enum_count<bns::mapping_type>)
+    if (req.type >= static_cast<std::underlying_type_t<bns::mapping_type>>(bns::mapping_type::belnet_2years))
       throw rpc_error{ERROR_WRONG_PARAM, "Unable to resolve BNS address: 'type' parameter not specified"};
 
     auto name_hash = bns::name_hash_input_to_base64(req.name_hash);

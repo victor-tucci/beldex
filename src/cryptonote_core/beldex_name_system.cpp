@@ -1205,7 +1205,7 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   // Simple BNS Extra Validation
   // -----------------------------------------------------------------------------------------------
   {
-    if (check_condition(bns_extra.version != 0, reason, tx, ", ", bns_extra_string(nettype, bns_extra), " unexpected version=", std::to_string(bns_extra.version), ", expected=0"))
+    if (check_condition(hf_version >=18 ? bns_extra.version != 1 : bns_extra.version != 0, reason, tx, ", ", bns_extra_string(nettype, bns_extra), " unexpected version=", std::to_string(bns_extra.version), ", expected=0"))
       return false;
 
     // -----------------------------------------------------------------------------------------------
@@ -1221,7 +1221,7 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
     {
       return false;
     }
-   }
+  }
 
   // -----------------------------------------------------------------------------------------------
   // BNS Field(s) Validation
