@@ -2272,9 +2272,9 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
     static constexpr auto names() { return NAMES("bns_renew_mapping"); }
 
     static constexpr const char *description =
-R"(Renews a Beldex Name System belnet mapping by adding to the existing expiry time.
+R"(Renews a Beldex Name System by adding to the existing expiry time.
 
-The renewal can be for 1, 2, 5, or 10 years by specifying a `type` value of "belnet_2y", "belnet_10y", etc.)";
+The renewal can be for 1, 2, 5, or 10 years by specifying a `year` of "2y","5y","10y", etc.)";
 
     struct request
     {
@@ -2464,7 +2464,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
   };
 
   BELDEX_RPC_DOC_INTROSPECT
-  // Takes a BNS encrypted value and encrypts the mapping value using the BNS name.
+  // Takes a BNS value and encrypts the mapping value using the BNS name.
   struct BNS_ENCRYPT_VALUE : RPC_COMMAND
   {
     static constexpr auto names() { return NAMES("bns_encrypt_value"); }
