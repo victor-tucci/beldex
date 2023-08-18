@@ -132,7 +132,7 @@ inline std::string_view mapping_type_str(mapping_type type)
 inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os << mapping_type_str(type); }
 
 constexpr bool mapping_type_allowed(uint8_t hf_version, mapping_type type) {
-  return (type == mapping_type::bchat && hf_version >= cryptonote::network_version_16_bns)
+  return (type == mapping_type::bchat && hf_version >= cryptonote::network_version_16)
       || (type == mapping_type::belnet && hf_version >= cryptonote::network_version_17_POS) || (type == mapping_type::wallet && hf_version >= cryptonote::network_version_17_POS);
 }
 

@@ -636,7 +636,7 @@ sqlite3 *init_beldex_name_system(const fs::path& file_path, bool read_only)
 std::vector<mapping_type> all_mapping_types(uint8_t hf_version) {
   std::vector<mapping_type> result;
   result.reserve(2);
-  if (hf_version >= cryptonote::network_version_16_bns)
+  if (hf_version >= cryptonote::network_version_16)
     result.push_back(mapping_type::bchat);
   if (hf_version >= cryptonote::network_version_17_POS)
     result.push_back(mapping_type::belnet);
@@ -1260,12 +1260,6 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   {
     uint64_t burn                = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
     uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years) : 0;
-    if (hf_version == cryptonote::network_version_18 && burn > burn_required && blockchain_height < 524'000) {
-        // Testnet sync fix: PR #1433 merged that lowered fees for HF18 while testnet was already on
-        // HF18, but broke syncing because earlier HF18 blocks have BNS txes at the higher fees, so
-        // this allows them to pass by pretending the tx burned the right amount.
-        burn = burn_required;
-    }
 
     if (burn != burn_required)
     {
@@ -2100,7 +2094,7 @@ bool name_system_db::add_block(const cryptonote::block &block, const std::vector
 
   bool bns_parsed_from_block = false;
   //TODO bns-rework have to replace this condition to (version >= 18)
-  if (block.major_version >= cryptonote::network_version_16_bns && (height > 945755))
+  if (block.major_version >= cryptonote::network_version_18_bns)
   {
     for (cryptonote::transaction const &tx : txs)
     {

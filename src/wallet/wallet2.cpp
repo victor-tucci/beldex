@@ -8564,7 +8564,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
     std::string error_msg;
     uint64_t cur_height = get_daemon_blockchain_height(error_msg);
 
-    if(version  >= cryptonote::network_version_18)
+    if(version  >= cryptonote::network_version_18_bns)
     {
       if(((p_contributor->amount) < master_nodes::SMALL_CONTRIBUTOR_THRESHOLD * COIN ) && ((cur_height - node_info.registration_height) <  master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER))
       {

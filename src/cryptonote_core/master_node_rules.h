@@ -203,9 +203,11 @@ namespace master_nodes {
     std::array<uint16_t, 3> storage_server;
   };
 
+  //TODO bns-rework have to give the new versions
   constexpr proof_version MIN_UPTIME_PROOF_VERSIONS[] = {
+    proof_version{{cryptonote::network_version_18_bns, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_17_POS, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
-    proof_version{{cryptonote::network_version_16_bns, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
+    proof_version{{cryptonote::network_version_16, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_15_flash, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_14_enforce_checkpoints, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_13_checkpointing, 0}, {4,0,0}, {0,9,5}, {2,2,0}},

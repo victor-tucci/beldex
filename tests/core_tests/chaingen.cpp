@@ -236,7 +236,7 @@ beldex_blockchain_entry &beldex_chain_generator::add_block(beldex_blockchain_ent
     db_.tx_table[tx_hash] = tx;
   }
 
-  if (can_be_added_to_blockchain && entry.block.major_version >= cryptonote::network_version_16_bns)
+  if (can_be_added_to_blockchain && entry.block.major_version >= cryptonote::network_version_16)
   {
     bns_db_->add_block(entry.block, entry.txs);
   }
@@ -543,7 +543,7 @@ cryptonote::transaction beldex_chain_generator::create_state_change_tx(master_no
 
   using scver = cryptonote::tx_extra_master_node_state_change::version_t;
   cryptonote::tx_extra_master_node_state_change state_change_extra(
-          hf_version >= cryptonote::network_version_18 ? scver::v4_reasons : scver::v0,
+          hf_version >= cryptonote::network_version_18_bns ? scver::v4_reasons : scver::v0,
           state, height, worker_index, reasons_all, reasons_any, {});
   if (voters.size())
   {
@@ -639,15 +639,15 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
     prev_txid = mapping.txid;
 
   bns::mapping_value encrypted_bchat_value = value_bchat;
-  bool encrypted_bchat = encrypted_bchat_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+  bool encrypted_bchat = encrypted_bchat_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
   assert(encrypted_bchat);
 
   bns::mapping_value encrypted_wallet_value = value_wallet;
-  bool encrypted_wallet = encrypted_wallet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+  bool encrypted_wallet = encrypted_wallet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
   assert(encrypted_wallet);
 
   bns::mapping_value encrypted_belnet_value = value_belnet;
-  bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+  bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
   assert(encrypted_belnet);
 
   std::vector<uint8_t> extra;
@@ -693,7 +693,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
     if (!encrypted_bchat_value.encrypted)
     {
       assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
-      bool encrypted_bchat = encrypted_bchat_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+      bool encrypted_bchat = encrypted_bchat_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
       if (use_asserts) assert(encrypted_bchat);
     }
   }
@@ -705,7 +705,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
     if (!encrypted_wallet_value.encrypted)
     {
       assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
-      bool encrypted_wallet = encrypted_wallet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+      bool encrypted_wallet = encrypted_wallet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
       if (use_asserts) assert(encrypted_wallet);
     }
   }
@@ -717,7 +717,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
     if (!encrypted_belnet_value.encrypted)
     {
       assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
-      bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16_bns);
+      bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
       if (use_asserts) assert(encrypted_belnet);
     }
   }
@@ -999,9 +999,9 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
     constexpr uint64_t num_blocks       = cryptonote::get_config(cryptonote::FAKECHAIN).GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS;
     uint64_t start_height               = height - num_blocks;
 
-    static_assert(cryptonote::network_version_count == cryptonote::network_version_18 + 1,
+    static_assert(cryptonote::network_version_count == cryptonote::network_version_18_bns + 1,
             "The code below needs to be updated to support higher hard fork versions");
-    if (blk.major_version <= cryptonote::network_version_16_bns)
+    if (blk.major_version <= cryptonote::network_version_16)
       miner_tx_context.batched_governance = 0;
     else if (blk.major_version >= cryptonote::network_version_17_POS)
       miner_tx_context.batched_governance = (FOUNDATION_REWARD_HF17) * num_blocks;
@@ -1265,7 +1265,7 @@ static void manual_calc_batched_governance(const test_generator &generator,
     uint64_t num_blocks                 = cryptonote::get_config(cryptonote::FAKECHAIN).GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS;
     uint64_t start_height               = height - num_blocks;
 
-    if (hard_fork_version >= cryptonote::network_version_16_bns)
+    if (hard_fork_version >= cryptonote::network_version_16)
     {
       miner_tx_context.batched_governance = num_blocks * cryptonote::governance_reward_formula(0, hard_fork_version);
       return;
@@ -1511,7 +1511,7 @@ cryptonote::transaction make_registration_tx(std::vector<test_event_entry>& even
   add_master_node_contributor_to_tx_extra(extra, contributors.at(0));
 
   cryptonote::txtype tx_type = cryptonote::txtype::standard;
-  if (hf_version >= cryptonote::network_version_16_bns) tx_type = cryptonote::txtype::stake; // NOTE: txtype stake was not introduced until HF14
+  if (hf_version >= cryptonote::network_version_16) tx_type = cryptonote::txtype::stake; // NOTE: txtype stake was not introduced until HF14
   beldex_tx_builder(events, tx, head, account, account.get_keys().m_account_address, amount, hf_version).with_tx_type(tx_type).with_extra(extra).with_unlock_time(unlock_time).build();
   events.push_back(tx);
   return tx;
