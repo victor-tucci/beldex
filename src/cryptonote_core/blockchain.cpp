@@ -301,7 +301,6 @@ uint64_t Blockchain::get_current_blockchain_height(bool lock) const
 bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 {
   uint64_t const snl_height   = std::max(hard_fork_begins(m_nettype, network_version_9_master_nodes).value_or(0), m_master_node_list.height() + 1);
-  //TODO BNS-rework have to change the version 16_bns to 18_bns
   uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, network_version_18_bns).value_or(0),          m_bns_db.height() + 1);
   uint64_t const end_height   = m_db->height();
   uint64_t const start_height = std::min(end_height, std::min(bns_height, snl_height));
@@ -3535,13 +3534,24 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
       }
     }
     
-    //TODO bns-rework have to replace this condition to (version >= 18)
-    if (tx.type == txtype::beldex_name_system && (hf_version >= network_version_18_bns))
+    if (tx.type == txtype::beldex_name_system)
     {
-      cryptonote::tx_extra_beldex_name_system data;
-      std::string fail_reason;
-      if (!m_bns_db.validate_bns_tx(hf_version, get_current_blockchain_height(), tx, data, &fail_reason))
+      uint64_t height = get_current_blockchain_height();
+      if (hf_version >= network_version_18_bns)
       {
+        cryptonote::tx_extra_beldex_name_system data;
+        std::string fail_reason;
+        if (!m_bns_db.validate_bns_tx(hf_version, height, tx, data, &fail_reason))
+        {
+          MERROR_VER("Failed to validate BNS TX reason: " << fail_reason);
+          tvc.m_verbose_error = std::move(fail_reason);
+          return false;
+        }
+      }
+      else if (height > get_config(nettype()).BNS_VALIDATION_HEIGHT)
+      {
+        // TODO this condition will be removed after the version 18 by the 'soft fork'
+        std::string fail_reason = "Bns buy option is not available in v17";
         MERROR_VER("Failed to validate BNS TX reason: " << fail_reason);
         tvc.m_verbose_error = std::move(fail_reason);
         return false;

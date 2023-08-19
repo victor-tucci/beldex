@@ -85,15 +85,13 @@ constexpr uint64_t REGISTRATION_YEAR_DAYS = 368;
 constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
 {
   uint64_t result = 0;
-  
-  // TODO bns-rework have to change the version to v18
-  if (hf_version >= 17)
+
+  const uint64_t basic_fee = (hf_version >= 18 ? 20 * COIN : // cryptonote::network_version_18_bns -- but don't want to add cryptonote_config.h include
+                                  15 * COIN                  // cryptonote::network_version_17_POS
+  );
+
+  switch (map_years)
   {
-    const uint64_t basic_fee = (hf_version >= 16 ? 15 * COIN : // cryptonote::network_version_16_POS -- but don't want to add cryptonote_config.h include
-                                    20 * COIN                  // cryptonote::network_version_15_bns
-    );
-    switch (map_years)
-    {
     case mapping_years::update_record_internal:
       result = 0;
       break;
@@ -112,8 +110,8 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
     case mapping_years::bns_10years:
       result = 6 * basic_fee;
       break;
-    }
   }
+
   return result;
 }
 }; // namespace bns

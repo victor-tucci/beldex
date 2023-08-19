@@ -2093,7 +2093,6 @@ bool name_system_db::add_block(const cryptonote::block &block, const std::vector
    return false;
 
   bool bns_parsed_from_block = false;
-  //TODO bns-rework have to replace this condition to (version >= 18)
   if (block.major_version >= cryptonote::network_version_18_bns)
   {
     for (cryptonote::transaction const &tx : txs)
