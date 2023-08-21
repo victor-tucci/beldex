@@ -272,9 +272,9 @@ namespace config
 
   namespace testnet
   {
-    inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 339767;
+    inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 169960;
     inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 175;   // TODO bns-rewok have to give the testnet height
-    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1595360006;
+    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1668622463;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 53;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 54;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 63;
@@ -303,7 +303,7 @@ namespace config
   {
     inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 0;
     inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 0;
-    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1597170000;
+    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1668622463;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 24; // ~ dV1 .. dV3
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 25; // ~ dVA .. dVC
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 36; // ~dVa .. dVc
