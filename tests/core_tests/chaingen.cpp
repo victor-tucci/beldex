@@ -999,7 +999,7 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
     constexpr uint64_t num_blocks       = cryptonote::get_config(cryptonote::FAKECHAIN).GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS;
     uint64_t start_height               = height - num_blocks;
 
-    static_assert(cryptonote::network_version_count == cryptonote::network_version_18_bns + 1,
+    static_assert(cryptonote::network_version_count == cryptonote::network_version_19 + 1,
             "The code below needs to be updated to support higher hard fork versions");
     if (blk.major_version <= cryptonote::network_version_16)
       miner_tx_context.batched_governance = 0;
