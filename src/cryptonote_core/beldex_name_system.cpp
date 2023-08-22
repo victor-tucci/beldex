@@ -1259,7 +1259,8 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
   // -----------------------------------------------------------------------------------------------
   {
     uint64_t burn                = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
-    uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years) : 0;
+
+     uint64_t const burn_required = (bns_extra.is_buying() || bns_extra.is_renewing()) ? burn_needed(hf_version, bns_extra.mapping_years) : (bns_extra.is_updating() && (bns_extra.field_is_set(bns::extra_field::owner) || bns_extra.field_is_set(bns::extra_field::backup_owner))) ? burn_needed(hf_version, mapping_years::update_owner_record) : 0;
 
     if (burn != burn_required)
     {

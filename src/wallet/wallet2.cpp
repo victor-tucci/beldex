@@ -8998,7 +8998,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
     if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
     return {};
   }
-  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, bns::mapping_years::update_record_internal);
+beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0,(owner || backup_owner) ? bns::mapping_years::update_owner_record : bns::mapping_years::update_record_internal);
 
   auto result = create_transactions_2({} /*dests*/,
                                       CRYPTONOTE_DEFAULT_TX_MIXIN,
