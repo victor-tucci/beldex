@@ -8793,11 +8793,11 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
       }
     }
 
-    if (txtype == bns::bns_tx_type::update && make_signature)
+    if ((txtype == bns::bns_tx_type::update && make_signature) || (txtype == bns::bns_tx_type::renew))
     {
       if (response->empty())
       {
-        if (reason) *reason = "Signature requested when preparing BNS TX but record to update does not exist";
+        if (reason) *reason = "Signature requested when preparing BNS TX but record to update/renew does not exist";
         return result;
       }
 
@@ -8818,14 +8818,6 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
           }
           return result;
         }
-      }
-    }
-    else if (txtype == bns::bns_tx_type::renew)
-    {
-      if (response->empty())
-      {
-        if (reason) *reason = "Renewal requested but record to renew does not exist or has expired";
-        return result;
       }
     }
   }
@@ -8998,7 +8990,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
     if (reason) *reason = ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
     return {};
   }
-beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0,(owner || backup_owner) ? bns::mapping_years::update_owner_record : bns::mapping_years::update_record_internal);
+  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0,(owner || backup_owner) ? bns::mapping_years::update_owner_record : bns::mapping_years::update_record_internal);
 
   auto result = create_transactions_2({} /*dests*/,
                                       CRYPTONOTE_DEFAULT_TX_MIXIN,

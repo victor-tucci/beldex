@@ -98,7 +98,7 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
       break;
 
     case mapping_years::update_owner_record:
-      result = basic_fee * 10/100;
+      result = basic_fee * 10/100 ;   // 10% from the basic fee
       break;
 
     case mapping_years::bns_1year: /* FALLTHRU */
