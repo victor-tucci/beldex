@@ -869,6 +869,12 @@ namespace master_nodes
     return false;
   }
 
+  master_node_info master_node_list::state_t::get_master_node_details(crypto::public_key mnode_key)
+  {
+    auto it = master_nodes_infos.find(mnode_key);
+    return *it->second;
+  }
+
   bool is_registration_tx(cryptonote::network_type nettype, uint8_t hf_version, const cryptonote::transaction& tx, uint64_t block_timestamp, uint64_t block_height, uint32_t index, crypto::public_key& key, master_node_info& info)
   {
     contributor_args_t contributor_args = {};
