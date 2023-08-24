@@ -87,7 +87,7 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
 {
   uint64_t result = 0;
 
-  const uint64_t basic_fee = (hf_version >= 18 ? 20 * COIN : // cryptonote::network_version_18_bns -- but don't want to add cryptonote_config.h include
+  const uint64_t basic_fee = (hf_version >= 18 ? 500 * COIN : // cryptonote::network_version_18_bns -- but don't want to add cryptonote_config.h include
                                   15 * COIN                  // cryptonote::network_version_17_POS
   );
 
@@ -113,7 +113,7 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
       result = 4 * basic_fee;
       break;
     case mapping_years::bns_10years:
-      result = 6 * basic_fee;
+      result = 8 * basic_fee;
       break;
   }
 
