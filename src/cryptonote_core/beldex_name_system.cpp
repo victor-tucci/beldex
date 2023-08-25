@@ -1137,8 +1137,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
           "Cannot buy an BNS name that is already registered: name_hash=", mapping.name_hash,
           "; TX: ", tx, "; ", bns_extra_string(bns_db.network_type(), bns_extra)))
         return false;
-
-  }
+    }
   else if (bns_extra.is_renewing())
   {
     // We allow anyone to renew a name, but it has to exist and be currently active
@@ -1147,13 +1146,32 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
     if (check_condition(!mapping.active(blockchain_height), reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), " TX requested to renew mapping that has already expired"))
       return false;
     expected_prev_txid = mapping.txid;
+
+  // Validate signature
+    auto data = tx_extra_signature(
+        bns_extra.encrypted_bchat_value,
+        bns_extra.encrypted_wallet_value,
+        bns_extra.encrypted_belnet_value,
+        bns_extra.field_is_set(bns::extra_field::owner) ? &bns_extra.owner : nullptr,
+        bns_extra.field_is_set(bns::extra_field::backup_owner) ? &bns_extra.backup_owner : nullptr,
+        expected_prev_txid);
+    if (check_condition(data.empty(), reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), " unexpectedly failed to generate signature, please inform the Beldex developers"))
+      return false;
+
+  crypto::hash hash;
+    crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr /*key*/, 0 /*key_len*/);
+
+    if (check_condition(!verify_bns_signature(hash, bns_extra.signature, mapping.owner) &&
+                        !verify_bns_signature(hash, bns_extra.signature, mapping.backup_owner), reason,
+                        tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), " failed to verify signature for BNS renew, current owner=", mapping.owner.to_string(bns_db.network_type()), ", backup owner=", mapping.backup_owner.to_string(bns_db.network_type())))
+      return false;
   }
   else
   {
     check_condition(true, reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), " is not a valid buy, update, or renew BNS tx");
     return false;
   }
-
+  
   if (check_condition(bns_extra.prev_txid != expected_prev_txid, reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), " specified prior txid=", bns_extra.prev_txid, ", but BNS DB reports=", expected_prev_txid, ", possible competing TX was submitted and accepted before this TX was processed"))
     return false;
 

@@ -567,7 +567,7 @@ namespace cryptonote
     bool is_buying()   const { return (field_is_set(bns::extra_field::buy) || field_is_set(bns::extra_field::buy_no_backup)) && field_any_set(bns::extra_field::buy_any_value); }
     // True if this is renewing an existing BNS: has no fields at all, is a renewal registration (i.e. belnet),
     // and has a non-null txid set (which should point to the most recent registration or update).
-    bool is_renewing() const { return fields == bns::extra_field::none && prev_txid && is_renewal_type(mapping_years); }
+    bool is_renewing() const { return fields == bns::extra_field::signature && prev_txid && is_renewal_type(mapping_years); }
 
     static tx_extra_beldex_name_system make_buy(
         bns::generic_owner const& owner,
@@ -579,7 +579,11 @@ namespace cryptonote
         const std::string& encrypted_belnet_value,
         const crypto::hash& prev_txid);
 
-    static tx_extra_beldex_name_system make_renew(bns::mapping_years mapping_years, const crypto::hash& name_hash, const crypto::hash& prev_txid);
+    static tx_extra_beldex_name_system make_renew(
+        const bns::generic_signature& signature,
+        bns::mapping_years mapping_years, 
+        const crypto::hash& name_hash, 
+        const crypto::hash& prev_txid);
 
     static tx_extra_beldex_name_system make_update(
         const bns::generic_signature& signature,

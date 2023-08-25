@@ -48,13 +48,17 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
 }
 
 tx_extra_beldex_name_system tx_extra_beldex_name_system::make_renew(
-    bns::mapping_years mapping_years, crypto::hash const &name_hash, crypto::hash const &prev_txid)
+    const bns::generic_signature& signature,
+    bns::mapping_years mapping_years, 
+    crypto::hash const &name_hash, 
+    crypto::hash const &prev_txid)
 {
   assert(is_renewal_type(mapping_years) && prev_txid);
 
   tx_extra_beldex_name_system result{};
   result.version = 1;
-  result.fields = bns::extra_field::none;
+  result.fields = bns::extra_field::signature;
+  result.signature = signature;
   result.mapping_years=mapping_years;
   result.name_hash = name_hash;
   result.prev_txid = prev_txid;
