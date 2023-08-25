@@ -368,9 +368,10 @@ beldex_chain_generator::create_and_add_beldex_name_system_tx_renew(cryptonote::a
                                                                uint8_t hf_version,
                                                                bns::mapping_years mapping_years,
                                                                std::string const &name,
+                                                               bns::generic_signature *signature,
                                                                bool kept_by_block)
 {
-  cryptonote::transaction t = create_beldex_name_system_tx_renew(src, hf_version, mapping_years, name);
+  cryptonote::transaction t = create_beldex_name_system_tx_renew(src, hf_version, mapping_years, name, signature);
   add_tx(t, true /*can_be_added_to_blockchain*/, ""/*fail_msg*/, kept_by_block);
   return t;
 }
@@ -775,6 +776,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_ren
                                                                                uint8_t hf_version,
                                                                                bns::mapping_years mapping_years,
                                                                                std::string const &name,
+                                                                               bns::generic_signature *signature,
                                                                                std::optional<uint64_t> burn_override) const
 {
   auto lcname = tools::lowercase_ascii_string(name);
@@ -789,8 +791,20 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_ren
   uint8_t new_hf_version = get_hf_version_at(get_block_height(top().block) + 1);
   uint64_t burn = burn_override.value_or(bns::burn_needed(new_hf_version, mapping_years));
 
+  bns::generic_signature signature_ = {};
+  if (!signature)
+  {
+    signature = &signature_;
+    auto data = bns::tx_extra_signature(nullptr, nullptr, nullptr, nullptr, nullptr, prev_txid);
+    crypto::hash hash{};
+    if (!data.empty())
+        crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
+    generate_signature(hash, src.get_keys().m_account_address.m_spend_public_key, src.get_keys().m_spend_secret_key, signature->monero);
+    signature->type = bns::generic_owner_sig_type::monero;
+  }
+
   std::vector<uint8_t> extra;
-  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_renew(mapping_years, name_hash, prev_txid);
+  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_renew(*signature, mapping_years, name_hash, prev_txid);
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
   cryptonote::add_burned_amount_to_tx_extra(extra, burn);
 
