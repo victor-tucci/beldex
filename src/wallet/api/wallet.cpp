@@ -1062,6 +1062,35 @@ uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 }
 
 EXPORT
+int WalletImpl::countBns()
+{  
+    clearStatus();
+    auto w = wallet();
+    std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::request> requests(1);
+    int count=0;
+        
+    for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+    {
+        if (requests.back().entries.size() >= cryptonote::rpc::BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES)
+            requests.emplace_back();
+         requests.back().entries.push_back(w->get_subaddress_as_str({0, index}));
+    }
+
+    for (auto const &request : requests)
+    {
+        auto [success, result] = w->bns_owners_to_names(request);
+        if (!success)
+        {
+            LOG_PRINT_L1(__FUNCTION__ << "Connection to daemon failed when requesting BNS names");
+            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+            break;
+        }
+        count += result.size();
+    }    
+    return count;
+}
+
+EXPORT
 std::vector<stakeInfo>* WalletImpl::listCurrentStakes() const
 {
     std::vector<stakeInfo>* stakes = new std::vector<stakeInfo>;
@@ -1713,6 +1742,394 @@ PendingTransaction *WalletImpl::createTransaction(const std::string &dst_addr, s
 
 {
     return createTransactionMultDest(std::vector<std::string> {dst_addr},  amount ? (std::vector<uint64_t> {*amount}) : (std::optional<std::vector<uint64_t>>()), priority, subaddr_account, subaddr_indices);
+}
+
+EXPORT
+bool WalletImpl::validate_bns_type(std::string mapping,bns::mapping_type *mapping_type)
+{
+    LOG_PRINT_L1(__FUNCTION__ << "Check bns type");
+    std::optional<bns::mapping_type> mapping_type_;
+    std::optional<uint8_t> hf_version = hardForkVersion();
+    if (!hf_version)
+    {
+        setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
+        return false;
+    }
+
+    //TODO Enable this validation in the final stage
+    // if(hf_version <= cryptonote::network_version_17_POS)
+    // {
+    //     setStatusError(tr("BNS Support is not available in this version "));
+    //     return false;
+    // }
+
+    if (tools::string_iequal(mapping, "bchat"))
+        mapping_type_ = bns::mapping_type::bchat;
+    else if (tools::string_iequal(mapping, "belnet"))
+        mapping_type_ = bns::mapping_type::belnet;
+    else if (tools::string_iequal_any(mapping, "belnet_1y", "belnet_1years")) // Can also specify "belnet"
+        mapping_type_ = bns::mapping_type::belnet;
+    else if (tools::string_iequal_any(mapping, "belnet_2y", "belnet_2years"))
+        mapping_type_ = bns::mapping_type::belnet_2years;
+    else if (tools::string_iequal_any(mapping, "belnet_5y", "belnet_5years"))
+        mapping_type_ = bns::mapping_type::belnet_5years;
+    else if (tools::string_iequal_any(mapping, "belnet_10y", "belnet_10years"))
+        mapping_type_ = bns::mapping_type::belnet_10years;
+    else if (tools::string_iequal(mapping, "wallet"))
+        mapping_type_ = bns::mapping_type::wallet;
+    else
+        {
+            setStatusError(tr("Unsupported BNS type"));
+            return false;
+        }
+
+    LOG_PRINT_L1(__FUNCTION__ << "Bnstype asigning...");
+    *mapping_type = *mapping_type_;
+    return true;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string &value,std::string &name,std::string &bnstype,
+                                                  uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+
+{  
+    clearStatus();
+    // Pause refresh thread while creating transaction
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do {
+        auto w = wallet();
+        bns::mapping_type mapping_type;
+        if(!validate_bns_type(bnstype, &mapping_type))
+            break;
+
+        // Getting subaddress for create a transaction from this subaddress
+        if (subaddr_indices.empty()) {
+            for (uint32_t index = 0; index < w->get_num_subaddresses(subaddr_account); ++index)
+                subaddr_indices.insert(index);
+        }
+
+        std::string reason;
+        try {
+            LOG_PRINT_L1(__FUNCTION__ << "Create bns_buy is start...");
+            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(mapping_type,
+                                                     owner.size() ? &owner : nullptr,
+                                                     backup_owner.size() ? &backup_owner : nullptr,
+                                                     name,
+                                                     value,
+                                                     &reason,
+                                                     priority,
+                                                     subaddr_account,
+                                                     subaddr_indices);
+
+            if (transaction->m_pending_tx.empty())
+            {
+                LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+                setStatusError(reason);
+                break;
+            }
+            pendingTxPostProcess(transaction);
+
+        }catch (const tools::error::daemon_busy&) {
+            // TODO: make it translatable with "tr"?
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") +  e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee())  %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) <<  e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big& e) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+
+    }while(false);
+
+    LOG_PRINT_L1(__FUNCTION__ << "Status given to transaction object");
+    transaction->m_status = status();
+    // Resume refresh thread
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value,std::string &name,std::string &bnstype,
+                                                  uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+
+{  
+    clearStatus();
+    // Pause refresh thread while creating transaction
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do {
+        auto w = wallet();
+        bns::mapping_type mapping_type;
+        if(!validate_bns_type(bnstype, &mapping_type))
+            break;
+
+        // Getting subaddress for create a transaction from this subaddress
+        if (subaddr_indices.empty()) {
+            for (uint32_t index = 0; index < w->get_num_subaddresses(subaddr_account); ++index)
+                subaddr_indices.insert(index);
+        }
+
+        std::string reason;
+        try {
+            LOG_PRINT_L1(__FUNCTION__ << "Create bns_update is start...");
+            transaction->m_pending_tx = w->bns_create_update_mapping_tx(mapping_type,
+                                                        name,
+                                                        value.size() ? &value : nullptr,
+                                                        owner.size() ? &owner : nullptr,
+                                                        backup_owner.size() ? &backup_owner : nullptr,
+                                                        nullptr,
+                                                        &reason,
+                                                        priority,
+                                                        subaddr_account,
+                                                        subaddr_indices);
+
+            if (transaction->m_pending_tx.empty())
+            {
+                LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+                setStatusError(reason);
+                break;
+            }
+            pendingTxPostProcess(transaction);
+
+        }catch (const tools::error::daemon_busy&) {
+            // TODO: make it translatable with "tr"?
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") +  e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee())  %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) <<  e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big& e) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+
+    }while(false);
+
+    LOG_PRINT_L1(__FUNCTION__ << "Status given to transaction object");
+    transaction->m_status = status();
+    // Resume refresh thread
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::string &bnstype,uint32_t priority,
+                                                    uint32_t m_current_subaddress_account,std::set<uint32_t> subaddr_indices)
+
+{
+    clearStatus();
+    // Pause refresh thread while creating transaction
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+do {
+    auto w = wallet();
+        bns::mapping_type mapping_type;
+        if(!validate_bns_type(bnstype, &mapping_type))
+            break;
+
+        // Getting subaddress for create a transaction from this subaddress
+        if (subaddr_indices.empty()) {
+            for (uint32_t index = 0; index < w->get_num_subaddresses(m_current_subaddress_account); ++index)
+                subaddr_indices.insert(index);
+        }
+
+std::string reason;
+try
+  {
+    LOG_PRINT_L1(__FUNCTION__ << "Create bns_renew is start...");
+    transaction->m_pending_tx = w->bns_create_renewal_tx(mapping_type,
+                                                name, 
+                                                &reason, 
+                                                priority, 
+                                                m_current_subaddress_account, 
+                                                subaddr_indices);
+    
+        if (transaction->m_pending_tx.empty())
+        {
+            LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+            setStatusError(reason);
+            break;
+        }
+        pendingTxPostProcess(transaction);
+
+        }catch (const tools::error::daemon_busy&) {
+            // TODO: make it translatable with "tr"?
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") +  e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee())  %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) <<  e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big& e) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+
+    }while(false);
+
+    LOG_PRINT_L1(__FUNCTION__ << "Status given to transaction object");
+    transaction->m_status = status();
+    // Resume refresh thread
+    startRefresh();
+    return transaction;
 }
 
 EXPORT
@@ -2445,7 +2862,7 @@ void WalletImpl::hardForkInfo(uint8_t &version, uint64_t &earliest_height) const
 EXPORT
 std::optional<uint8_t> WalletImpl::hardForkVersion() const
 {
-    m_wallet_ptr->get_hard_fork_version();
+    return m_wallet_ptr->get_hard_fork_version();
 }
 
 EXPORT
