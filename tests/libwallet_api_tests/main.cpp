@@ -83,6 +83,7 @@ const uint64_t AMOUNT_4BDX  =  4000000000L;
 const uint64_t AMOUNT_2BDX  =  2000000000L;
 const uint64_t AMOUNT_1BDX  =  1000000000L;
 
+
 const std::string PAYMENT_ID_EMPTY = "";
 
 std::string TESTNET_DAEMON_ADDRESS = "38.242.196.72:19091";
@@ -445,6 +446,7 @@ struct WalletTest2 : public testing::Test
 //     std::string seed1 = wallet1->seed();
 //     std::string address1 = wallet1->mainAddress();
 
+
 //     ASSERT_TRUE(wallet1->store(""));
 //     ASSERT_TRUE(wallet1->good());
 
@@ -459,7 +461,6 @@ struct WalletTest2 : public testing::Test
 //     ASSERT_TRUE(wallet1->mainAddress() == address1);
 //     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 // }
-
 
 
 
@@ -558,6 +559,7 @@ TEST_F(WalletTest1, WalletRefresh)
 //     ASSERT_TRUE(AMOUNT_4BDX == Wallet::Wallet::amountFromDouble(4.0));
 //     ASSERT_TRUE(AMOUNT_1BDX == Wallet::Wallet::amountFromDouble(1.0));
 
+
 // }
 
 
@@ -595,6 +597,7 @@ TEST_F(WalletTest1, WalletRefresh)
 TEST_F(WalletTest1, BnsBuyTransaction)
 {
     //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
     // make sure testnet daemon is running
     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
@@ -621,6 +624,7 @@ TEST_F(WalletTest1, BnsBuyTransaction)
     wallet1->refresh();
     std::cout <<"refresh_end...\n";
     ASSERT_TRUE(wallet1->balance(0) == balance);
+
     ASSERT_TRUE(transaction->commit());
     ASSERT_FALSE(wallet1->balance(0) == balance);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
@@ -691,6 +695,7 @@ TEST_F(WalletTest1, BnsBuyTransactionWithOldValue)
 }
 
 TEST_F(WalletTest1, BnsUpdateTransaction)
+
 {
     //TODO=Beldex_bns have to check more conditions also the wallet_listener check
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
@@ -719,6 +724,7 @@ TEST_F(WalletTest1, BnsUpdateTransaction)
     ASSERT_FALSE(wallet1->balance(0) == balance);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
+
 
 TEST_F(WalletTest1, BnsUpdateWithSameValue)
 {
@@ -978,7 +984,6 @@ TEST_F(WalletTest1, statusOfCountBns)
 // }
 
 
-
 TEST_F(WalletTest1, WalletHistory)
 {
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
@@ -1208,8 +1213,6 @@ TEST_F(WalletTest2, WalletCallBackRefreshedSync)
 // }
 
 
-
-
 // TEST_F(WalletTest2, WalletCallbackSent)
 // {
 //     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
@@ -1414,6 +1417,7 @@ TEST_F(WalletTest2, WalletCallBackRefreshedSync)
 //     std::cerr << "TEST: wallet closed\n";
 
 // }
+
 
 
 
