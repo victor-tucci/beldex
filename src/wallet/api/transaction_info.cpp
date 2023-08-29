@@ -46,6 +46,7 @@ EXPORT
 TransactionInfoImpl::TransactionInfoImpl()
     : m_direction(Direction_Out)
       , m_is_stake(false)
+      , m_is_bns(false)
       , m_pending(false)
       , m_failed(false)
       , m_reward_type(reward_type::unspecified)
@@ -88,6 +89,12 @@ EXPORT
 bool TransactionInfoImpl::isStake() const
 {
     return m_is_stake;
+}
+
+EXPORT
+bool TransactionInfoImpl::isBns() const
+{
+    return m_is_bns;
 }
 
 EXPORT
