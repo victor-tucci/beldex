@@ -273,7 +273,7 @@ namespace config
   namespace testnet
   {
     inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 169960;
-    inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 175;   // TODO bns-rewok have to give the testnet height
+    inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 992219;
     inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1668622463;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 53;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 54;
