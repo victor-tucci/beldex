@@ -186,7 +186,7 @@ constexpr uint64_t DIFFICULTY_BLOCKS_COUNT(bool before_hf16)
 #define HF_VERSION_EFFECTIVE_SHORT_TERM_MEDIAN_IN_PENALTY cryptonote::network_version_17_POS
 #define HF_VERSION_POS                          cryptonote::network_version_17_POS
 #define HF_VERSION_CLSAG                        cryptonote::network_version_15_flash
-#define HF_VERSION_PROOF_BTENC                  cryptonote::network_version_18
+#define HF_VERSION_PROOF_BTENC                  cryptonote::network_version_18_bns
 
 #define PER_KB_FEE_QUANTIZATION_DECIMALS        8
 
@@ -227,6 +227,7 @@ namespace config
   // slightly over time (because average block time is not typically *exactly*
   // DIFFICULTY_TARGET_V2).
   inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 742421;
+  inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 2068850;
   inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1639187815;
 
   inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 0xd1;
@@ -271,8 +272,9 @@ namespace config
 
   namespace testnet
   {
-    inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 339767;
-    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1595360006;
+    inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 169960;
+    inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 992219;
+    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1668622463;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 53;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 54;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 63;
@@ -300,7 +302,8 @@ namespace config
   namespace devnet
   {
     inline constexpr uint64_t HEIGHT_ESTIMATE_HEIGHT = 0;
-    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1597170000;
+    inline constexpr uint64_t BNS_VALIDATION_HEIGHT = 0;
+    inline constexpr time_t HEIGHT_ESTIMATE_TIMESTAMP = 1668622463;
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 24; // ~ dV1 .. dV3
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 25; // ~ dVA .. dVC
     inline constexpr uint64_t CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 36; // ~dVa .. dVc
@@ -345,9 +348,10 @@ namespace cryptonote
     network_version_13_checkpointing, // Checkpointing, Relaxed Deregistration, RandomXL, Beldex Storage Server
     network_version_14_enforce_checkpoints,
     network_version_15_flash,
-    network_version_16_bns,
+    network_version_16,
     network_version_17_POS,
-    network_version_18,
+    network_version_18_bns,
+    network_version_19,
 
     network_version_count,
   };
@@ -378,6 +382,7 @@ namespace cryptonote
   {
     network_type NETWORK_TYPE;
     uint64_t HEIGHT_ESTIMATE_HEIGHT;
+    uint64_t BNS_VALIDATION_HEIGHT;
     time_t HEIGHT_ESTIMATE_TIMESTAMP;
     uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX;
     uint64_t CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX;
@@ -405,6 +410,7 @@ namespace cryptonote
   inline constexpr network_config mainnet_config{
     MAINNET,
     ::config::HEIGHT_ESTIMATE_HEIGHT,
+    ::config::BNS_VALIDATION_HEIGHT,
     ::config::HEIGHT_ESTIMATE_TIMESTAMP,
     ::config::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX,
     ::config::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX,
@@ -427,6 +433,7 @@ namespace cryptonote
   inline constexpr network_config testnet_config{
     TESTNET,
     ::config::testnet::HEIGHT_ESTIMATE_HEIGHT,
+    ::config::testnet::BNS_VALIDATION_HEIGHT,
     ::config::testnet::HEIGHT_ESTIMATE_TIMESTAMP,
     ::config::testnet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX,
     ::config::testnet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX,
@@ -449,6 +456,7 @@ namespace cryptonote
   inline constexpr network_config devnet_config{
     DEVNET,
     ::config::devnet::HEIGHT_ESTIMATE_HEIGHT,
+    ::config::devnet::BNS_VALIDATION_HEIGHT,
     ::config::devnet::HEIGHT_ESTIMATE_TIMESTAMP,
     ::config::devnet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX,
     ::config::devnet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX,
@@ -471,6 +479,7 @@ namespace cryptonote
   inline constexpr network_config fakenet_config{
     FAKECHAIN,
     ::config::HEIGHT_ESTIMATE_HEIGHT,
+    ::config::BNS_VALIDATION_HEIGHT,
     ::config::HEIGHT_ESTIMATE_TIMESTAMP,
     ::config::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX,
     ::config::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX,

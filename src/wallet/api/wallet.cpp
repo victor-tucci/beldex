@@ -1745,51 +1745,38 @@ PendingTransaction *WalletImpl::createTransaction(const std::string &dst_addr, s
 }
 
 EXPORT
-bool WalletImpl::validate_bns_type(std::string mapping,bns::mapping_type *mapping_type)
+bool WalletImpl::bns_validate_years(std::string_view map_years, bns::mapping_years *mapping_years)
 {
-    LOG_PRINT_L1(__FUNCTION__ << "Check bns type");
-    std::optional<bns::mapping_type> mapping_type_;
-    std::optional<uint8_t> hf_version = hardForkVersion();
-    if (!hf_version)
+    LOG_PRINT_L1(__FUNCTION__ << "Check bns year");
+    std::optional<bns::mapping_years> mapping_year_;
+
+    if (!map_years.empty())
     {
-        setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
-        return false;
-    }
-
-    //TODO Enable this validation in the final stage
-    // if(hf_version <= cryptonote::network_version_17_POS)
-    // {
-    //     setStatusError(tr("BNS Support is not available in this version "));
-    //     return false;
-    // }
-
-    if (tools::string_iequal(mapping, "bchat"))
-        mapping_type_ = bns::mapping_type::bchat;
-    else if (tools::string_iequal(mapping, "belnet"))
-        mapping_type_ = bns::mapping_type::belnet;
-    else if (tools::string_iequal_any(mapping, "belnet_1y", "belnet_1years")) // Can also specify "belnet"
-        mapping_type_ = bns::mapping_type::belnet;
-    else if (tools::string_iequal_any(mapping, "belnet_2y", "belnet_2years"))
-        mapping_type_ = bns::mapping_type::belnet_2years;
-    else if (tools::string_iequal_any(mapping, "belnet_5y", "belnet_5years"))
-        mapping_type_ = bns::mapping_type::belnet_5years;
-    else if (tools::string_iequal_any(mapping, "belnet_10y", "belnet_10years"))
-        mapping_type_ = bns::mapping_type::belnet_10years;
-    else if (tools::string_iequal(mapping, "wallet"))
-        mapping_type_ = bns::mapping_type::wallet;
-    else
+      if (tools::string_iequal_any(map_years, "1y", "1year"))
+        mapping_year_ = bns::mapping_years::bns_1year;
+      else if (tools::string_iequal_any(map_years, "2y", "2years"))
+        mapping_year_ = bns::mapping_years::bns_2years;
+      else if (tools::string_iequal_any(map_years, "5y", "5years"))
+        mapping_year_ = bns::mapping_years::bns_5years;
+      else if (tools::string_iequal_any(map_years, "10y", "10years"))
+        mapping_year_ = bns::mapping_years::bns_10years;
+      else
         {
-            setStatusError(tr("Unsupported BNS type"));
+            setStatusError(tr("Unsupported BNS year"));
             return false;
         }
+    }
+    else{
+      mapping_year_ = bns::mapping_years::bns_1year;
+    }
 
-    LOG_PRINT_L1(__FUNCTION__ << "Bnstype asigning...");
-    *mapping_type = *mapping_type_;
+    LOG_PRINT_L1(__FUNCTION__ << "Bnsyear assigning...");
+    *mapping_years = *mapping_year_;
     return true;
 }
 
 EXPORT
-PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string &value,std::string &name,std::string &bnstype,
+PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string& mapping_years,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet,std::string &name,
                                                   uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {  
@@ -1801,8 +1788,12 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 
     do {
         auto w = wallet();
-        bns::mapping_type mapping_type;
-        if(!validate_bns_type(bnstype, &mapping_type))
+        if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty()){
+            setStatusError(tr("Value must be atleast one"));
+            break;
+        }
+        bns::mapping_years map_year;
+        if(!bns_validate_years(mapping_years, &map_year))
             break;
 
         // Getting subaddress for create a transaction from this subaddress
@@ -1814,11 +1805,13 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
         std::string reason;
         try {
             LOG_PRINT_L1(__FUNCTION__ << "Create bns_buy is start...");
-            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(mapping_type,
+            transaction->m_pending_tx = w->bns_create_buy_mapping_tx(map_year,
                                                      owner.size() ? &owner : nullptr,
                                                      backup_owner.size() ? &backup_owner : nullptr,
                                                      name,
-                                                     value,
+                                                     value_bchat.size() ? &value_bchat : nullptr,
+                                                     value_wallet.size() ? &value_wallet : nullptr,
+                                                     value_belnet.size() ? &value_belnet : nullptr,
                                                      &reason,
                                                      priority,
                                                      subaddr_account,
@@ -1904,7 +1897,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 }
 
 EXPORT
-PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value,std::string &name,std::string &bnstype,
+PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet,std::string &name,
                                                   uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {  
@@ -1916,9 +1909,6 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
 
     do {
         auto w = wallet();
-        bns::mapping_type mapping_type;
-        if(!validate_bns_type(bnstype, &mapping_type))
-            break;
 
         // Getting subaddress for create a transaction from this subaddress
         if (subaddr_indices.empty()) {
@@ -1929,9 +1919,10 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
         std::string reason;
         try {
             LOG_PRINT_L1(__FUNCTION__ << "Create bns_update is start...");
-            transaction->m_pending_tx = w->bns_create_update_mapping_tx(mapping_type,
-                                                        name,
-                                                        value.size() ? &value : nullptr,
+            transaction->m_pending_tx = w->bns_create_update_mapping_tx(name,
+                                                        value_bchat.size() ? &value_bchat : nullptr,
+                                                        value_wallet.size() ? &value_wallet : nullptr,
+                                                        value_belnet.size() ? &value_belnet : nullptr,
                                                         owner.size() ? &owner : nullptr,
                                                         backup_owner.size() ? &backup_owner : nullptr,
                                                         nullptr,
@@ -2020,7 +2011,7 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
 }
 
 EXPORT
-PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::string &bnstype,uint32_t priority,
+PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::string &bnsyear,uint32_t priority,
                                                     uint32_t m_current_subaddress_account,std::set<uint32_t> subaddr_indices)
 
 {
@@ -2030,10 +2021,10 @@ PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::strin
 
     PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
 
-do {
-    auto w = wallet();
-        bns::mapping_type mapping_type;
-        if(!validate_bns_type(bnstype, &mapping_type))
+    do {
+        auto w = wallet();
+        bns::mapping_years map_year;
+        if(!bns_validate_years(bnsyear, &map_year))
             break;
 
         // Getting subaddress for create a transaction from this subaddress
@@ -2042,24 +2033,24 @@ do {
                 subaddr_indices.insert(index);
         }
 
-std::string reason;
-try
-  {
-    LOG_PRINT_L1(__FUNCTION__ << "Create bns_renew is start...");
-    transaction->m_pending_tx = w->bns_create_renewal_tx(mapping_type,
-                                                name, 
-                                                &reason, 
-                                                priority, 
-                                                m_current_subaddress_account, 
-                                                subaddr_indices);
-    
-        if (transaction->m_pending_tx.empty())
+        std::string reason;
+        try
         {
-            LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
-            setStatusError(reason);
-            break;
-        }
-        pendingTxPostProcess(transaction);
+            LOG_PRINT_L1(__FUNCTION__ << "Create bns_renew is start...");
+            transaction->m_pending_tx = w->bns_create_renewal_tx(map_year,
+                                                                name, 
+                                                                &reason, 
+                                                                priority,       
+                                                                m_current_subaddress_account, 
+                                                                subaddr_indices);
+    
+            if (transaction->m_pending_tx.empty())
+            {   
+                LOG_PRINT_L1(__FUNCTION__ << "Transaction data is empty");
+                setStatusError(reason);
+                break;
+            }
+            pendingTxPostProcess(transaction);
 
         }catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?

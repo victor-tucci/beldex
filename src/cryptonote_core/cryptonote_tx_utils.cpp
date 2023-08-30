@@ -446,7 +446,7 @@ namespace cryptonote
     }
 
     uint64_t expected_amount = 0;
-    if (hard_fork_version <= cryptonote::network_version_16_bns)
+    if (hard_fork_version <= cryptonote::network_version_16)
     {
       // NOTE: Use the amount actually paid out when we split the master node
       // reward (across up to 4 recipients) which may actually pay out less than

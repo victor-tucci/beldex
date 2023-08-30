@@ -611,14 +611,18 @@ TEST_F(WalletTest1, BnsBuyTransaction)
     // Change the value based on your datas
     std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
     std::string backup_owner = "";
-    std::string value = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
+    std::string mapping_years = "1y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
     std::string name  ="blackpearl.bdx";
-    std::string type  ="belnet";
     Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
                                                                                 backup_owner,
-                                                                                value,
-                                                                                name,
-                                                                                type);
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
     ASSERT_TRUE(transaction->good());
     std::cout <<"refresh_started...\n";
     wallet1->refresh();
@@ -630,7 +634,7 @@ TEST_F(WalletTest1, BnsBuyTransaction)
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-TEST_F(WalletTest1, BnsBuyTransactionWithWrongType)
+TEST_F(WalletTest1, BnsBuyTransactionWithNoValues)
 {
     //TODO=Beldex_bns have to check more conditions also the wallet_listener check
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
@@ -646,14 +650,51 @@ TEST_F(WalletTest1, BnsBuyTransactionWithWrongType)
     // Change the value based on your datas
     std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
     std::string backup_owner = "";
-    std::string value = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
-    std::string name  ="blackpearl.bdx";
-    std::string type  ="belnett";
+    std::string mapping_years = "10y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "";
+    std::string name  ="black.bdx";
     Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
                                                                                 backup_owner,
-                                                                                value,
-                                                                                name,
-                                                                                type);
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsBuyTransactionWithWrongYears)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string mapping_years = "6y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "t9e3s4k9rw4e6fxexycb74wo1guriebnsepfkkfr6s3rpxauncmy.bdx";
+    std::string name  ="black.bdx";
+    Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
+                                                                                backup_owner,
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
     Utils::print_status(transaction->status());
     ASSERT_FALSE(transaction->good());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
@@ -675,14 +716,18 @@ TEST_F(WalletTest1, BnsBuyTransactionWithOldValue)
     // Change the value based on your datas
     std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
     std::string backup_owner = "";
-    std::string value = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
+    std::string mapping_years = "1y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
     std::string name  ="blackpearl.bdx";
-    std::string type  ="belnet";
     Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
                                                                                 backup_owner,
-                                                                                value,
-                                                                                name,
-                                                                                type);
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
     ASSERT_TRUE(transaction->good());
     std::cout <<"refresh_started...\n";
     wallet1->refresh();
@@ -711,10 +756,11 @@ TEST_F(WalletTest1, BnsUpdateTransaction)
     // Change the value based on your datas
     std::string owner = "";
     std::string backup_owner = "";
-    std::string value = "fcbzchy4kknz1tq8eb5aiakibyfo7nqg6qxpons46h1qytexfc4y.bdx";
-    std::string name  ="tontin.bdx";
-    std::string type  ="belnet";
-    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value, name, type);
+    std::string value_bchat = "bd08c9d0c3077a509f159a2d91aa251b69480a3572f2ce60f01f01067b06de9c21";
+    std::string value_wallet = "";
+    std::string value_belnet = "";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value_bchat, value_wallet, value_belnet, name);
     ASSERT_TRUE(transaction->good());
     std::cout <<"refresh_started...\n";
     wallet1->refresh();
@@ -742,10 +788,11 @@ TEST_F(WalletTest1, BnsUpdateWithSameValue)
     // Change the value based on your datas
     std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
     std::string backup_owner = "";
-    std::string value = "fcbzchy4kknz1tq8eb5aiakibyfo7nqg6qxpons46h1qytexfc4y.bdx";
-    std::string name  ="tontin.bdx";
-    std::string type  ="belnet";
-    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value, name, type);
+    std::string value_bchat = "bd08c9d0c3077a509f159a2d91aa251b69480a3572f2ce60f01f01067b06de9c21";
+    std::string value_wallet = "";
+    std::string value_belnet = "fcbzchy4kknz1tq8eb5aiakibyfo7nqg6qxpons46h1qytexfc4y.bdx";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value_bchat, value_wallet, value_belnet, name);
     ASSERT_TRUE(transaction->good());
     std::cout <<"refresh_started...\n";
     wallet1->refresh();
@@ -773,10 +820,11 @@ TEST_F(WalletTest1, BnsUpdateWrongValues)
     // Change the value based on your datas
     std::string owner = "";
     std::string backup_owner = "";
-    std::string value ="bd6eada11acbbaa92d8f1d7ca5d5482dc0ddbec8ed7f0966f75ce5ef2483408f72";
-    std::string name  ="test";
-    std::string type  ="belnet";
-    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value, name, type);
+    std::string value_bchat ="";
+    std::string value_wallet ="";
+    std::string value_belnet ="bd08c9d0c3077a509f159a2d91aa251b69480a3572f2ce60f01f01067b06de9c21";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value_bchat, value_wallet, value_belnet, name);
     ASSERT_FALSE(transaction->good());
     Utils::print_status(transaction->status());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
@@ -795,10 +843,10 @@ TEST_F(WalletTest1, BnsRenewTransaction)
     std::cout <<"**balance: " << balance << std::endl;
     ASSERT_TRUE(wallet1->good());
 
-    std::string name  ="cat.bdx";
-    std::string type  ="belnet_5y";
+    std::string name  ="rohan.bdx";
+    std::string year  ="10y";
     Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
-                                                                            type);
+                                                                            year);
     ASSERT_TRUE(transaction->good());
     std::cout <<"refresh_started...\n";
     wallet1->refresh();
@@ -812,7 +860,7 @@ TEST_F(WalletTest1, BnsRenewTransaction)
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-TEST_F(WalletTest1, BnsRenewTransactionForWrongName)
+TEST_F(WalletTest1, BnsRenewTransactionForNonExistBns)
 {
     //TODO=Beldex_bns have to check more conditions also the wallet_listener check
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
@@ -825,16 +873,16 @@ TEST_F(WalletTest1, BnsRenewTransactionForWrongName)
     std::cout <<"**balance: " << balance << std::endl;
     ASSERT_TRUE(wallet1->good());
 
-    std::string name  ="hell";
-    std::string type  ="belnet";
+    std::string name  ="roha.bdx";
+    std::string year  ="2y";
     Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
-                                                                            type);
+                                                                            year);
     ASSERT_FALSE(transaction->good());
     Utils::print_status(transaction->status());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-TEST_F(WalletTest1, BnsRenewTransactionForBchat)
+TEST_F(WalletTest1, BnsRenewTransactionForWrongYear)
 {
     //TODO=Beldex_bns have to check more conditions also the wallet_listener check
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
@@ -847,36 +895,15 @@ TEST_F(WalletTest1, BnsRenewTransactionForBchat)
     std::cout <<"**balance: " << balance << std::endl;
     ASSERT_TRUE(wallet1->good());
 
-    std::string name  ="boot.bdx";
-    std::string type  ="bchat";
+    std::string name  ="rohan.bdx";
+    std::string year  ="3y";
     Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
-                                                                            type);
+                                                                            year);
     ASSERT_FALSE(transaction->good());
     Utils::print_status(transaction->status());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-TEST_F(WalletTest1, BnsRenewTransactionForWallet)
-{
-    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
-    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // make sure testnet daemon is running
-    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
-    std::cout <<"Refresh_started...\n";
-    ASSERT_TRUE(wallet1->refresh());
-    std::cout <<"Refresh_end...\n";
-    uint64_t balance = wallet1->balance(0);
-    std::cout <<"**balance: " << balance << std::endl;
-    ASSERT_TRUE(wallet1->good());
-
-    std::string name  ="hell.bdx";
-    std::string type  ="wallet";
-    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
-                                                                            type);
-    ASSERT_FALSE(transaction->good());
-    Utils::print_status(transaction->status());
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-}
 
 TEST_F(WalletTest1, countForBns)
 {

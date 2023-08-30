@@ -839,7 +839,7 @@ namespace master_nodes
       if (cit != contributor.locked_contributions.end())
       {
         // NOTE(beldex): This should be checked in blockchain check_tx_inputs already
-        if(version >= cryptonote::network_version_18)
+        if(version >= cryptonote::network_version_18_bns)
         {
           if (cit->amount < (master_nodes::SMALL_CONTRIBUTOR_THRESHOLD*COIN) && (block_height - node_info.registration_height) < master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER)
           {

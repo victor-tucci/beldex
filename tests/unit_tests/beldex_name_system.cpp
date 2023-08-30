@@ -12,7 +12,7 @@ TEST(beldex_name_system, name_tests)
     bool allowed;
   };
 
-  name_test const belnet_names[] = {
+  name_test const bns_names[] = {
       {"a.bdx", true},
       {"domain.bdx", true},
       {"xn--tda.bdx", true}, // ü
@@ -40,45 +40,17 @@ TEST(beldex_name_system, name_tests)
       {"ab--xyz.bdx", false}, // Double-hyphen at chars 3&4 is reserved by DNS (currently only xn-- is used).
   };
 
-  name_test const session_wallet_names[] = {
-      {"Hello", true},
-      {"1Hello", true},
-      {"1Hello1", true},
-      {"_Hello1", true},
-      {"1Hello_", true},
-      {"_Hello_", true},
-      {"999", true},
-      {"xn--tda", true},
-      {"xn--Mnchen-Ost-9db", true},
-
-      {"-", false},
-      {"@", false},
-      {"'Hello", false},
-      {"@Hello", false},
-      {"[Hello", false},
-      {"]Hello", false},
-      {"Hello ", false},
-      {" Hello", false},
-      {" Hello ", false},
-
-      {"Hello World", false},
-      {"Hello\\ World", false},
-      {"\"hello\"", false},
-      {"hello\"", false},
-      {"\"hello", false},
-  };
-
   for (uint16_t type16 = 0; type16 < static_cast<uint16_t>(bns::mapping_type::_count); type16++)
   {
     auto type = static_cast<bns::mapping_type>(type16);
     if (type == bns::mapping_type::wallet) continue; // Not yet supported
-    name_test const *names = bns::is_belnet_type(type) ? belnet_names : session_wallet_names;
-    size_t names_count     = bns::is_belnet_type(type) ? beldex::char_count(belnet_names) : beldex::char_count(session_wallet_names);
+    name_test const *names = bns_names;
+    size_t names_count     = beldex::char_count(bns_names);
 
     for (size_t i = 0; i < names_count; i++)
     {
       name_test const &entry = names[i];
-      ASSERT_EQ(bns::validate_bns_name(type, entry.name), entry.allowed) << "Values were {type=" << type << ", name=\"" << entry.name << "\"}";
+      ASSERT_EQ(bns::validate_bns_name(entry.name), entry.allowed) << "Values were {type=" << type << ", name=\"" << entry.name << "\"}";
     }
   }
 }

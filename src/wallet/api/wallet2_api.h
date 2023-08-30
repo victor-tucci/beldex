@@ -870,9 +870,11 @@ struct Wallet
      * \brief createBnsTransaction  creates bns transaction
      * \param owner                 owner
      * \param backup_owner          backup_owner
-     * \param value                 bchatid or belnet or wallet address
+     * \param mapping_years         years(1y,2y,5y,10y)
+     * \param value_bchat           bchat_id
+     * \param value_wallet          wallet address
+     * \param value_belnet          belnet_id
      * \param name                  bns name
-     * \param bnstype               type(bchat,belnet,wallet)
      * \param subaddr_account       subaddress account from which the input funds are taken
      * \param subaddr_indices       set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
      * \return                      PendingTransaction object. caller is responsible to check PendingTransaction::status()
@@ -880,9 +882,11 @@ struct Wallet
      */
     virtual PendingTransaction *createBnsTransaction(std::string& owner,
                                                   std::string& backup_owner,
-                                                  std::string &value,
+                                                  std::string& mapping_years,
+                                                  std::string &value_bchat,
+                                                  std::string &value_wallet,
+                                                  std::string &value_belnet,
                                                   std::string &name,
-                                                  std::string &bnstype,
                                                   uint32_t priority                  = 0,
                                                   uint32_t subaddr_account           = 0,
                                                   std::set<uint32_t> subaddr_indices = {}) = 0;
@@ -890,9 +894,10 @@ struct Wallet
      * \brief bnsUpdateTransaction  creates bns update transaction
      * \param owner                 owner
      * \param backup_owner          backup_owner
-     * \param value                 bchatid or belnet or wallet address
+     * \param value_bchat           bchat_id
+     * \param value_wallet          wallet address
+     * \param value_belnet          belnet_id
      * \param name                  bns name
-     * \param bnstype               type(bchat,belnet,wallet)
      * \param subaddr_account       subaddress account from which the input funds are taken
      * \param subaddr_indices       set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
      * \return                      PendingTransaction object. caller is responsible to check PendingTransaction::status()
@@ -900,23 +905,24 @@ struct Wallet
      */
     virtual PendingTransaction* bnsUpdateTransaction(std::string& owner,
                                                       std::string& backup_owner,
-                                                      std::string& value,
+                                                      std::string& value_bchat,
+                                                      std::string& value_wallet,
+                                                      std::string& value_belnet,
                                                       std::string& name,
-                                                      std::string& bnstype,
                                                       uint32_t priority = 0,
                                                       uint32_t subaddr_account = 0,
                                                       std::set<uint32_t> subaddr_indices = {}) = 0;
     /*!
      * \brief bnsRenewTransaction               creates bns renew transaction
      * \param name                              bns name
-     * \param bnstype                           type(belnet,belnet_2y,belnet_5y,belnet_10y)
+     * \param bnsyear                           years(1y,2y,5y,10y)
      * \param m_current_subaddress_account      subaddress account from which the input funds are taken
      * \param subaddr_indices                   set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
      * \return                                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
      *                                          after object returned
      */
     virtual PendingTransaction *bnsRenewTransaction(std::string &name,
-                                                    std::string &bnstype,
+                                                    std::string &bnsyear,
                                                     uint32_t priority=0,
                                                     uint32_t m_current_subaddress_account = 0,
                                                     std::set<uint32_t> subaddr_indices = {}) = 0;

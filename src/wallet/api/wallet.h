@@ -183,22 +183,25 @@ public:
                                         std::set<uint32_t> subaddr_indices = {}) override;
     PendingTransaction* createBnsTransaction(std::string& owner,
                                         std::string& backup_owner,
-                                        std::string &value,
+                                        std::string& mapping_years,
+                                        std::string &value_bchat,
+                                        std::string &value_wallet,
+                                        std::string &value_belnet,
                                         std::string &name,
-                                        std::string &bnstype,
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
     PendingTransaction* bnsUpdateTransaction(std::string& owner,
                                         std::string& backup_owner,
-                                        std::string &value,
+                                        std::string &value_bchat,
+                                        std::string &value_wallet,
+                                        std::string &value_belnet,
                                         std::string &name,
-                                        std::string &bnstype,
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
     PendingTransaction* bnsRenewTransaction(std::string &name,
-                                        std::string &bnstype,
+                                        std::string &bnsyear,
                                         uint32_t priority=0,
                                         uint32_t m_current_subaddress_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
@@ -264,8 +267,8 @@ private:
     bool isNewWallet() const;
     void pendingTxPostProcess(PendingTransactionImpl * pending);
     bool doInit(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, bool ssl = false);
-    bool validate_bns_type(std::string mapping,bns::mapping_type *mapping_type);
-
+    bool bns_validate_years(std::string_view map_years, bns::mapping_years *mapping_years);
+   
 private:
     friend class PendingTransactionImpl;
     friend class UnsignedTransactionImpl;    

@@ -819,7 +819,6 @@ private:
 
     struct bns_detail
     {
-      bns::mapping_type type;
       std::string name;
       std::string hashed_name;
     };
@@ -1225,7 +1224,7 @@ private:
 
     // params constructor, accumulates the burn amounts if the priority is
     // a flash and, or a bns tx. If it is a flash TX, bns_burn_type is ignored.
-    static cryptonote::beldex_construct_tx_params construct_params(uint8_t hf_version, cryptonote::txtype tx_type, uint32_t priority, uint64_t extra_burn = 0, bns::mapping_type bns_burn_type = static_cast<bns::mapping_type>(0));
+    static cryptonote::beldex_construct_tx_params construct_params(uint8_t hf_version, cryptonote::txtype tx_type, uint32_t priority, uint64_t extra_burn = 0, bns::mapping_years bns_burn_type = static_cast<bns::mapping_years>(0));
 
     bool is_unattended() const { return m_unattended; }
 
@@ -1392,22 +1391,22 @@ private:
     };
     request_stake_unlock_result can_request_stake_unlock(const crypto::public_key &mn_key);
 
-    // Attempts to convert the BNS type string to a mapping type (checking the current hard fork).
-    // If type isn't valid then returns std::nullopt and sets the failure reason in `reason` (if not
+    // Attempts to convert the BNS years string to a mapping years.
+    // If years isn't valid then returns std::nullopt and sets the failure reason in `reason` (if not
     // nullptr).
-    std::optional<bns::mapping_type> bns_validate_type(std::string_view type, bns::bns_tx_type bns_action, std::string *reason);
+    std::optional<bns::mapping_years> bns_validate_years(std::string_view map_years, std::string *reason);
 
-    std::vector<pending_tx> bns_create_buy_mapping_tx(bns::mapping_type type, std::string const *owner, std::string const *backup_owner, std::string name, std::string const &value, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {});
+    std::vector<pending_tx> bns_create_buy_mapping_tx(bns::mapping_years mapping_years, std::string const *owner, std::string const *backup_owner, std::string name, std::string const *value_bchat, std::string const *value_wallet, std::string const *value_belnet, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {});
 
     // signature: (Optional) If set, use the signature given, otherwise by default derive the signature from the wallet spend key as an ed25519 key.
     //            The signature is derived from the hash of the previous txid blob and previous value blob of the mapping. By default this is signed using the wallet's spend key as an ed25519 keypair.
-    std::vector<pending_tx> bns_create_update_mapping_tx(bns::mapping_type type, std::string name, std::string const *value, std::string const *owner, std::string const *backup_owner, std::string const *signature, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
+    std::vector<pending_tx> bns_create_update_mapping_tx(std::string name, std::string const *value_bchat, std::string const *value_wallet, std::string const *value_belnet, std::string const *owner, std::string const *backup_owner, std::string const *signature, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
 
     // BNS renewal (for belnet registrations, not for bchat/wallet)
-    std::vector<pending_tx> bns_create_renewal_tx(bns::mapping_type type, std::string name, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
+    std::vector<pending_tx> bns_create_renewal_tx(bns::mapping_years map_years, std::string name, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response = {});
 
     // Generate just the signature required for putting into bns_update_mapping command in the wallet
-    bool bns_make_update_mapping_signature(bns::mapping_type type, std::string name, std::string const *value, std::string const *owner, std::string const *backup_owner, bns::generic_signature &signature, uint32_t account_index = 0, std::string *reason = nullptr);
+    bool bns_make_update_mapping_signature(std::string name, std::string const *value_bchat, std::string const *value_wallet, std::string const *value_belnet, std::string const *owner, std::string const *backup_owner, bns::generic_signature &signature, uint32_t account_index = 0, std::string *reason = nullptr);
 
     void freeze(size_t idx);
     void thaw(size_t idx);
@@ -1725,7 +1724,6 @@ namespace boost::serialization
     template <class Archive>
     void serialize(Archive &a, tools::wallet2::bns_detail &x, const unsigned int ver)
     {
-      a & x.type;
       a & x.name;
       a & x.hashed_name;
       if (ver < 1)
