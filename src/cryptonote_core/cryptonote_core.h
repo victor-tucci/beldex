@@ -151,15 +151,6 @@ namespace cryptonote
       */
      bool on_idle();
 
-       /**
-       * @brief handles an incoming uptime proof for being compatible with V12
-       *
-       * Parses an incoming uptime proof
-       *
-       * @return true if we haven't seen it before and thus need to relay.
-       */
-       bool handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation);
-
      /**
       * @brief handles an incoming uptime proof
       *

@@ -46,9 +46,9 @@
 
 namespace master_nodes
 {
-  std::optional<std::vector<std::string_view>> master_node_test_results::why(bool v12) const
+  std::optional<std::vector<std::string_view>> master_node_test_results::why() const
   {
-    if (passed(v12))
+    if (passed())
       return std::nullopt;
 
     std::vector<std::string_view> results{{"Master Node is currently failing the following tests:"sv}};
@@ -260,7 +260,7 @@ namespace master_nodes
       }
 
       auto test_results = check_master_node(obligations_height_hf_version_, node_key, info);  //MN proof Testing
-      bool passed       = test_results.passed(hf_version==cryptonote::network_version_12_security_signature);
+      bool passed       = test_results.passed();
       LOG_PRINT_L3("process_quorums: check_master_node passed:");//TODO:VOTE
       LOG_PRINT_L3("NODE KEY:" << quorum->workers[node_index]);
     
@@ -347,7 +347,7 @@ namespace master_nodes
         tested_myself_once_per_block = true;
         auto my_test_results = check_master_node(obligations_height_hf_version, my_keys.pub, info);
         const bool print_failings = info.is_decommissioned() ||
-          (info.is_active() && !my_test_results.passed(hf_version==cryptonote::network_version_12_security_signature) &&
+          (info.is_active() && !my_test_results.passed() &&
             // Don't warn uptime proofs if the daemon is just recently started and is candidate for testing (i.e. restarting the daemon)
             (my_test_results.uptime_proved || live_time >= 1h));
       
@@ -358,7 +358,7 @@ namespace master_nodes
                 ? "Master Node (yours) is currently decommissioned and being tested in quorum: "
                 : "Master Node (yours) is active but is not passing tests for quorum: ")
               << m_obligations_height);
-          if (auto why = my_test_results.why(hf_version==cryptonote::network_version_12_security_signature))
+          if (auto why = my_test_results.why())
             LOG_PRINT_L0(tools::join("\n", *why));
           else
             LOG_PRINT_L0("Master Node is passing all local tests");

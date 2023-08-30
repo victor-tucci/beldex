@@ -1926,48 +1926,28 @@ namespace cryptonote
     auto height = get_current_blockchain_height();
     auto hf_version = get_network_version(m_nettype, height);
     cryptonote_connection_context fake_context{};
-    if (hf_version<=cryptonote::network_version_12_security_signature) {
 
-        NOTIFY_UPTIME_PROOF_V12::request req_v12 = m_master_node_list.generate_uptime_proof_v12();
-        get_protocol()->relay_uptime_proof_v12(req_v12, fake_context);
+    auto proof = m_master_node_list.generate_uptime_proof(m_mn_public_ip, storage_https_port(), storage_omq_port(),
+                                                          ss_version, m_quorumnet_port, belnet_version);
+    NOTIFY_BTENCODED_UPTIME_PROOF::request req = proof.generate_request();
+    relayed = get_protocol()->relay_btencoded_uptime_proof(req, fake_context);
+
+    // TODO: remove after HF19
+    if (relayed && tools::view_guts(m_master_keys.pub) != tools::view_guts(m_master_keys.pub_ed25519))
+    {
+      // Temp workaround: nodes with both pub and ed25519 are failing bt-encoded proofs, so send
+      // an old-style proof out as well as a workaround.
+      NOTIFY_UPTIME_PROOF::request req = m_master_node_list.generate_uptime_proof(m_mn_public_ip,
+                                                                                  storage_https_port(),
+                                                                                  storage_omq_port(),
+                                                                                  m_quorumnet_port);
+      get_protocol()->relay_uptime_proof(req, fake_context);
     }
-    else {
 
-
-        auto proof = m_master_node_list.generate_uptime_proof(m_mn_public_ip, storage_https_port(), storage_omq_port(),
-                                                              ss_version, m_quorumnet_port, belnet_version);
-        NOTIFY_BTENCODED_UPTIME_PROOF::request req = proof.generate_request();
-        relayed = get_protocol()->relay_btencoded_uptime_proof(req, fake_context);
-
-        // TODO: remove after HF19
-        if (relayed && tools::view_guts(m_master_keys.pub) != tools::view_guts(m_master_keys.pub_ed25519)) {
-            // Temp workaround: nodes with both pub and ed25519 are failing bt-encoded proofs, so send
-            // an old-style proof out as well as a workaround.
-            NOTIFY_UPTIME_PROOF::request req = m_master_node_list.generate_uptime_proof(m_mn_public_ip,
-                                                                                        storage_https_port(),
-                                                                                        storage_omq_port(),
-                                                                                        m_quorumnet_port);
-            get_protocol()->relay_uptime_proof(req, fake_context);
-        }
-
-        if (relayed)
-            MGINFO("Submitted uptime-proof for master Node (yours): " << m_master_keys.pub);
-    }
+    if (relayed)
+      MGINFO("Submitted uptime-proof for master Node (yours): " << m_master_keys.pub);
     return true;
   }
-//-----------------------------------------------------------------------------------------------
-bool core::handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation)
-{
-    crypto::public_key pkey = {};
-    bool result = m_master_node_list.handle_uptime_proof_v12(proof, my_uptime_proof_confirmation, pkey);
-    if (result && m_master_node_list.is_master_node(proof.pubkey, true /*require_active*/) && pkey)
-    {
-        oxenmq::pubkey_set added;
-        added.insert(tools::copy_guts(pkey));
-        m_omq->update_active_sns(added, {} /*removed*/);
-    }
-    return result;
-}
   //-----------------------------------------------------------------------------------------------
   bool core::handle_uptime_proof(const NOTIFY_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation)
   {

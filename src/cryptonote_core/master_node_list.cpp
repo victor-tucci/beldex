@@ -2741,21 +2741,7 @@ namespace master_nodes
     return true;
   }
 
-    //TODO: remove after HF17, mnode revision 1
-    crypto::hash master_node_list::hash_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof) const
-    {
-        char magic[4] = "SUP"; // Meaningless magic byte + null char
-        size_t buf_size;
-        crypto::hash result;
-
-        auto buf = tools::memcpy_le(magic, proof.pubkey.data, proof.timestamp);
-        buf_size = buf.size();
-        crypto::cn_fast_hash(buf.data(), buf_size, result);
-        return result;
-    }
-
-
-    //TODO: remove after HF18, mnode revision 1
+  //TODO: remove after HF18, mnode revision 1
   crypto::hash master_node_list::hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof) const
   {
     size_t buf_size;
@@ -2787,20 +2773,6 @@ namespace master_nodes
     crypto_sign_detached(result.sig_ed25519.data, NULL, reinterpret_cast<unsigned char *>(hash.data), sizeof(hash.data), keys.key_ed25519.data);
     return result;
   }
-
-    cryptonote::NOTIFY_UPTIME_PROOF_V12::request master_node_list::generate_uptime_proof_v12() const
-    {
-        assert(m_master_node_keys);
-        const auto& keys = *m_master_node_keys;
-        cryptonote::NOTIFY_UPTIME_PROOF_V12::request result = {};
-        result.mnode_version                            = BELDEX_VERSION;
-        result.timestamp                                = time(nullptr);
-        result.pubkey                                   = keys.pub;
-        crypto::hash hash = hash_uptime_proof_v12(result);
-        crypto::generate_signature(hash, keys.pub, keys.key, result.sig);
-        return result;
-    }
-
 
   uptime_proof::Proof master_node_list::generate_uptime_proof(uint32_t public_ip, uint16_t storage_https_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> belnet_version) const
   {
@@ -2840,13 +2812,6 @@ namespace master_nodes
     std::unique_lock lock{blockchain};
     auto &db = blockchain.get_db();
     db.set_master_node_proof(pubkey, *this);
-  }
-
-  bool proof_info::update_v12(uint64_t ts){
-      bool update_db = false;
-      update_db |= update_val(timestamp, ts);
-      effective_timestamp = timestamp;
-      return update_db;
   }
 
   bool proof_info::update(uint64_t ts, std::unique_ptr<uptime_proof::Proof> new_proof, const crypto::x25519_public_key &pk_x2)
@@ -2932,63 +2897,6 @@ namespace master_nodes
   }
 
 #define REJECT_PROOF(log) do { LOG_PRINT_L2("Rejecting uptime proof from " << proof.pubkey << ": " log); return false; } while (0)
-
-    bool master_node_list::handle_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation, crypto::public_key &pubkey)
-    {
-        uint64_t timestamp               = proof.timestamp;
-        pubkey = proof.pubkey;
-
-        auto& netconf = get_config(m_blockchain.nettype());
-        auto now = std::chrono::system_clock::now();
-
-        // Validate proof version, timestamp range,
-        auto time_deviation = now - std::chrono::system_clock::from_time_t(proof.timestamp);
-        if (time_deviation > netconf.UPTIME_PROOF_TOLERANCE || time_deviation < -netconf.UPTIME_PROOF_TOLERANCE)
-            REJECT_PROOF("timestamp is too far from now");
-
-        auto vers = get_network_version_revision(m_blockchain.nettype(), m_blockchain.get_current_blockchain_height());
-        for (auto const &min : MIN_UPTIME_PROOF_VERSIONS)
-            if (vers >= min.hardfork_revision && proof.mnode_version < min.beldexd)
-                REJECT_PROOF("v" << tools::join(".", min.beldexd) << "+ beldexd version is required for v" << +vers.first << "." << +vers.second << "+ network proofs");
-
-        //
-        // Validate proof signature
-        //
-        crypto::hash hash = hash_uptime_proof_v12(proof);
-
-
-        if (!crypto::check_signature(hash, proof.pubkey, proof.sig))
-            REJECT_PROOF("signature validation failed");
-
-
-
-        auto locks = tools::unique_locks(m_blockchain, m_mn_mutex);
-        auto it = m_state.master_nodes_infos.find(proof.pubkey);
-        if (it == m_state.master_nodes_infos.end())
-            REJECT_PROOF("no such master node is currently registered");
-
-        auto &iproof = proofs[proof.pubkey];
-
-
-        if (now <= std::chrono::system_clock::from_time_t(iproof.timestamp) + std::chrono::seconds{netconf.UPTIME_PROOF_FREQUENCY} / 2)
-            REJECT_PROOF("already received one uptime proof for this node recently");
-
-        if (m_master_node_keys && proof.pubkey == m_master_node_keys->pub)
-        {
-            my_uptime_proof_confirmation = true;
-            MGINFO("Received uptime-proof confirmation back from network for Master Node (yours): " << proof.pubkey);
-        }
-        else
-        {
-            my_uptime_proof_confirmation = false;
-            LOG_PRINT_L2("Accepted uptime proof from " << proof.pubkey);
-        }
-
-        if (iproof.update_v12(std::chrono::system_clock::to_time_t(now)))
-            iproof.store(proof.pubkey, m_blockchain);
-
-        return true;
-    }
 
   //TODO remove after HF18, mnode revision 1
   bool master_node_list::handle_uptime_proof(cryptonote::NOTIFY_UPTIME_PROOF::request const &proof, bool &my_uptime_proof_confirmation, crypto::x25519_public_key &x25519_pkey)
