@@ -309,8 +309,7 @@ namespace master_nodes
           LOG_PRINT_L3("Decommissioned master node " << quorum->workers[node_index] << " has no remaining credit; voting to deregister");
           vote_for_state = new_state::deregister; // Credit ran out!
         } else {
-          int64_t decommission_minimum    = BLOCKS_EXPECTED_IN_HOURS(2,hf_version);
-          if (credit >= decommission_minimum) {
+          if (credit >= DECOMMISSION_MINIMUM) {
             vote_for_state = new_state::decommission;
             LOG_PRINT_L3("Master node "
                          << quorum->workers[node_index]
@@ -320,7 +319,7 @@ namespace master_nodes
             LOG_PRINT_L3("Master node "
                          << quorum->workers[node_index]
                          << " has stopped passing required checks, but does not have sufficient earned credit ("
-                         << credit << " blocks, " << decommission_minimum
+                         << credit << " blocks, " << DECOMMISSION_MINIMUM
                          << " required) to decommission; voting to deregister");
           }
         }
@@ -431,7 +430,6 @@ namespace master_nodes
 
     uint64_t const height        = cryptonote::get_block_height(block);
     uint64_t const latest_height = std::max(m_core.get_current_blockchain_height(), m_core.get_target_blockchain_height());
-    uint64_t VOTE_LIFETIME                           = BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
     if (latest_height < VOTE_LIFETIME)
       return;
 
@@ -787,15 +785,12 @@ namespace master_nodes
     // Now we calculate the credit at last commission plus any credit earned from being up for `blocks_up` blocks since
     int64_t credit = info.recommission_credit;
 
-
     if (blocks_up > 0) {
-        credit += blocks_up / BLOCKS_PER_CREDIT_EARNED;
+      credit += blocks_up * DECOMMISSION_CREDIT_PER_DAY / BLOCKS_PER_DAY;
     }
 
-
-    int64_t decommission_max_credit   = BLOCKS_EXPECTED_IN_HOURS(48,hf_version);
-    if (credit > decommission_max_credit)
-      credit = decommission_max_credit; // Cap the available decommission credit blocks if above the max
+    if (credit > DECOMMISSION_MAX_CREDIT)
+      credit = DECOMMISSION_MAX_CREDIT; // Cap the available decommission credit blocks if above the max
 
     // If currently decommissioned, remove any used credits used for the current downtime
     if (info.is_decommissioned())

@@ -394,7 +394,7 @@ namespace cryptonote { namespace rpc {
     }
 
     res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(next_block_is_POS);
-    res.target = tools::to_seconds((next_block_is_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
+    res.target = tools::to_seconds((next_block_is_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD));
     res.tx_count = m_core.get_blockchain_storage().get_total_transactions() - res.height; //without coinbase
     res.tx_pool_size = m_core.get_pool().get_transactions_count();
     if (context.admin)
@@ -798,8 +798,8 @@ namespace cryptonote { namespace rpc {
       void operator()(const tx_extra_beldex_name_system& x) {
         auto& bns = entry.bns.emplace();
         bns.version = x.version;          
-        if (x.is_buying() || x.is_renewing())
-          bns.blocks = bns::expiry_blocks(nettype, x.mapping_years, hf_version) ;
+        if ((x.is_buying() || x.is_renewing()) && (x.version == 1))
+          bns.blocks = bns::expiry_blocks(nettype, x.mapping_years) ;
         if(x.version == 0)
           switch (x.type)
           {
@@ -1310,7 +1310,7 @@ namespace cryptonote { namespace rpc {
 
     const miner& lMiner = m_core.get_miner();
     res.active = lMiner.is_mining();
-    res.block_target = tools::to_seconds(TARGET_BLOCK_TIME); // old_block_time
+    res.block_target = tools::to_seconds(TARGET_BLOCK_TIME_OLD); // old_block_time
     res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(false /*POS*/);
     if ( lMiner.is_mining() ) {
       res.speed = lMiner.get_speed();
@@ -3067,7 +3067,8 @@ namespace cryptonote { namespace rpc {
     entry.funded                        = info.is_fully_funded();
     entry.state_height                  = info.is_fully_funded()
         ? (info.is_decommissioned() ? info.last_decommission_height : info.active_since_height) : info.last_reward_block_height;
-    entry.earned_downtime_blocks        = master_nodes::quorum_cop::calculate_decommission_credit(info, current_height,info.registration_hf_version);
+    uint8_t hf_version = m_core.get_blockchain_storage().get_network_version();
+    entry.earned_downtime_blocks        = master_nodes::quorum_cop::calculate_decommission_credit(info, current_height,hf_version);
     entry.decommission_count            = info.decommission_count;
     entry.last_decommission_reason_consensus_all      = info.last_decommission_reason_consensus_all;
     entry.last_decommission_reason_consensus_any      = info.last_decommission_reason_consensus_any;

@@ -898,7 +898,7 @@ bool beldex_core_test_deregister_too_old::generate(std::vector<test_event_entry>
 
   const auto pk       = gen.top_quorum().obligations->workers[0];
   const auto dereg_tx = gen.create_and_add_state_change_tx(master_nodes::new_state::deregister, pk, 0, 0);
-  gen.add_n_blocks(240); /// create enough blocks to make deregistrations invalid (240 blocks)
+  gen.add_n_blocks(master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS); /// create enough blocks to make deregistrations invalid (240 blocks)
 
   /// In the real world, this transaction should not make it into a block, but in this case we do try to add it (as in
   /// tests we must add specify transactions manually), which should exercise the same validation code and reject the
@@ -1111,7 +1111,7 @@ static bns_keys_t make_bns_keys(cryptonote::account_base const &src)
 
 // belnet FAKECHAIN BNS expiry blocks
 uint64_t bns_expiry(bns::mapping_years map_years) {
-  auto exp = bns::expiry_blocks(cryptonote::FAKECHAIN, map_years, 17);
+  auto exp = bns::expiry_blocks(cryptonote::FAKECHAIN, map_years);
   if (!exp) throw std::logic_error{"test suite bug: bns_expiry called with non-mapping years"};
   return *exp;
 }

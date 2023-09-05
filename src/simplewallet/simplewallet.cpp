@@ -5051,13 +5051,7 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
   const std::string tag = m_wallet->get_account_tags().second[m_current_subaddress_account];
   success_msg_writer() << tr("Tag: ") << (tag.empty() ? std::string{tr("(No tag assigned)")} : tag);
   uint64_t blocks_to_unlock, time_to_unlock;
-  std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-  if (!hf_version)
-  {
-    tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-    return false;
-  }
-  uint64_t unlocked_balance = m_wallet->unlocked_balance(m_current_subaddress_account, false, &blocks_to_unlock, &time_to_unlock,*hf_version);
+  uint64_t unlocked_balance = m_wallet->unlocked_balance(m_current_subaddress_account, false, &blocks_to_unlock, &time_to_unlock);
   std::string unlock_time_message;
   if (blocks_to_unlock > 0 && time_to_unlock > 0)
     unlock_time_message = fmt::format(" ({:d} block(s) and {}) to unlock)", blocks_to_unlock, tools::get_human_readable_timespan(std::chrono::seconds(time_to_unlock)));
@@ -5068,7 +5062,7 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
   success_msg_writer() << tr("Balance: ") << print_money(m_wallet->balance(m_current_subaddress_account, false)) << ", "
     << tr("unlocked balance: ") << print_money(unlocked_balance) << unlock_time_message << extra;
   std::map<uint32_t, uint64_t> balance_per_subaddress = m_wallet->balance_per_subaddress(m_current_subaddress_account, false);
-  std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> unlocked_balance_per_subaddress = m_wallet->unlocked_balance_per_subaddress(m_current_subaddress_account, false,*hf_version);
+  std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> unlocked_balance_per_subaddress = m_wallet->unlocked_balance_per_subaddress(m_current_subaddress_account, false);
   if (!detailed || balance_per_subaddress.empty())
     return true;
   success_msg_writer() << tr("Balance per address:");
@@ -5698,13 +5692,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
       LOG_PRINT_L0("confirm_and_send_tx 3");
       if (lock_time_in_blocks > 0)
       {
-          std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-          if (!hf_version)
-          {
-              tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-              return false;
-          }
-          float days = lock_time_in_blocks / static_cast<float>(BLOCKS_EXPECTED_IN_DAYS(1,*hf_version));
+        float days = lock_time_in_blocks / (double) BLOCKS_PER_DAY;
         prompt << boost::format(tr(".\nThis transaction (including %s change) will unlock on block %llu, in approximately %s days (assuming 2 minutes per block)")) % cryptonote::print_money(change) % ((unsigned long long)unlock_block) % days;
       }
 
@@ -6526,13 +6514,8 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
         *mapping_years == bns::mapping_years::bns_10years ? 10 :
         *mapping_years == bns::mapping_years::bns_5years ? 5 :
         *mapping_years == bns::mapping_years::bns_2years ? 2 :1;
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version)
-    {
-      tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-      return false;
-    }
-    std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years, *hf_version);
+
+    std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years);
     fmt::print(fmt::format(tr("Name         : {}\n"), name)); 
     fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "(none)" : value_bchat));
     fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "(none)" : value_wallet));
@@ -6625,13 +6608,7 @@ bool simple_wallet::bns_renew_mapping(std::vector<std::string> args)
         *mapping_years == bns::mapping_years::bns_5years ? 5 :
         *mapping_years == bns::mapping_years::bns_2years ? 2 :1;
 
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version)
-    {
-      tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-      return false;
-    }
-    std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years, *hf_version);
+    std::optional<uint64_t> blocks = bns::expiry_blocks(m_wallet->nettype(), *mapping_years);
     fmt::print(fmt::format(tr("Renewal {} {} ({} blocks)\n"),(years > 1) ? "years :" : "year  :", years, *blocks)); 
     fmt::print(fmt::format(tr("New expiry    : Block {}\n"), (*response[0].expiration_height + *blocks))); 
     std::cout << std::flush;
@@ -9325,12 +9302,6 @@ void simple_wallet::print_accounts(const std::string& tag)
   }
   success_msg_writer() << fmt::format(tr(" {:>15} {:>21} {:>21} {:>21}"), "Account", "Balance", "Unlocked balance", "Label");
   uint64_t total_balance = 0, total_unlocked_balance = 0;
-  std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-  if (!hf_version)
-  {
-    tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-    return;
-  }
 
   for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index)
   {
@@ -9341,10 +9312,10 @@ void simple_wallet::print_accounts(const std::string& tag)
       % account_index
       % m_wallet->get_subaddress_as_str({account_index, 0}).substr(0, 6)
       % print_money(m_wallet->balance(account_index, false))
-      % print_money(m_wallet->unlocked_balance(account_index, false,NULL,NULL,*hf_version))
+      % print_money(m_wallet->unlocked_balance(account_index, false,NULL,NULL))
       % m_wallet->get_subaddress_label({account_index, 0});
     total_balance += m_wallet->balance(account_index, false);
-    total_unlocked_balance += m_wallet->unlocked_balance(account_index, false,NULL,NULL,*hf_version);
+    total_unlocked_balance += m_wallet->unlocked_balance(account_index, false,NULL,NULL);
   }
   success_msg_writer() << tr("----------------------------------------------------------------------------------");
   success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total", print_money(total_balance), print_money(total_unlocked_balance));
@@ -10134,12 +10105,6 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
 
   std::list<std::pair<crypto::hash, tools::wallet2::payment_details>> payments;
   m_wallet->get_payments(payments, 0, (uint64_t)-1, m_current_subaddress_account);
-std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-if (!hf_version)
-{
-    tools::fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
-    return false;
-}
   for (std::list<std::pair<crypto::hash, tools::wallet2::payment_details>>::const_iterator i = payments.begin(); i != payments.end(); ++i) {
     const tools::wallet2::payment_details &pd = i->second;
     if (pd.m_tx_hash == txid) {
@@ -10157,7 +10122,7 @@ if (!hf_version)
       success_msg_writer() << "Payment ID: " << payment_id;
       if (pd.m_unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER)
       {
-        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE));
+        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17);
         uint64_t suggested_threshold = 0;
         if (!pd.m_unmined_flash)
         {
@@ -10176,7 +10141,7 @@ if (!hf_version)
         uint64_t current_time = static_cast<uint64_t>(time(NULL));
 
 
-        uint64_t threshold = current_time + tools::to_seconds((*hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3:CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2));
+        uint64_t threshold = current_time + tools::to_seconds(CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3);
         if (threshold >= pd.m_unlock_time)
           success_msg_writer() << "unlocked for " << tools::get_human_readable_timespan(std::chrono::seconds(threshold - pd.m_unlock_time));
         else
@@ -10217,7 +10182,7 @@ if (!hf_version)
       success_msg_writer() << "Destinations: " << dests;
       if (pd.m_unlock_time < CRYPTONOTE_MAX_BLOCK_NUMBER)
       {
-        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + (hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17:CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE));
+        uint64_t bh = std::max(pd.m_unlock_time, pd.m_block_height + CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE_V17);
         if (bh >= last_block_height)
           success_msg_writer() << "Locked: " << (bh - last_block_height) << " blocks to unlock";
         else
@@ -10226,7 +10191,7 @@ if (!hf_version)
       else
       {
         uint64_t current_time = static_cast<uint64_t>(time(NULL));
-        uint64_t threshold = current_time + tools::to_seconds((*hf_version>=cryptonote::network_version_17_POS?CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3:CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2));
+        uint64_t threshold = current_time + tools::to_seconds(CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V3);
         if (threshold >= pd.m_unlock_time)
           success_msg_writer() << "unlocked for " << tools::get_human_readable_timespan(std::chrono::seconds(threshold - pd.m_unlock_time));
         else
