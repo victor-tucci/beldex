@@ -978,6 +978,9 @@ namespace master_nodes
     info.swarm_id                      = UNASSIGNED_SWARM_ID;
     info.last_ip_change_height         = block_height;
 
+    if(hf_version >= cryptonote::network_version_18_bns)
+      info.recommission_credit           = DECOMMISSION_INITIAL_CREDIT_V18;
+
     for (size_t i = 0; i < contributor_args.addresses.size(); i++)
     {
       // Check for duplicates

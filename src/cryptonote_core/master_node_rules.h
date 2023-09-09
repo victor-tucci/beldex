@@ -82,13 +82,14 @@ namespace master_nodes {
   // decommission time: the first quorum test after the credit expires determines whether the server
   // gets recommissioned or decommissioned).
 
-  inline constexpr int64_t DECOMMISSION_CREDIT_PER_DAY = BLOCKS_PER_DAY / 30;
-  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT = BLOCKS_PER_HOUR * 2;
-  inline constexpr int64_t DECOMMISSION_MAX_CREDIT     = BLOCKS_PER_DAY * 2;
-  inline constexpr int64_t DECOMMISSION_MINIMUM        = BLOCKS_PER_HOUR * 2;
+  inline constexpr int64_t DECOMMISSION_CREDIT_PER_DAY      = BLOCKS_PER_DAY / 30;
+  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT      = BLOCKS_PER_HOUR * 2;
+  inline constexpr int64_t DECOMMISSION_MAX_CREDIT          = BLOCKS_PER_DAY * 2;
+  inline constexpr int64_t DECOMMISSION_MINIMUM             = BLOCKS_PER_HOUR * 2;
+  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT_V18  = BLOCKS_PER_HOUR * 12;
 
   static_assert(DECOMMISSION_INITIAL_CREDIT <= DECOMMISSION_MAX_CREDIT, "Initial registration decommission credit cannot be larger than the maximum decommission credit");
-
+  static_assert(DECOMMISSION_INITIAL_CREDIT_V18 <= DECOMMISSION_MAX_CREDIT, "Initial registration decommission credit cannot be larger than the maximum decommission credit");
 
   // This determines how many credits a node gets when being recommissioned after being
   // decommissioned.  It gets passed two values: the credit at the time the node was decomissioned,
