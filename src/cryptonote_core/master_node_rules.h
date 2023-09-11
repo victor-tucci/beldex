@@ -86,7 +86,7 @@ namespace master_nodes {
   inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT      = BLOCKS_PER_HOUR * 2;
   inline constexpr int64_t DECOMMISSION_MAX_CREDIT          = BLOCKS_PER_DAY * 2;
   inline constexpr int64_t DECOMMISSION_MINIMUM             = BLOCKS_PER_HOUR * 2;
-  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT_V18  = BLOCKS_PER_HOUR * 12;
+  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT_V18  = BLOCKS_PER_HOUR * 3;
 
   static_assert(DECOMMISSION_INITIAL_CREDIT <= DECOMMISSION_MAX_CREDIT, "Initial registration decommission credit cannot be larger than the maximum decommission credit");
   static_assert(DECOMMISSION_INITIAL_CREDIT_V18 <= DECOMMISSION_MAX_CREDIT, "Initial registration decommission credit cannot be larger than the maximum decommission credit");
