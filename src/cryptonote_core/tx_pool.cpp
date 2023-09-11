@@ -262,7 +262,7 @@ namespace cryptonote
 
     if(tx.type == txtype::key_image_unlock)
     {
-      if(hf_version  >= cryptonote::network_version_18)
+      if(hf_version  >= cryptonote::network_version_18_bns)
       {
         crypto::public_key mnode_key;
         if (!cryptonote::get_master_node_pubkey_from_tx_extra(tx.extra, mnode_key))
