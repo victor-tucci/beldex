@@ -270,6 +270,7 @@ namespace cryptonote::rpc {
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
     BNS_OWNERS_TO_NAMES::response                       invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context);
     BNS_RESOLVE::response                               invoke(BNS_RESOLVE::request&& req, rpc_context context);
+    BNS_VALUE_DECRYPT::response                         invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context);
     FLUSH_CACHE::response                               invoke(FLUSH_CACHE::request&& req, rpc_context);
 
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)

@@ -2495,7 +2495,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     struct request
     {
       std::string name;            // The BNS name of the given encrypted value.
-      std::string type;            // The mapping type: "bchat" or "belnet".
+      std::string type;            // The mapping type: "bchat" or "belnet" or "wallet".
       std::string encrypted_value; // The encrypted value represented in hex.
 
       KV_MAP_SERIALIZABLE
