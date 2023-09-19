@@ -2555,6 +2555,29 @@ namespace rpc {
   };
 
   BELDEX_RPC_DOC_INTROSPECT
+  // Takes a BNS encrypted value and decrypts the mapping value using the BNS name.
+  struct BNS_VALUE_DECRYPT : PUBLIC
+  {
+    static constexpr auto names() { return NAMES("bns_value_decrypt"); }
+
+    struct request
+    {
+      std::string name;            // The BNS name of the given encrypted value.
+      std::string type;            // The mapping type: "bchat" or "belnet" or "wallet".
+      std::string encrypted_value; // The encrypted value represented in hex.
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct response
+    {
+      std::string value; // The value decrypted
+
+      KV_MAP_SERIALIZABLE
+    };
+  };
+  
+  BELDEX_RPC_DOC_INTROSPECT
   // Clear TXs from the daemon cache, currently only the cache storing TX hashes that were previously verified bad by the daemon.
   struct FLUSH_CACHE : RPC_COMMAND
   {
@@ -2655,6 +2678,7 @@ namespace rpc {
     BNS_NAMES_TO_OWNERS,
     BNS_OWNERS_TO_NAMES,
     BNS_RESOLVE,
+    BNS_VALUE_DECRYPT,
     FLUSH_CACHE
   >;
 

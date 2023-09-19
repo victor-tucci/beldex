@@ -3634,5 +3634,54 @@ namespace cryptonote { namespace rpc {
     }
     return res;
   }
+  //------------------------------------------------------------------------------------------------------------------------------
+  BNS_VALUE_DECRYPT::response core_rpc_server::invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context)
+  {
+    BNS_VALUE_DECRYPT::response res{};
 
+    // ---------------------------------------------------------------------------------------------
+    //
+    // Validate encrypted value
+    //
+    // ---------------------------------------------------------------------------------------------
+    if (req.encrypted_value.size() % 2 != 0)
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value length not divisible by 2, length=" + std::to_string(req.encrypted_value.size())};
+
+    if (req.encrypted_value.size() >= (bns::mapping_value::BUFFER_SIZE * 2))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value too long to decrypt=" + req.encrypted_value};
+
+    if (!oxenc::is_hex(req.encrypted_value))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value is not hex=" + req.encrypted_value};
+
+    // ---------------------------------------------------------------------------------------------
+    //
+    // Validate type and name
+    //
+    // ---------------------------------------------------------------------------------------------
+    std::string reason;
+    bns::mapping_type type = {};
+
+    std::optional<uint8_t> hf_version = m_core.get_blockchain_storage().get_network_version();
+    if (!bns::validate_mapping_type(req.type, *hf_version, &type, &reason))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Invalid BNS type: " + reason};
+
+     if (!bns::validate_bns_name(req.name, &reason))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Invalid BNS name '" + req.name + "': " + reason};
+    
+    // ---------------------------------------------------------------------------------------------
+    //
+    // Decrypt value
+    //
+    // ---------------------------------------------------------------------------------------------
+    bns::mapping_value value = {};
+    value.len = req.encrypted_value.size() / 2;
+    value.encrypted = true;
+    oxenc::from_hex(req.encrypted_value.begin(), req.encrypted_value.end(), value.buffer.begin());
+
+    if (!value.decrypt(req.name, type))
+      throw rpc_error{ERROR_INTERNAL, "Value decryption failure"};
+
+    res.value = value.to_readable_value(nettype(), type);
+    return res;
+  }
 } }  // namespace cryptonote
