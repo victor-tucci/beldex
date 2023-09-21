@@ -96,10 +96,9 @@ namespace master_nodes
     bool belnet_reachable        = true;
 
     // Returns a vector of reasons why this node is failing (nullopt if not failing).
-    std::optional<std::vector<std::string_view>> why(bool v12) const;
-    constexpr bool passed(bool v12) const {
-        if (v12) return uptime_proved;
+    std::optional<std::vector<std::string_view>> why() const;
 
+    constexpr bool passed() const {
         return uptime_proved &&
             //single_ip -- deliberately excluded (it only gives ip-change penalties, not deregs)
             checkpoint_participation &&
