@@ -101,9 +101,9 @@ constexpr uint64_t burn_needed(uint8_t hf_version, mapping_years map_years)
       result = basic_fee * 10/100 ;   // 10% from the basic fee
       break;
 
-    case mapping_years::bns_1year: /* FALLTHRU */
+    case mapping_years::bns_1year:
     default:
-      result = basic_fee;
+      result = basic_fee + (basic_fee * 30/100);  // 30% extra from the basic fee
       break;
 
     case mapping_years::bns_2years:
