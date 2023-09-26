@@ -784,6 +784,7 @@ private:
       bool out = false;
       bool stake = false;
       bool bns = false;
+      bool coin_burn = false;
       bool pending = false;
       bool failed = false;
       bool pool = false;
