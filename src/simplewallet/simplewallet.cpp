@@ -3124,7 +3124,7 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
   m_cmd_binder.set_handler("coin_burn",
                            [this](const auto& x) { return coin_burn(x); },
                            tr(USAGE_COIN_BURN),
-                           tr(tools::wallet_rpc::BNS_BUY_MAPPING::description));
+                           tr("<burn=amount> Burn amount vanished from the chain."));
 }
 
 simple_wallet::~simple_wallet()
@@ -6605,8 +6605,11 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
     PRINT_USAGE(USAGE_COIN_BURN);
     return false;
   }
-  std::cout << "burn_amount : " << burn_amount << std::endl;
-
+  if(burn_amount == 0){
+    fail_msg_writer() << tr("Burn amount equals to zero/not given.");
+    PRINT_USAGE(USAGE_COIN_BURN);
+    return false;
+  }
   // unlock the wallet for getting the keys
   SCOPED_WALLET_UNLOCK();
   // create_transaction2 try for burning
@@ -8729,7 +8732,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
         case wallet::pay_type::governance:   color = epee::console_color_cyan; break;
         case wallet::pay_type::stake:        color = epee::console_color_blue; break;
         case wallet::pay_type::bns:          color = epee::console_color_blue; break;
-        case wallet::pay_type::coin_burn:    color = epee::console_color_blue; break;
+        case wallet::pay_type::coin_burn:    color = epee::console_color_orange; break;
         case wallet::pay_type::master_node:  color = epee::console_color_cyan; break;
         default:                             color = epee::console_color_magenta; break;
       }

@@ -3557,6 +3557,17 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
         return false;
       }
     }
+    else if (tx.type == txtype::coin_burn)
+    {
+      uint64_t burn = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
+      if (burn == 0)
+      {
+        std::string fail_reason = "Burn amount must not equals to zero";
+        MERROR_VER("Failed to validate Burn TX reason: " << fail_reason);
+        tvc.m_verbose_error = std::move(fail_reason);
+        return false;
+      }      
+    }
   }
   }
   else
