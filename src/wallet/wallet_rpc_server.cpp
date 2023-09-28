@@ -606,13 +606,10 @@ namespace tools
   GET_BALANCE::response wallet_rpc_server::invoke(GET_BALANCE::request&& req)
   {
     require_open();
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version)
-       throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
     GET_BALANCE::response res{};
     {
       res.balance = req.all_accounts ? m_wallet->balance_all(req.strict) : m_wallet->balance(req.account_index, req.strict);
-      res.unlocked_balance = req.all_accounts ? m_wallet->unlocked_balance_all(req.strict, &res.blocks_to_unlock, &res.time_to_unlock) : m_wallet->unlocked_balance(req.account_index, req.strict, &res.blocks_to_unlock, &res.time_to_unlock,*hf_version);
+      res.unlocked_balance = req.all_accounts ? m_wallet->unlocked_balance_all(req.strict, &res.blocks_to_unlock, &res.time_to_unlock) : m_wallet->unlocked_balance(req.account_index, req.strict, &res.blocks_to_unlock, &res.time_to_unlock);
       res.multisig_import_needed = m_wallet->multisig() && m_wallet->has_multisig_partial_key_images();
       std::map<uint32_t, std::map<uint32_t, uint64_t>> balance_per_subaddress_per_account;
       std::map<uint32_t, std::map<uint32_t, std::pair<uint64_t, std::pair<uint64_t, uint64_t>>>> unlocked_balance_per_subaddress_per_account;
@@ -621,13 +618,13 @@ namespace tools
         for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index)
         {
           balance_per_subaddress_per_account[account_index] = m_wallet->balance_per_subaddress(account_index, req.strict);
-          unlocked_balance_per_subaddress_per_account[account_index] = m_wallet->unlocked_balance_per_subaddress(account_index, req.strict,*hf_version);
+          unlocked_balance_per_subaddress_per_account[account_index] = m_wallet->unlocked_balance_per_subaddress(account_index, req.strict);
         }
       }
       else
       {
         balance_per_subaddress_per_account[req.account_index] = m_wallet->balance_per_subaddress(req.account_index, req.strict);
-        unlocked_balance_per_subaddress_per_account[req.account_index] = m_wallet->unlocked_balance_per_subaddress(req.account_index, req.strict,*hf_version);
+        unlocked_balance_per_subaddress_per_account[req.account_index] = m_wallet->unlocked_balance_per_subaddress(req.account_index, req.strict);
       }
       std::vector<wallet::transfer_details> transfers;
       m_wallet->get_transfers(transfers);
@@ -757,9 +754,6 @@ namespace tools
   GET_ACCOUNTS::response wallet_rpc_server::invoke(GET_ACCOUNTS::request&& req)
   {
     require_open();
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version)
-        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
     GET_ACCOUNTS::response res{};
     {
       res.total_balance = 0;
@@ -779,7 +773,7 @@ namespace tools
         info.account_index = subaddr_index.major;
         info.base_address = m_wallet->get_subaddress_as_str(subaddr_index);
         info.balance = m_wallet->balance(subaddr_index.major, req.strict_balances);
-        info.unlocked_balance = m_wallet->unlocked_balance(subaddr_index.major, req.strict_balances,NULL,NULL,*hf_version);
+        info.unlocked_balance = m_wallet->unlocked_balance(subaddr_index.major, req.strict_balances,NULL,NULL);
         info.label = m_wallet->get_subaddress_label(subaddr_index);
         info.tag = account_tags.second[subaddr_index.major];
         res.subaddress_accounts.push_back(info);
@@ -3333,9 +3327,6 @@ namespace {
   BNS_ADD_KNOWN_NAMES::response wallet_rpc_server::invoke(BNS_ADD_KNOWN_NAMES::request&& req)
   {
     require_open();
-
-    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
 
     std::string reason;
     for (auto& rec : req.names)

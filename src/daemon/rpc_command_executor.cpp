@@ -1045,7 +1045,7 @@ bool rpc_command_executor::print_transaction_pool_stats() {
   else
   {
     uint64_t backlog = (res.pool_stats.bytes_total + full_reward_zone - 1) / full_reward_zone;
-    backlog_message = fmt::format("estimated {} block ({} minutes ) backlog", backlog, backlog * TARGET_BLOCK_TIME_V17 / 1min);
+    backlog_message = fmt::format("estimated {} block ({} minutes ) backlog", backlog, backlog * TARGET_BLOCK_TIME / 1min);
   }
 
   tools::msg_writer() << n_transactions << " tx(es), " << res.pool_stats.bytes_total << " bytes total (min " << res.pool_stats.bytes_min << ", max " << res.pool_stats.bytes_max << ", avg " << avg_bytes << ", median " << res.pool_stats.bytes_med << ")" << std::endl
@@ -1389,7 +1389,7 @@ bool rpc_command_executor::alt_chain_info(const std::string &tip, size_t above, 
         tools::msg_writer() << "Time span: " << tools::get_human_readable_timespan(std::chrono::seconds(dt));
         cryptonote::difficulty_type start_difficulty = bhres.block_headers.back().difficulty;
         if (start_difficulty > 0)
-          tools::msg_writer() << "Approximated " << 100.f * tools::to_seconds(TARGET_BLOCK_TIME) * chain.length / dt << "% of network hash rate";  //old block time
+          tools::msg_writer() << "Approximated " << 100.f * tools::to_seconds(TARGET_BLOCK_TIME_OLD) * chain.length / dt << "% of network hash rate";  //old block time
         else
           tools::fail_msg_writer() << "Bad cumulative difficulty reported by dameon";
       }
@@ -1619,7 +1619,7 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
     else
     {
       uint64_t delta_height      = (blockchain_height >= expiry_height) ? 0 : expiry_height - blockchain_height;
-      uint64_t expiry_epoch_time = now + (delta_height * tools::to_seconds(TARGET_BLOCK_TIME_V17));
+      uint64_t expiry_epoch_time = now + (delta_height * tools::to_seconds(TARGET_BLOCK_TIME));
       stream << expiry_height << " (in " << delta_height << ") blocks\n";
       stream << indent2 << "Expiry Date (estimated): " << get_date_time(expiry_epoch_time) << " (" << get_human_time_ago(expiry_epoch_time, now) << ")\n";
     }
@@ -1740,11 +1740,10 @@ static void append_printable_master_node_list_entry(cryptonote::network_type net
   if (entry.active) {
     stream << indent2 << "Current Status: ACTIVE\n";
     stream << indent2 << "Downtime Credits: " << entry.earned_downtime_blocks << " blocks"
-      << " (about " << to_string_rounded(entry.earned_downtime_blocks / (double) BLOCKS_EXPECTED_IN_HOURS(1,hf_version), 2)  << " hours)";
+      << " (about " << to_string_rounded(entry.earned_downtime_blocks / (double) BLOCKS_PER_HOUR, 2)  << " hours)";
 
-    int64_t decommission_minimum    = BLOCKS_EXPECTED_IN_HOURS(MINIMUM_CREDIT_HOURS,hf_version);
-    if (entry.earned_downtime_blocks < decommission_minimum)
-      stream << " (Note: " << decommission_minimum << " blocks required to enable deregistration delay)";
+    if (entry.earned_downtime_blocks < master_nodes::DECOMMISSION_MINIMUM)
+      stream << " (Note: " << master_nodes::DECOMMISSION_MINIMUM << " blocks required to enable deregistration delay)";
   } else if (is_registered) {
     stream << indent2 << "Current Status: DECOMMISSIONED" ;
     if (entry.last_decommission_reason_consensus_all || entry.last_decommission_reason_consensus_any)

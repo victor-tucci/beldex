@@ -75,9 +75,9 @@ namespace master_nodes
 
   static uint64_t short_term_state_cull_height(uint8_t hf_version, uint64_t block_height)
   {
-    uint64_t state_change_tx_lifetime_in_blocks = BLOCKS_EXPECTED_IN_HOURS(2,hf_version);
-    size_t DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * state_change_tx_lifetime_in_blocks;
-
+    size_t constexpr DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * STATE_CHANGE_TX_LIFETIME_IN_BLOCKS;
+    static_assert(DEFAULT_SHORT_TERM_STATE_HISTORY >= 12 * BLOCKS_PER_HOUR, // Arbitrary, but raises a compilation failure if it gets shortened.
+        "not enough short term state storage for blink quorum retrieval!");
     uint64_t result =
         (block_height < DEFAULT_SHORT_TERM_STATE_HISTORY) ? 0 : block_height - DEFAULT_SHORT_TERM_STATE_HISTORY;
     return result;
@@ -978,6 +978,9 @@ namespace master_nodes
     info.swarm_id                      = UNASSIGNED_SWARM_ID;
     info.last_ip_change_height         = block_height;
 
+    if(hf_version >= cryptonote::network_version_18_bns)
+      info.recommission_credit           = DECOMMISSION_INITIAL_CREDIT_V18;
+
     for (size_t i = 0; i < contributor_args.addresses.size(); i++)
     {
       // Check for duplicates
@@ -1614,8 +1617,8 @@ namespace master_nodes
       bool newest_block           = m_blockchain.get_current_blockchain_height() == (block_height + 1);
 
       auto now                    = POS::clock::now().time_since_epoch();
-      auto earliest_time          = std::chrono::seconds(block.timestamp) - (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
-      auto latest_time            = std::chrono::seconds(block.timestamp) + (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
+      auto earliest_time          = std::chrono::seconds(block.timestamp) - (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD);
+      auto latest_time            = std::chrono::seconds(block.timestamp) + (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD);
 
       if (newest_block && (now >= earliest_time && now <= latest_time))
       {
@@ -2138,7 +2141,6 @@ namespace master_nodes
     uint64_t cull_height = short_term_state_cull_height(hf_version, block_height);
     {
       auto end_it = m_transient.state_history.upper_bound(cull_height);
-      uint64_t vote_lifetime =   BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
       for (auto it = m_transient.state_history.begin(); it != end_it; it++)
       {
         if (m_store_quorum_history)
@@ -2146,7 +2148,7 @@ namespace master_nodes
 
         uint64_t next_long_term_state         = ((it->height / STORE_LONG_TERM_STATE_INTERVAL) + 1) * STORE_LONG_TERM_STATE_INTERVAL;
         uint64_t dist_to_next_long_term_state = next_long_term_state - it->height;
-        bool need_quorum_for_future_states    = (dist_to_next_long_term_state <= vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
+        bool need_quorum_for_future_states    = (dist_to_next_long_term_state <= VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
         if ((it->height % STORE_LONG_TERM_STATE_INTERVAL) == 0 || need_quorum_for_future_states)
         {
           m_transient.state_added_to_archive = true;
@@ -2692,8 +2694,7 @@ namespace master_nodes
     // first (vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER) states we only
     // store their quorums, such that the following states have quorum
     // information preceeding it.
-    uint64_t vote_lifetime =   BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
-    uint64_t const max_short_term_height = short_term_state_cull_height(hf_version, (m_state.height - 1)) + vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER;
+    uint64_t const max_short_term_height = short_term_state_cull_height(hf_version, (m_state.height - 1)) + VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER;
     for (auto it = m_transient.state_history.begin();
          it != m_transient.state_history.end() && it->height <= max_short_term_height;
          it++)
@@ -3341,8 +3342,7 @@ namespace master_nodes
         auto was = info.recommission_credit;
         auto hf_version = mn_list->m_blockchain.get_network_version();
         if (info.decommission_count <= info.is_decommissioned()) // Has never been decommissioned (or is currently in the first decommission), so add initial starting credit
-
-            info.recommission_credit = BLOCKS_EXPECTED_IN_HOURS(MINIMUM_CREDIT_HOURS,hf_version);
+            info.recommission_credit = DECOMMISSION_INITIAL_CREDIT;
         else
           info.recommission_credit = 0;
 

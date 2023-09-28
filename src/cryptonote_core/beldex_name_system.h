@@ -157,7 +157,7 @@ constexpr std::string_view db_mapping_value(bns::mapping_type type) {
   }
 }
 // Returns the length of the given mapping type, in blocks, or std::nullopt if the mapping type never expires.
-std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_years map_years, uint8_t hf_version);
+std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_years map_years);
 
 // Returns *the* proper representation of a name_hash for querying the database, which is 44 base64
 // characters (43 significant chars + a padding '=').  External input values should always get

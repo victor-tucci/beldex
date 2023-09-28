@@ -473,19 +473,19 @@ namespace cryptonote
         if (hf17)
         {
             LOG_PRINT_CCONTEXT_L0("process_payload_sync_data hf17");
-            std::chrono::seconds behindtime = 0 * TARGET_BLOCK_TIME;
+            std::chrono::seconds behindtime = 0 * TARGET_BLOCK_TIME_OLD;
             int64_t diff = static_cast<int64_t>(hshd.current_height) - static_cast<int64_t>(curr_height);
             uint64_t abs_diff = std::abs(diff);
 
             if (curr_height<*hf17){
                 LOG_PRINT_CCONTEXT_L0("process_payload_sync_data curr_height<hf17");
                 uint64_t old_diff = static_cast<int64_t>(*hf17) - static_cast<int64_t>(curr_height);
-                behindtime = old_diff * TARGET_BLOCK_TIME;
+                behindtime = old_diff * TARGET_BLOCK_TIME_OLD;
                 uint64_t max_block_height = std::max(hshd.current_height, curr_height);
-                behindtime = behindtime + ((max_block_height - *hf17)  * TARGET_BLOCK_TIME_V17);
+                behindtime = behindtime + ((max_block_height - *hf17)  * TARGET_BLOCK_TIME);
             } else{
                 LOG_PRINT_CCONTEXT_L0("process_payload_sync_data curr_height>hf17");
-                behindtime =   (abs_diff * TARGET_BLOCK_TIME_V17);
+                behindtime =   (abs_diff * TARGET_BLOCK_TIME);
             }
             MCLOG(is_inital ? el::Level::Info : el::Level::Debug, "global", context <<  "Sync data returned a new top block candidate: " << curr_height << " -> " << hshd.current_height
                                                                                     << " [Your node is " << abs_diff << " blocks (" << tools::get_human_readable_timespan(behindtime) << " "

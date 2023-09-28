@@ -599,7 +599,7 @@ namespace rpc {
       uint32_t threads_count;            // Number of running mining threads.
       std::string address;               // Account address daemon is mining to. Empty if not mining.
       std::string pow_algorithm;         // Current hashing algorithm name
-      uint32_t block_target;             // The expected time to solve per block, i.e. TARGET_BLOCK_TIMe
+      uint32_t block_target;             // The expected time to solve per block, i.e. TARGET_BLOCK_TIME_OLD
       uint64_t block_reward;             // Block reward for the current block being mined.
       uint64_t difficulty;               // The difficulty for the current block being mined.
 
