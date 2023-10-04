@@ -2509,6 +2509,41 @@ This command is only required if the open wallet is one of the owners of a BNS r
     };
   };
 
+  BELDEX_RPC_DOC_INTROSPECT
+  struct COIN_BURN : RESTRICTED
+  {
+    static constexpr auto names() { return NAMES("burn_amount"); }
+    static constexpr const char *description = R"(A coin burn is a process in which a predetermined amount of cryptocurrency is permanently removed from circulation. Once burned, the specified amount of coins is eliminated from the blockchain, making them inaccessible and unrecoverable.)";
+
+    struct request
+    {
+      uint64_t burn;                                // burn amount
+      uint32_t account_index;                       // (Optional) Transfer from this account index. (Defaults to 0)
+      std::set<uint32_t> subaddr_indices;           // (Optional) Transfer from this set of subaddresses. (Defaults to 0).
+      uint32_t           priority;
+      bool get_tx_key;                              // (Optional) Return the transaction key after sending.
+      bool do_not_relay;                            // (Optional) If true, the newly created transaction will not be relayed to the beldex network. (Defaults to false)
+      bool get_tx_hex;                              // Return the transaction as hex string after sending. (Defaults to false)
+      bool get_tx_metadata;                         // Return the metadata needed to relay the transaction. (Defaults to false)
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct response
+    {
+      std::string tx_hash;        // Publicly searchable transaction hash.
+      std::string tx_key;         // Transaction key if get_tx_key is true, otherwise, blank string.
+      uint64_t amount;            // Amount transferred for the transaction.
+      uint64_t fee;               // Fee charged for the txn.
+      std::string tx_blob;        // Raw transaction represented as hex string, if get_tx_hex is true.
+      std::string tx_metadata;    // Set of transaction metadata needed to relay this transfer later, if get_tx_metadata is true.
+      std::string multisig_txset; // Set of multisig transactions in the process of being signed (empty for non-multisig).
+      std::string unsigned_txset; // Set of unsigned tx for cold-signing purposes.
+
+      KV_MAP_SERIALIZABLE
+    };
+  };
+  
   /// List of all supported rpc command structs to allow compile-time enumeration of all supported
   /// RPC types.  Every type added above that has an RPC endpoint needs to be added here, and needs
   /// a core_rpc_server::invoke() overload that takes a <TYPE>::request and returns a
@@ -2612,7 +2647,8 @@ This command is only required if the open wallet is one of the owners of a BNS r
     BNS_KNOWN_NAMES,
     BNS_ADD_KNOWN_NAMES,
     BNS_DECRYPT_VALUE,
-    BNS_ENCRYPT_VALUE
+    BNS_ENCRYPT_VALUE,
+    COIN_BURN
   >;
 
 }

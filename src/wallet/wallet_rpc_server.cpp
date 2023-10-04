@@ -1069,6 +1069,45 @@ namespace tools
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
+  COIN_BURN::response wallet_rpc_server::invoke(COIN_BURN::request&& req)
+  {
+    require_open();
+    COIN_BURN::response res{};
+
+    std::vector<uint8_t> extra;
+    uint64_t burn_amount = req.burn;
+
+    LOG_PRINT_L3("on_burn_transfer starts");
+    uint32_t priority;
+    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+    if (!hf_version)
+      throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
+    
+    cryptonote::beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, cryptonote::txtype::coin_burn, req.priority, burn_amount);
+    std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, req.priority, extra, req.account_index, req.subaddr_indices, tx_params);
+    
+    if (ptx_vector.empty())
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Failed to create coin_burn transaction:"};
+   // reject proposed transactions if there are more than one.  see on_transfer_split below.
+    if (ptx_vector.size() != 1)
+      throw wallet_rpc_error{error_code::TX_TOO_LARGE, "Transaction would be too large.  try /transfer_split."};
+    fill_response( ptx_vector,
+                   req.get_tx_key,
+                   res.tx_key,
+                   res.amount,
+                   res.fee,
+                   res.multisig_txset,
+                   res.unsigned_txset,
+                   req.do_not_relay,
+                   false /*flash*/,
+                   res.tx_hash,
+                   req.get_tx_hex,
+                   res.tx_blob,
+                   req.get_tx_metadata,
+                   res.tx_metadata);
+    return res;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
   TRANSFER_SPLIT::response wallet_rpc_server::invoke(TRANSFER_SPLIT::request&& req)
   {
     require_open();

@@ -1294,4 +1294,26 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_ENCRYPT_VALUE::response)
   KV_SERIALIZE(encrypted_value)
 KV_SERIALIZE_MAP_CODE_END()
 
+KV_SERIALIZE_MAP_CODE_BEGIN(COIN_BURN::request)
+  KV_SERIALIZE(burn)
+  KV_SERIALIZE(account_index)
+  KV_SERIALIZE(subaddr_indices)
+  KV_SERIALIZE(get_tx_key)
+  KV_SERIALIZE_OPT(priority,        (uint32_t)0);
+  KV_SERIALIZE_OPT(do_not_relay, false)
+  KV_SERIALIZE_OPT(get_tx_hex, false)
+  KV_SERIALIZE_OPT(get_tx_metadata, false)
+KV_SERIALIZE_MAP_CODE_END()
+
+
+KV_SERIALIZE_MAP_CODE_BEGIN(COIN_BURN::response)
+  KV_SERIALIZE(tx_hash)
+  KV_SERIALIZE(tx_key)
+  KV_SERIALIZE(amount)
+  KV_SERIALIZE(fee)
+  KV_SERIALIZE(tx_blob)
+  KV_SERIALIZE(tx_metadata)
+  KV_SERIALIZE(multisig_txset)
+  KV_SERIALIZE(unsigned_txset)
+KV_SERIALIZE_MAP_CODE_END()
 }
