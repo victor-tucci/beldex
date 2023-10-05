@@ -264,7 +264,7 @@ namespace
   const char* USAGE_BNS_BY_OWNER("bns_by_owner [<owner> ...]");
   const char* USAGE_BNS_LOOKUP("bns_lookup <name> [<name> ...]");
     
-  const char* USAGE_COIN_BURN("coin_burn [index=<N1>[,<N2>,...]] [<priority>] <burn=amount>");
+  const char* USAGE_COIN_BURN("coin_burn [index=<N1>[,<N2>,...]] [<priority>] <burn=amount | txid>");
 
 
 #if defined (BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
@@ -7247,17 +7247,22 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
   // get the burn amount from the argument
   static constexpr auto BURN_PREFIX = "burn="sv;
   uint64_t burn_amount = 0;
+  crypto::hash txid;
   std::string burn_amount_str = eat_named_argument(args, BURN_PREFIX);
-  if (!burn_amount_str.empty() && !cryptonote::parse_amount(burn_amount, burn_amount_str)) {
-    fail_msg_writer() << tr("Invalid amount");
-    return true;
+  
+  if (!burn_amount_str.empty() && !cryptonote::parse_amount(burn_amount, burn_amount_str)) {  
+    if (!tools::hex_to_type(burn_amount_str, txid))
+    {
+      fail_msg_writer() << tr("failed to parse transactio ID or Invalid amount");
+      return true;
+    }
   }
 
   if(args.size() != 0){
     PRINT_USAGE(USAGE_COIN_BURN);
     return false;
   }
-  if(burn_amount == 0){
+  if(!txid && burn_amount == 0){
     fail_msg_writer() << tr("Burn amount equals to zero/not given.");
     PRINT_USAGE(USAGE_COIN_BURN);
     return false;
@@ -7278,7 +7283,14 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
     // parms are constructed
     beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::coin_burn, priority, burn_amount);
     // transaction process called
-    ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
+    if(burn_amount){
+      std::cout << "amount process : \n";
+      ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
+    }else{
+
+        std::cout << "txid : " << txid << std::endl;
+        std::cout << "txid process : \n";
+    }
 
     if (ptx_vector.empty())
     {
