@@ -7284,12 +7284,34 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
     beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::coin_burn, priority, burn_amount);
     // transaction process called
     if(burn_amount){
-      std::cout << "amount process : \n";
       ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
     }else{
+      tools::wallet2::transfer_container transfers;
+      bool available = false;
+      crypto::key_image ki;
+      m_wallet->get_transfers(transfers);
 
-        std::cout << "txid : " << txid << std::endl;
-        std::cout << "txid process : \n";
+      for (const auto& td : transfers)
+      {
+        if(td.m_txid == txid)
+        {
+          available = true;
+          if(td.m_spent)
+          {
+            fail_msg_writer() << tr("The txid already spent.");
+            return false;
+          }
+          ki = td.m_key_image;
+          break;
+        }
+      }
+
+      if(!available)
+      {
+        fail_msg_writer() << tr("No incoming available transfers");
+        return false;
+      }
+      std::cout <<"keyimage : " << ki << std::endl;
     }
 
     if (ptx_vector.empty())
