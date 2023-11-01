@@ -7239,6 +7239,7 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
   if (!try_connect_to_daemon())
     return false;
 
+  size_t outputs = 1;
   // priority and subaddress fetch
   uint32_t priority = 0;
   std::set<uint32_t> subaddr_indices  = {};
@@ -7288,7 +7289,7 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
     }else{
       tools::wallet2::transfer_container transfers;
       bool available = false;
-      crypto::key_image ki;
+      std::vector<crypto::key_image> ki;
       m_wallet->get_transfers(transfers);
 
       for (const auto& td : transfers)
@@ -7296,22 +7297,24 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
         if(td.m_txid == txid)
         {
           available = true;
-          if(td.m_spent)
+          if(!td.m_spent)
           {
-            fail_msg_writer() << tr("The txid already spent.");
-            return false;
-          }
-          ki = td.m_key_image;
-          break;
+            ki.push_back(td.m_key_image) ;
+          } 
         }
       }
-
+      if(available && ki.size() == 0)
+      {
+        fail_msg_writer() << tr("The txid already spent.");
+        return false;
+      }
       if(!available)
       {
         fail_msg_writer() << tr("No incoming available transfers");
         return false;
       }
-      std::cout <<"keyimage : " << ki << std::endl;
+
+      ptx_vector = m_wallet->create_transactions_burn(ki, outputs, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra);
     }
 
     if (ptx_vector.empty())
