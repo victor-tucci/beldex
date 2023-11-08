@@ -11621,10 +11621,8 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   // real transactions.
   std::swap(burn_fixed, beldex_tx_params.burn_fixed);
   std::swap(burn_percent, beldex_tx_params.burn_percent);
-  bool burning;
-  THROW_WALLET_EXCEPTION_IF(burning && beldex_tx_params.hf_version < HF_VERSION_FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
+  THROW_WALLET_EXCEPTION_IF(beldex_tx_params.hf_version < HF_VERSION_FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
   std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
-  const std::vector<uint8_t> &extra = burning ? extra_plus : extra_base;
   extra_plus = extra_base;
   add_burned_amount_to_tx_extra(extra_plus, 0);
   fixed_fee += burn_fixed;
@@ -11652,7 +11650,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
     // get a tx that can't pay for itself
     uint64_t fee_dust_threshold;
     {
-      const uint64_t estimated_tx_weight_with_one_extra_output = estimate_tx_weight(tx.selected_transfers.size() + 1, fake_outs_count, tx.dsts.size()+1, extra.size(), clsag);
+      const uint64_t estimated_tx_weight_with_one_extra_output = estimate_tx_weight(tx.selected_transfers.size() + 1, fake_outs_count, tx.dsts.size()+1, extra_base.size(), clsag);
       fee_dust_threshold = calculate_fee_from_weight(base_fee, estimated_tx_weight_with_one_extra_output, outputs, fee_percent, fixed_fee, fee_quantization_mask);
     }
 
@@ -11679,7 +11677,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
     // here, check if we need to sent tx and start a new one
     LOG_PRINT_L2("Considering whether to create a tx now, " << tx.selected_transfers.size() << " inputs, tx limit "
       << upper_transaction_weight_limit);
-    const size_t estimated_rct_tx_weight = estimate_tx_weight(tx.selected_transfers.size(), fake_outs_count, tx.dsts.size() + 2, extra.size(), clsag);
+    const size_t estimated_rct_tx_weight = estimate_tx_weight(tx.selected_transfers.size(), fake_outs_count, tx.dsts.size() + 2, extra_base.size(), clsag);
     bool try_tx = (unused_dust_indices.empty() && unused_transfers_indices.empty()) || ( estimated_rct_tx_weight >= tx_weight_target(upper_transaction_weight_limit));
     LOG_PRINT_L2("Accumulated_outputs : " << accumulated_outputs);
     if (try_tx) {
@@ -11687,7 +11685,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
       pending_tx test_ptx;
 
       const size_t num_outputs = get_num_outputs(tx.dsts, m_transfers, tx.selected_transfers, beldex_tx_params);
-      needed_fee = estimate_fee(tx.selected_transfers.size(), fake_outs_count, num_outputs, extra.size(), clsag, base_fee, fee_percent, fixed_fee, fee_quantization_mask);
+      needed_fee = estimate_fee(tx.selected_transfers.size(), fake_outs_count, num_outputs, extra_base.size(), clsag, base_fee, fee_percent, fixed_fee, fee_quantization_mask);
 
       // add N - 1 outputs for correct initial fee estimation
       for (size_t i = 0; i < ((outputs > 1) ? outputs - 1 : outputs); ++i)
@@ -11695,7 +11693,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
 
       LOG_PRINT_L2("Trying to create a tx now, with " << tx.dsts.size() << " destinations and " <<
         tx.selected_transfers.size() << " outputs");
-      transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, outs, unlock_time, needed_fee, extra,
+      transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, outs, unlock_time, needed_fee, extra_base,
           test_tx, test_ptx, rct_config, beldex_tx_params);
       auto txBlob = t_serializable_object_to_blob(test_ptx.tx);
       needed_fee = calculate_fee(test_ptx.tx, txBlob.size(), base_fee, fee_percent, fixed_fee, fee_quantization_mask);
@@ -11718,7 +11716,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
           dt.amount = dt_amount;
         }
         beldex_tx_params = tools::wallet2::construct_params(*hf_version, tx_type, priority,amount_burned);
-        transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, outs, unlock_time, needed_fee, extra,
+        transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, outs, unlock_time, needed_fee, extra_base,
             test_tx, test_ptx, rct_config, beldex_tx_params);
         txBlob = t_serializable_object_to_blob(test_ptx.tx);
         needed_fee = calculate_fee(test_ptx.tx, txBlob.size(), base_fee, fee_percent, fixed_fee, fee_quantization_mask);
@@ -11751,7 +11749,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   {
     cryptonote::transaction test_tx;
     pending_tx test_ptx;
-    transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, tx.outs, unlock_time, tx.needed_fee, extra, test_tx, test_ptx, rct_config, beldex_tx_params);
+    transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, tx.outs, unlock_time, tx.needed_fee, extra_base, test_tx, test_ptx, rct_config, beldex_tx_params);
     auto txBlob = t_serializable_object_to_blob(test_ptx.tx);
     tx.tx = test_tx;
     tx.ptx = test_ptx;

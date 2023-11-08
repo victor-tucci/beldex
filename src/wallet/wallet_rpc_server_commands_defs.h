@@ -2512,15 +2512,16 @@ This command is only required if the open wallet is one of the owners of a BNS r
   BELDEX_RPC_DOC_INTROSPECT
   struct COIN_BURN : RESTRICTED
   {
-    static constexpr auto names() { return NAMES("burn_amount"); }
+    static constexpr auto names() { return NAMES("burn" , "coin_burn"); }
     static constexpr const char *description = R"(A coin burn is a process in which a predetermined amount of cryptocurrency is permanently removed from circulation. Once burned, the specified amount of coins is eliminated from the blockchain, making them inaccessible and unrecoverable.)";
 
     struct request
     {
-      uint64_t burn;                                // burn amount
+      uint64_t amount;                                // burn amount
+      std::string tx_id;                            // Transaction ID used to find the transfer.
       uint32_t account_index;                       // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices;           // (Optional) Transfer from this set of subaddresses. (Defaults to 0).
-      uint32_t           priority;
+      uint32_t priority;
       bool get_tx_key;                              // (Optional) Return the transaction key after sending.
       bool do_not_relay;                            // (Optional) If true, the newly created transaction will not be relayed to the beldex network. (Defaults to false)
       bool get_tx_hex;                              // Return the transaction as hex string after sending. (Defaults to false)
