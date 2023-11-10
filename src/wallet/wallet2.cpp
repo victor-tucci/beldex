@@ -11622,12 +11622,13 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   std::swap(burn_fixed, beldex_tx_params.burn_fixed);
   std::swap(burn_percent, beldex_tx_params.burn_percent);
   THROW_WALLET_EXCEPTION_IF(beldex_tx_params.hf_version < HF_VERSION_FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
-  std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
-  extra_plus = extra_base;
-  add_burned_amount_to_tx_extra(extra_plus, 0);
-  fixed_fee += burn_fixed;
-  THROW_WALLET_EXCEPTION_IF(burn_percent > fee_percent, error::wallet_internal_error, "invalid burn fees: cannot burn more than the tx fee");
-
+  {
+    std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
+    extra_plus = extra_base;
+    add_burned_amount_to_tx_extra(extra_plus, 0);
+    fixed_fee += burn_fixed;
+    THROW_WALLET_EXCEPTION_IF(burn_percent > fee_percent, error::wallet_internal_error, "invalid burn fees: cannot burn more than the tx fee");
+  }
   LOG_PRINT_L2("Starting with " << unused_transfers_indices.size() << " non-dust outputs and " << unused_dust_indices.size() << " dust outputs");
 
   if (unused_dust_indices.empty() && unused_transfers_indices.empty())
@@ -11715,7 +11716,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
         {
           dt.amount = dt_amount;
         }
-        beldex_tx_params = tools::wallet2::construct_params(*hf_version, tx_type, priority,amount_burned);
+        beldex_tx_params.burn_fixed = amount_burned;
         transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, outs, unlock_time, needed_fee, extra_base,
             test_tx, test_ptx, rct_config, beldex_tx_params);
         txBlob = t_serializable_object_to_blob(test_ptx.tx);

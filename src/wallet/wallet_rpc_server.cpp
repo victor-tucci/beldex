@@ -1076,30 +1076,26 @@ namespace tools
 
     std::vector<wallet2::pending_tx> ptx_vector;
     std::vector<uint8_t> extra;
-    uint64_t burn_amount = req.amount;
-    std::cout << "burn_amount : " << burn_amount << std::endl;
-    std::string tx_id = req.tx_id;
-    std::cout << "req.txid : " << req.tx_id << std::endl;
-    
-    if(burn_amount == 0 && tx_id.empty())
+
+    if(req.amount == 0 && req.tx_id.empty())
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Amount/Txid is required"};
-    if(!burn_amount == 0 && !tx_id.empty())
+    if(req.amount != 0 && !req.tx_id.empty())
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Only one field needed either Amount or Txid"};
 
     LOG_PRINT_L3("on_burn_transfer starts");
     
-    if(!burn_amount == 0)
+    if(req.amount)
     {
       std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
       if (!hf_version)
         throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
-      cryptonote::beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, cryptonote::txtype::coin_burn, req.priority, burn_amount);
+      cryptonote::beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, cryptonote::txtype::coin_burn, req.priority, req.amount);
       ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, req.priority, extra, req.account_index, req.subaddr_indices, tx_params);
     }
-    else if (!tx_id.empty())
+    else
     {
       crypto::hash tx_hash;
-      if (!tools::hex_to_type(tx_id, tx_hash))
+      if (!tools::hex_to_type(req.tx_id, tx_hash))
         throw wallet_rpc_error{error_code::WRONG_TXID, "failed to parse txid"};
       size_t outputs = 1;
       tools::wallet2::transfer_container transfers;      
