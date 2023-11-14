@@ -113,6 +113,16 @@ namespace {
     return input_line_result::yes;
   }
 
+  input_line_result input_line_cancel_get_input(char const *msg, std::string &input)
+  {
+    std::string prompt = msg;
+    prompt += " (C/Cancel): ";
+    input   = input_line(prompt);
+    
+    if (command_line::is_cancel(input)) return input_line_result::cancel;
+    return input_line_result::yes;
+  }
+
   const char *get_address_type_name(epee::net_utils::address_type address_type)
   {
     switch (address_type)
@@ -2214,29 +2224,26 @@ bool rpc_command_executor::prepare_registration(bool force_registration)
         bool valid_address = false;
         while (!valid_address && tries < 3)
         {
-          last_input_result = input_line_back_cancel_get_input("Enter the Beldex address for the operator", address_str);
+          last_input_result = input_line_cancel_get_input("Enter the Beldex address for the operator", address_str);
           if (cryptonote::is_valid_address(address_str, nettype))
           {
             valid_address = true;
           }
+          else if (last_input_result == input_line_result::cancel) 
+          {  
+            step = register_step::cancelled_by_user;
+            break;
+          }
           else
           {
-            std::cout << "\033[1;31mInvalid address: " << address_str << " Please try again.\033[0m\n"<< std::endl;
+            std::cout << "\033[1;31mInvalid address: \033[0m" << address_str << std::endl;
             tries++;
           }
         }
         if (!valid_address)
         {
-          std::cout << "Max tries exceeded. Aborting the process." << std::endl;
+          std::cout << "Aborting the process." << std::endl;
           return false;
-        }
-        if (last_input_result == input_line_result::back)
-          continue;
-
-        if (last_input_result == input_line_result::cancel)
-        {
-          step = register_step::cancelled_by_user;
-          continue;
         }
         state.addresses.push_back(address_str); 
         state.prev_step = step;
