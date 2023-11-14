@@ -3267,7 +3267,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
   if (tx.is_transfer())
   {
-    if (tx.type != txtype::beldex_name_system && hf_version >= HF_VERSION_MIN_2_OUTPUTS && tx.vout.size() < 2)
+    if (tx.type != txtype::beldex_name_system && tx.type != txtype::coin_burn && hf_version >= HF_VERSION_MIN_2_OUTPUTS && tx.vout.size() < 2)
     {
       MERROR_VER("Tx " << get_transaction_hash(tx) << " has fewer than two outputs, which is not allowed as of hardfork " << +HF_VERSION_MIN_2_OUTPUTS);
       tvc.m_too_few_outputs = true;
@@ -3556,6 +3556,17 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
         tvc.m_verbose_error = std::move(fail_reason);
         return false;
       }
+    }
+    else if (tx.type == txtype::coin_burn)
+    {
+      uint64_t burn = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
+      if (burn == 0)
+      {
+        std::string fail_reason = "Burn amount must not equals to zero";
+        MERROR_VER("Failed to validate Burn TX reason: " << fail_reason);
+        tvc.m_verbose_error = std::move(fail_reason);
+        return false;
+      }      
     }
   }
   }

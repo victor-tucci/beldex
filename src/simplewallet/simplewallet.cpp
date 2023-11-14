@@ -263,6 +263,9 @@ namespace
   const char* USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE("bns_make_update_mapping_signature [owner=<value>] [backup_owner=<value>] <name>");
   const char* USAGE_BNS_BY_OWNER("bns_by_owner [<owner> ...]");
   const char* USAGE_BNS_LOOKUP("bns_lookup <name> [<name> ...]");
+    
+  const char* USAGE_COIN_BURN("coin_burn [index=<N1>[,<N2>,...]] [<priority>] <burn=amount | txid>");
+
 
 #if defined (BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
   std::string input_line(const std::string &prompt, bool yesno = false)
@@ -3117,6 +3120,11 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
                            [this](const auto& x) { return bns_make_update_mapping_signature(x); },
                            tr(USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE),
                            tr(tools::wallet_rpc::BNS_MAKE_UPDATE_SIGNATURE::description));
+
+  m_cmd_binder.set_handler("coin_burn",
+                           [this](const auto& x) { return coin_burn(x); },
+                           tr(USAGE_COIN_BURN),
+                           tr(tools::wallet_rpc::COIN_BURN::description));
 }
 
 simple_wallet::~simple_wallet()
@@ -7203,6 +7211,119 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
   return true;
 }
 //----------------------------------------------------------------------------------------------------
+bool simple_wallet::coin_burn(std::vector<std::string> args)
+{
+  if (!try_connect_to_daemon())
+    return false;
+
+  size_t outputs = 1;
+  // priority and subaddress fetch
+  uint32_t priority = 0;
+  std::set<uint32_t> subaddr_indices  = {};
+  if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
+
+  // get the burn amount from the argument
+  static constexpr auto BURN_PREFIX = "burn="sv;
+  uint64_t burn_amount = 0;
+  crypto::hash txid;
+  std::string burn_amount_str = eat_named_argument(args, BURN_PREFIX);
+  
+  if (!burn_amount_str.empty() && !cryptonote::parse_amount(burn_amount, burn_amount_str)) {  
+    if (!tools::hex_to_type(burn_amount_str, txid))
+    {
+      fail_msg_writer() << tr("failed to parse transactio ID or Invalid amount");
+      return true;
+    }
+  }
+
+  if(args.size() != 0){
+    PRINT_USAGE(USAGE_COIN_BURN);
+    return false;
+  }
+  if(!txid && burn_amount == 0){
+    fail_msg_writer() << tr("Burn amount equals to zero/not given.");
+    PRINT_USAGE(USAGE_COIN_BURN);
+    return false;
+  }
+  // unlock the wallet for getting the keys
+  SCOPED_WALLET_UNLOCK();
+  // create_transaction2 try for burning
+  try 
+  {
+    std::vector<uint8_t> extra;
+    std::vector<tools::wallet2::pending_tx> ptx_vector;
+    std::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+    if (!hf_version)
+    {
+      fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+      return false;
+    }
+    // parms are constructed
+    beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::coin_burn, priority, burn_amount);
+    // transaction process called
+    if(burn_amount){
+      ptx_vector = m_wallet->create_transactions_2({}, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra, m_current_subaddress_account, subaddr_indices, tx_params);
+    }else{
+      tools::wallet2::transfer_container transfers;
+      bool available = false;
+      std::vector<crypto::key_image> ki;
+      m_wallet->get_transfers(transfers);
+
+      for (const auto& td : transfers)
+      {
+        if(td.m_txid == txid)
+        {
+          available = true;
+          if(!td.m_spent)
+          {
+            ki.push_back(td.m_key_image) ;
+          } 
+        }
+      }
+      if(available && ki.size() == 0)
+      {
+        fail_msg_writer() << tr("The txid already spent.");
+        return false;
+      }
+      if(!available)
+      {
+        fail_msg_writer() << tr("No incoming available transfers");
+        return false;
+      }
+
+      ptx_vector = m_wallet->create_transactions_burn(ki, outputs, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, priority, extra);
+    }
+
+    if (ptx_vector.empty())
+    {
+      fail_msg_writer() << tr("No outputs found, or daemon is not ready");
+      return false;
+    }
+
+    std::vector<cryptonote::address_parse_info> dsts;
+    cryptonote::address_parse_info info = {};
+    info.address                        = m_wallet->get_subaddress({m_current_subaddress_account, 0});
+    info.is_subaddress                  = m_current_subaddress_account != 0;
+    dsts.push_back(info);
+
+    if (!confirm_and_send_tx(dsts, ptx_vector, priority == tools::tx_priority_flash))
+      return false;
+  }
+  catch (const std::exception &e)
+  {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+    return true;
+  }
+  catch (...)
+  {
+    LOG_ERROR("unknown error");
+    fail_msg_writer() << tr("unknown error");
+    return true;
+  }
+
+  return true;
+}
+//----------------------------------------------------------------------------------------------------
 bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
 {
   if (!try_connect_to_daemon())
@@ -8624,8 +8745,9 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
         case wallet::pay_type::governance:   color = epee::console_color_cyan; break;
         case wallet::pay_type::stake:        color = epee::console_color_blue; break;
         case wallet::pay_type::bns:          color = epee::console_color_blue; break;
-        case wallet::pay_type::master_node: color = epee::console_color_cyan; break;
-        default:                            color = epee::console_color_magenta; break;
+        case wallet::pay_type::coin_burn:    color = epee::console_color_orange; break;
+        case wallet::pay_type::master_node:  color = epee::console_color_cyan; break;
+        default:                             color = epee::console_color_magenta; break;
       }
     }
 
@@ -8647,6 +8769,8 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
             transfer.pay_type == wallet::pay_type::bns ||
             transfer.pay_type == wallet::pay_type::miner)
           destinations += output.address.substr(0, 6);
+        else if (transfer.pay_type == wallet::pay_type::coin_burn){
+            destinations = "-"; continue;}
         else
           destinations += output.address;
 
