@@ -94,6 +94,7 @@ namespace tools
   static const char *ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED = tr("Failed to query daemon for master node list");
   static const char *ERR_MSG_TOO_MANY_TXS_CONSTRUCTED = tr("Constructed too many transactions, please sweep_all first");
   static const char *ERR_MSG_EXCEPTION_THROWN = tr("Exception thrown, staking process could not be completed: ");
+  static const char *ERR_MSG_BNS_HF_VERSION = tr("Bns buy option is not available in v17");
 
   class ringdb;
   class wallet2;
