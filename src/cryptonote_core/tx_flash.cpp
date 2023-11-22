@@ -43,10 +43,10 @@ static void check_args(flash_tx::subquorum q, int position, const char *func_nam
         throw std::invalid_argument("Invalid voter position passed to " + std::string(func_name));
 }
 
-crypto::public_key flash_tx::get_mn_pubkey(subquorum q, int position, const master_node_list &snl) const {
+crypto::public_key flash_tx::get_mn_pubkey(subquorum q, int position, const master_node_list &mnl) const {
     check_args(q, position, __func__);
     uint64_t qheight = quorum_height(q);
-    auto flash_quorum = snl.get_quorum(quorum_type::flash, qheight);
+    auto flash_quorum = mnl.get_quorum(quorum_type::flash, qheight);
     if (!flash_quorum) {
         // TODO FIXME XXX - we don't want a failure here; if this happens we need to go back into state
         // history to retrieve the state info.  (Or maybe this can't happen?)
@@ -86,8 +86,8 @@ bool flash_tx::add_signature(subquorum q, int position, bool approved, const cry
 }
 
 
-bool flash_tx::add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_node_list &snl) {
-    return add_signature(q, position, approved, sig, get_mn_pubkey(q, position, snl));
+bool flash_tx::add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_node_list &mnl) {
+    return add_signature(q, position, approved, sig, get_mn_pubkey(q, position, mnl));
 }
 
 bool flash_tx::add_prechecked_signature(subquorum q, int position, bool approved, const crypto::signature &sig) {

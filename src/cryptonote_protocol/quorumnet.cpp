@@ -593,7 +593,7 @@ std::enable_if_t<std::is_integral<I>::value, I> get_or(bt_dict &d, const std::st
 // input quorum checksum matches the computed checksum for the quorums (if provided), otherwise sets
 // the given output checksum (if provided) to the calculated value.  Throws std::runtime_error on
 // failure.
-quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &snl, const uint64_t *input_checksum, uint64_t *output_checksum = nullptr) {
+quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &mnl, const uint64_t *input_checksum, uint64_t *output_checksum = nullptr) {
     // We currently just use two quorums, Q and Q' in the whitepaper, but this code is designed to
     // work fine with more quorums (but don't use a single subquorum; that could only be secure or
     // reliable but not both).
@@ -604,7 +604,7 @@ quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &sn
         auto height = flash_tx::quorum_height(flash_height, static_cast<flash_tx::subquorum>(qi));
         if (!height)
             throw std::runtime_error("too early in blockchain to create a quorum");
-        result[qi] = snl.get_quorum(quorum_type::flash, height);
+        result[qi] = mnl.get_quorum(quorum_type::flash, height);
         if (!result[qi])
             throw std::runtime_error("failed to obtain a flash quorum");
         auto &v = result[qi]->validators;
