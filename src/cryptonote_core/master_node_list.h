@@ -680,8 +680,8 @@ namespace master_nodes
       mutable quorum_manager                 quorums;          // Mutable because we are allowed to (and need to) change it via std::set iterator
       master_node_list*                     mn_list;
 
-      state_t(master_node_list* snl) : mn_list{snl} {}
-      state_t(master_node_list* snl, state_serialized &&state);
+      state_t(master_node_list* mnl) : mn_list{mnl} {}
+      state_t(master_node_list* mnl, state_serialized &&state);
 
       friend bool operator<(const state_t &a, const state_t &b) { return a.height < b.height; }
       friend bool operator<(const state_t &s, block_height h)   { return s.height < h; }

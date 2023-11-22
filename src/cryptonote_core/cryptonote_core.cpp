@@ -498,9 +498,9 @@ namespace cryptonote
   // Returns the master nodes info
   std::shared_ptr<const master_nodes::master_node_info> core::get_my_mn_info() const
   {
-    auto& snl = get_master_node_list();
+    auto& mnl = get_master_node_list();
     const auto& pubkey = get_master_keys().pub;
-    auto states = snl.get_master_node_list_state({ pubkey });
+    auto states = mnl.get_master_node_list_state({ pubkey });
     if (states.empty())
       return nullptr;
     else
@@ -523,9 +523,9 @@ namespace cryptonote
       s += "no";
     else
     {
-      auto& snl = get_master_node_list();
+      auto& mnl = get_master_node_list();
       const auto& pubkey = get_master_keys().pub;
-      auto states = snl.get_master_node_list_state({ pubkey });
+      auto states = mnl.get_master_node_list_state({ pubkey });
       if (states.empty())
         s += "not registered";
       else
@@ -539,7 +539,7 @@ namespace cryptonote
           s += "decomm.";
 
         uint64_t last_proof = 0;
-        snl.access_proof(pubkey, [&](auto& proof) { last_proof = proof.timestamp; });
+        mnl.access_proof(pubkey, [&](auto& proof) { last_proof = proof.timestamp; });
         s += ", proof: ";
         time_t now = std::time(nullptr);
         s += time_ago_str(now, last_proof);
@@ -2393,7 +2393,7 @@ namespace cryptonote
     m_master_node_vote_relayer.do_call([this] { return relay_master_node_votes(); });
     m_check_disk_space_interval.do_call([this] { return check_disk_space(); });
     m_block_rate_interval.do_call([this] { return check_block_rate(); });
-    m_mn_proof_cleanup_interval.do_call([&snl=m_master_node_list] { snl.cleanup_proofs(); return true; });
+    m_mn_proof_cleanup_interval.do_call([&mnl=m_master_node_list] { mnl.cleanup_proofs(); return true; });
 
     std::chrono::seconds lifetime{time(nullptr) - get_start_time()};
     if (m_master_node && lifetime > get_net_config().UPTIME_PROOF_STARTUP_DELAY) // Give us some time to connect to peers before sending uptimes
