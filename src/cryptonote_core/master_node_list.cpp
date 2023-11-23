@@ -3308,12 +3308,12 @@ namespace master_nodes
     return result;
   }
 
-  master_node_list::state_t::state_t(master_node_list* snl, state_serialized &&state)
+  master_node_list::state_t::state_t(master_node_list* mnl, state_serialized &&state)
   : height{state.height}
   , key_image_blacklist{std::move(state.key_image_blacklist)}
   , only_loaded_quorums{state.only_stored_quorums}
   , block_hash{state.block_hash}
-  , mn_list{snl}
+  , mn_list{mnl}
   {
     if (!mn_list)
       throw std::logic_error("Cannot deserialize a state_t without a master_node_list");

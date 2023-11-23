@@ -8865,6 +8865,11 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
     return {};
   }
 
+  if (hf_version <= cryptonote::network_version_17_POS)
+  {
+    if (reason) *reason = ERR_MSG_BNS_HF_VERSION;
+    return {};
+  }
   beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_version, txtype::beldex_name_system, priority, 0, mapping_years);
   auto result = create_transactions_2({} /*dests*/,
                                       CRYPTONOTE_DEFAULT_TX_MIXIN,
