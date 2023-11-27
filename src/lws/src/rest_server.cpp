@@ -109,7 +109,7 @@ namespace lws
         // response.m_mime_tipe = "application/json";
         // response.m_header_info.m_content_type = "application/json";
         // response.m_body.assign(reinterpret_cast<const char*>(body->data()), body->size()); // \TODO Remove copy here too!s
-        // return true;
+        return true;
       }
     };
     rest_server::rest_server(epee::span<const std::string> addresses, db::storage disk, configuration config)
