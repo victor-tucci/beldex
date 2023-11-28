@@ -587,7 +587,7 @@ namespace cryptonote { namespace rpc {
 
       char hexstr[10];
       std::string extra_res;
-      for(int i=0;i<(int)blk.miner_tx.extra.size();i++)
+      for(int i=0;i<blk.miner_tx.extra.size();i++)
       {
         sprintf(hexstr, "%02x", blk.miner_tx.extra[i]);
         extra_res+=hexstr;
