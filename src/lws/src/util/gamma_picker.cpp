@@ -12,7 +12,7 @@ namespace lws
   {
     constexpr const double gamma_shape = 19.28;
     constexpr const double gamma_scale = 1 / double(1.61);
-    constexpr const std::size_t blocks_in_a_year = BLOCKS_EXPECTED_IN_YEARS(1, 17);  // need to change
+    constexpr const std::size_t blocks_in_a_year = BLOCKS_PER_DAY * 365;  // need to change
     constexpr const std::size_t default_unlock_time = CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE * DIFFICULTY_TARGET_V2;
     constexpr const std::size_t recent_spend_window = 2 * DIFFICULTY_TARGET_V2;  // need to change
   }
