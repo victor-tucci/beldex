@@ -8568,7 +8568,7 @@ wallet2::request_stake_unlock_result wallet2::can_request_stake_unlock(const cry
     {
       if(((p_contributor->amount) < master_nodes::SMALL_CONTRIBUTOR_THRESHOLD * COIN ) && ((cur_height - node_info.registration_height) <  master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER))
       {
-        result.msg = tr("you can't give the unlock command! you have to wait upto ") + std::to_string(node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height) + " Blocks or "+ std::to_string((node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height)/ (master_nodes::SMALL_CONTRIBUTOR_THRESHOLD / 30)) + " days approx";
+        result.msg = tr("you can't give the unlock command! you have to wait upto ") + std::to_string(node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height) + " Blocks or "+ std::to_string((node_info.registration_height + master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER - cur_height)/ (master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER / 30)) + " days approx";
         result.success = false;
         return result;
       }
