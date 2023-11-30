@@ -30,8 +30,8 @@ namespace bns
 constexpr size_t WALLET_NAME_MAX                  = 64;
 constexpr size_t WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID     = 73;  // Wallet will encrypt an identifier (1 byte) a public spend and view key (2x 32 bytes) = 65 bytes plus an additional item for payment id (8 bytes) if necessary. The identifier 0 -> No Subaddress or Payment ID, 1 -> Has Subaddress, 2-> Has Payment ID
 constexpr size_t WALLET_ACCOUNT_BINARY_LENGTH_NO_PAYMENT_ID     = 65;
-constexpr size_t BELNET_DOMAIN_NAME_MAX          = 63 + 4; // DNS components name must be at most 63 (+ 4 for .bdx); this limit applies if there is at least one hyphen (and thus includes punycode)
-constexpr size_t BELNET_DOMAIN_NAME_MAX_NOHYPHEN = 32 + 4; // If the name does not contain a - then we restrict it to 32 characters so that it cannot be (and is obviously not) an encoded .bdx address (52 characters)
+constexpr size_t DOMAIN_NAME_MAX          = 63 + 4; // DNS components name must be at most 63 (+ 4 for .bdx); this limit applies if there is at least one hyphen (and thus includes punycode)
+constexpr size_t DOMAIN_NAME_MAX_NOHYPHEN = 32 + 4; // If the name does not contain a - then we restrict it to 32 characters so that it cannot be (and is obviously not) an encoded .bdx address (52 characters)
 constexpr size_t BELNET_ADDRESS_BINARY_LENGTH    = sizeof(crypto::ed25519_public_key);
 constexpr size_t BCHAT_DISPLAY_NAME_MAX         = 64;
 constexpr size_t BCHAT_PUBLIC_KEY_BINARY_LENGTH = 1 + sizeof(crypto::ed25519_public_key); // Bchat keys at prefixed with 0xbd + ed25519 key
@@ -49,6 +49,8 @@ constexpr char BNS_WALLET_TYPE_INTEGRATED = 0x02;
 struct mapping_value
 {
   static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
+  // static size_t constexpr BUFFER_SIZE_TOTAL = (WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID + BELNET_ADDRESS_BINARY_LENGTH + BCHAT_PUBLIC_KEY_BINARY_LENGTH) + 3*SODIUM_ENCRYPTION_EXTRA_BYTES;
+
   std::array<uint8_t, BUFFER_SIZE> buffer;
   bool encrypted;
   size_t len;
@@ -122,9 +124,6 @@ inline std::string_view mapping_type_str(mapping_type type)
   switch(type)
   {
     case mapping_type::belnet:         return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
-    case mapping_type::belnet_2years:  return "belnet_2years"sv;  // Only used in a buy tx, not in the DB
-    case mapping_type::belnet_5years:  return "belnet_5years"sv;  // "
-    case mapping_type::belnet_10years: return "belnet_10years"sv; // "
     case mapping_type::bchat:         return "bchat"sv;
     case mapping_type::wallet:          return "wallet"sv;
     default: assert(false);             return "xx_unhandled_type"sv;
@@ -133,13 +132,11 @@ inline std::string_view mapping_type_str(mapping_type type)
 inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os << mapping_type_str(type); }
 
 constexpr bool mapping_type_allowed(uint8_t hf_version, mapping_type type) {
-  return (type == mapping_type::bchat && hf_version >= cryptonote::network_version_16_bns)
-      || (is_belnet_type(type) && hf_version >= cryptonote::network_version_17_POS);
+  return (type == mapping_type::bchat && hf_version >= cryptonote::network_version_16)
+      || (type == mapping_type::belnet && hf_version >= cryptonote::network_version_17_POS) || (type == mapping_type::wallet && hf_version >= cryptonote::network_version_17_POS);
 }
 
-// Returns all mapping types supported for lookup as of the given hardfork.  (Note that this does
-// not return the dedicated length types such as mapping_type::belnet_5years as those are only
-// relevant within a BNS buy tx).
+// Returns all mapping types supported for lookup as of the given hardfork.
 std::vector<mapping_type> all_mapping_types(uint8_t hf_version);
 
 sqlite3 *init_beldex_name_system(const fs::path& file_path, bool read_only);
@@ -148,13 +145,19 @@ sqlite3 *init_beldex_name_system(const fs::path& file_path, bool read_only);
 /// type.  In particularly this maps all mapping_type::belnet_Xyears values to the underlying value
 /// of mapping_type::belnet.
 constexpr uint16_t db_mapping_type(bns::mapping_type type) {
-  if (is_belnet_type(type))
-    return static_cast<uint16_t>(mapping_type::belnet);
   return static_cast<uint16_t>(type);
 }
-
+constexpr std::string_view db_mapping_value(bns::mapping_type type) {
+  switch(type)
+  {
+    case mapping_type::bchat: return "encrypted_bchat_value"sv;
+    case mapping_type::wallet: return "encrypted_wallet_value"sv;
+    case mapping_type::belnet: return "encrypted_belnet_value"sv;
+    default: assert(false);             return "xx_unhandled_type"sv;
+  }
+}
 // Returns the length of the given mapping type, in blocks, or std::nullopt if the mapping type never expires.
-std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_type type,uint8_t hf_version);
+std::optional<uint64_t> expiry_blocks(cryptonote::network_type nettype, mapping_years map_years);
 
 // Returns *the* proper representation of a name_hash for querying the database, which is 44 base64
 // characters (43 significant chars + a padding '=').  External input values should always get
@@ -171,7 +174,7 @@ std::string name_hash_bytes_to_base64(std::string_view bytes);
 // otherwise.
 std::optional<std::string> name_hash_input_to_base64(std::string_view input);
 
-bool validate_bns_name(mapping_type type, std::string name, std::string *reason = nullptr);
+bool validate_bns_name(std::string name, std::string *reason = nullptr);
 
 std::optional<cryptonote::address_parse_info> encrypted_wallet_value_to_info(std::string name, std::string encrypted_value, std::string nonce);
 
@@ -179,14 +182,14 @@ generic_signature  make_ed25519_signature(crypto::hash const &hash, crypto::ed25
 generic_owner      make_monero_owner(cryptonote::account_public_address const &owner, bool is_subaddress);
 generic_owner      make_ed25519_owner(crypto::ed25519_public_key const &pkey);
 bool               parse_owner_to_generic_owner(cryptonote::network_type nettype, std::string_view owner, generic_owner &key, std::string *reason);
-std::string        tx_extra_signature(std::string_view value, generic_owner const *owner, generic_owner const *backup_owner, crypto::hash const &prev_txid);
+std::string        tx_extra_signature(std::string_view value_bchat, std::string_view value_wallet, std::string_view value_belnet, generic_owner const *owner, generic_owner const *backup_owner, crypto::hash const &prev_txid);
 
 enum struct bns_tx_type { lookup, buy, update, renew };
 // Converts a human readable case-insensitive string denoting the mapping type into a value suitable for storing into the BNS DB.
 // Currently accepts "bchat" or "belnet" for lookups, buys, updates, and renewals; for buys and renewals also accepts "belnet_Ny[ear]" for N=2,5,10
 // Lookups are implied by none of buy/update/renew.
 // mapping_type: (optional) if function returns true, the uint16_t value of the 'type' will be set
-bool         validate_mapping_type(std::string_view type, uint8_t hf_version, bns_tx_type txtype, mapping_type *mapping_type, std::string *reason);
+bool         validate_mapping_type(std::string_view type, uint8_t hf_version, mapping_type *mapping_type, std::string *reason);
 
 // Hashes an BNS name.  The name must already be lower-case (but this is only checked in debug builds).
 crypto::hash name_to_hash(std::string_view name, const std::optional<crypto::hash>& key = std::nullopt); // Takes a human readable name and hashes it.  Takes an optional value to use as a key to produce a keyed hash.
@@ -223,9 +226,10 @@ struct mapping_record
 
   bool          loaded;
   int64_t       id;
-  mapping_type  type;
   std::string   name_hash; // name hashed and represented in base64 encoding
-  mapping_value encrypted_value;
+  mapping_value encrypted_bchat_value;
+  mapping_value encrypted_wallet_value;
+  mapping_value encrypted_belnet_value;
   uint64_t      register_height;
   std::optional<uint64_t> expiration_height;
   uint64_t      update_height;
@@ -298,14 +302,14 @@ struct name_system_db
   // The get_mapping* methods can return any mapping, or only active mappings: for only active
   // mappings, pass in the blockchain height.  If you omit it (or explicitly pass std::nullopt) then
   // you will get the latest mappingsvalues regardless of whether expired or not they are expired.
-  mapping_record              get_mapping           (mapping_type type, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
-  std::vector<mapping_record> get_mappings          (std::vector<mapping_type> const &types, std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
+  mapping_record              get_mapping           (std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
+  std::vector<mapping_record> get_mappings          (std::string_view name_base64_hash, std::optional<uint64_t> blockchain_height = std::nullopt);
   std::vector<mapping_record> get_mappings_by_owner (generic_owner const &key, std::optional<uint64_t> blockchain_height = std::nullopt);
   std::vector<mapping_record> get_mappings_by_owners(std::vector<generic_owner> const &keys, std::optional<uint64_t> blockchain_height = std::nullopt);
   settings_record             get_settings          ();
 
   // Returns the count of each type of BNS registration that is currently active.
-  std::map<mapping_type, int> get_mapping_counts(uint64_t blockchain_height);
+  int get_mapping_counts(uint64_t blockchain_height);
 
   // Resolves a mapping of the given type and name hash. Returns a null optional if the value was
   // not found or expired, otherwise returns the encrypted value.

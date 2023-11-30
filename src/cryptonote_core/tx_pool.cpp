@@ -209,7 +209,7 @@ namespace cryptonote
           return true;
         }
 
-        if (data.type == pool_data.type && data.name_hash == pool_data.name_hash)
+        if (data.name_hash == pool_data.name_hash)
         {
           LOG_PRINT_L1("New TX: " << get_transaction_hash(tx) << ", has TX: " << get_transaction_hash(pool_tx) << " from the pool that is requesting the same BNS entry already.");
           return true;
@@ -218,7 +218,7 @@ namespace cryptonote
     }
     else
     {
-      if (tx.type != txtype::standard && tx.type != txtype::stake)
+      if (tx.type != txtype::standard && tx.type != txtype::stake && tx.type != txtype::coin_burn)
       {
         // NOTE(beldex): This is a developer error. If we come across this in production, be conservative and just reject
         MERROR("Unrecognised transaction type: " << tx.type << " for tx: " << get_transaction_hash(tx));
@@ -258,6 +258,44 @@ namespace cryptonote
       // the tx was accepted before timing out.
       tvc.m_verifivation_failed = true;
       return false;
+    }
+
+    if(tx.type == txtype::key_image_unlock)
+    {
+      if(hf_version  >= cryptonote::network_version_18_bns)
+      {
+        crypto::public_key mnode_key;
+        if (!cryptonote::get_master_node_pubkey_from_tx_extra(tx.extra, mnode_key))
+          return false;
+      
+        cryptonote::tx_extra_tx_key_image_unlock unlock;
+        if (!cryptonote::get_field_from_tx_extra(tx.extra, unlock))
+          return false;
+      
+        uint64_t block_height = m_blockchain.get_current_blockchain_height();
+        const master_nodes::master_node_info &node_info = m_blockchain.get_master_node_list().get_master_node_details(mnode_key);
+
+        for (const auto &contributor : node_info.contributors)
+        {
+          auto cit = std::find_if(contributor.locked_contributions.begin(),
+                            contributor.locked_contributions.end(),
+                            [&unlock](const master_nodes::master_node_info::contribution_t &contribution) {
+                              return unlock.key_image == contribution.key_image;
+                            });
+          if (cit != contributor.locked_contributions.end())
+          {
+            if (cit->amount < (master_nodes::SMALL_CONTRIBUTOR_THRESHOLD*COIN) && (block_height - node_info.registration_height) < master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER)
+            {
+               MWARNING("Unlock TX: small contributor trying to unlock node before "
+                << std::to_string(master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER) <<" blocks from the registration height"
+                << " for tx: "
+                << get_transaction_hash(tx));
+              tvc.m_verifivation_failed = true;
+              return false;
+            }
+          }
+        }      
+      }
     }
 
     if(!check_inputs_types_supported(tx))

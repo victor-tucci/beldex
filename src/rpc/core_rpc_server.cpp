@@ -394,7 +394,7 @@ namespace cryptonote { namespace rpc {
     }
 
     res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(next_block_is_POS);
-    res.target = tools::to_seconds((next_block_is_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME));
+    res.target = tools::to_seconds((next_block_is_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD));
     res.tx_count = m_core.get_blockchain_storage().get_total_transactions() - res.height; //without coinbase
     res.tx_pool_size = m_core.get_pool().get_transactions_count();
     if (context.admin)
@@ -427,10 +427,7 @@ namespace cryptonote { namespace rpc {
     res.block_size_median = res.block_weight_median = m_core.get_blockchain_storage().get_current_cumulative_block_weight_median();
 
     auto bns_counts = m_core.get_blockchain_storage().name_system_db().get_mapping_counts(res.height);
-    res.bns_counts = {
-      bns_counts[bns::mapping_type::bchat],
-      bns_counts[bns::mapping_type::wallet],
-      bns_counts[bns::mapping_type::belnet]};
+    res.bns_counts = bns_counts;
 
     if (context.admin)
     {
@@ -800,21 +797,24 @@ namespace cryptonote { namespace rpc {
       }
       void operator()(const tx_extra_beldex_name_system& x) {
         auto& bns = entry.bns.emplace();
-          bns.blocks = bns::expiry_blocks(nettype, x.type,hf_version) ;
-        switch (x.type)
-        {
-          case bns::mapping_type::belnet: [[fallthrough]];
-          case bns::mapping_type::belnet_2years: [[fallthrough]];
-          case bns::mapping_type::belnet_5years: [[fallthrough]];
-          case bns::mapping_type::belnet_10years: bns.type = "belnet"; break;
+        bns.version = x.version;          
+        if ((x.is_buying() || x.is_renewing()) && (x.version == 1))
+          bns.blocks = bns::expiry_blocks(nettype, x.mapping_years) ;
+        if(x.version == 0)
+          switch (x.type)
+          {
+            case bns::mapping_type::belnet: [[fallthrough]];
+            case bns::mapping_type::belnet_2years: [[fallthrough]];
+            case bns::mapping_type::belnet_5years: [[fallthrough]];
+            case bns::mapping_type::belnet_10years: bns.type = "belnet"; break;
 
-          case bns::mapping_type::bchat: bns.type = "bchat"; break;
-          case bns::mapping_type::wallet:  bns.type = "wallet"; break;
+            case bns::mapping_type::bchat: bns.type = "bchat"; break;
+            case bns::mapping_type::wallet:  bns.type = "wallet"; break;
 
-          case bns::mapping_type::update_record_internal: [[fallthrough]];
-          case bns::mapping_type::_count:
-                                           break;
-        }
+            case bns::mapping_type::update_record_internal: [[fallthrough]];
+            case bns::mapping_type::_count:
+              break;
+          }
         if (x.is_buying())
           bns.buy = true;
         else if (x.is_updating())
@@ -822,8 +822,12 @@ namespace cryptonote { namespace rpc {
         else if (x.is_renewing())
           bns.renew = true;
         bns.name_hash = tools::type_to_hex(x.name_hash);
-        if (!x.encrypted_value.empty())
-          bns.value = oxenc::to_hex(x.encrypted_value);
+        if (!x.encrypted_bchat_value.empty())
+          bns.value_bchat = oxenc::to_hex(x.encrypted_bchat_value);
+        if (!x.encrypted_wallet_value.empty())
+          bns.value_wallet = oxenc::to_hex(x.encrypted_wallet_value);
+        if (!x.encrypted_belnet_value.empty())
+          bns.value_belnet = oxenc::to_hex(x.encrypted_belnet_value);
         _load_owner(bns.owner, x.owner);
         _load_owner(bns.backup_owner, x.backup_owner);
       }
@@ -1306,7 +1310,7 @@ namespace cryptonote { namespace rpc {
 
     const miner& lMiner = m_core.get_miner();
     res.active = lMiner.is_mining();
-    res.block_target = tools::to_seconds(TARGET_BLOCK_TIME); // old_block_time
+    res.block_target = tools::to_seconds(TARGET_BLOCK_TIME_OLD); // old_block_time
     res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block(false /*POS*/);
     if ( lMiner.is_mining() ) {
       res.speed = lMiner.get_speed();
@@ -3063,7 +3067,8 @@ namespace cryptonote { namespace rpc {
     entry.funded                        = info.is_fully_funded();
     entry.state_height                  = info.is_fully_funded()
         ? (info.is_decommissioned() ? info.last_decommission_height : info.active_since_height) : info.last_reward_block_height;
-    entry.earned_downtime_blocks        = master_nodes::quorum_cop::calculate_decommission_credit(info, current_height,info.registration_hf_version);
+    uint8_t hf_version = m_core.get_blockchain_storage().get_network_version();
+    entry.earned_downtime_blocks        = master_nodes::quorum_cop::calculate_decommission_credit(info, current_height,hf_version);
     entry.decommission_count            = info.decommission_count;
     entry.last_decommission_reason_consensus_all      = info.last_decommission_reason_consensus_all;
     entry.last_decommission_reason_consensus_any      = info.last_decommission_reason_consensus_any;
@@ -3513,36 +3518,25 @@ namespace cryptonote { namespace rpc {
     bns::name_system_db &db = m_core.get_blockchain_storage().name_system_db();
     for (size_t request_index = 0; request_index < req.entries.size(); request_index++)
     {
-      BNS_NAMES_TO_OWNERS::request_entry const &request = req.entries[request_index];
-      if (!context.admin)
-        check_quantity_limit(request.types.size(), BNS_NAMES_TO_OWNERS::MAX_TYPE_REQUEST_ENTRIES, "types");
-
-      types.clear();
-      if (types.capacity() < request.types.size())
-        types.reserve(request.types.size());
-      for (auto type : request.types)
-      {
-        types.push_back(static_cast<bns::mapping_type>(type));
-        if (!bns::mapping_type_allowed(hf_version, types.back()))
-          throw rpc_error{ERROR_WRONG_PARAM, "Invalid belnet type '" + std::to_string(type) + "'"};
-      }
+      std::string const &req_name_hash = req.entries[request_index];
 
       // This also takes 32 raw bytes, but that is undocumented (because it is painful to pass
       // through json).
-      auto name_hash = bns::name_hash_input_to_base64(request.name_hash);
+      auto name_hash = bns::name_hash_input_to_base64(req_name_hash);
       if (!name_hash)
         throw rpc_error{ERROR_WRONG_PARAM, "Invalid name_hash: expected hash as 64 hex digits or 43/44 base64 characters"};
 
-      std::vector<bns::mapping_record> records = db.get_mappings(types, *name_hash, height);
+      std::vector<bns::mapping_record> records = db.get_mappings(*name_hash, height);
       for (auto const &record : records)
       {
         auto& entry = res.entries.emplace_back();
         entry.entry_index                                      = request_index;
-        entry.type                                             = record.type;
         entry.name_hash                                        = record.name_hash;
         entry.owner                                            = record.owner.to_string(nettype());
         if (record.backup_owner) entry.backup_owner            = record.backup_owner.to_string(nettype());
-        entry.encrypted_value                                  = oxenc::to_hex(record.encrypted_value.to_view());
+        entry.encrypted_bchat_value                            = oxenc::to_hex(record.encrypted_bchat_value.to_view());
+        entry.encrypted_wallet_value                           = oxenc::to_hex(record.encrypted_wallet_value.to_view());
+        entry.encrypted_belnet_value                           = oxenc::to_hex(record.encrypted_belnet_value.to_view());
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);
@@ -3600,11 +3594,12 @@ namespace cryptonote { namespace rpc {
 
       auto& entry = res.entries.emplace_back();
       entry.request_index   = it->second;
-      entry.type            = record.type;
       entry.name_hash       = std::move(record.name_hash);
       if (record.owner) entry.owner = record.owner.to_string(nettype());
       if (record.backup_owner) entry.backup_owner = record.backup_owner.to_string(nettype());
-      entry.encrypted_value = oxenc::to_hex(record.encrypted_value.to_view());
+      entry.encrypted_bchat_value = oxenc::to_hex(record.encrypted_bchat_value.to_view());
+      entry.encrypted_wallet_value = oxenc::to_hex(record.encrypted_wallet_value.to_view());
+      entry.encrypted_belnet_value = oxenc::to_hex(record.encrypted_belnet_value.to_view());
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);
@@ -3619,7 +3614,7 @@ namespace cryptonote { namespace rpc {
   {
     BNS_RESOLVE::response res{};
 
-    if (req.type >= tools::enum_count<bns::mapping_type>)
+    if (req.type >= static_cast<std::underlying_type_t<bns::mapping_type>>(bns::mapping_type::belnet_2years))
       throw rpc_error{ERROR_WRONG_PARAM, "Unable to resolve BNS address: 'type' parameter not specified"};
 
     auto name_hash = bns::name_hash_input_to_base64(req.name_hash);
@@ -3629,8 +3624,6 @@ namespace cryptonote { namespace rpc {
 
     uint8_t hf_version = m_core.get_blockchain_storage().get_network_version();
     auto type = static_cast<bns::mapping_type>(req.type);
-    if (!bns::mapping_type_allowed(hf_version, type))
-      throw rpc_error{ERROR_WRONG_PARAM, "Invalid belnet type '" + std::to_string(req.type) + "'"};
 
     if (auto mapping = m_core.get_blockchain_storage().name_system_db().resolve(
         type, *name_hash, m_core.get_current_blockchain_height()))
@@ -3642,5 +3635,54 @@ namespace cryptonote { namespace rpc {
     }
     return res;
   }
+  //------------------------------------------------------------------------------------------------------------------------------
+  BNS_VALUE_DECRYPT::response core_rpc_server::invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context)
+  {
+    BNS_VALUE_DECRYPT::response res{};
 
+    // ---------------------------------------------------------------------------------------------
+    //
+    // Validate encrypted value
+    //
+    // ---------------------------------------------------------------------------------------------
+    if (req.encrypted_value.size() % 2 != 0)
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value length not divisible by 2, length=" + std::to_string(req.encrypted_value.size())};
+
+    if (req.encrypted_value.size() >= (bns::mapping_value::BUFFER_SIZE * 2))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value too long to decrypt=" + req.encrypted_value};
+
+    if (!oxenc::is_hex(req.encrypted_value))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value is not hex=" + req.encrypted_value};
+
+    // ---------------------------------------------------------------------------------------------
+    //
+    // Validate type and name
+    //
+    // ---------------------------------------------------------------------------------------------
+    std::string reason;
+    bns::mapping_type type = {};
+
+    std::optional<uint8_t> hf_version = m_core.get_blockchain_storage().get_network_version();
+    if (!bns::validate_mapping_type(req.type, *hf_version, &type, &reason))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Invalid BNS type: " + reason};
+
+     if (!bns::validate_bns_name(req.name, &reason))
+      throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Invalid BNS name '" + req.name + "': " + reason};
+    
+    // ---------------------------------------------------------------------------------------------
+    //
+    // Decrypt value
+    //
+    // ---------------------------------------------------------------------------------------------
+    bns::mapping_value value = {};
+    value.len = req.encrypted_value.size() / 2;
+    value.encrypted = true;
+    oxenc::from_hex(req.encrypted_value.begin(), req.encrypted_value.end(), value.buffer.begin());
+
+    if (!value.decrypt(req.name, type))
+      throw rpc_error{ERROR_INTERNAL, "Value decryption failure"};
+
+    res.value = value.to_readable_value(nettype(), type);
+    return res;
+  }
 } }  // namespace cryptonote

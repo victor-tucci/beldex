@@ -300,22 +300,22 @@ uint64_t Blockchain::get_current_blockchain_height(bool lock) const
 //------------------------------------------------------------------
 bool Blockchain::load_missing_blocks_into_beldex_subsystems()
 {
-  uint64_t const snl_height   = std::max(hard_fork_begins(m_nettype, network_version_9_master_nodes).value_or(0), m_master_node_list.height() + 1);
-  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, network_version_16_bns).value_or(0),          m_bns_db.height() + 1);
+  uint64_t const mnl_height   = std::max(hard_fork_begins(m_nettype, network_version_9_master_nodes).value_or(0), m_master_node_list.height() + 1);
+  uint64_t const bns_height   = std::max(hard_fork_begins(m_nettype, network_version_18_bns).value_or(0),          m_bns_db.height() + 1);
   uint64_t const end_height   = m_db->height();
-  uint64_t const start_height = std::min(end_height, std::min(bns_height, snl_height));
-
+  uint64_t const start_height = std::min(end_height, std::min(bns_height, mnl_height));
+  
   int64_t const total_blocks = static_cast<int64_t>(end_height) - static_cast<int64_t>(start_height);
   if (total_blocks <= 0) return true;
   if (total_blocks > 1)
-    MGINFO("Loading blocks into beldex subsystems, scanning blockchain from height: " << start_height << " to: " << end_height << " (snl: " << snl_height << ", bns: " << bns_height << ")");
+    MGINFO("Loading blocks into beldex subsystems, scanning blockchain from height: " << start_height << " to: " << end_height << " (mnl: " << mnl_height << ", bns: " << bns_height << ")");
 
   using clock                   = std::chrono::steady_clock;
   using work_time               = std::chrono::duration<float>;
   int64_t constexpr BLOCK_COUNT = 1000;
   auto work_start               = clock::now();
   auto scan_start               = work_start;
-  work_time bns_duration{}, snl_duration{}, bns_iteration_duration{}, snl_iteration_duration{};
+  work_time bns_duration{}, mnl_duration{}, bns_iteration_duration{}, mnl_iteration_duration{};
 
   std::vector<cryptonote::block> blocks;
   std::vector<cryptonote::transaction> txs;
@@ -330,7 +330,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
     {
       m_master_node_list.store();
       auto duration = work_time{clock::now() - work_start};
-      MGINFO("... scanning height " << start_height + (index * BLOCK_COUNT) << " (" << duration.count() << "s) (snl: " << snl_iteration_duration.count() << "s; bns: " << bns_iteration_duration.count() << "s)");
+      MGINFO("... scanning height " << start_height + (index * BLOCK_COUNT) << " (" << duration.count() << "s) (mnl: " << mnl_iteration_duration.count() << "s; bns: " << bns_iteration_duration.count() << "s)");
 #ifdef ENABLE_SYSTEMD
       // Tell systemd that we're doing something so that it should let us continue starting up
       // (giving us 120s until we have to send the next notification):
@@ -339,8 +339,8 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
       work_start = clock::now();
 
       bns_duration += bns_iteration_duration;
-      snl_duration += snl_iteration_duration;
-      bns_iteration_duration = snl_iteration_duration = {};
+      mnl_duration += mnl_iteration_duration;
+      bns_iteration_duration = mnl_iteration_duration = {};
     }
 
     blocks.clear();
@@ -363,9 +363,9 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
         return false;
       }
 
-      if (block_height >= snl_height)
+      if (block_height >= mnl_height)
       {
-        auto snl_start = clock::now();
+        auto mnl_start = clock::now();
 
         checkpoint_t *checkpoint_ptr = nullptr;
         checkpoint_t checkpoint;
@@ -378,7 +378,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
           MFATAL("Unable to process block {} for updating master node list: " << e.what());
           return false;
         }
-        snl_iteration_duration += clock::now() - snl_start;
+        mnl_iteration_duration += clock::now() - mnl_start;
       }
 
       if (m_bns_db.db && (block_height >= bns_height))
@@ -397,7 +397,7 @@ bool Blockchain::load_missing_blocks_into_beldex_subsystems()
   if (total_blocks > 1)
   {
     auto duration = work_time{clock::now() - scan_start};
-    MGINFO("Done recalculating beldex subsystems (" << duration.count() << "s) (snl: " << snl_duration.count() << "s; bns: " << bns_duration.count() << "s)");
+    MGINFO("Done recalculating beldex subsystems (" << duration.count() << "s) (mnl: " << mnl_duration.count() << "s; bns: " << bns_duration.count() << "s)");
   }
 
   if (total_blocks > 0)
@@ -650,7 +650,7 @@ void Blockchain::pop_blocks(uint64_t nblocks)
 
   bool stop_batch = m_db->batch_start();
   uint8_t hf_version = get_network_version();
-  uint64_t blocks_expected_in_hours = BLOCKS_EXPECTED_IN_HOURS(24,hf_version);
+  uint64_t blocks_expected_per_day = (hf_version>=cryptonote::network_version_17_POS) ? BLOCKS_PER_DAY : BLOCKS_PER_DAY_OLD ;
   try
   {
     const uint64_t blockchain_height = m_db->height();
@@ -663,7 +663,7 @@ void Blockchain::pop_blocks(uint64_t nblocks)
     tools::PerformanceTimer timer;
     for (int progress = 0; i < nblocks; ++i)
     {
-      if (nblocks >= blocks_expected_in_hours && (i != 0 && (i % blocks_per_update == 0)))
+      if (nblocks >= blocks_expected_per_day && (i != 0 && (i % blocks_per_update == 0)))
       {
         MGINFO("... popping blocks " << (++progress * PERCENT_PER_PROGRESS_UPDATE) << "% completed, height: " << (blockchain_height - i) << " (" << timer.seconds() << "s)");
         timer.reset();
@@ -954,7 +954,7 @@ difficulty_type Blockchain::get_difficulty_for_next_block(bool POS)
       m_nettype, m_cache.m_timestamps, m_cache.m_difficulties, chain_height, m_cache.m_timestamps_and_difficulties_height);
   uint64_t diff = next_difficulty_v2(m_cache.m_timestamps,
                                      m_cache.m_difficulties,
-                                     tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)),
+                                     tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD)),
                                      difficulty_mode(m_nettype, chain_height));
 
   m_cache.m_timestamps_and_difficulties_height = chain_height;
@@ -1219,7 +1219,7 @@ difficulty_type Blockchain::get_difficulty_for_alternative_chain(const std::list
   auto hf_version = cryptonote::get_network_version(m_nettype, height);
   return next_difficulty_v2(timestamps,
                             cumulative_difficulties,
-                            tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)),
+                            tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD)),
                             difficulty_mode(m_nettype, height));
 }
 //------------------------------------------------------------------
@@ -3267,7 +3267,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
   if (tx.is_transfer())
   {
-    if (tx.type != txtype::beldex_name_system && hf_version >= HF_VERSION_MIN_2_OUTPUTS && tx.vout.size() < 2)
+    if (tx.type != txtype::beldex_name_system && tx.type != txtype::coin_burn && hf_version >= HF_VERSION_MIN_2_OUTPUTS && tx.vout.size() < 2)
     {
       MERROR_VER("Tx " << get_transaction_hash(tx) << " has fewer than two outputs, which is not allowed as of hardfork " << +HF_VERSION_MIN_2_OUTPUTS);
       tvc.m_too_few_outputs = true;
@@ -3533,16 +3533,40 @@ if (tx.version >= cryptonote::txversion::v2_ringct)
         }
       }
     }
+    
     if (tx.type == txtype::beldex_name_system)
     {
-      cryptonote::tx_extra_beldex_name_system data;
-      std::string fail_reason;
-      if (!m_bns_db.validate_bns_tx(hf_version, get_current_blockchain_height(), tx, data, &fail_reason))
+      uint64_t height = get_current_blockchain_height();
+      if (hf_version >= network_version_18_bns)
       {
+        cryptonote::tx_extra_beldex_name_system data;
+        std::string fail_reason;
+        if (!m_bns_db.validate_bns_tx(hf_version, height, tx, data, &fail_reason))
+        {
+          MERROR_VER("Failed to validate BNS TX reason: " << fail_reason);
+          tvc.m_verbose_error = std::move(fail_reason);
+          return false;
+        }
+      }
+      else if (height > get_config(nettype()).BNS_VALIDATION_HEIGHT)
+      {
+        // TODO this condition will be removed after the version 18 by the 'soft fork'
+        std::string fail_reason = "Bns buy option is not available in v17";
         MERROR_VER("Failed to validate BNS TX reason: " << fail_reason);
         tvc.m_verbose_error = std::move(fail_reason);
         return false;
       }
+    }
+    else if (tx.type == txtype::coin_burn)
+    {
+      uint64_t burn = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
+      if (burn == 0)
+      {
+        std::string fail_reason = "Burn amount must not equals to zero";
+        MERROR_VER("Failed to validate Burn TX reason: " << fail_reason);
+        tvc.m_verbose_error = std::move(fail_reason);
+        return false;
+      }      
     }
   }
   }

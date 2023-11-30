@@ -473,19 +473,19 @@ namespace cryptonote
         if (hf17)
         {
             LOG_PRINT_CCONTEXT_L0("process_payload_sync_data hf17");
-            std::chrono::seconds behindtime = 0 * TARGET_BLOCK_TIME;
+            std::chrono::seconds behindtime = 0 * TARGET_BLOCK_TIME_OLD;
             int64_t diff = static_cast<int64_t>(hshd.current_height) - static_cast<int64_t>(curr_height);
             uint64_t abs_diff = std::abs(diff);
 
             if (curr_height<*hf17){
                 LOG_PRINT_CCONTEXT_L0("process_payload_sync_data curr_height<hf17");
                 uint64_t old_diff = static_cast<int64_t>(*hf17) - static_cast<int64_t>(curr_height);
-                behindtime = old_diff * TARGET_BLOCK_TIME;
+                behindtime = old_diff * TARGET_BLOCK_TIME_OLD;
                 uint64_t max_block_height = std::max(hshd.current_height, curr_height);
-                behindtime = behindtime + ((max_block_height - *hf17)  * TARGET_BLOCK_TIME_V17);
+                behindtime = behindtime + ((max_block_height - *hf17)  * TARGET_BLOCK_TIME);
             } else{
                 LOG_PRINT_CCONTEXT_L0("process_payload_sync_data curr_height>hf17");
-                behindtime =   (abs_diff * TARGET_BLOCK_TIME_V17);
+                behindtime =   (abs_diff * TARGET_BLOCK_TIME);
             }
             MCLOG(is_inital ? el::Level::Info : el::Level::Debug, "global", context <<  "Sync data returned a new top block candidate: " << curr_height << " -> " << hshd.current_height
                                                                                     << " [Your node is " << abs_diff << " blocks (" << tools::get_human_readable_timespan(behindtime) << " "
@@ -873,38 +873,6 @@ namespace cryptonote
 
     return 1;
   }
-//------------------------------------------------------------------------------------------------------------------------
-    template<class t_core>
-    int t_cryptonote_protocol_handler<t_core>::handle_uptime_proof_v12(int command, NOTIFY_UPTIME_PROOF_V12::request& arg, cryptonote_connection_context& context)
-    {
-        MLOG_P2P_MESSAGE("Received NOTIFY_UPTIME_PROOF_V12");
-        // NOTE: Don't relay your own uptime proof, otherwise we have the following situation
-
-        // Node1 sends uptime ->
-        // Node2 receives uptime and relays it back to Node1 for acknowledgement ->
-        // Node1 receives it, handle_uptime_proof returns true to acknowledge, Node1 tries to resend to the same peers again
-
-        // Instead, if we receive our own uptime proof, then acknowledge but don't
-        // send on. If the we are missing an uptime proof it will have been
-        // submitted automatically by the daemon itself instead of
-        // using my own proof relayed by other nodes.
-
-        (void)context;
-        bool my_uptime_proof_confirmation = false;
-        if (m_core.handle_uptime_proof_v12(arg, my_uptime_proof_confirmation))
-        {
-            if (!my_uptime_proof_confirmation)
-            {
-                // NOTE: The default exclude context contains the peer who sent us this
-                // uptime proof, we want to ensure we relay it back so they know that the
-                // peer they relayed to received their uptime and confirm it, so send in an
-                // empty context so we don't omit the source peer from the relay back.
-                cryptonote_connection_context empty_context = {};
-                relay_uptime_proof_v12(arg, empty_context);
-            }
-        }
-        return 1;
-    }
   //------------------------------------------------------------------------------------------------------------------------  
   template<class t_core>
   int t_cryptonote_protocol_handler<t_core>::handle_uptime_proof(int command, NOTIFY_UPTIME_PROOF::request& arg, cryptonote_connection_context& context)
@@ -2611,13 +2579,6 @@ skip:
     m_p2p->relay_notify_to_list(NOTIFY_NEW_FLUFFY_BLOCK::ID, epee::strspan<uint8_t>(fluffyBlob), std::move(fluffyConnections));
     return true;
   }
-    //------------------------------------------------------------------------------------------------------------------------
-    template<class t_core>
-    bool t_cryptonote_protocol_handler<t_core>::relay_uptime_proof_v12(NOTIFY_UPTIME_PROOF_V12::request& arg, cryptonote_connection_context& exclude_context)
-    {
-        bool result = relay_to_synchronized_peers<NOTIFY_UPTIME_PROOF_V12>(arg, exclude_context);
-        return result;
-    }
   //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>
   bool t_cryptonote_protocol_handler<t_core>::relay_uptime_proof(NOTIFY_UPTIME_PROOF::request& arg, cryptonote_connection_context& exclude_context)

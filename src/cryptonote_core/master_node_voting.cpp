@@ -179,16 +179,15 @@ namespace master_nodes
           tvc.m_verifivation_failed = true;
         return false;
       }
-      uint64_t state_change_tx_lifetime_in_blocks = BLOCKS_EXPECTED_IN_HOURS(2,hf_version);
-      if (latest_height >= state_change.block_height + state_change_tx_lifetime_in_blocks)
+      if (latest_height >= state_change.block_height + master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS)
       {
         LOG_PRINT_L1("Received state change tx for height: "
                      << state_change.block_height << " and master node: " << state_change.master_node_index
-                     << ", is older than: " << state_change_tx_lifetime_in_blocks
+                     << ", is older than: " << master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS
                      << " (current height: " << latest_height << ") "
                      << "blocks and has been rejected.");
         vvc.m_invalid_block_height = true;
-        if (latest_height >= state_change.block_height + (state_change_tx_lifetime_in_blocks+ VOTE_OR_TX_VERIFY_HEIGHT_BUFFER))
+        if (latest_height >= state_change.block_height + (master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS+ VOTE_OR_TX_VERIFY_HEIGHT_BUFFER))
           tvc.m_verifivation_failed = true;
         return false;
       }
@@ -426,11 +425,10 @@ namespace master_nodes
   {
     bool result           = true;
     bool height_in_buffer = false;
-    uint64_t vote_lifetime = BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
-    if (latest_height > vote.block_height + vote_lifetime)
+    if (latest_height > vote.block_height + VOTE_LIFETIME)
     {
-      height_in_buffer = latest_height <= vote.block_height + (vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
-      LOG_PRINT_L1("Received vote for height: " << vote.block_height << ", is older than: " << vote_lifetime
+      height_in_buffer = latest_height <= vote.block_height + (VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
+      LOG_PRINT_L1("Received vote for height: " << vote.block_height << ", is older than: " << VOTE_LIFETIME
                                                 << " blocks and has been rejected.");
       vvc.m_invalid_block_height = true;
     }
@@ -605,9 +603,8 @@ namespace master_nodes
 #else
     constexpr uint64_t TIME_BETWEEN_RELAY = 60 * 2;
 #endif
-    uint64_t vote_lifetime = BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
     const uint64_t max_last_sent = static_cast<uint64_t>(time(nullptr)) - TIME_BETWEEN_RELAY;
-    const uint64_t min_height = height > vote_lifetime ? height - vote_lifetime : 0;
+    const uint64_t min_height = height > VOTE_LIFETIME ? height - VOTE_LIFETIME : 0;
 
     std::vector<quorum_vote_t> result;
 
@@ -694,8 +691,7 @@ namespace master_nodes
   void voting_pool::remove_expired_votes(uint64_t height,uint8_t hf_version)
   {
     std::unique_lock lock{m_lock};
-    uint64_t vote_lifetime = BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
-    uint64_t min_height = (height < vote_lifetime) ? 0 : height - vote_lifetime;
+    uint64_t min_height = (height < VOTE_LIFETIME) ? 0 : height - VOTE_LIFETIME;
     cull_votes(m_obligations_pool, min_height, height);
     cull_votes(m_checkpoint_pool, min_height, height);
   }

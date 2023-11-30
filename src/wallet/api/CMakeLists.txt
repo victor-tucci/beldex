@@ -136,6 +136,7 @@ if (STATIC AND BUILD_STATIC_DEPS)
             randomx
             uSockets
             cpr
+            fmt
             )
 
     if(IOS)

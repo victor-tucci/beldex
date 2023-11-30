@@ -80,11 +80,14 @@ enum struct extra_field : uint8_t
   owner           = 1 << 0,
   backup_owner    = 1 << 1,
   signature       = 1 << 2,
-  encrypted_value = 1 << 3,
+  encrypted_bchat_value = 1 << 3,
+  encrypted_wallet_value = 1 << 4,
+  encrypted_belnet_value = 1 << 5,
 
   // Bit Masks
-  updatable_fields = (extra_field::owner | extra_field::backup_owner | extra_field::encrypted_value),
-  buy_no_backup    = (extra_field::owner | extra_field::encrypted_value),
+  updatable_fields = (extra_field::owner | extra_field::backup_owner | extra_field::encrypted_bchat_value | extra_field::encrypted_wallet_value | extra_field::encrypted_belnet_value),
+  buy_no_backup    = (extra_field::owner),
+  buy_any_value    = (extra_field::encrypted_bchat_value | extra_field::encrypted_wallet_value | extra_field::encrypted_belnet_value),
   buy              = (extra_field::buy_no_backup | extra_field::backup_owner),
   all              = (extra_field::updatable_fields | extra_field::signature),
 };
@@ -544,13 +547,16 @@ namespace cryptonote
   {
     uint8_t                 version = 0;
     bns::mapping_type       type;
+    bns::mapping_years      mapping_years;
     crypto::hash            name_hash;
     crypto::hash            prev_txid = crypto::null_hash;  // previous txid that purchased the mapping
     bns::extra_field        fields;
     bns::generic_owner      owner        = {};
     bns::generic_owner      backup_owner = {};
     bns::generic_signature  signature    = {};
-    std::string             encrypted_value; // binary format of the name->value mapping
+    std::string             encrypted_bchat_value; // binary format of the name->bchat_value mapping
+    std::string             encrypted_wallet_value; // binary format of the name->wallet_value mapping
+    std::string             encrypted_belnet_value; // binary format of the name->belnet_value mapping
 
     bool field_is_set (bns::extra_field bit) const { return (fields & bit) == bit; }
     bool field_any_set(bns::extra_field bit) const { return (fields & bit) != bns::extra_field::none; }
@@ -558,40 +564,52 @@ namespace cryptonote
     // True if this is updating some BNS info: has a signature and 1 or more updating field
     bool is_updating() const { return field_is_set(bns::extra_field::signature) && field_any_set(bns::extra_field::updatable_fields); }
     // True if this is buying a new BNS record
-    bool is_buying()   const { return (fields == bns::extra_field::buy || fields == bns::extra_field::buy_no_backup); }
+    bool is_buying()   const { return (field_is_set(bns::extra_field::buy) || field_is_set(bns::extra_field::buy_no_backup)) && field_any_set(bns::extra_field::buy_any_value); }
     // True if this is renewing an existing BNS: has no fields at all, is a renewal registration (i.e. belnet),
     // and has a non-null txid set (which should point to the most recent registration or update).
-    bool is_renewing() const { return fields == bns::extra_field::none && prev_txid && is_belnet_type(type); }
+    bool is_renewing() const { return fields == bns::extra_field::signature && prev_txid && is_renewal_type(mapping_years); }
 
     static tx_extra_beldex_name_system make_buy(
         bns::generic_owner const& owner,
         bns::generic_owner const* backup_owner,
-        bns::mapping_type type,
+        bns::mapping_years mapping_years,
         const crypto::hash& name_hash,
-        const std::string& encrypted_value,
+        const std::string& encrypted_bchat_value,
+        const std::string& encrypted_wallet_value,
+        const std::string& encrypted_belnet_value,
         const crypto::hash& prev_txid);
 
-    static tx_extra_beldex_name_system make_renew(bns::mapping_type type, const crypto::hash& name_hash, const crypto::hash& prev_txid);
+    static tx_extra_beldex_name_system make_renew(
+        const bns::generic_signature& signature,
+        bns::mapping_years mapping_years, 
+        const crypto::hash& name_hash, 
+        const crypto::hash& prev_txid);
 
     static tx_extra_beldex_name_system make_update(
         const bns::generic_signature& signature,
-        bns::mapping_type type,
         const crypto::hash& name_hash,
-        std::string_view encrypted_value,
+        std::string_view encrypted_bchat_value,
+        std::string_view encrypted_wallet_value,
+        std::string_view encrypted_belnet_value,
         const bns::generic_owner* owner,
         const bns::generic_owner* backup_owner,
         const crypto::hash& prev_txid);
 
     BEGIN_SERIALIZE()
       FIELD(version)
-      ENUM_FIELD(type, type < bns::mapping_type::_count)
+      if(version >=1)
+        ENUM_FIELD(mapping_years, mapping_years < bns::mapping_years::_count)
+      else
+        ENUM_FIELD(type, type < bns::mapping_type::_count)
       FIELD(name_hash)
       FIELD(prev_txid)
       ENUM_FIELD(fields, fields <= bns::extra_field::all)
       if (field_is_set(bns::extra_field::owner)) FIELD(owner);
       if (field_is_set(bns::extra_field::backup_owner)) FIELD(backup_owner);
       if (field_is_set(bns::extra_field::signature)) FIELD(signature);
-      if (field_is_set(bns::extra_field::encrypted_value)) FIELD(encrypted_value);
+      if (field_is_set(bns::extra_field::encrypted_bchat_value)) FIELD(encrypted_bchat_value);
+      if (field_is_set(bns::extra_field::encrypted_wallet_value)) FIELD(encrypted_wallet_value);
+      if (field_is_set(bns::extra_field::encrypted_belnet_value)) FIELD(encrypted_belnet_value);
     END_SERIALIZE()
   };
 

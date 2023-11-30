@@ -63,10 +63,8 @@ add_subdirectory(block_weight)
 add_subdirectory(hash)
 add_subdirectory(net_load_tests)
 add_subdirectory(network_tests)
-if (ANDROID)
-# Currently failed to compile
-#  add_subdirectory(libwallet_api_tests)
-endif()
+#TODO have to add this libwallet_api_tests as optional
+add_subdirectory(libwallet_api_tests)
 
 if (TREZOR_DEBUG)
   add_subdirectory(trezor)

@@ -51,9 +51,9 @@ message(STATUS "CMake version ${CMAKE_VERSION}")
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "macOS deployment target (Apple clang only)")
 
 project(beldex
-    VERSION 4.1.0
+    VERSION 5.0.0
     LANGUAGES CXX C)
-set(BELDEX_RELEASE_CODENAME "Bucephalus")
+set(BELDEX_RELEASE_CODENAME "Bern")
 
 # String value to append to the full version string; this is intended to easily identify whether a
 # binary was build from the release or development branches.  This should be permanently set to an

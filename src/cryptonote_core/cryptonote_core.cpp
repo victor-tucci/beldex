@@ -498,9 +498,9 @@ namespace cryptonote
   // Returns the master nodes info
   std::shared_ptr<const master_nodes::master_node_info> core::get_my_mn_info() const
   {
-    auto& snl = get_master_node_list();
+    auto& mnl = get_master_node_list();
     const auto& pubkey = get_master_keys().pub;
-    auto states = snl.get_master_node_list_state({ pubkey });
+    auto states = mnl.get_master_node_list_state({ pubkey });
     if (states.empty())
       return nullptr;
     else
@@ -523,9 +523,9 @@ namespace cryptonote
       s += "no";
     else
     {
-      auto& snl = get_master_node_list();
+      auto& mnl = get_master_node_list();
       const auto& pubkey = get_master_keys().pub;
-      auto states = snl.get_master_node_list_state({ pubkey });
+      auto states = mnl.get_master_node_list_state({ pubkey });
       if (states.empty())
         s += "not registered";
       else
@@ -539,7 +539,7 @@ namespace cryptonote
           s += "decomm.";
 
         uint64_t last_proof = 0;
-        snl.access_proof(pubkey, [&](auto& proof) { last_proof = proof.timestamp; });
+        mnl.access_proof(pubkey, [&](auto& proof) { last_proof = proof.timestamp; });
         s += ", proof: ";
         time_t now = std::time(nullptr);
         s += time_ago_str(now, last_proof);
@@ -1926,48 +1926,28 @@ namespace cryptonote
     auto height = get_current_blockchain_height();
     auto hf_version = get_network_version(m_nettype, height);
     cryptonote_connection_context fake_context{};
-    if (hf_version<=cryptonote::network_version_12_security_signature) {
 
-        NOTIFY_UPTIME_PROOF_V12::request req_v12 = m_master_node_list.generate_uptime_proof_v12();
-        get_protocol()->relay_uptime_proof_v12(req_v12, fake_context);
+    auto proof = m_master_node_list.generate_uptime_proof(m_mn_public_ip, storage_https_port(), storage_omq_port(),
+                                                          ss_version, m_quorumnet_port, belnet_version);
+    NOTIFY_BTENCODED_UPTIME_PROOF::request req = proof.generate_request();
+    relayed = get_protocol()->relay_btencoded_uptime_proof(req, fake_context);
+
+    // TODO: remove after HF19
+    if (relayed && tools::view_guts(m_master_keys.pub) != tools::view_guts(m_master_keys.pub_ed25519))
+    {
+      // Temp workaround: nodes with both pub and ed25519 are failing bt-encoded proofs, so send
+      // an old-style proof out as well as a workaround.
+      NOTIFY_UPTIME_PROOF::request req = m_master_node_list.generate_uptime_proof(m_mn_public_ip,
+                                                                                  storage_https_port(),
+                                                                                  storage_omq_port(),
+                                                                                  m_quorumnet_port);
+      get_protocol()->relay_uptime_proof(req, fake_context);
     }
-    else {
 
-
-        auto proof = m_master_node_list.generate_uptime_proof(m_mn_public_ip, storage_https_port(), storage_omq_port(),
-                                                              ss_version, m_quorumnet_port, belnet_version);
-        NOTIFY_BTENCODED_UPTIME_PROOF::request req = proof.generate_request();
-        relayed = get_protocol()->relay_btencoded_uptime_proof(req, fake_context);
-
-        // TODO: remove after HF19
-        if (relayed && tools::view_guts(m_master_keys.pub) != tools::view_guts(m_master_keys.pub_ed25519)) {
-            // Temp workaround: nodes with both pub and ed25519 are failing bt-encoded proofs, so send
-            // an old-style proof out as well as a workaround.
-            NOTIFY_UPTIME_PROOF::request req = m_master_node_list.generate_uptime_proof(m_mn_public_ip,
-                                                                                        storage_https_port(),
-                                                                                        storage_omq_port(),
-                                                                                        m_quorumnet_port);
-            get_protocol()->relay_uptime_proof(req, fake_context);
-        }
-
-        if (relayed)
-            MGINFO("Submitted uptime-proof for master Node (yours): " << m_master_keys.pub);
-    }
+    if (relayed)
+      MGINFO("Submitted uptime-proof for master Node (yours): " << m_master_keys.pub);
     return true;
   }
-//-----------------------------------------------------------------------------------------------
-bool core::handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation)
-{
-    crypto::public_key pkey = {};
-    bool result = m_master_node_list.handle_uptime_proof_v12(proof, my_uptime_proof_confirmation, pkey);
-    if (result && m_master_node_list.is_master_node(proof.pubkey, true /*require_active*/) && pkey)
-    {
-        oxenmq::pubkey_set added;
-        added.insert(tools::copy_guts(pkey));
-        m_omq->update_active_sns(added, {} /*removed*/);
-    }
-    return result;
-}
   //-----------------------------------------------------------------------------------------------
   bool core::handle_uptime_proof(const NOTIFY_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation)
   {
@@ -2413,7 +2393,7 @@ bool core::handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof
     m_master_node_vote_relayer.do_call([this] { return relay_master_node_votes(); });
     m_check_disk_space_interval.do_call([this] { return check_disk_space(); });
     m_block_rate_interval.do_call([this] { return check_block_rate(); });
-    m_mn_proof_cleanup_interval.do_call([&snl=m_master_node_list] { snl.cleanup_proofs(); return true; });
+    m_mn_proof_cleanup_interval.do_call([&mnl=m_master_node_list] { mnl.cleanup_proofs(); return true; });
 
     std::chrono::seconds lifetime{time(nullptr) - get_start_time()};
     if (m_master_node && lifetime > get_net_config().UPTIME_PROOF_STARTUP_DELAY) // Give us some time to connect to peers before sending uptimes
@@ -2494,7 +2474,7 @@ bool core::handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof
     const auto hf_version = get_network_version(m_nettype, m_target_blockchain_height);
 
 
-    static double threshold = 1. / ((24h * 10) / (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)); // one false positive every 10 days
+    static double threshold = 1. / ((24h * 10) / (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD)); // one false positive every 10 days
     static constexpr unsigned int max_blocks_checked = 150;
 
     const time_t now = time(NULL);
@@ -2506,7 +2486,7 @@ bool core::handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof
       unsigned int b = 0;
       const time_t time_boundary = now - static_cast<time_t>(seconds[n]);
       for (time_t ts: timestamps) b += ts >= time_boundary;
-      const double p = probability(b, seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME)));
+      const double p = probability(b, seconds[n] / tools::to_seconds((hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD)));
       MDEBUG("blocks in the last " << seconds[n] / 60 << " minutes: " << b << " (probability " << p << ")");
       if (p < threshold)
       {

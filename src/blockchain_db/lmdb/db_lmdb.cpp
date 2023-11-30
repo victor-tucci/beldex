@@ -4702,13 +4702,13 @@ void BlockchainLMDB::fixup(cryptonote::network_type nettype)
           if (is_hard_fork_at_least(nettype, cryptonote::network_version_17_POS, curr_height)
               && block_header_has_POS_components(get_block_header_from_height(curr_height)))
           {
-            diff = POS_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME_V17
+            diff = POS_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME
           }
           else
           {
             diff = next_difficulty_v2(timestamps,
                                       difficulties,
-                                      tools::to_seconds(TARGET_BLOCK_TIME), //use OLD BLOCK_TIME
+                                      tools::to_seconds(TARGET_BLOCK_TIME_OLD), //use OLD BLOCK_TIME
                                       difficulty_mode(nettype, curr_height + 1));
           }
         }

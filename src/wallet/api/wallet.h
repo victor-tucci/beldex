@@ -118,6 +118,7 @@ public:
     bool trustedDaemon() const override;
     uint64_t balance(uint32_t accountIndex = 0) const override;
     uint64_t unlockedBalance(uint32_t accountIndex = 0) const override;
+    int countBns() override;
     std::vector<stakeInfo>* listCurrentStakes() const override;
     uint64_t blockChainHeight() const override;
     uint64_t approximateBlockChainHeight() const override;
@@ -179,6 +180,30 @@ public:
                                         std::optional<uint64_t> amount,
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
+                                        std::set<uint32_t> subaddr_indices = {}) override;
+    PendingTransaction* createBnsTransaction(std::string& owner,
+                                        std::string& backup_owner,
+                                        std::string& mapping_years,
+                                        std::string &value_bchat,
+                                        std::string &value_wallet,
+                                        std::string &value_belnet,
+                                        std::string &name,
+                                        uint32_t priority = 0,
+                                        uint32_t subaddr_account = 0,
+                                        std::set<uint32_t> subaddr_indices = {}) override;
+    PendingTransaction* bnsUpdateTransaction(std::string& owner,
+                                        std::string& backup_owner,
+                                        std::string &value_bchat,
+                                        std::string &value_wallet,
+                                        std::string &value_belnet,
+                                        std::string &name,
+                                        uint32_t priority = 0,
+                                        uint32_t subaddr_account = 0,
+                                        std::set<uint32_t> subaddr_indices = {}) override;
+    PendingTransaction* bnsRenewTransaction(std::string &name,
+                                        std::string &bnsyear,
+                                        uint32_t priority=0,
+                                        uint32_t m_current_subaddress_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
     PendingTransaction* createSweepUnmixableTransaction() override;
     bool submitTransaction(std::string_view filename) override;
@@ -242,7 +267,8 @@ private:
     bool isNewWallet() const;
     void pendingTxPostProcess(PendingTransactionImpl * pending);
     bool doInit(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, bool ssl = false);
-
+    bool bns_validate_years(std::string_view map_years, bns::mapping_years *mapping_years);
+   
 private:
     friend class PendingTransactionImpl;
     friend class UnsignedTransactionImpl;    

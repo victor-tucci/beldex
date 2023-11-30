@@ -190,6 +190,8 @@ namespace cryptonote
     bool bns_by_owner(const std::vector<std::string> &args);
     bool bns_lookup(std::vector<std::string> args);
 
+    bool coin_burn(std::vector<std::string> args);
+
     enum class sweep_type_t { stake, register_stake, all_or_below, single };
     bool sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool flash);
     bool sweep_main(uint32_t account, uint64_t below, Transfer transfer_type, const std::vector<std::string> &args);
@@ -371,7 +373,7 @@ namespace cryptonote
       {
         auto current_time = std::chrono::system_clock::now();
         auto hf_version = cryptonote::get_network_version(nettype, height);
-        const auto node_update_threshold = (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME) / 2;
+        const auto node_update_threshold = (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD) / 2;
         if (node_update_threshold < current_time - m_blockchain_height_update_time || m_blockchain_height <= height)
         {
           update_blockchain_height();

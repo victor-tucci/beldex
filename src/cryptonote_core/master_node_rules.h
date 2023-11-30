@@ -31,8 +31,8 @@ namespace master_nodes {
   constexpr size_t POS_BLOCK_REQUIRED_SIGNATURES = 7;  // A block must have exactly N signatures to be considered properly
 #endif
 
-  constexpr auto POS_MIN_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME_V17 - 15s;
-  constexpr auto POS_MAX_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME_V17 + 15s;
+  constexpr auto POS_MIN_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME - 15s;
+  constexpr auto POS_MAX_TARGET_BLOCK_TIME = TARGET_BLOCK_TIME + 15s;
   constexpr size_t POS_QUORUM_SIZE = POS_QUORUM_NUM_VALIDATORS + 1 /*Leader*/;
 
   static_assert(POS_ROUND_TIME >=
@@ -82,8 +82,14 @@ namespace master_nodes {
   // decommission time: the first quorum test after the credit expires determines whether the server
   // gets recommissioned or decommissioned).
 
+  inline constexpr int64_t DECOMMISSION_CREDIT_PER_DAY      = BLOCKS_PER_DAY / 30;
+  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT      = BLOCKS_PER_HOUR * 2;
+  inline constexpr int64_t DECOMMISSION_MAX_CREDIT          = BLOCKS_PER_DAY * 2;
+  inline constexpr int64_t DECOMMISSION_MINIMUM             = BLOCKS_PER_HOUR * 2;
+  inline constexpr int64_t DECOMMISSION_INITIAL_CREDIT_V18  = BLOCKS_PER_HOUR * 3;
 
-
+  static_assert(DECOMMISSION_INITIAL_CREDIT <= DECOMMISSION_MAX_CREDIT, "Initial registration decommission credit cannot be larger than the maximum decommission credit");
+  static_assert(DECOMMISSION_INITIAL_CREDIT_V18 <= DECOMMISSION_MAX_CREDIT, "Initial registration decommission credit cannot be larger than the maximum decommission credit");
 
   // This determines how many credits a node gets when being recommissioned after being
   // decommissioned.  It gets passed two values: the credit at the time the node was decomissioned,
@@ -102,6 +108,29 @@ namespace master_nodes {
       return std::max<int64_t>(0, credit_at_decomm - 2*decomm_blocks);
   }
 
+  // Some sanity checks on the recommission credit value:
+  static_assert(RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, 0) <= DECOMMISSION_MAX_CREDIT,
+          "Max recommission credit should not be higher than DECOMMISSION_MAX_CREDIT");
+
+  // These are by no means exhaustive, but will at least catch simple mistakes
+  static_assert(
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, DECOMMISSION_MAX_CREDIT) <= RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, DECOMMISSION_MAX_CREDIT/2) &&
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, DECOMMISSION_MAX_CREDIT/2) <= RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, 0) &&
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT/2, DECOMMISSION_MAX_CREDIT/2) <= RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT/2, 0),
+          "Recommission credit should be (weakly) decreasing in the length of decommissioning");
+  static_assert(
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT/2, 1) <= RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, 1) &&
+          RECOMMISSION_CREDIT(0, 1) <= RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT/2, 1),
+          "Recommission credit should be (weakly) increasing in initial credit blocks");
+
+  // This one actually could be supported (i.e. you can have negative credit and half to crawl out
+  // of that hole), but the current code is entirely untested as to whether or not that actually
+  // works.
+  static_assert(
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, 0) >= 0 &&
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, DECOMMISSION_MAX_CREDIT) >= 0 &&
+          RECOMMISSION_CREDIT(DECOMMISSION_MAX_CREDIT, 2*DECOMMISSION_MAX_CREDIT) >= 0, // delayed recommission that overhangs your time
+          "Recommission credit should not be negative");
 
 
   constexpr uint64_t  CHECKPOINT_NUM_CHECKPOINTS_FOR_CHAIN_FINALITY = 2;  // Number of consecutive checkpoints before, blocks preceeding the N checkpoints are locked in
@@ -128,6 +157,7 @@ namespace master_nodes {
   // node on the network: temporary decommissioning, recommissioning, and permanent deregistration.
   constexpr size_t   STATE_CHANGE_NTH_OF_THE_NETWORK_TO_TEST = 100;
   constexpr size_t   STATE_CHANGE_MIN_NODES_TO_TEST          = 50;
+  constexpr uint64_t VOTE_LIFETIME                           = BLOCKS_PER_HOUR * 2;
 
     // Small Stake prevented from unlocking stake until a certain number of blocks have passed
   constexpr uint64_t SMALL_CONTRIBUTOR_UNLOCK_TIMER =  2880 * 30;
@@ -184,7 +214,7 @@ namespace master_nodes {
   constexpr size_t   STEALING_SWARM_UPPER_PERCENTILE  = 75;
   constexpr uint64_t KEY_IMAGE_AWAITING_UNLOCK_HEIGHT = 0;
 
-
+  constexpr uint64_t STATE_CHANGE_TX_LIFETIME_IN_BLOCKS = VOTE_LIFETIME;
 
   // If we get an incoming vote of state change tx that is outside the acceptable range by this many
   // blocks then ignore it but don't trigger a connection drop; the sending side could be a couple
@@ -204,8 +234,9 @@ namespace master_nodes {
   };
 
   constexpr proof_version MIN_UPTIME_PROOF_VERSIONS[] = {
+    proof_version{{cryptonote::network_version_18_bns, 0}, {5,0,0}, {0,9,7}, {2,3,0}},
     proof_version{{cryptonote::network_version_17_POS, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
-    proof_version{{cryptonote::network_version_16_bns, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
+    proof_version{{cryptonote::network_version_16, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_15_flash, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_14_enforce_checkpoints, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
     proof_version{{cryptonote::network_version_13_checkpointing, 0}, {4,0,0}, {0,9,5}, {2,2,0}},
@@ -233,11 +264,12 @@ namespace master_nodes {
 
   constexpr uint64_t staking_num_lock_blocks(cryptonote::network_type nettype,uint8_t hf_version)
   {
+    auto blocks_per_day = (hf_version>=cryptonote::network_version_17_POS) ? BLOCKS_PER_DAY : BLOCKS_PER_DAY_OLD ;
     switch (nettype)
     {
       case cryptonote::FAKECHAIN: return 30;
-      case cryptonote::TESTNET:   return BLOCKS_EXPECTED_IN_DAYS(2,hf_version);
-      default:                    return BLOCKS_EXPECTED_IN_DAYS(30,hf_version);
+      case cryptonote::TESTNET:   return 2 * blocks_per_day;
+      default:                    return 30 * blocks_per_day;
     }
   }
 

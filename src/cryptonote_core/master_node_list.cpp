@@ -75,9 +75,9 @@ namespace master_nodes
 
   static uint64_t short_term_state_cull_height(uint8_t hf_version, uint64_t block_height)
   {
-    uint64_t state_change_tx_lifetime_in_blocks = BLOCKS_EXPECTED_IN_HOURS(2,hf_version);
-    size_t DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * state_change_tx_lifetime_in_blocks;
-
+    size_t constexpr DEFAULT_SHORT_TERM_STATE_HISTORY = 6 * STATE_CHANGE_TX_LIFETIME_IN_BLOCKS;
+    static_assert(DEFAULT_SHORT_TERM_STATE_HISTORY >= 12 * BLOCKS_PER_HOUR, // Arbitrary, but raises a compilation failure if it gets shortened.
+        "not enough short term state storage for blink quorum retrieval!");
     uint64_t result =
         (block_height < DEFAULT_SHORT_TERM_STATE_HISTORY) ? 0 : block_height - DEFAULT_SHORT_TERM_STATE_HISTORY;
     return result;
@@ -839,7 +839,7 @@ namespace master_nodes
       if (cit != contributor.locked_contributions.end())
       {
         // NOTE(beldex): This should be checked in blockchain check_tx_inputs already
-        if(version >= cryptonote::network_version_18)
+        if(version >= cryptonote::network_version_18_bns)
         {
           if (cit->amount < (master_nodes::SMALL_CONTRIBUTOR_THRESHOLD*COIN) && (block_height - node_info.registration_height) < master_nodes::SMALL_CONTRIBUTOR_UNLOCK_TIMER)
           {
@@ -867,6 +867,12 @@ namespace master_nodes
     }
 
     return false;
+  }
+
+  master_node_info master_node_list::state_t::get_master_node_details(crypto::public_key mnode_key)
+  {
+    auto it = master_nodes_infos.find(mnode_key);
+    return *it->second;
   }
 
   bool is_registration_tx(cryptonote::network_type nettype, uint8_t hf_version, const cryptonote::transaction& tx, uint64_t block_timestamp, uint64_t block_height, uint32_t index, crypto::public_key& key, master_node_info& info)
@@ -971,6 +977,9 @@ namespace master_nodes
     info.last_reward_transaction_index = index;
     info.swarm_id                      = UNASSIGNED_SWARM_ID;
     info.last_ip_change_height         = block_height;
+
+    if(hf_version >= cryptonote::network_version_18_bns)
+      info.recommission_credit           = DECOMMISSION_INITIAL_CREDIT_V18;
 
     for (size_t i = 0; i < contributor_args.addresses.size(); i++)
     {
@@ -1608,8 +1617,8 @@ namespace master_nodes
       bool newest_block           = m_blockchain.get_current_blockchain_height() == (block_height + 1);
 
       auto now                    = POS::clock::now().time_since_epoch();
-      auto earliest_time          = std::chrono::seconds(block.timestamp) - (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
-      auto latest_time            = std::chrono::seconds(block.timestamp) + (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME);
+      auto earliest_time          = std::chrono::seconds(block.timestamp) - (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD);
+      auto latest_time            = std::chrono::seconds(block.timestamp) + (block.major_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD);
 
       if (newest_block && (now >= earliest_time && now <= latest_time))
       {
@@ -2132,7 +2141,6 @@ namespace master_nodes
     uint64_t cull_height = short_term_state_cull_height(hf_version, block_height);
     {
       auto end_it = m_transient.state_history.upper_bound(cull_height);
-      uint64_t vote_lifetime =   BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
       for (auto it = m_transient.state_history.begin(); it != end_it; it++)
       {
         if (m_store_quorum_history)
@@ -2140,7 +2148,7 @@ namespace master_nodes
 
         uint64_t next_long_term_state         = ((it->height / STORE_LONG_TERM_STATE_INTERVAL) + 1) * STORE_LONG_TERM_STATE_INTERVAL;
         uint64_t dist_to_next_long_term_state = next_long_term_state - it->height;
-        bool need_quorum_for_future_states    = (dist_to_next_long_term_state <= vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
+        bool need_quorum_for_future_states    = (dist_to_next_long_term_state <= VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
         if ((it->height % STORE_LONG_TERM_STATE_INTERVAL) == 0 || need_quorum_for_future_states)
         {
           m_transient.state_added_to_archive = true;
@@ -2686,8 +2694,7 @@ namespace master_nodes
     // first (vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER) states we only
     // store their quorums, such that the following states have quorum
     // information preceeding it.
-    uint64_t vote_lifetime =   BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
-    uint64_t const max_short_term_height = short_term_state_cull_height(hf_version, (m_state.height - 1)) + vote_lifetime + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER;
+    uint64_t const max_short_term_height = short_term_state_cull_height(hf_version, (m_state.height - 1)) + VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER;
     for (auto it = m_transient.state_history.begin();
          it != m_transient.state_history.end() && it->height <= max_short_term_height;
          it++)
@@ -2735,21 +2742,7 @@ namespace master_nodes
     return true;
   }
 
-    //TODO: remove after HF17, mnode revision 1
-    crypto::hash master_node_list::hash_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof) const
-    {
-        char magic[4] = "SUP"; // Meaningless magic byte + null char
-        size_t buf_size;
-        crypto::hash result;
-
-        auto buf = tools::memcpy_le(magic, proof.pubkey.data, proof.timestamp);
-        buf_size = buf.size();
-        crypto::cn_fast_hash(buf.data(), buf_size, result);
-        return result;
-    }
-
-
-    //TODO: remove after HF18, mnode revision 1
+  //TODO: remove after HF18, mnode revision 1
   crypto::hash master_node_list::hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof) const
   {
     size_t buf_size;
@@ -2781,20 +2774,6 @@ namespace master_nodes
     crypto_sign_detached(result.sig_ed25519.data, NULL, reinterpret_cast<unsigned char *>(hash.data), sizeof(hash.data), keys.key_ed25519.data);
     return result;
   }
-
-    cryptonote::NOTIFY_UPTIME_PROOF_V12::request master_node_list::generate_uptime_proof_v12() const
-    {
-        assert(m_master_node_keys);
-        const auto& keys = *m_master_node_keys;
-        cryptonote::NOTIFY_UPTIME_PROOF_V12::request result = {};
-        result.mnode_version                            = BELDEX_VERSION;
-        result.timestamp                                = time(nullptr);
-        result.pubkey                                   = keys.pub;
-        crypto::hash hash = hash_uptime_proof_v12(result);
-        crypto::generate_signature(hash, keys.pub, keys.key, result.sig);
-        return result;
-    }
-
 
   uptime_proof::Proof master_node_list::generate_uptime_proof(uint32_t public_ip, uint16_t storage_https_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> belnet_version) const
   {
@@ -2834,13 +2813,6 @@ namespace master_nodes
     std::unique_lock lock{blockchain};
     auto &db = blockchain.get_db();
     db.set_master_node_proof(pubkey, *this);
-  }
-
-  bool proof_info::update_v12(uint64_t ts){
-      bool update_db = false;
-      update_db |= update_val(timestamp, ts);
-      effective_timestamp = timestamp;
-      return update_db;
   }
 
   bool proof_info::update(uint64_t ts, std::unique_ptr<uptime_proof::Proof> new_proof, const crypto::x25519_public_key &pk_x2)
@@ -2926,63 +2898,6 @@ namespace master_nodes
   }
 
 #define REJECT_PROOF(log) do { LOG_PRINT_L2("Rejecting uptime proof from " << proof.pubkey << ": " log); return false; } while (0)
-
-    bool master_node_list::handle_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation, crypto::public_key &pubkey)
-    {
-        uint64_t timestamp               = proof.timestamp;
-        pubkey = proof.pubkey;
-
-        auto& netconf = get_config(m_blockchain.nettype());
-        auto now = std::chrono::system_clock::now();
-
-        // Validate proof version, timestamp range,
-        auto time_deviation = now - std::chrono::system_clock::from_time_t(proof.timestamp);
-        if (time_deviation > netconf.UPTIME_PROOF_TOLERANCE || time_deviation < -netconf.UPTIME_PROOF_TOLERANCE)
-            REJECT_PROOF("timestamp is too far from now");
-
-        auto vers = get_network_version_revision(m_blockchain.nettype(), m_blockchain.get_current_blockchain_height());
-        for (auto const &min : MIN_UPTIME_PROOF_VERSIONS)
-            if (vers >= min.hardfork_revision && proof.mnode_version < min.beldexd)
-                REJECT_PROOF("v" << tools::join(".", min.beldexd) << "+ beldexd version is required for v" << +vers.first << "." << +vers.second << "+ network proofs");
-
-        //
-        // Validate proof signature
-        //
-        crypto::hash hash = hash_uptime_proof_v12(proof);
-
-
-        if (!crypto::check_signature(hash, proof.pubkey, proof.sig))
-            REJECT_PROOF("signature validation failed");
-
-
-
-        auto locks = tools::unique_locks(m_blockchain, m_mn_mutex);
-        auto it = m_state.master_nodes_infos.find(proof.pubkey);
-        if (it == m_state.master_nodes_infos.end())
-            REJECT_PROOF("no such master node is currently registered");
-
-        auto &iproof = proofs[proof.pubkey];
-
-
-        if (now <= std::chrono::system_clock::from_time_t(iproof.timestamp) + std::chrono::seconds{netconf.UPTIME_PROOF_FREQUENCY} / 2)
-            REJECT_PROOF("already received one uptime proof for this node recently");
-
-        if (m_master_node_keys && proof.pubkey == m_master_node_keys->pub)
-        {
-            my_uptime_proof_confirmation = true;
-            MGINFO("Received uptime-proof confirmation back from network for Master Node (yours): " << proof.pubkey);
-        }
-        else
-        {
-            my_uptime_proof_confirmation = false;
-            LOG_PRINT_L2("Accepted uptime proof from " << proof.pubkey);
-        }
-
-        if (iproof.update_v12(std::chrono::system_clock::to_time_t(now)))
-            iproof.store(proof.pubkey, m_blockchain);
-
-        return true;
-    }
 
   //TODO remove after HF18, mnode revision 1
   bool master_node_list::handle_uptime_proof(cryptonote::NOTIFY_UPTIME_PROOF::request const &proof, bool &my_uptime_proof_confirmation, crypto::x25519_public_key &x25519_pkey)
@@ -3393,12 +3308,12 @@ namespace master_nodes
     return result;
   }
 
-  master_node_list::state_t::state_t(master_node_list* snl, state_serialized &&state)
+  master_node_list::state_t::state_t(master_node_list* mnl, state_serialized &&state)
   : height{state.height}
   , key_image_blacklist{std::move(state.key_image_blacklist)}
   , only_loaded_quorums{state.only_stored_quorums}
   , block_hash{state.block_hash}
-  , mn_list{snl}
+  , mn_list{mnl}
   {
     if (!mn_list)
       throw std::logic_error("Cannot deserialize a state_t without a master_node_list");
@@ -3427,8 +3342,7 @@ namespace master_nodes
         auto was = info.recommission_credit;
         auto hf_version = mn_list->m_blockchain.get_network_version();
         if (info.decommission_count <= info.is_decommissioned()) // Has never been decommissioned (or is currently in the first decommission), so add initial starting credit
-
-            info.recommission_credit = BLOCKS_EXPECTED_IN_HOURS(MINIMUM_CREDIT_HOURS,hf_version);
+            info.recommission_credit = DECOMMISSION_INITIAL_CREDIT;
         else
           info.recommission_credit = 0;
 
