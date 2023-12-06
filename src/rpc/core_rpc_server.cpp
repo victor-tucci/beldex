@@ -3648,7 +3648,7 @@ namespace cryptonote { namespace rpc {
     if (req.encrypted_value.size() % 2 != 0)
       throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value length not divisible by 2, length=" + std::to_string(req.encrypted_value.size())};
 
-    if (req.encrypted_value.size() >= (bns::mapping_value::BUFFER_SIZE * 2))
+    if ((req.encrypted_value.size() >= (bns::mapping_value::BUFFER_SIZE * 2)) && !(req.type =="wallet"))
       throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value too long to decrypt=" + req.encrypted_value};
 
     if (!oxenc::is_hex(req.encrypted_value))
