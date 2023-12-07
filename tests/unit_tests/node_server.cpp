@@ -64,7 +64,6 @@ public:
   int add_flashes(const std::vector<std::shared_ptr<cryptonote::flash_tx>> &flashes) { return 0; }
   bool handle_incoming_block(const cryptonote::blobdata& block_blob, const cryptonote::block *block, cryptonote::block_verification_context& bvc, cryptonote::checkpoint_t const *checkpoint, bool update_miner_blocktemplate = true) { return true; }
   bool handle_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation) { return false; }
-  bool handle_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation) { return false; }
   bool handle_btencoded_uptime_proof(const cryptonote::NOTIFY_BTENCODED_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation) { return false; }
   void pause_mine(){}
   void resume_mine(){}
@@ -313,8 +312,9 @@ TEST(node_server, bind_same_p2p_port)
 
   const auto init = [](const std::unique_ptr<test_data_t>& server, const char* port) -> bool {
     boost::program_options::options_description desc_options("Command line options");
+    boost::program_options::options_description hidden("Hidden options");
     cryptonote::core::init_options(desc_options);
-    Server::init_options(desc_options);
+    Server::init_options(desc_options, hidden);
 
     const char *argv[2] = {nullptr, nullptr};
     boost::program_options::variables_map vm;

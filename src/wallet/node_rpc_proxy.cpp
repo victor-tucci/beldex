@@ -176,22 +176,14 @@ bool NodeRPCProxy::get_earliest_height(uint8_t version, uint64_t &earliest_heigh
 
 std::optional<uint8_t> NodeRPCProxy::get_hardfork_version() const
 {
-    if (m_offline)
-       return std::nullopt;
+  if (m_offline)
+    return std::nullopt;
 
-    auto now = std::chrono::steady_clock::now();
-    if (now >= m_hardfork_version_time + 30s) // re-cache every 30 seconds
-    {
-        try {
-            m_hardfork_version_time = now;
-            m_hardfork_version =  invoke_json_rpc<rpc::HARD_FORK_INFO>({}).version;
+  try {
+    return invoke_json_rpc<rpc::HARD_FORK_INFO>({}).version;
+  }catch (...) {}
 
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
-  if (m_hardfork_version==0) return std::nullopt;
-  return m_hardfork_version;
+  return std::nullopt;
 }
 
 bool NodeRPCProxy::refresh_dynamic_base_fee_cache(uint64_t grace_blocks) const

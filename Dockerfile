@@ -33,16 +33,16 @@ RUN set -ex && \
 
 WORKDIR /usr/local/src
 
-ARG OPENSSL_VERSION=1.1.1g
-ARG OPENSSL_HASH=ddb04774f1e32f0c49751e21b67216ac87852ceb056b75209af2443400636d46
-RUN set -ex \
-    && curl -s -O https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz \
-    && echo "${OPENSSL_HASH}  openssl-${OPENSSL_VERSION}.tar.gz" | sha256sum -c \
-    && tar xf openssl-${OPENSSL_VERSION}.tar.gz \
-    && cd openssl-${OPENSSL_VERSION} \
-    && ./Configure --prefix=/usr linux-x86_64 no-shared --static \
-    && make -j$(nproc) \
-    && make install_sw -j$(nproc)
+# ARG OPENSSL_VERSION=1.1.1g
+# ARG OPENSSL_HASH=ddb04774f1e32f0c49751e21b67216ac87852ceb056b75209af2443400636d46
+# RUN set -ex \
+#     && curl -s -O https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz \
+#     && echo "${OPENSSL_HASH}  openssl-${OPENSSL_VERSION}.tar.gz" | sha256sum -c \
+#     && tar xf openssl-${OPENSSL_VERSION}.tar.gz \
+#     && cd openssl-${OPENSSL_VERSION} \
+#     && ./Configure --prefix=/usr linux-x86_64 no-shared --static \
+#     && make -j$(nproc) \
+#     && make install_sw -j$(nproc)
 
 ARG BOOST_VERSION=1_72_0
 ARG BOOST_VERSION_DOT=1.72.0
@@ -95,17 +95,17 @@ RUN set -ex \
     && make install
 
 RUN set -ex \
-    && apt install wget -y \
-    && wget https://github.com/libexpat/libexpat/releases/download/R_2_3_0/expat-2.3.0.tar.gz \
-    && tar xf expat-2.3.0.tar.gz \
-    && cd expat-2.3.0 \
-    && ./configure --enable-static --prefix=/usr && make && make install
+    && apt install wget -y
+#     && wget https://github.com/libexpat/libexpat/releases/download/R_2_3_0/expat-2.3.0.tar.gz \
+#     && tar xf expat-2.3.0.tar.gz \
+#     && cd expat-2.3.0 \
+#     && ./configure --enable-static --prefix=/usr && make && make install
 
 RUN set -ex \
     && wget https://curl.se/download/curl-7.76.1.tar.gz \
     && tar xf curl-7.76.1.tar.gz \
     && cd curl-7.76.1 \
-    && ./configure --with-openssl --enable-static --prefix=/usr && make && make install
+    && ./configure --enable-static --prefix=/usr && make && make install
 
 RUN set -ex \
     && apt-get update -y \
@@ -118,12 +118,12 @@ RUN set -ex \
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 70 --slave /usr/bin/g++ g++ /usr/bin/g++-7 --slave /usr/bin/gcov gcov /usr/bin/gcov-7 \
     && gcc --version
 
-RUN set -ex \
-    && apt install libevent-dev -y \
-    && wget https://nlnetlabs.nl/downloads/unbound/unbound-1.13.1.tar.gz \
-    && tar xf unbound-1.13.1.tar.gz \
-    && cd unbound-1.13.1 \
-     && ./configure --enable-static --disable-flto --prefix=/usr CFLAGS=-fPIC && make && make install
+# RUN set -ex \
+#     && apt install libevent-dev -y \
+#     && wget https://nlnetlabs.nl/downloads/unbound/unbound-1.13.1.tar.gz \
+#     && tar xf unbound-1.13.1.tar.gz \
+#     && cd unbound-1.13.1 \
+#      && ./configure --enable-static --disable-flto --prefix=/usr CFLAGS=-fPIC && make && make install
 
 WORKDIR /src
 COPY . .
@@ -132,7 +132,7 @@ RUN set -ex && \
     apt-get install libsystemd-dev -y && \
     git submodule update --init --recursive && \
     rm -rf build/release && mkdir -p build/release && cd build/release && \
-    cmake -DSTATIC=ON -DARCH=x86-64 -DCMAKE_BUILD_TYPE=Release ../.. && \
+    cmake -DSTATIC=ON -DARCH=x86-64 -DHTTPS_AND_SSL=OFF -DCMAKE_BUILD_TYPE=Release ../.. && \
     make -j$(nproc) VERBOSE=1
 
 RUN set -ex && \

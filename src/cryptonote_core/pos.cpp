@@ -745,7 +745,7 @@ bool POS::get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t b
   uint64_t const delta_height = block_height - cryptonote::get_block_height(POS_genesis_block);
   times.genesis_timestamp     = POS::time_point(std::chrono::seconds(POS_genesis_block.timestamp));
   times.prev_timestamp  = POS::time_point(std::chrono::seconds(prev_timestamp));
-  times.ideal_timestamp  = POS::time_point(times.genesis_timestamp + (TARGET_BLOCK_TIME_V17 * delta_height)); //only for POS
+  times.ideal_timestamp  = POS::time_point(times.genesis_timestamp + (TARGET_BLOCK_TIME * delta_height)); //only for POS
 
 
 #if 1
@@ -889,14 +889,14 @@ Yes +-----[Block can not be added to blockchain]
 
     - The ideal next block timestamp is determined by
 
-      G.Timestamp + (height * TARGET_BLOCK_TIME_v17)
+      G.Timestamp + (height * TARGET_BLOCK_TIME)
 
       Where 'G' is the base POS genesis block, i.e. the hardforking block
       activating POS (HF17).
 
       The actual next block timestamp is determined by
 
-      P.Timestamp + (TARGET_BLOCK_TIME_V17 ±15s)
+      P.Timestamp + (TARGET_BLOCK_TIME ±15s)
 
       Where 'P' is the previous block. The block time is adjusted ±15s depending
       on how close/far away the ideal block time is.
@@ -1565,7 +1565,7 @@ round_state send_and_wait_for_random_value(round_context &context, master_nodes:
       {
         if (auto &random_value = quorum[index]; random_value)
         {
-          epee::wipeable_string string = oxenmq::to_hex(tools::view_guts(random_value->data));
+          epee::wipeable_string string = oxenc::to_hex(tools::view_guts(random_value->data));
 
 #if defined(NDEBUG)
           // Mask the random value generated incase someone is snooping logs
@@ -1596,7 +1596,7 @@ round_state send_and_wait_for_random_value(round_context &context, master_nodes:
     crypto::hash const &final_block_hash = cryptonote::get_block_hash(final_block);
     crypto::generate_signature(final_block_hash, key.pub, key.key, context.transient.signed_block.send.data);
 
-    MINFO(log_prefix(context) << "Block final random value " << oxenmq::to_hex(tools::view_guts(final_block.POS.random_value.data)) << " generated from validators " << bitset_view16(stage.bitset));
+    MINFO(log_prefix(context) << "Block final random value " << oxenc::to_hex(tools::view_guts(final_block.POS.random_value.data)) << " generated from validators " << bitset_view16(stage.bitset));
     return round_state::send_and_wait_for_signed_blocks;
   }
 

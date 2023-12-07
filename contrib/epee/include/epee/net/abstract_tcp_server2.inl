@@ -37,7 +37,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include "../warnings.h"
 #include "../string_tools.h"
-#include "../misc_language.h"
+#include "../scope_leaver.h"
 #include "local_ip.h"
 #include "../pragma_comp_defs.h"
 
@@ -431,7 +431,7 @@ PRAGMA_WARNING_DISABLE_VS(4355)
       //ask it inside(!) critical region if we still able to go in event wait...
       size_t cnt = GET_IO_SERVICE(socket()).poll_one();
       if(!cnt)
-        misc_utils::sleep_no_w(1);
+        std::this_thread::sleep_for(1ms);
     }
     
     return true;
@@ -1200,7 +1200,7 @@ POP_WARNINGS
     // error path, if e or exception
     assert(m_state != nullptr); // always set in constructor
     MERROR("Some problems at accept: " << e.message() << ", connections_count = " << m_state->sock_count);
-    misc_utils::sleep_no_w(100);
+    std::this_thread::sleep_for(100ms);
     (*current_new_connection).reset(new connection<t_protocol_handler>(io_service_, m_state, m_connection_type));
     current_acceptor->async_accept((*current_new_connection)->socket(),
         boost::bind(accept_function_pointer, this,
@@ -1315,7 +1315,7 @@ POP_WARNINGS
     connections_.insert(new_connection_l);
     MTRACE("connections_ size now " << connections_.size());
     connections_mutex.unlock();
-    epee::misc_utils::auto_scope_leave_caller scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){ std::lock_guard lock{connections_mutex}; connections_.erase(new_connection_l); });
+    auto scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){ std::lock_guard lock{connections_mutex}; connections_.erase(new_connection_l); });
     boost::asio::ip::tcp::socket&  sock_ = new_connection_l->socket();
 
     bool try_ipv6 = false;
@@ -1431,7 +1431,7 @@ POP_WARNINGS
     connections_.insert(new_connection_l);
     MDEBUG("connections_ size now " << connections_.size());
     connections_mutex.unlock();
-    epee::misc_utils::auto_scope_leave_caller scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){ std::lock_guard lock{connections_mutex}; connections_.erase(new_connection_l); });
+    auto scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){ std::lock_guard lock{connections_mutex}; connections_.erase(new_connection_l); });
     boost::asio::ip::tcp::socket&  sock_ = new_connection_l->socket();
     
     bool try_ipv6 = false;

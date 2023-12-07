@@ -34,7 +34,7 @@
 #include "beldex_economy.h"
 #include "common/hex.h"
 #include "version.h"
-#include <oxenmq/hex.h>
+#include <oxenc/hex.h>
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "debugtools.deserialize"
@@ -46,10 +46,10 @@ using namespace cryptonote;
 static std::string extra_nonce_to_string(const cryptonote::tx_extra_nonce &extra_nonce)
 {
   if (extra_nonce.nonce.size() == 9 && extra_nonce.nonce[0] == TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID)
-    return "encrypted payment ID: " + oxenmq::to_hex(extra_nonce.nonce.begin() + 1, extra_nonce.nonce.end());
+    return "encrypted payment ID: " + oxenc::to_hex(extra_nonce.nonce.begin() + 1, extra_nonce.nonce.end());
   if (extra_nonce.nonce.size() == 33 && extra_nonce.nonce[0] == TX_EXTRA_NONCE_PAYMENT_ID)
-    return "plaintext payment ID: " + oxenmq::to_hex(extra_nonce.nonce.begin() + 1, extra_nonce.nonce.end());
-  return oxenmq::to_hex(extra_nonce.nonce);
+    return "plaintext payment ID: " + oxenc::to_hex(extra_nonce.nonce.begin() + 1, extra_nonce.nonce.end());
+  return oxenc::to_hex(extra_nonce.nonce);
 }
 
 struct extra_printer {
@@ -66,7 +66,7 @@ struct extra_printer {
       std::cout << pk;
     }
   }
-  void operator()(const tx_extra_mysterious_minergate& x) { std::cout << "minergate custom: " << oxenmq::to_hex(x.data); }
+  void operator()(const tx_extra_mysterious_minergate& x) { std::cout << "minergate custom: " << oxenc::to_hex(x.data); }
   void operator()(const tx_extra_master_node_winner& x) { std::cout << "MN reward winner: " << x.m_master_node_key; }
   void operator()(const tx_extra_master_node_register& x) { std::cout << "MN registration data"; } // TODO: could parse this further
   void operator()(const tx_extra_master_node_pubkey& x) { std::cout << "MN pubkey: " << x.m_master_node_key; }
@@ -81,9 +81,6 @@ struct extra_printer {
     switch (x.type)
     {
       case bns::mapping_type::belnet: std::cout << " - belnet (1y)"; break;
-      case bns::mapping_type::belnet_2years: std::cout << " - belnet (2y)"; break;
-      case bns::mapping_type::belnet_5years: std::cout << " - belnet (5y)"; break;
-      case bns::mapping_type::belnet_10years: std::cout << " - Belnet (10y)"; break;
       case bns::mapping_type::bchat: std::cout << " - Bchat address"; break;
       case bns::mapping_type::wallet: std::cout << " - Wallet address"; break;
       case bns::mapping_type::update_record_internal:
@@ -170,9 +167,9 @@ int main(int argc, char* argv[])
 
   mlog_configure("", true);
 
-  cryptonote::blobdata blob;
-  if (epee::string_tools::parse_hexstr_to_binbuff(input, blob))
+  if (oxenc::is_hex(input))
   {
+    auto blob = oxenc::from_hex(input);
     bool full;
     cryptonote::block block;
     cryptonote::transaction tx;

@@ -57,7 +57,6 @@
 #include "cryptonote_protocol/quorumnet.h"
 #include "serialization/boost_std_variant.h"
 #include "serialization/boost_std_optional.h"
-#include "epee/misc_language.h"
 
 #include "blockchain_db/testdb.h"
 
@@ -1469,9 +1468,9 @@ struct beldex_chain_generator
 
   // NOTE: Add constructed TX to events_ and assume that it is valid to add to the blockchain. If the TX is meant to be unaddable to the blockchain use the individual create + add functions to
   // be able to mark the add TX event as something that should trigger a failure.
-  cryptonote::transaction                              create_and_add_beldex_name_system_tx(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bns::mapping_value const &value, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, bool kept_by_block = false);
-  cryptonote::transaction                              create_and_add_beldex_name_system_tx_update(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bns::mapping_value const *value, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, bns::generic_signature *signature = nullptr, bool kept_by_block = false);
-  cryptonote::transaction                              create_and_add_beldex_name_system_tx_renew(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bool kept_by_block = false);
+  cryptonote::transaction                              create_and_add_beldex_name_system_tx(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_years mapping_years, std::string const &name, bns::mapping_value const &value_bchat, bns::mapping_value const &value_wallet, bns::mapping_value const &value_belnet, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, bool kept_by_block = false);
+  cryptonote::transaction                              create_and_add_beldex_name_system_tx_update(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bns::mapping_value const *value_bchat, bns::mapping_value const *value_wallet, bns::mapping_value const *value_belnet, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, bns::generic_signature *signature = nullptr, bool kept_by_block = false);
+  cryptonote::transaction                              create_and_add_beldex_name_system_tx_renew(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_years mapping_years, std::string const &name, bns::generic_signature *signature = nullptr, bool kept_by_block = false);
   cryptonote::transaction                              create_and_add_tx                 (const cryptonote::account_base& src, const cryptonote::account_public_address& dest, uint64_t amount, uint64_t fee = TESTS_DEFAULT_FEE, bool kept_by_block = false);
   cryptonote::transaction                              create_and_add_state_change_tx(master_nodes::new_state state, const crypto::public_key& pub_key, uint16_t reasons_all, uint16_t reasons_any, uint64_t height = -1, const std::vector<uint64_t>& voters = {}, uint64_t fee = 0, bool kept_by_block = false);
   cryptonote::transaction                              create_and_add_registration_tx(const cryptonote::account_base& src, const cryptonote::keypair& sn_keys = cryptonote::keypair{hw::get_device("default")}, bool kept_by_block = false);
@@ -1494,10 +1493,10 @@ struct beldex_chain_generator
 
   // value: Takes the binary value NOT the human readable version, of the name->value mapping
   static const uint64_t ONS_AUTO_BURN = static_cast<uint64_t>(-1);
-  cryptonote::transaction                              create_beldex_name_system_tx(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bns::mapping_value const &value, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, std::optional<uint64_t> burn_override = std::nullopt) const;
-  cryptonote::transaction                              create_beldex_name_system_tx_update(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bns::mapping_value const *value, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, bns::generic_signature *signature = nullptr, bool use_asserts = false) const;
+  cryptonote::transaction                              create_beldex_name_system_tx(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_years mapping_years, std::string const &name, bns::mapping_value const &value_bchat, bns::mapping_value const &value_wallet, bns::mapping_value const &value_belnet, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, std::optional<uint64_t> burn_override = std::nullopt) const;
+  cryptonote::transaction                              create_beldex_name_system_tx_update(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, bns::mapping_value const *value_bchat, bns::mapping_value const *value_wallet, bns::mapping_value const *value_belnet, bns::generic_owner const *owner = nullptr, bns::generic_owner const *backup_owner = nullptr, bns::generic_signature *signature = nullptr, bool use_asserts = false) const;
   cryptonote::transaction                              create_beldex_name_system_tx_update_w_extra(cryptonote::account_base const &src, uint8_t hf_version, cryptonote::tx_extra_beldex_name_system const &ons_extra) const;
-  cryptonote::transaction                              create_beldex_name_system_tx_renew(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_type type, std::string const &name, std::optional<uint64_t> burn_override = std::nullopt) const;
+  cryptonote::transaction                              create_beldex_name_system_tx_renew(cryptonote::account_base const &src, uint8_t hf_version, bns::mapping_years mapping_years, std::string const &name, bns::generic_signature *signature = nullptr, std::optional<uint64_t> burn_override = std::nullopt) const;
 
   beldex_blockchain_entry                                create_genesis_block(const cryptonote::account_base &miner, uint64_t timestamp);
   beldex_blockchain_entry                                create_next_block(const std::vector<cryptonote::transaction>& txs = {}, cryptonote::checkpoint_t const *checkpoint = nullptr);

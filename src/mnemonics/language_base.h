@@ -39,7 +39,6 @@
 #include <unordered_map>
 #include <string>
 #include "epee/misc_log_ex.h"
-#include "epee/fnv1.h"
 
 /*!
  * \namespace Language
@@ -143,8 +142,7 @@ namespace Language
   {
     std::size_t operator()(const epee::wipeable_string &s) const
     {
-      const epee::wipeable_string sc = utf8canonical(s);
-      return epee::fnv::FNV1a(sc.data(), sc.size());
+      return std::hash<epee::wipeable_string>{}(utf8canonical(s));
     }
   };
 

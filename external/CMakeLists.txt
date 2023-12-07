@@ -33,42 +33,21 @@
 # ...except for FreeBSD, because FreeBSD is a special case that doesn't play well with
 # others.
 
-set(DEFAULT_WITH_MINIUPNPC ON)
-if(ANDROID OR IOS)
-  set(DEFAULT_WITH_MINIUPNPC OFF)
-endif()
-
-option(WITH_MINIUPNPC "Enable miniupnpc support for IGD NAT hole punching" ${DEFAULT_WITH_MINIUPNPC})
-
 if(NOT STATIC AND NOT BUILD_STATIC_DEPS)
   find_package(PkgConfig REQUIRED)
-  if(WITH_MINIUPNPC)
-      pkg_check_modules(MINIUPNPC miniupnpc>=2.1 IMPORTED_TARGET)
-  endif()
+  pkg_check_modules(OXENC liboxenc>=1.0.1 IMPORTED_TARGET)
   pkg_check_modules(OXENMQ liboxenmq>=1.2.3 IMPORTED_TARGET)
 endif()
 
-if(NOT WITH_MINIUPNPC)
-  message(STATUS "miniupnpc support disabled")
-  target_compile_definitions(miniupnpc INTERFACE WITHOUT_MINIUPNPC)
-elseif(MINIUPNPC_FOUND)
-  message(STATUS "Found miniupnpc")
-  target_link_libraries(miniupnpc INTERFACE PkgConfig::MINIUPNPC)
-else()
-  message(STATUS "Using in-tree miniupnpc")
-  add_subdirectory(miniupnp/miniupnpc)
-  if(MSVC)
-    target_compile_options(libminiupnpc-static PRIVATE -wd4244 -wd4267)
-  else()
-    target_compile_options(libminiupnpc-static PRIVATE -Wno-undef -Wno-unused-result -Wno-unused-value)
-  endif()
-  if(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
-    target_compile_definitions(libminiupnpc-static PRIVATE _NETBSD_SOURCE)
-  endif()
-
-  target_link_libraries(miniupnpc INTERFACE libminiupnpc-static)
+if(NOT OXENC_FOUND)
+   message(STATUS "Using in-tree oxen-encoding")
+   add_subdirectory(oxen-encoding)
+ else()
+   add_library(oxenc INTERFACE)
+   target_link_libraries(oxenc INTERFACE PkgConfig::OXENC)
+   add_library(oxenc::oxenc ALIAS oxenc)
+   message(STATUS "Found liboxenc ${OXENC_VERSION}")
 endif()
-
 
 if(NOT OXENMQ_FOUND)
   message(STATUS "Using in-tree oxenmq")
@@ -83,7 +62,7 @@ endif()
 add_subdirectory(db_drivers)
 add_subdirectory(easylogging++ easyloggingpp)
 add_subdirectory(randomx EXCLUDE_FROM_ALL)
-
+add_subdirectory(fmt)
 # uSockets doesn't really have a proper build system (just a very simple Makefile) so build it
 # ourselves.
 if (NOT CMAKE_VERSION VERSION_LESS 3.12)
@@ -122,8 +101,12 @@ target_compile_definitions(uWebSockets INTERFACE UWS_HTTPRESPONSE_NO_WRITEMARK U
 # 3.15+, and we target lower than that (and this is fairly simple to build).
 
 if(NOT BUILD_STATIC_DEPS)
-  find_package(CURL REQUIRED COMPONENTS HTTP HTTPS SSL)
-
+  if(NOT HTTPS_AND_SSL)
+    find_package(CURL REQUIRED COMPONENTS HTTP)
+  else()
+    find_package(CURL REQUIRED COMPONENTS HTTP HTTPS SSL)
+  endif()
+  
   # CURL::libcurl wasn't added to FindCURL until cmake 3.12, so add it if necessary
   if (CMAKE_VERSION VERSION_LESS 3.12 AND NOT TARGET CURL::libcurl)
     add_library(libcurl UNKNOWN IMPORTED GLOBAL)
@@ -143,3 +126,17 @@ target_link_libraries(cpr PUBLIC CURL::libcurl)
 target_include_directories(cpr PUBLIC cpr/include)
 target_compile_definitions(cpr PUBLIC CPR_CURL_NOSIGNAL)
 add_library(cpr::cpr ALIAS cpr)
+
+file(READ cpr/CMakeLists.txt cpr_cmake_head LIMIT 1000)
+if(cpr_cmake_head MATCHES "project\\(cpr VERSION ([0-9]+)\.([0-9]+)\.([0-9]+) LANGUAGES CXX\\)")
+    set(cpr_VERSION_MAJOR ${CMAKE_MATCH_1})
+    set(cpr_VERSION_MINOR ${CMAKE_MATCH_2})
+    set(cpr_VERSION_PATCH ${CMAKE_MATCH_3})
+    set(cpr_VERSION "${cpr_VERSION_MAJOR}.${cpr_VERSION_MINOR}.${cpr_VERSION_PATCH}")
+    set(cpr_VERSION_NUM "(${cpr_VERSION_MAJOR} * 0x10000 + ${cpr_VERSION_MINOR} * 0x100 + ${cpr_VERSION_PATCH})")
+
+    configure_file(cpr/cmake/cprver.h.in "${CMAKE_CURRENT_BINARY_DIR}/cpr_generated_includes/cpr/cprver.h")
+    target_include_directories(cpr PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpr_generated_includes")
+else()
+    message(FATAL_ERROR "Could not identify cpr submodule version!")
+endif()

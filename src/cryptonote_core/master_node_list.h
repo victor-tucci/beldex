@@ -190,7 +190,6 @@ namespace master_nodes
     // both pubkeys are set to null.
     void update_pubkey(const crypto::ed25519_public_key &pk);
 
-    bool update_v12(uint64_t ts);
     // Called to update data received from a proof is received, updating values in the local object.
     // Returns true if serializable data is changed (in which case `store()` should be called).
     // Note that this does not update the m_x25519_to_pub map if the x25519 key changes (that's the
@@ -446,11 +445,6 @@ namespace master_nodes
   };
 
   class master_node_list
-    : public cryptonote::BlockAddedHook,
-      public cryptonote::BlockchainDetachedHook,
-      public cryptonote::InitHook,
-      public cryptonote::ValidateMinerTxHook,
-      public cryptonote::AltBlockAddedHook
   {
   public:
     explicit master_node_list(cryptonote::Blockchain& blockchain);
@@ -458,11 +452,11 @@ namespace master_nodes
     master_node_list(const master_node_list &) = delete;
     master_node_list &operator=(const master_node_list &) = delete;
 
-    bool block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint) override;
-    void blockchain_detached(uint64_t height, bool by_pop_blocks) override;
-    void init() override;
-    bool validate_miner_tx(cryptonote::block const &block, cryptonote::block_reward_parts const &base_reward) const override;
-    bool alt_block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const *checkpoint) override;
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, const cryptonote::checkpoint_t* checkpoint);
+    void blockchain_detached(uint64_t height);
+    void init();
+    void validate_miner_tx(const cryptonote::miner_tx_info& info) const;
+    void alt_block_add(const cryptonote::block_add_info& info);
     payout get_block_leader() const { std::lock_guard lock{m_mn_mutex}; return m_state.get_block_leader(); }
     bool is_master_node(const crypto::public_key& pubkey, bool require_active = true) const;
     bool is_key_image_locked(crypto::key_image const &check_image, uint64_t *unlock_height = nullptr, master_node_info::contribution_t *the_locked_contribution = nullptr) const;
@@ -548,13 +542,8 @@ namespace master_nodes
     void set_quorum_history_storage(uint64_t hist_size); // 0 = none (default), 1 = unlimited, N = # of blocks
     bool store();
 
-    //TODO: remove after HF12
-    crypto::hash hash_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof) const;
     //TODO: remove after HF18
     crypto::hash hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof) const;
-
-    //TODO: remove after HF12
-    cryptonote::NOTIFY_UPTIME_PROOF_V12::request generate_uptime_proof_v12() const;
     /// Record public ip and storage port and add them to the master node list
     //TODO: remove after HF18
     cryptonote::NOTIFY_UPTIME_PROOF::request generate_uptime_proof(uint32_t public_ip,
@@ -564,7 +553,6 @@ namespace master_nodes
 
     uptime_proof::Proof generate_uptime_proof(uint32_t public_ip, uint16_t storage_port, uint16_t storage_omq_port, std::array<uint16_t, 3> ss_version, uint16_t quorumnet_port, std::array<uint16_t, 3> belnet_version) const;
 
-    bool handle_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation, crypto::public_key &pubkey);
     //TODO: remove after HF18
     bool handle_uptime_proof(cryptonote::NOTIFY_UPTIME_PROOF::request const &proof, bool &my_uptime_proof_confirmation, crypto::x25519_public_key &x25519_pkey);
 
@@ -692,8 +680,8 @@ namespace master_nodes
       mutable quorum_manager                 quorums;          // Mutable because we are allowed to (and need to) change it via std::set iterator
       master_node_list*                     mn_list;
 
-      state_t(master_node_list* snl) : mn_list{snl} {}
-      state_t(master_node_list* snl, state_serialized &&state);
+      state_t(master_node_list* mnl) : mn_list{mnl} {}
+      state_t(master_node_list* mnl, state_serialized &&state);
 
       friend bool operator<(const state_t &a, const state_t &b) { return a.height < b.height; }
       friend bool operator<(const state_t &s, block_height h)   { return s.height < h; }
@@ -728,13 +716,14 @@ namespace master_nodes
       bool process_key_image_unlock_tx(cryptonote::network_type nettype, uint64_t block_height, const cryptonote::transaction &tx,uint8_t version);
       payout get_block_leader() const;
       payout get_block_producer(uint8_t POS_round) const;
+      master_node_info get_master_node_details(crypto::public_key mnode_key);
     };
 
     // Can be set to true (via --dev-allow-local-ips) for debugging a new testnet on a local private network.
     bool debug_allow_local_ips = false;
     void record_timestamp_participation(crypto::public_key const &pubkey, bool participated);
     void record_timesync_status(crypto::public_key const &pubkey, bool synced);
-
+    master_node_info get_master_node_details(crypto::public_key mnode_key){return m_state.get_master_node_details(mnode_key);}
   private:
     // Note(maxim): private methods don't have to be protected the mutex
     bool m_rescanning = false; /* set to true when doing a rescan so we know not to reset proofs */
@@ -742,7 +731,7 @@ namespace master_nodes
     void record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated);
 
     // Verify block against Master Node state that has just been called with 'state.update_from_block(block)'.
-    bool verify_block(const cryptonote::block& block, bool alt_block, cryptonote::checkpoint_t const *checkpoint);
+    void verify_block(const cryptonote::block& block, bool alt_block, cryptonote::checkpoint_t const *checkpoint);
 
     void reset(bool delete_db_entry = false);
     bool load(uint64_t current_height);

@@ -75,7 +75,6 @@ target_link_libraries(rpc
     cryptonote_protocol
     Boost::thread
     Boost::program_options
-    OpenSSL::SSL
     extra)
 
 target_link_libraries(daemon_rpc_server

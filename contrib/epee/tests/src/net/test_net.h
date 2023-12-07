@@ -229,7 +229,6 @@ namespace tests
     {
       LOG_PRINT_L0("on_command_2: id "<< arg.example_id_data);     
       rsp.example_id_data = arg.example_id_data;
-      //misc_utils::sleep_no_w(6000);
       return true;
     }
     //----------------------------------------------------------------------------------
@@ -266,7 +265,7 @@ namespace tests
     std::thread th2{[&srv2] { srv2.run(); }};
 
     LOG_PRINT_L0("Initialized servers, waiting for worker threads started...");
-    misc_utils::sleep_no_w(1000);  
+    std::this_thread::sleep_for(1s); 
 
 
     LOG_PRINT_L0("Connecting to each other...");
@@ -369,7 +368,7 @@ namespace tests
     std::thread thmain2{ [&srv2] { srv2.run(); } };
 
     LOG_PRINT_L0("Initalized servers, waiting for worker threads started...");
-    misc_utils::sleep_no_w(1000);
+    std::this_thread::sleep_for(1s);
 
 
     LOG_PRINT_L0("Connecting to each other...");

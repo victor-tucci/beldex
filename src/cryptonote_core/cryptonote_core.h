@@ -151,15 +151,6 @@ namespace cryptonote
       */
      bool on_idle();
 
-       /**
-       * @brief handles an incoming uptime proof for being compatible with V12
-       *
-       * Parses an incoming uptime proof
-       *
-       * @return true if we haven't seen it before and thus need to relay.
-       */
-       bool handle_uptime_proof_v12(const NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation);
-
      /**
       * @brief handles an incoming uptime proof
       *
@@ -824,7 +815,7 @@ namespace cryptonote
       * requested range.  The optional value will be empty only if requesting the full chain *and*
       * another thread is already calculating it.
       */
-     std::optional<std::tuple<uint64_t, uint64_t, uint64_t>> get_coinbase_tx_sum(uint64_t start_offset, size_t count);
+     std::optional<std::tuple<int64_t, int64_t, int64_t>> get_coinbase_tx_sum(uint64_t start_offset, size_t count);
 
      /**
       * @brief get the network type we're on
@@ -1233,12 +1224,11 @@ namespace cryptonote
      bool m_offline;
      bool m_pad_transactions;
 
-     std::shared_ptr<tools::Notify> m_block_rate_notify;
-
      struct {
        std::shared_mutex mutex;
        bool building = false;
-       uint64_t height = 0, emissions = 0, fees = 0, burnt = 0;
+       uint64_t height = 0;
+       int64_t emissions = 0, fees = 0, burnt = 0;
      } m_coinbase_cache;
 
      std::optional<oxenmq::TaggedThreadID> m_POS_thread_id;

@@ -125,9 +125,6 @@ if (STATIC AND BUILD_STATIC_DEPS)
             # Static deps:
             Boost::program_options Boost::serialization Boost::system Boost::thread
             zlib
-            OpenSSL::SSL OpenSSL::Crypto
-            expat
-            libunbound
             sqlite3
             ${merged_protobuf}
             sodium
@@ -139,6 +136,7 @@ if (STATIC AND BUILD_STATIC_DEPS)
             randomx
             uSockets
             cpr
+            fmt
             )
 
     if(IOS)

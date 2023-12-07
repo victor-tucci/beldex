@@ -55,7 +55,6 @@ void mock_daemon::default_options(boost::program_options::variables_map & vm)
   tools::options::set_option(vm, nodetool::arg_p2p_add_exclusive_node, po::variable_value(exclusive_nodes, false));
 
   tools::options::set_option(vm, nodetool::arg_p2p_bind_ip, po::variable_value(std::string("127.0.0.1"), false));
-  tools::options::set_option(vm, nodetool::arg_no_igd, po::variable_value(true, false));
   tools::options::set_option(vm, cryptonote::arg_offline, po::variable_value(true, false));
   tools::options::set_option(vm, "disable-dns-checkpoints", po::variable_value(true, false));
 
@@ -229,11 +228,11 @@ bool mock_daemon::run_main()
   CHECK_AND_ASSERT_THROW_MES(!m_start_zmq || m_start_p2p, "ZMQ requires P2P");
   boost::thread stop_thread = boost::thread([this] {
     while (!this->m_stopped)
-      epee::misc_utils::sleep_no_w(100);
+      std::this_thread::sleep_for(100ms);
     this->stop_p2p();
   });
 
-  epee::misc_utils::auto_scope_leave_caller scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){
+  auto scope_exit_handler = epee::misc_utils::create_scope_leave_handler([&](){
     m_stopped = true;
     stop_thread.join();
   });
@@ -267,7 +266,7 @@ bool mock_daemon::run_main()
     else
     {
       while (!this->m_stopped)
-        epee::misc_utils::sleep_no_w(100);
+        std::this_thread::sleep_for(100ms);
     }
 
     if (m_start_zmq)
@@ -319,7 +318,7 @@ void mock_daemon::mine_blocks(size_t num_blocks, const std::string &miner_addres
   auto mining_started = std::chrono::system_clock::now();
 
   while(true) {
-    epee::misc_utils::sleep_no_w(100);
+    std::this_thread::sleep_for(100ms);
     const uint64_t cur_height = get_height();
 
     if (cur_height - start_height >= num_blocks)

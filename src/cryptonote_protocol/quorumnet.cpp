@@ -40,7 +40,7 @@
 #include "common/random.h"
 
 #include <oxenmq/oxenmq.h>
-#include <oxenmq/hex.h>
+#include <oxenc/hex.h>
 #include <shared_mutex>
 #include <iterator>
 #include <time.h>
@@ -53,8 +53,10 @@ namespace quorumnet {
 namespace {
 
 using namespace master_nodes;
-using namespace oxenmq;
+using namespace oxenc;
 
+namespace send_option = oxenmq::send_option;
+using oxenmq::Message;
 using flash_tx = cryptonote::flash_tx;
 
 constexpr auto NUM_FLASH_QUORUMS = tools::enum_count<flash_tx::subquorum>;
@@ -72,7 +74,7 @@ using pending_signature_set = std::unordered_set<pending_signature, pending_sign
 
 struct QnetState {
     cryptonote::core &core;
-    OxenMQ &omq{core.get_omq()};
+    oxenmq::OxenMQ &omq{core.get_omq()};
 
     // Track submitted flash txes here; unlike the flashes stored in the mempool we store these ones
     // more liberally to track submitted flashes, even if unsigned/unacceptable, while the mempool
@@ -82,7 +84,7 @@ struct QnetState {
     struct flash_metadata {
         std::shared_ptr<flash_tx> btxptr;
         pending_signature_set pending_sigs;
-        ConnectionID reply_conn;
+        oxenmq::ConnectionID reply_conn;
         uint64_t reply_tag = 0;
     };
     // { height => { txhash => {flash_tx,conn,reply}, ... }, ... }
@@ -320,7 +322,7 @@ public:
     }
 
 private:
-    OxenMQ &omq;
+    oxenmq::OxenMQ &omq;
 
     /// Looks up a pubkey in known remotes and adds it to `peers`.  If strong, it is added with an
     /// address, otherwise it is added with an empty address.  If the element already exists, it
@@ -591,7 +593,7 @@ std::enable_if_t<std::is_integral<I>::value, I> get_or(bt_dict &d, const std::st
 // input quorum checksum matches the computed checksum for the quorums (if provided), otherwise sets
 // the given output checksum (if provided) to the calculated value.  Throws std::runtime_error on
 // failure.
-quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &snl, const uint64_t *input_checksum, uint64_t *output_checksum = nullptr) {
+quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &mnl, const uint64_t *input_checksum, uint64_t *output_checksum = nullptr) {
     // We currently just use two quorums, Q and Q' in the whitepaper, but this code is designed to
     // work fine with more quorums (but don't use a single subquorum; that could only be secure or
     // reliable but not both).
@@ -602,7 +604,7 @@ quorum_array get_flash_quorums(uint64_t flash_height, const master_node_list &sn
         auto height = flash_tx::quorum_height(flash_height, static_cast<flash_tx::subquorum>(qi));
         if (!height)
             throw std::runtime_error("too early in blockchain to create a quorum");
-        result[qi] = snl.get_quorum(quorum_type::flash, height);
+        result[qi] = mnl.get_quorum(quorum_type::flash, height);
         if (!result[qi])
             throw std::runtime_error("failed to obtain a flash quorum");
         auto &v = result[qi]->validators;
@@ -650,7 +652,7 @@ std::string debug_known_signatures(flash_tx &btx, quorum_array &flash_quorums) {
 /// tx; otherwise signatures are stored until we learn about the tx and then processed.
 void process_flash_signatures(QnetState &qnet, const std::shared_ptr<flash_tx> &btxptr, quorum_array &flash_quorums, uint64_t quorum_checksum, std::list<pending_signature> &&signatures,
         uint64_t reply_tag, // > 0 if we are expected to send a status update if it becomes accepted/rejected
-        ConnectionID reply_conn, // who we are supposed to send the status update to
+        oxenmq::ConnectionID reply_conn, // who we are supposed to send the status update to
         const std::string &received_from = ""s /* x25519 of the peer that sent this, if available (to avoid trying to pointlessly relay back to them) */) {
 
     auto &btx = *btxptr;
@@ -828,7 +830,7 @@ void process_flash_signatures(QnetState &qnet, const std::shared_ptr<flash_tx> &
 ///     "#" - precomputed tx hash.  This much match the actual hash of the transaction (the flash
 ///           submission will fail immediately if it does not).
 ///
-void handle_flash(oxenmq::Message& m, QnetState& qnet) {
+void handle_flash(Message& m, QnetState& qnet) {
     // TODO: if someone sends an invalid tx (i.e. one that doesn't get to the distribution stage)
     // then put a timeout on that IP during which new submissions from them are dropped for a short
     // time.
@@ -1193,7 +1195,7 @@ void handle_flash_signature(Message& m, QnetState& qnet) {
     auto flash_quorums = get_flash_quorums(flash_height, qnet.core.get_master_node_list(), &checksum); // throws if bad quorum or checksum mismatch
 
     uint64_t reply_tag = 0;
-    ConnectionID reply_conn;
+    oxenmq::ConnectionID reply_conn;
     std::shared_ptr<flash_tx> btxptr;
     auto find_flash = [&]() {
         auto height_it = qnet.flashes.find(flash_height);
@@ -1703,6 +1705,8 @@ void init_core_callbacks() {
 
 namespace {
 void setup_endpoints(cryptonote::core& core, void* obj) {
+    using namespace oxenmq;
+    
     auto& omq = core.get_omq();
 
     if (core.master_node()) {

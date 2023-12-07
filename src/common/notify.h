@@ -29,7 +29,9 @@
 #pragma once 
 
 #include <string>
+#include <string_view>
 #include <vector>
+#include <fmt/core.h>
 #include "fs.h"
 
 namespace tools
@@ -38,13 +40,28 @@ namespace tools
 class Notify
 {
 public:
-  Notify(const char *spec);
+  explicit Notify(std::string_view spec);
 
-  int notify(const char *tag, const char *s, ...);
-
+  template <typename T, typename... MoreTags>
+  int notify(std::string_view tag, const T& value, MoreTags&&... more) const {
+    std::vector<std::string> margs{args};
+    replace_tags(margs, tag, value, std::forward<MoreTags>(more)...);
+    return spawn(margs);
+  }
 private:
   fs::path filename;
   std::vector<std::string> args;
+
+  int spawn(const std::vector<std::string>& margs) const;
+
+  template <typename T, typename... MoreTags>
+  static void replace_tags(std::vector<std::string>& margs, std::string_view tag, const T& value, MoreTags&&... more) {
+    replace_tag(margs, tag, fmt::format("{}", value));
+    if constexpr (sizeof...(MoreTags) > 0)
+      replace_tags(margs, std::forward<MoreTags>(more)...);
+  }
+
+  static void replace_tag(std::vector<std::string>& margs, std::string_view tag, std::string_view value);
 };
 
 }

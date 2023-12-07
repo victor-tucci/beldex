@@ -31,15 +31,13 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <numeric>
-#include <oxenmq/base64.h>
-#include "epee/misc_language.h"
+#include <oxenc/base64.h>
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "epee/misc_os_dependent.h"
 #include "common/command_line.h"
 #include "common/util.h"
 #include "common/file.h"
 #include "common/string_util.h"
-#include "epee/string_coding.h"
 #include "epee/string_tools.h"
 #include "epee/storages/portable_storage_template_helper.h"
 
@@ -254,13 +252,13 @@ namespace cryptonote
         tools::trim(extra_vec[i]);
         if(!extra_vec[i].size())
           continue;
-        if (!oxenmq::is_base64(extra_vec[i]))
+        if (!oxenc::is_base64(extra_vec[i]))
         {
           MWARNING("Invalid (non-base64) extra message `" << extra_vec[i] << "'");
           continue;
         }
 
-        std::string buff = oxenmq::from_base64(extra_vec[i]);
+        std::string buff = oxenc::from_base64(extra_vec[i]);
         if(buff != "0")
           m_extra_messages[i] = buff;
       }
@@ -457,7 +455,7 @@ namespace cryptonote
     {
       if(m_pausers_count)//anti split workaround
       {
-        epee::misc_utils::sleep_no_w(100);
+        std::this_thread::sleep_for(100ms);
         continue;
       }
 
@@ -476,7 +474,7 @@ namespace cryptonote
       if(!local_template_ver)//no any set_block_template call
       {
         LOG_PRINT_L2("Block template not set yet");
-        epee::misc_utils::sleep_no_w(1000);
+        std::this_thread::sleep_for(1s);
         continue;
       }
 

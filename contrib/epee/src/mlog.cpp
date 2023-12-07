@@ -443,7 +443,19 @@ void set_console_color(int color, bool bright)
 #endif
     }
     break;
-
+  case console_color_orange:
+    {
+#ifdef WIN32
+      HANDLE h_stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+      SetConsoleTextAttribute(h_stdout, FOREGROUND_RED | FOREGROUND_GREEN | (bright ? FOREGROUND_INTENSITY : 0));
+#else
+      if (bright)
+        std::cout << "\033[1;38;5;208m"; // Use ANSI escape code for bright orange (38;5;208).
+      else
+        std::cout << "\033[0;38;5;166m"; // Use ANSI escape code for normal orange (38;5;166).
+#endif
+    }
+    break;
   }
 }
 

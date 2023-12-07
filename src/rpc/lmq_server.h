@@ -35,7 +35,7 @@
 
 namespace oxenmq { class OxenMQ; }
 
-namespace cryptonote { namespace rpc {
+namespace cryptonote::rpc {
 
 void init_omq_options(boost::program_options::options_description& desc);
 
@@ -44,7 +44,7 @@ void init_omq_options(boost::program_options::options_description& desc);
  * cryptonote_core--but it works with it to add RPC endpoints, make it listen on RPC ports, and
  * handles RPC requests.
  */
-class omq_rpc final : public cryptonote::BlockAddedHook {
+class omq_rpc final{
 
   enum class mempool_sub_type { all, flash };
   struct mempool_sub {
@@ -65,9 +65,9 @@ class omq_rpc final : public cryptonote::BlockAddedHook {
 public:
   omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::program_options::variables_map& vm);
 
-  bool block_added(const block& block, const std::vector<transaction>& txs, const checkpoint_t *) override;
+  void send_block_notifications(const block& block);
 
   void send_mempool_notifications(const crypto::hash& id, const transaction& tx, const std::string& blob, const tx_pool_options& opts);
 };
 
-}} // namespace cryptonote::rpc
+} // namespace cryptonote::rpc
