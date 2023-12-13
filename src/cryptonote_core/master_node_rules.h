@@ -221,8 +221,8 @@ namespace master_nodes {
   // blocks out of sync and sending something that it thinks is legit.
   constexpr uint64_t VOTE_OR_TX_VERIFY_HEIGHT_BUFFER    = 5;
 
-  constexpr std::array<uint16_t, 3> MIN_STORAGE_SERVER_VERSION{{2, 0, 7}};
-  constexpr std::array<uint16_t, 3> MIN_BELNET_VERSION{{0, 8, 0}};
+  constexpr std::array<uint16_t, 3> MIN_STORAGE_SERVER_VERSION{{2, 3, 0}};
+  constexpr std::array<uint16_t, 3> MIN_BELNET_VERSION{{0, 9, 7}};
 
   // The minimum accepted version number, broadcasted by Master Nodes via uptime proofs for each hardfork
  struct proof_version
