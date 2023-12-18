@@ -6491,6 +6491,23 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
   std::string reason;
   std::vector<tools::wallet2::pending_tx> ptx_vector;
 
+  for(std::string check : {owner, backup_owner, value_wallet})
+  {
+    cryptonote::address_parse_info info;
+    if(!check.empty() && get_account_address_from_str(info, m_wallet->nettype(), check))
+    {
+      if (info.has_payment_id)
+      {
+        std::string confirm = input_line(tr("The integrated address provided will be converted into the primary address. Do you want to continue ? (Y/Yes/N/No) "));
+        if(!std::cin.eof())
+        {
+          if (!command_line::is_yes(confirm))
+            return true;
+        }
+      }
+    }
+  }
+  
   try
   {
     ptx_vector = m_wallet->bns_create_buy_mapping_tx(*mapping_years,
@@ -6659,6 +6676,24 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
   std::string reason;
   std::vector<tools::wallet2::pending_tx> ptx_vector;
   std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> response;
+  
+  for(std::string check : {owner, backup_owner, value_wallet})
+  {
+    cryptonote::address_parse_info info;
+    if(!check.empty() && get_account_address_from_str(info, m_wallet->nettype(), check))
+    {
+      if (info.has_payment_id)
+      {
+        std::string confirm = input_line(tr("The integrated address provided will be converted into the primary address. Do you want to continue ? (Y/Yes/N/No) "));
+        if(!std::cin.eof())
+        {
+          if (!command_line::is_yes(confirm))
+            return true;
+        }
+      }
+    }
+  }
+  
   try
   {
     ptx_vector = m_wallet->bns_create_update_mapping_tx(name,
@@ -6925,6 +6960,24 @@ bool simple_wallet::bns_make_update_mapping_signature(std::vector<std::string> a
   SCOPED_WALLET_UNLOCK();
   bns::generic_signature signature_binary;
   std::string reason;
+
+  for(std::string check : {owner, backup_owner})
+  {
+    cryptonote::address_parse_info info;
+    if(!check.empty() && get_account_address_from_str(info, m_wallet->nettype(), check))
+    {
+      if (info.has_payment_id)
+      {
+        std::string confirm = input_line(tr("The integrated address provided will be converted into the primary address. Do you want to continue ? (Y/Yes/N/No) "));
+        if(!std::cin.eof())
+        {
+          if (!command_line::is_yes(confirm))
+            return true;
+        }
+      }
+    }
+  }
+  
   if (m_wallet->bns_make_update_mapping_signature(name,
                                                   nullptr,
                                                   nullptr,
@@ -9034,7 +9087,7 @@ bool simple_wallet::rescan_blockchain(const std::vector<std::string> &args_)
   if (start_height > wallet_from_height)
   {
     message_writer() << tr("Warning: your restore height is higher than wallet restore height: ") << wallet_from_height;
-    std::string confirm = input_line(tr("Rescan anyway ? (Y/Yes/N/No): "));
+    std::string confirm = input_line(tr("Rescan anyway ? (Y/Yes/N/No) "));
     if(!std::cin.eof())
     {
       if (!command_line::is_yes(confirm))

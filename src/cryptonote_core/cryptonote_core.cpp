@@ -1658,7 +1658,7 @@ namespace cryptonote
 
     crypto::public_key pubkey = m_master_node_list.get_random_pubkey();
     crypto::x25519_public_key x_pkey{0};
-    constexpr std::array<uint16_t, 3> MIN_TIMESTAMP_VERSION{9,1,0};
+    constexpr std::array<uint16_t, 3> MIN_TIMESTAMP_VERSION{5,0,0};
     std::array<uint16_t,3> proofversion;
     m_master_node_list.access_proof(pubkey, [&](auto &proof) {
       x_pkey = proof.pubkey_x25519;
