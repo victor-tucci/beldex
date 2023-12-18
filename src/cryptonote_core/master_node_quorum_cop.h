@@ -96,10 +96,9 @@ namespace master_nodes
     bool belnet_reachable        = true;
 
     // Returns a vector of reasons why this node is failing (nullopt if not failing).
-    std::optional<std::vector<std::string_view>> why(bool v12) const;
-    constexpr bool passed(bool v12) const {
-        if (v12) return uptime_proved;
+    std::optional<std::vector<std::string_view>> why() const;
 
+    constexpr bool passed() const {
         return uptime_proved &&
             //single_ip -- deliberately excluded (it only gives ip-change penalties, not deregs)
             checkpoint_participation &&
@@ -112,16 +111,13 @@ namespace master_nodes
   };
 
   class quorum_cop
-    : public cryptonote::BlockAddedHook,
-      public cryptonote::BlockchainDetachedHook,
-      public cryptonote::InitHook
   {
   public:
     explicit quorum_cop(cryptonote::core& core);
 
-    void init() override;
-    bool block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const * /*checkpoint*/) override;
-    void blockchain_detached(uint64_t height, bool by_pop_blocks) override;
+    void init();
+    void block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs);
+    void blockchain_detached(uint64_t height, bool by_pop_blocks);
 
     void                       set_votes_relayed  (std::vector<quorum_vote_t> const &relayed_votes);
     std::vector<quorum_vote_t> get_relayable_votes(uint64_t current_height, uint8_t hf_version, bool quorum_relay);

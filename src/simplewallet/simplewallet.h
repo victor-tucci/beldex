@@ -156,7 +156,6 @@ namespace cryptonote
     bool set_track_uses(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_inactivity_lock_timeout(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_device_name(const std::vector<std::string> &args = std::vector<std::string>());
-    bool set_export_format(const std::vector<std::string> &args = std::vector<std::string>());
     bool help(const std::vector<std::string> &args = std::vector<std::string>());
     bool start_mining(const std::vector<std::string> &args);
     bool stop_mining(const std::vector<std::string> &args);
@@ -182,7 +181,7 @@ namespace cryptonote
     bool register_master_node(const std::vector<std::string> &args_);
     bool request_stake_unlock(const std::vector<std::string> &args_);
     bool print_locked_stakes(const std::vector<std::string>& /*args*/);
-    bool query_locked_stakes(bool print_result);
+    bool query_locked_stakes(bool print_result, bool print_key_images = false);
     bool bns_buy_mapping(std::vector<std::string> args);
     bool bns_renew_mapping(std::vector<std::string> args);
     bool bns_update_mapping(std::vector<std::string> args);
@@ -190,6 +189,8 @@ namespace cryptonote
     bool bns_make_update_mapping_signature(std::vector<std::string> args);
     bool bns_by_owner(const std::vector<std::string> &args);
     bool bns_lookup(std::vector<std::string> args);
+
+    bool coin_burn(std::vector<std::string> args);
 
     enum class sweep_type_t { stake, register_stake, all_or_below, single };
     bool sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool flash);
@@ -372,7 +373,7 @@ namespace cryptonote
       {
         auto current_time = std::chrono::system_clock::now();
         auto hf_version = cryptonote::get_network_version(nettype, height);
-        const auto node_update_threshold = (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME_V17:TARGET_BLOCK_TIME) / 2;
+        const auto node_update_threshold = (hf_version>=cryptonote::network_version_17_POS?TARGET_BLOCK_TIME:TARGET_BLOCK_TIME_OLD) / 2;
         if (node_update_threshold < current_time - m_blockchain_height_update_time || m_blockchain_height <= height)
         {
           update_blockchain_height();

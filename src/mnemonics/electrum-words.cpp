@@ -41,7 +41,6 @@
 #include <vector>
 #include <unordered_map>
 #include "epee/wipeable_string.h"
-#include "epee/misc_language.h"
 #include "epee/int-util.h"
 #include "mnemonics/electrum-words.h"
 #include "common/beldex.h"

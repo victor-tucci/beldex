@@ -309,12 +309,13 @@ bool message_store::check_auto_config_token(const std::string &raw_token,
   std::replace(hex_digits.begin(), hex_digits.end(), 'l', '1');
 
   // Now it must be correct hex with correct checksum, no further tolerance possible
-  std::string token_bytes;
-  if (!epee::string_tools::parse_hexstr_to_binbuff(hex_digits, token_bytes))
+  if (!oxenc::is_hex(hex_digits))
   {
     return false;
   }
-  const crypto::hash &hash = crypto::cn_fast_hash(token_bytes.data(), token_bytes.size() - 1);
+  std::string token_bytes = oxenc::from_hex(hex_digits);
+
+  auto hash = crypto::cn_fast_hash(token_bytes.data(), token_bytes.size() - 1);
   if (token_bytes[AUTO_CONFIG_TOKEN_BYTES] != hash.data[0])
   {
     return false;
@@ -336,7 +337,7 @@ std::string message_store::create_auto_config_token()
   const crypto::hash &hash = crypto::cn_fast_hash(token_bytes.data(), token_bytes.size());
   token_bytes += hash.data[0];
   std::string prefix(AUTO_CONFIG_TOKEN_PREFIX);
-  return prefix + oxenmq::to_hex(token_bytes);
+  return prefix + oxenc::to_hex(token_bytes);
 }
 
 // Add a message for sending "me" address data to the auto-config transport address

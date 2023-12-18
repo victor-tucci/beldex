@@ -181,7 +181,7 @@ bool transactions_flow_test(std::string& working_folder,
   w1.refresh(true, blocks_fetched, received_money, ok);
   while(w1.unlocked_balance(0, true) < amount_to_transfer)
   {
-    epee::misc_utils::sleep_no_w(1000);
+    std::this_thread::sleep_for(1s);
     w1.refresh(true, blocks_fetched, received_money, ok);
   }
 
@@ -229,7 +229,7 @@ bool transactions_flow_test(std::string& working_folder,
     uint64_t amount_to_tx = (amount_to_transfer - transfered_money) > transfer_size ? transfer_size: (amount_to_transfer - transfered_money);
     while(w1.unlocked_balance(0, true) < amount_to_tx + TEST_FEE)
     {
-      epee::misc_utils::sleep_no_w(1000);
+      std::this_thread::sleep_for(1s);
       LOG_PRINT_L0("not enough money, waiting for cashback or mining");
       w1.refresh(true, blocks_fetched, received_money, ok);
     }
@@ -268,12 +268,12 @@ bool transactions_flow_test(std::string& working_folder,
 
 
   LOG_PRINT_L0( "waiting some new blocks...");
-  epee::misc_utils::sleep_no_w(TARGET_BLOCK_TIME*20*1000);//wait two blocks before sync on another wallet on another daemon
+  std::this_thread::sleep_for(TARGET_BLOCK_TIME_OLD*20*1s);//wait two blocks before sync on another wallet on another daemon
   LOG_PRINT_L0( "refreshing...");
   bool recvd_money = false;
   while(w2.refresh(true, blocks_fetched, recvd_money, ok) && ( (blocks_fetched && recvd_money) || !blocks_fetched  ) )
   {
-    epee::misc_utils::sleep_no_w(TARGET_BLOCK_TIME*1000);//wait two blocks before sync on another wallet on another daemon
+    std::this_thread::sleep_for(TARGET_BLOCK_TIME_OLD*1s);//wait two blocks before sync on another wallet on another daemon
   }
 
   uint64_t money_2 = w2.balance(0, true);

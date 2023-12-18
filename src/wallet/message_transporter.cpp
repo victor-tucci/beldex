@@ -27,10 +27,10 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "message_transporter.h"
-#include "epee/string_coding.h"
 #include <boost/format.hpp>
 #include "wallet_errors.h"
 #include <algorithm>
+#include <oxenc/base64.h>
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "wallet.mms"
@@ -129,26 +129,27 @@ bool message_transporter::receive_messages(const std::vector<std::string> &desti
     const bitmessage_rpc::message_info &message_info = bitmessage_res.inboxMessages[i];
     if (std::find(destination_transport_addresses.begin(), destination_transport_addresses.end(), message_info.toAddress) != destination_transport_addresses.end())
     {
-      transport_message message{};
-      bool is_mms_message = false;
       try
       {
         // First Base64-decoding: The message body is Base64 in the Bitmessage API
-        std::string message_body = epee::string_encoding::base64_decode(message_info.message);
+        if (!oxenc::is_base64(message_info.message))
+          throw std::runtime_error{"not base64"};
+
+        std::string message_body = oxenc::from_base64(message_info.message);
         // Second Base64-decoding: The MMS uses Base64 to hide non-textual data in its JSON from Bitmessage
-        json = epee::string_encoding::base64_decode(message_body);
-        if (!epee::serialization::load_t_from_json(message, json))
-          MERROR("Failed to deserialize message");
-        else
-          is_mms_message = true;
+        if (!oxenc::is_base64(message_body))
+          throw std::runtime_error{"decoded base64 does not contain more base64"};
+
+        transport_message message{};
+        if (!epee::serialization::load_t_from_json(message, oxenc::from_base64(message_body)))
+          throw std::runtime_error{"epee json-to-type deserialization failed"};
+
+        message.transport_id = message_info.msgid;
+        messages.push_back(std::move(message));
       }
       catch(const std::exception& e)
       {
-      }
-      if (is_mms_message)
-      {
-        message.transport_id = message_info.msgid;
-        messages.push_back(message);
+        MERROR("Failed to deserialize message: " << e.what());
       }
     }
   }
@@ -164,9 +165,8 @@ void message_transporter::send_message(const transport_message &message)
   add_xml_rpc_string_param(request, message.destination_transport_address);
   add_xml_rpc_string_param(request, message.source_transport_address);
   add_xml_rpc_base64_param(request, message.subject);
-  std::string json = epee::serialization::store_t_to_json(message);
-  std::string message_body = epee::string_encoding::base64_encode(json);  // See comment in "receive_message" about reason for (double-)Base64 encoding
-  add_xml_rpc_base64_param(request, message_body);
+ // See comment in "receive_message" about (shitty) reason for (double-)Base64 encoding
+  add_xml_rpc_base64_param(request, oxenc::to_base64(epee::serialization::store_t_to_json(message)));
   add_xml_rpc_integer_param(request, 2);
   end_xml_rpc_cmd(request);
   std::string answer;
@@ -294,8 +294,7 @@ void message_transporter::add_xml_rpc_string_param(std::string &xml, const std::
 void message_transporter::add_xml_rpc_base64_param(std::string &xml, const std::string &param)
 {
   // Bitmessage expects some arguments Base64-encoded, but it wants them as parameters of type "string", not "base64" that is also part of XML-RPC
-  std::string encoded_param = epee::string_encoding::base64_encode(param);
-  xml += (boost::format("<param><value><string>%s</string></value></param>") % encoded_param).str();
+  xml += (boost::format("<param><value><string>%s</string></value></param>") % oxenc::to_base64(param)).str();
 }
 
 void message_transporter::add_xml_rpc_integer_param(std::string &xml, const int32_t &param)

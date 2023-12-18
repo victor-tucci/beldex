@@ -46,9 +46,9 @@
 
 namespace master_nodes
 {
-  std::optional<std::vector<std::string_view>> master_node_test_results::why(bool v12) const
+  std::optional<std::vector<std::string_view>> master_node_test_results::why() const
   {
-    if (passed(v12))
+    if (passed())
       return std::nullopt;
 
     std::vector<std::string_view> results{{"Master Node is currently failing the following tests:"sv}};
@@ -90,7 +90,7 @@ namespace master_nodes
     master_nodes::participation_history<master_nodes::timestamp_participation_entry> timestamp_participation{};
     master_nodes::participation_history<master_nodes::timesync_entry> timesync_status{};
 
-    constexpr std::array<uint16_t, 3> MIN_TIMESTAMP_VERSION{9,1,0};
+    constexpr std::array<uint16_t, 3> MIN_TIMESTAMP_VERSION{5,0,0};
 
     const auto unreachable_threshold = netconf.UPTIME_PROOF_VALIDITY - netconf.UPTIME_PROOF_FREQUENCY;
 
@@ -135,7 +135,7 @@ namespace master_nodes
             result.storage_server_reachable = false;
         }
         // TODO: perhaps come back and make this activate on some "soft fork" height before HF19?
-        if (!belnet_reachable && hf_version >= cryptonote::network_version_18) {
+        if (!belnet_reachable && hf_version >= cryptonote::network_version_18_bns) {
             LOG_PRINT_L1("Master Node belnet is not reachable for node: " << pubkey);
             result.belnet_reachable = false;
         }
@@ -260,7 +260,7 @@ namespace master_nodes
       }
 
       auto test_results = check_master_node(obligations_height_hf_version_, node_key, info);  //MN proof Testing
-      bool passed       = test_results.passed(hf_version==cryptonote::network_version_12_security_signature);
+      bool passed       = test_results.passed();
       LOG_PRINT_L3("process_quorums: check_master_node passed:");//TODO:VOTE
       LOG_PRINT_L3("NODE KEY:" << quorum->workers[node_index]);
     
@@ -309,8 +309,7 @@ namespace master_nodes
           LOG_PRINT_L3("Decommissioned master node " << quorum->workers[node_index] << " has no remaining credit; voting to deregister");
           vote_for_state = new_state::deregister; // Credit ran out!
         } else {
-          int64_t decommission_minimum    = BLOCKS_EXPECTED_IN_HOURS(2,hf_version);
-          if (credit >= decommission_minimum) {
+          if (credit >= DECOMMISSION_MINIMUM) {
             vote_for_state = new_state::decommission;
             LOG_PRINT_L3("Master node "
                          << quorum->workers[node_index]
@@ -320,7 +319,7 @@ namespace master_nodes
             LOG_PRINT_L3("Master node "
                          << quorum->workers[node_index]
                          << " has stopped passing required checks, but does not have sufficient earned credit ("
-                         << credit << " blocks, " << decommission_minimum
+                         << credit << " blocks, " << DECOMMISSION_MINIMUM
                          << " required) to decommission; voting to deregister");
           }
         }
@@ -347,7 +346,7 @@ namespace master_nodes
         tested_myself_once_per_block = true;
         auto my_test_results = check_master_node(obligations_height_hf_version, my_keys.pub, info);
         const bool print_failings = info.is_decommissioned() ||
-          (info.is_active() && !my_test_results.passed(hf_version==cryptonote::network_version_12_security_signature) &&
+          (info.is_active() && !my_test_results.passed() &&
             // Don't warn uptime proofs if the daemon is just recently started and is candidate for testing (i.e. restarting the daemon)
             (my_test_results.uptime_proved || live_time >= 1h));
       
@@ -358,7 +357,7 @@ namespace master_nodes
                 ? "Master Node (yours) is currently decommissioned and being tested in quorum: "
                 : "Master Node (yours) is active but is not passing tests for quorum: ")
               << m_obligations_height);
-          if (auto why = my_test_results.why(hf_version==cryptonote::network_version_12_security_signature))
+          if (auto why = my_test_results.why())
             LOG_PRINT_L0(tools::join("\n", *why));
           else
             LOG_PRINT_L0("Master Node is passing all local tests");
@@ -431,7 +430,6 @@ namespace master_nodes
 
     uint64_t const height        = cryptonote::get_block_height(block);
     uint64_t const latest_height = std::max(m_core.get_current_blockchain_height(), m_core.get_target_blockchain_height());
-    uint64_t VOTE_LIFETIME                           = BLOCKS_EXPECTED_IN_HOURS(VOTE_LIFETIME_HOURS,hf_version);
     if (latest_height < VOTE_LIFETIME)
       return;
 
@@ -551,18 +549,13 @@ namespace master_nodes
     }
   }
 
-  bool quorum_cop::block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, cryptonote::checkpoint_t const * /*checkpoint*/)
+  void quorum_cop::block_add(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs)
   {
     process_quorums(block);
     uint64_t const height = cryptonote::get_block_height(block) + 1; // chain height = new top block height + 1
     m_vote_pool.remove_expired_votes(height,block.major_version);
     m_vote_pool.remove_used_votes(txs, block.major_version);
 
-    // These feels out of place here because the hook system sucks: TODO replace it with
-    // std::function hooks instead.
-    m_core.update_omq_mns();
-
-    return true;
   }
 
   static bool handle_obligations_vote(cryptonote::core &core, const quorum_vote_t& vote, const std::vector<pool_vote_entry>& votes, const quorum& quorum)
@@ -792,15 +785,12 @@ namespace master_nodes
     // Now we calculate the credit at last commission plus any credit earned from being up for `blocks_up` blocks since
     int64_t credit = info.recommission_credit;
 
-
     if (blocks_up > 0) {
-        credit += blocks_up / BLOCKS_PER_CREDIT_EARNED;
+      credit += blocks_up * DECOMMISSION_CREDIT_PER_DAY / BLOCKS_PER_DAY;
     }
 
-
-    int64_t decommission_max_credit   = BLOCKS_EXPECTED_IN_HOURS(48,hf_version);
-    if (credit > decommission_max_credit)
-      credit = decommission_max_credit; // Cap the available decommission credit blocks if above the max
+    if (credit > DECOMMISSION_MAX_CREDIT)
+      credit = DECOMMISSION_MAX_CREDIT; // Cap the available decommission credit blocks if above the max
 
     // If currently decommissioned, remove any used credits used for the current downtime
     if (info.is_decommissioned())

@@ -76,7 +76,6 @@ public:
     uint64_t blockchainHeight() override;
     uint64_t blockchainTargetHeight() override;
     uint64_t blockTarget() override;
-    std::string resolveOpenAlias(const std::string &address, bool &dnssec_valid) const override;
 
 private:
     WalletManagerImpl() {}

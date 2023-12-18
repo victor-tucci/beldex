@@ -3,22 +3,16 @@
 #include <fstream>
 #include "crypto/hash.h"
 #include "fs.h"
-
-extern "C" {
-#include <openssl/sha.h>
-}
+#include "sodium/crypto_hash_sha256.h"
 
 namespace tools {
 
   bool sha256sum_str(std::string_view data, crypto::hash &hash)
-  {
-    SHA256_CTX ctx;
-    if (!SHA256_Init(&ctx))
-      return false;
-    if (!SHA256_Update(&ctx, data.data(), data.size()))
-      return false;
-    if (!SHA256_Final(reinterpret_cast<unsigned char*>(hash.data), &ctx))
-      return false;
+  { 
+    crypto_hash_sha256(
+             reinterpret_cast<unsigned char*>(hash.data),
+             reinterpret_cast<const unsigned char*>(data.data()),
+             data.size());
     return true;
   }
 
@@ -32,25 +26,22 @@ namespace tools {
     if (!f)
       return false;
     std::ifstream::pos_type file_size = f.tellg();
-    SHA256_CTX ctx;
-    if (!SHA256_Init(&ctx))
-      return false;
+    crypto_hash_sha256_state st;
+    crypto_hash_sha256_init(&st);
     size_t size_left = file_size;
     f.seekg(0, std::ios::beg);
+    std::array<unsigned char, 16384> buf;
     while (size_left)
     {
-      char buf[4096];
-      std::ifstream::pos_type read_size = size_left > sizeof(buf) ? sizeof(buf) : size_left;
-      f.read(buf, read_size);
+      std::ifstream::pos_type read_size = std::min(size_left,sizeof(buf));
+      f.read(reinterpret_cast<char*>(buf.data()), read_size);
       if (!f || !f.good())
         return false;
-      if (!SHA256_Update(&ctx, buf, read_size))
-        return false;
+      crypto_hash_sha256_update(&st, buf.data(), read_size);
       size_left -= read_size;
     }
     f.close();
-    if (!SHA256_Final((unsigned char*)hash.data, &ctx))
-      return false;
+    crypto_hash_sha256_final( &st,reinterpret_cast<unsigned char*>(hash.data));
     return true;
   }
 

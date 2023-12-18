@@ -242,21 +242,6 @@ namespace cryptonote
     };
   };
 
-    /************************************************************************/
-    /*                                                                      */
-    /************************************************************************/
-    struct NOTIFY_UPTIME_PROOF_V12
-    {
-        const static int ID = BC_COMMANDS_POOL_BASE + 11;
-        struct request
-        {
-            std::array<uint16_t, 3> mnode_version;
-            uint64_t timestamp;
-            crypto::public_key pubkey;
-            crypto::signature sig;
-            KV_MAP_SERIALIZABLE
-        };
-    };
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/

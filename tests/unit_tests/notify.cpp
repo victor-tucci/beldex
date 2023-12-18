@@ -32,10 +32,14 @@
 
 #include "gtest/gtest.h"
 
-#include "epee/misc_language.h"
 #include "epee/string_tools.h"
 #include "common/file.h"
 #include "common/notify.h"
+
+#include <thread>
+#include <chrono>
+
+using namespace std::literals;
 
 TEST(notify, works)
 {
@@ -64,13 +68,13 @@ TEST(notify, works)
 #endif
       + " " + name_template + " %s";
 
-  tools::Notify notify(spec.c_str());
-  notify.notify("%s", "1111111111111111111111111111111111111111111111111111111111111111", NULL);
+  tools::Notify notify(spec);
+  notify.notify("%s", "1111111111111111111111111111111111111111111111111111111111111111");
 
   bool ok = false;
   for (int i = 0; i < 10; ++i)
   {
-    epee::misc_utils::sleep_no_w(100);
+    std::this_thread::sleep_for(100ms);
 
     std::string s;
     if (tools::slurp_file(name_template, s))

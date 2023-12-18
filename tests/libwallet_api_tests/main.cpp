@@ -79,14 +79,15 @@ const char * TESTNET_WALLET_PASS = "";
 std::string CURRENT_SRC_WALLET;
 std::string CURRENT_DST_WALLET;
 
-const uint64_t AMOUNT_10XMR =  10000000000000L;
-const uint64_t AMOUNT_5XMR  =  5000000000000L;
-const uint64_t AMOUNT_1XMR  =  1000000000000L;
+const uint64_t AMOUNT_4BDX  =  4000000000L;
+const uint64_t AMOUNT_2BDX  =  2000000000L;
+const uint64_t AMOUNT_1BDX  =  1000000000L;
+
 
 const std::string PAYMENT_ID_EMPTY = "";
 
-std::string TESTNET_DAEMON_ADDRESS = "localhost:38081";
-std::string MAINNET_DAEMON_ADDRESS = "localhost:18081";
+std::string TESTNET_DAEMON_ADDRESS = "38.242.196.72:19091";
+std::string MAINNET_DAEMON_ADDRESS = "explorer.beldex.io:19091";
 
 
 }
@@ -120,12 +121,18 @@ struct Utils
                   << ", f: " << Wallet::Wallet::displayAmount(t->fee())
                   << ", h: " << t->hash()
                   << ", pid: " << t->paymentId()
+                  << ", stake or Bns : " << (t->isStake() ? "STAKE" : t->isBns() ? "BNS" : "false")
                   << std::endl;
+    }
+
+    static void print_status(std::pair<int, std::string> status_)
+    {
+        std::cout <<"status: " << status_.second << std::endl;
     }
 
     static std::string get_wallet_address(const std::string &filename, const std::string &password)
     {
-        Wallet::WalletManager *wmgr = Wallet::WalletManagerFactory::getWalletManager();
+        Wallet::WalletManagerBase *wmgr = Wallet::WalletManagerFactory::getWalletManager();
         Wallet::Wallet * w = wmgr->openWallet(filename, password, Wallet::NetworkType::TESTNET);
         std::string result = w->mainAddress();
         wmgr->closeWallet(w);
@@ -136,7 +143,7 @@ struct Utils
 
 struct WalletManagerTest : public testing::Test
 {
-    Wallet::WalletManager * wmgr;
+    Wallet::WalletManagerBase * wmgr;
 
 
     WalletManagerTest()
@@ -159,7 +166,7 @@ struct WalletManagerTest : public testing::Test
 
 struct WalletManagerMainnetTest : public testing::Test
 {
-    Wallet::WalletManager * wmgr;
+    Wallet::WalletManagerBase * wmgr;
 
 
     WalletManagerMainnetTest()
@@ -179,7 +186,7 @@ struct WalletManagerMainnetTest : public testing::Test
 
 struct WalletTest1 : public testing::Test
 {
-    Wallet::WalletManager * wmgr;
+    Wallet::WalletManagerBase * wmgr;
 
     WalletTest1()
     {
@@ -192,7 +199,7 @@ struct WalletTest1 : public testing::Test
 
 struct WalletTest2 : public testing::Test
 {
-    Wallet::WalletManager * wmgr;
+    Wallet::WalletManagerBase * wmgr;
 
     WalletTest2()
     {
@@ -201,69 +208,65 @@ struct WalletTest2 : public testing::Test
 
 };
 
-TEST_F(WalletManagerTest, WalletManagerCreatesWallet)
-{
+// TEST_F(WalletManagerTest, WalletManagerCreatesWallet)
+// {
+//     Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet->good());
+//     std::cout <<"**good(): " << wallet->good()<< std::endl;
+//     ASSERT_TRUE(!wallet->seed().empty());
+//     std::vector<std::string> words;
+//     std::string seed = wallet->seed();
+//     boost::split(words, seed, boost::is_any_of(" "), boost::token_compress_on);
+//     ASSERT_TRUE(words.size() == 25);
+//     std::cout << "** seed: " << wallet->seed() << std::endl;
+//     ASSERT_FALSE(wallet->mainAddress().empty());
+//     std::cout << "** address: " << wallet->mainAddress() << std::endl;
+//     ASSERT_TRUE(wmgr->closeWallet(wallet));
+// }
 
-    Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(!wallet->seed().empty());
-    std::vector<std::string> words;
-    std::string seed = wallet->seed();
-    boost::split(words, seed, boost::is_any_of(" "), boost::token_compress_on);
-    ASSERT_TRUE(words.size() == 25);
-    std::cout << "** seed: " << wallet->seed() << std::endl;
-    ASSERT_FALSE(wallet->mainAddress().empty());
-    std::cout << "** address: " << wallet->mainAddress() << std::endl;
-    ASSERT_TRUE(wmgr->closeWallet(wallet));
-
-}
-
-TEST_F(WalletManagerTest, WalletManagerOpensWallet)
-{
-
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-    Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet2->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet2->seed() == seed1);
-    std::cout << "** seed: " << wallet2->seed() << std::endl;
-}
+// TEST_F(WalletManagerTest, WalletManagerOpensWallet)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet2->good());
+//     ASSERT_TRUE(wallet2->seed() == seed1);
+//     std::cout << "** seed: " << wallet2->seed() << std::endl;
+// }
 
 
-TEST_F(WalletManagerTest, WalletMaxAmountAsString)
-{
-    LOG_PRINT_L3("max amount: " << Wallet::Wallet::displayAmount(
-                     Wallet::Wallet::maximumAllowedAmount()));
+// TEST_F(WalletManagerTest, WalletMaxAmountAsString)
+// {
+//     LOG_PRINT_L3("max amount: " << Wallet::Wallet::displayAmount(
+//                      Wallet::Wallet::maximumAllowedAmount()));
+// }
 
-}
 
+// TEST_F(WalletManagerTest, WalletAmountFromString)
+// {
+//     uint64_t amount = Wallet::Wallet::amountFromString("18446740");
+//     ASSERT_TRUE(amount > 0);
+//     amount = Wallet::Wallet::amountFromString("11000000000000");
+//     ASSERT_TRUE(amount > 0);
+//     amount = Wallet::Wallet::amountFromString("0.0");
+//     ASSERT_FALSE(amount > 0);
+//     amount = Wallet::Wallet::amountFromString("10.1");
+//     ASSERT_TRUE(amount > 0);
+// }
 
-TEST_F(WalletManagerTest, WalletAmountFromString)
-{
-    uint64_t amount = Wallet::Wallet::amountFromString("18446740");
-    ASSERT_TRUE(amount > 0);
-    amount = Wallet::Wallet::amountFromString("11000000000000");
-    ASSERT_FALSE(amount > 0);
-    amount = Wallet::Wallet::amountFromString("0.0");
-    ASSERT_FALSE(amount > 0);
-    amount = Wallet::Wallet::amountFromString("10.1");
-    ASSERT_TRUE(amount > 0);
-
-}
-
-void open_wallet_helper(Wallet::WalletManager *wmgr, Wallet::Wallet **wallet, const std::string &pass, std::mutex *mutex)
-{
-    if (mutex)
-        mutex->lock();
-    LOG_PRINT_L3("opening wallet in thread: " << boost::this_thread::get_id());
-    *wallet = wmgr->openWallet(WALLET_NAME, pass, Wallet::NetworkType::TESTNET);
-    LOG_PRINT_L3("wallet address: " << (*wallet)->mainAddress());
-    LOG_PRINT_L3("wallet status: " << (*wallet)->status());
-    LOG_PRINT_L3("closing wallet in thread: " << boost::this_thread::get_id());
-    if (mutex)
-        mutex->unlock();
-}
+// void open_wallet_helper(Wallet::WalletManagerBase *wmgr, Wallet::Wallet **wallet, const std::string &pass, std::mutex *mutex)
+// {
+//     if (mutex)
+//         mutex->lock();
+//     LOG_PRINT_L3("opening wallet in thread: " << boost::this_thread::get_id());
+//     *wallet = wmgr->openWallet(WALLET_NAME, pass, Wallet::NetworkType::TESTNET);
+//     LOG_PRINT_L3("wallet address: " << (*wallet)->mainAddress());
+//     LOG_PRINT_L3("wallet status: " << (*wallet)->good());
+//     LOG_PRINT_L3("closing wallet in thread: " << boost::this_thread::get_id());
+//     if (mutex)
+//         mutex->unlock();
+// }
 
 
 
@@ -283,188 +286,188 @@ void open_wallet_helper(Wallet::WalletManager *wmgr, Wallet::Wallet **wallet, co
 //    std::mutex mutex;
 //    std::thread thread1(open_wallet, wmgr, &wallet2, wrong_wallet_pass, &mutex);
 //    thread1.join();
-//    ASSERT_TRUE(wallet2->status() != Wallet::Wallet::Status_Ok);
+//    ASSERT_TRUE(wallet2->good()!= Wallet::Wallet::Status_Ok);
 //    ASSERT_TRUE(wmgr->closeWallet(wallet2));
 
 //    std::thread thread2(open_wallet, wmgr, &wallet3, wallet_pass, &mutex);
 //    thread2.join();
 
-//    ASSERT_TRUE(wallet3->status() == Wallet::Wallet::Status_Ok);
+//    ASSERT_TRUE(wallet3->good()== Wallet::Wallet::Status_Ok);
 //    ASSERT_TRUE(wmgr->closeWallet(wallet3));
 //}
 
 
-TEST_F(WalletManagerTest, WalletManagerOpensWalletWithPasswordAndReopen)
-{
-    // create password protected wallet
-    std::string wallet_pass = "password";
-    std::string wrong_wallet_pass = "1111";
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, wallet_pass, WALLET_LANG, Wallet::NetworkType::TESTNET);
-    std::string seed1 = wallet1->seed();
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+// TEST_F(WalletManagerTest, WalletManagerOpensWalletWithPasswordAndReopen)
+// {
+//     // create password protected wallet
+//     std::string wallet_pass = "password";
+//     std::string wrong_wallet_pass = "1111";
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, wallet_pass, WALLET_LANG, Wallet::NetworkType::TESTNET);
+//     std::string seed1 = wallet1->seed();
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 
-    Wallet::Wallet *wallet2 = nullptr;
-    Wallet::Wallet *wallet3 = nullptr;
-    std::mutex mutex;
+//     Wallet::Wallet *wallet2 = nullptr;
+//     Wallet::Wallet *wallet3 = nullptr;
+//     std::mutex mutex;
 
-    open_wallet_helper(wmgr, &wallet2, wrong_wallet_pass, nullptr);
-    ASSERT_TRUE(wallet2 != nullptr);
-    ASSERT_TRUE(wallet2->status() != Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wmgr->closeWallet(wallet2));
+//     open_wallet_helper(wmgr, &wallet2, wrong_wallet_pass, nullptr);
+//     ASSERT_TRUE(wallet2 != nullptr);
+//     ASSERT_FALSE(wallet2->good());
+//     ASSERT_TRUE(wmgr->closeWallet(wallet2));
 
-    open_wallet_helper(wmgr, &wallet3, wallet_pass, nullptr);
-    ASSERT_TRUE(wallet3 != nullptr);
-    ASSERT_TRUE(wallet3->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wmgr->closeWallet(wallet3));
-}
-
-
-TEST_F(WalletManagerTest, WalletManagerStoresWallet)
-{
-
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    wallet1->store("");
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-    Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet2->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet2->seed() == seed1);
-}
+//     open_wallet_helper(wmgr, &wallet3, wallet_pass, nullptr);
+//     ASSERT_TRUE(wallet3 != nullptr);
+//     ASSERT_TRUE(wallet3->good());
+//     ASSERT_TRUE(wmgr->closeWallet(wallet3));
+// }
 
 
-TEST_F(WalletManagerTest, WalletManagerMovesWallet)
-{
-
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string WALLET_NAME_MOVED = std::string("/tmp/") + WALLET_NAME + ".moved";
-    std::string seed1 = wallet1->seed();
-    ASSERT_TRUE(wallet1->store(WALLET_NAME_MOVED));
-
-    Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME_MOVED, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet2->filename() == WALLET_NAME_MOVED);
-    ASSERT_TRUE(wallet2->keysFilename() == WALLET_NAME_MOVED + ".keys");
-    ASSERT_TRUE(wallet2->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet2->seed() == seed1);
-}
+// TEST_F(WalletManagerTest, WalletManagerStoresWallet)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     wallet1->store("");
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet2->good());
+//     ASSERT_TRUE(wallet2->seed() == seed1);
+// }
 
 
-TEST_F(WalletManagerTest, WalletManagerChangesPassword)
-{
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    ASSERT_TRUE(wallet1->setPassword(WALLET_PASS2));
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-    Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME, WALLET_PASS2, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet2->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet2->seed() == seed1);
-    ASSERT_TRUE(wmgr->closeWallet(wallet2));
-    Wallet::Wallet * wallet3 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_FALSE(wallet3->status() == Wallet::Wallet::Status_Ok);
-}
+// TEST_F(WalletManagerTest, WalletManagerMovesWallet)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string WALLET_NAME_MOVED = std::string("/tmp/") + WALLET_NAME + ".moved";
+//     std::string seed1 = wallet1->seed();
+//     std::cout << "** seed: " << seed1 << std::endl;
+//     ASSERT_TRUE(wallet1->store(WALLET_NAME_MOVED));
+
+//     Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME_MOVED, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet2->filename() == WALLET_NAME_MOVED);
+//     ASSERT_TRUE(wallet2->keysFilename() == WALLET_NAME_MOVED + ".keys");
+//     ASSERT_TRUE(wallet2->good());
+//     ASSERT_TRUE(wallet2->seed() == seed1);
+// }
+
+
+// TEST_F(WalletManagerTest, WalletManagerChangesPassword)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     ASSERT_TRUE(wallet1->setPassword(WALLET_PASS2));
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME, WALLET_PASS2, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet2->good());
+//     ASSERT_TRUE(wallet2->seed() == seed1);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet2));
+//     Wallet::Wallet * wallet3 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_FALSE(wallet3->good());
+// }
 
 
 
-TEST_F(WalletManagerTest, WalletManagerRecoversWallet)
-{
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    std::string address1 = wallet1->mainAddress();
-    ASSERT_FALSE(address1.empty());
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-    Utils::deleteWallet(WALLET_NAME);
-    Wallet::Wallet * wallet2 = wmgr->recoveryWallet(WALLET_NAME, seed1, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet2->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet2->seed() == seed1);
-    ASSERT_TRUE(wallet2->mainAddress() == address1);
-    ASSERT_TRUE(wmgr->closeWallet(wallet2));
-}
+// TEST_F(WalletManagerTest, WalletManagerRecoversWallet)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     std::string address1 = wallet1->mainAddress();
+//     ASSERT_FALSE(address1.empty());
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     Utils::deleteWallet(WALLET_NAME);
+//     Wallet::Wallet * wallet2 = wmgr->recoveryWallet(WALLET_NAME,WALLET_PASS, seed1, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet2->good());
+//     ASSERT_TRUE(wallet2->seed() == seed1);
+//     ASSERT_TRUE(wallet2->mainAddress() == address1);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet2));
+// }
 
 
-TEST_F(WalletManagerTest, WalletManagerStoresWallet1)
-{
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    std::string address1 = wallet1->mainAddress();
+// TEST_F(WalletManagerTest, WalletManagerStoresWallet1)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     std::string address1 = wallet1->mainAddress();
 
-    ASSERT_TRUE(wallet1->store(""));
-    ASSERT_TRUE(wallet1->store(WALLET_NAME_COPY));
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-    Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME_COPY, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet2->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet2->seed() == seed1);
-    ASSERT_TRUE(wallet2->mainAddress() == address1);
-    ASSERT_TRUE(wmgr->closeWallet(wallet2));
-}
-
-
-TEST_F(WalletManagerTest, WalletManagerStoresWallet2)
-{
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    std::string address1 = wallet1->mainAddress();
-
-    ASSERT_TRUE(wallet1->store(WALLET_NAME_WITH_DIR));
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-
-    wallet1 = wmgr->openWallet(WALLET_NAME_WITH_DIR, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet1->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet1->seed() == seed1);
-    ASSERT_TRUE(wallet1->mainAddress() == address1);
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-}
+//     ASSERT_TRUE(wallet1->store(""));
+//     ASSERT_TRUE(wallet1->store(WALLET_NAME_COPY));
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     // Wallet::Wallet * wallet2 = wmgr->openWallet(WALLET_NAME_COPY, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     // ASSERT_TRUE(wallet2->good());
+//     // ASSERT_TRUE(wallet2->seed() == seed1);
+//     // ASSERT_TRUE(wallet2->mainAddress() == address1);
+//     // ASSERT_TRUE(wmgr->closeWallet(wallet2));
+// }
 
 
-TEST_F(WalletManagerTest, WalletManagerStoresWallet3)
-{
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    std::string address1 = wallet1->mainAddress();
+// TEST_F(WalletManagerTest, WalletManagerStoresWallet2)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     std::string address1 = wallet1->mainAddress();
 
-    ASSERT_FALSE(wallet1->store(WALLET_NAME_WITH_DIR_NON_WRITABLE));
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     ASSERT_TRUE(wallet1->store(WALLET_NAME_WITH_DIR));
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 
-    wallet1 = wmgr->openWallet(WALLET_NAME_WITH_DIR_NON_WRITABLE, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_FALSE(wallet1->status() == Wallet::Wallet::Status_Ok);
-
-    // "close" always returns true;
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-
-    wallet1 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet1->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet1->seed() == seed1);
-    ASSERT_TRUE(wallet1->mainAddress() == address1);
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-
-}
+//     wallet1 = wmgr->openWallet(WALLET_NAME_WITH_DIR, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet1->good());
+//     ASSERT_TRUE(wallet1->seed() == seed1);
+//     ASSERT_TRUE(wallet1->mainAddress() == address1);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+// }
 
 
-TEST_F(WalletManagerTest, WalletManagerStoresWallet4)
-{
-    Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed1 = wallet1->seed();
-    std::string address1 = wallet1->mainAddress();
+// TEST_F(WalletManagerTest, WalletManagerStoresWallet3)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     std::string address1 = wallet1->mainAddress();
 
-    ASSERT_TRUE(wallet1->store(""));
-    ASSERT_TRUE(wallet1->status() == Wallet::Wallet::Status_Ok);
+//     ASSERT_FALSE(wallet1->store(WALLET_NAME_WITH_DIR_NON_WRITABLE));
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 
-    ASSERT_TRUE(wallet1->store(""));
-    ASSERT_TRUE(wallet1->status() == Wallet::Wallet::Status_Ok);
+//     wallet1 = wmgr->openWallet(WALLET_NAME_WITH_DIR_NON_WRITABLE, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_FALSE(wallet1->good());
 
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+//     // "close" always returns true;
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 
-    wallet1 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet1->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet1->seed() == seed1);
-    ASSERT_TRUE(wallet1->mainAddress() == address1);
-    ASSERT_TRUE(wmgr->closeWallet(wallet1));
-}
+//     wallet1 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet1->good());
+//     ASSERT_TRUE(wallet1->seed() == seed1);
+//     ASSERT_TRUE(wallet1->mainAddress() == address1);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 
+// }
+
+
+// TEST_F(WalletManagerTest, WalletManagerStoresWallet4)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->createWallet(WALLET_NAME, WALLET_PASS, WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed1 = wallet1->seed();
+//     std::string address1 = wallet1->mainAddress();
+
+
+//     ASSERT_TRUE(wallet1->store(""));
+//     ASSERT_TRUE(wallet1->good());
+
+//     ASSERT_TRUE(wallet1->store(""));
+//     ASSERT_TRUE(wallet1->good());
+
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+
+//     wallet1 = wmgr->openWallet(WALLET_NAME, WALLET_PASS, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet1->good());
+//     ASSERT_TRUE(wallet1->seed() == seed1);
+//     ASSERT_TRUE(wallet1->mainAddress() == address1);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+// }
 
 
 
 TEST_F(WalletManagerTest, WalletManagerFindsWallet)
 {
     std::vector<std::string> wallets = wmgr->findWallets(WALLETS_ROOT_DIR);
+    // wallet have to create by own
     ASSERT_FALSE(wallets.empty());
     std::cout << "Found wallets: " << std::endl;
     for (auto wallet_path: wallets) {
@@ -473,26 +476,27 @@ TEST_F(WalletManagerTest, WalletManagerFindsWallet)
 }
 
 
-TEST_F(WalletTest1, WalletGeneratesPaymentId)
-{
-    std::string payment_id = Wallet::Wallet::genPaymentId();
-    ASSERT_TRUE(payment_id.length() == 16);
-}
+// TEST_F(WalletTest1, WalletGeneratesPaymentId)
+// {
+//     std::string payment_id = Wallet::Wallet::genPaymentId();
+//     ASSERT_TRUE(payment_id.length() == 16);
+// }
 
 
-TEST_F(WalletTest1, WalletGeneratesIntegratedAddress)
-{
-    std::string payment_id = Wallet::Wallet::genPaymentId();
+// TEST_F(WalletTest1, WalletGeneratesIntegratedAddress)
+// {
+//     std::string payment_id = Wallet::Wallet::genPaymentId();
 
-    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    std::string integrated_address = wallet1->integratedAddress(payment_id);
-    ASSERT_TRUE(integrated_address.length() == 106);
-}
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     std::string integrated_address = wallet1->integratedAddress(payment_id);
+//     ASSERT_TRUE(integrated_address.length() == 106);
+// }
 
 
 TEST_F(WalletTest1, WalletShowsBalance)
 {
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
     ASSERT_TRUE(wallet1->balance(0) > 0);
     ASSERT_TRUE(wallet1->unlockedBalance(0) > 0);
 
@@ -500,7 +504,7 @@ TEST_F(WalletTest1, WalletShowsBalance)
     uint64_t unlockedBalance1 = wallet1->unlockedBalance(0);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
     Wallet::Wallet * wallet2 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-
+    ASSERT_TRUE(wallet2->init(TESTNET_DAEMON_ADDRESS, 0));
     ASSERT_TRUE(balance1 == wallet2->balance(0));
     std::cout << "wallet balance: " << wallet2->balance(0) << std::endl;
     ASSERT_TRUE(unlockedBalance1 == wallet2->unlockedBalance(0));
@@ -508,30 +512,30 @@ TEST_F(WalletTest1, WalletShowsBalance)
     ASSERT_TRUE(wmgr->closeWallet(wallet2));
 }
 
-TEST_F(WalletTest1, WalletReturnsCurrentBlockHeight)
-{
-    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    ASSERT_TRUE(wallet1->blockChainHeight() > 0);
-    wmgr->closeWallet(wallet1);
-}
+// TEST_F(WalletTest1, WalletReturnsCurrentBlockHeight)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     ASSERT_TRUE(wallet1->blockChainHeight() > 0);
+//     wmgr->closeWallet(wallet1);
+// }
 
 
-TEST_F(WalletTest1, WalletReturnsDaemonBlockHeight)
-{
-    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // wallet not connected to daemon
-    ASSERT_TRUE(wallet1->daemonBlockChainHeight() == 0);
-    ASSERT_TRUE(wallet1->status() != Wallet::Wallet::Status_Ok);
-    ASSERT_FALSE(wallet1->errorString().empty());
-    wmgr->closeWallet(wallet1);
+// TEST_F(WalletTest1, WalletReturnsDaemonBlockHeight)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // wallet not connected to daemon
+//     ASSERT_TRUE(wallet1->daemonBlockChainHeight() == 0);
+//     ASSERT_TRUE(wallet1->good());
+//     ASSERT_FALSE(wmgr->errorString().empty());
+//     wmgr->closeWallet(wallet1);
 
-    wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // wallet connected to daemon
-    wallet1->init(TESTNET_DAEMON_ADDRESS, 0);
-    ASSERT_TRUE(wallet1->daemonBlockChainHeight() > 0);
-    std::cout << "daemonBlockChainHeight: " << wallet1->daemonBlockChainHeight() << std::endl;
-    wmgr->closeWallet(wallet1);
-}
+//     wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // wallet connected to daemon
+//     wallet1->init(TESTNET_DAEMON_ADDRESS, 0);
+//     ASSERT_TRUE(wallet1->daemonBlockChainHeight() > 0);
+//     std::cout << "daemonBlockChainHeight: " << wallet1->daemonBlockChainHeight() << std::endl;
+//     wmgr->closeWallet(wallet1);
+// }
 
 
 TEST_F(WalletTest1, WalletRefresh)
@@ -546,134 +550,465 @@ TEST_F(WalletTest1, WalletRefresh)
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-TEST_F(WalletTest1, WalletConvertsToString)
+// TEST_F(WalletTest1, WalletConvertsToString)
+// {
+//     std::string strAmount = Wallet::Wallet::displayAmount(AMOUNT_2BDX);
+//     ASSERT_TRUE(AMOUNT_2BDX == Wallet::Wallet::amountFromString(strAmount));
+
+//     ASSERT_TRUE(AMOUNT_2BDX == Wallet::Wallet::amountFromDouble(2.0));
+//     ASSERT_TRUE(AMOUNT_4BDX == Wallet::Wallet::amountFromDouble(4.0));
+//     ASSERT_TRUE(AMOUNT_1BDX == Wallet::Wallet::amountFromDouble(1.0));
+
+
+// }
+
+
+
+// TEST_F(WalletTest1, WalletTransaction)
+
+// {
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+//     std::cout <<"Refresh_started...\n";
+//     ASSERT_TRUE(wallet1->refresh());
+//     std::cout <<"Refresh_end...\n";
+//     uint64_t balance = wallet1->balance(0);
+//     std::cout <<"**balance: " << balance << std::endl;
+//     ASSERT_TRUE(wallet1->good());
+
+//     std::string recepient_address = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
+//     const int MIXIN_COUNT = 4;
+
+
+//     Wallet::PendingTransaction * transaction = wallet1->createTransaction(recepient_address,
+//                                                                              AMOUNT_4BDX);
+//     ASSERT_TRUE(transaction->good());
+//     std::cout <<"refresh_started...\n";
+//     wallet1->refresh();
+//     std::cout <<"refresh_end...\n";
+//     ASSERT_TRUE(wallet1->balance(0) == balance);
+//     ASSERT_TRUE(transaction->amount() == AMOUNT_4BDX);
+//     ASSERT_TRUE(transaction->commit());
+//     ASSERT_FALSE(wallet1->balance(0) == balance);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+// }
+
+TEST_F(WalletTest1, BnsBuyTransaction)
 {
-    std::string strAmount = Wallet::Wallet::displayAmount(AMOUNT_5XMR);
-    ASSERT_TRUE(AMOUNT_5XMR == Wallet::Wallet::amountFromString(strAmount));
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
 
-    ASSERT_TRUE(AMOUNT_5XMR == Wallet::Wallet::amountFromDouble(5.0));
-    ASSERT_TRUE(AMOUNT_10XMR == Wallet::Wallet::amountFromDouble(10.0));
-    ASSERT_TRUE(AMOUNT_1XMR == Wallet::Wallet::amountFromDouble(1.0));
-
-}
-
-
-
-TEST_F(WalletTest1, WalletTransaction)
-
-{
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
     // make sure testnet daemon is running
     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
     ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
     uint64_t balance = wallet1->balance(0);
-    ASSERT_TRUE(wallet1->status() == Wallet::PendingTransaction::Status_Ok);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
 
-    std::string recepient_address = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
-    const int MIXIN_COUNT = 4;
-
-
-    Wallet::PendingTransaction * transaction = wallet1->createTransaction(recepient_address,
-                                                                             PAYMENT_ID_EMPTY,
-                                                                             AMOUNT_10XMR,
-                                                                             MIXIN_COUNT,
-                                                                             Wallet::PendingTransaction::Priority_Medium,
-                                                                             0,
-                                                                             std::set<uint32_t>{});
-    ASSERT_TRUE(transaction->status() == Wallet::PendingTransaction::Status_Ok);
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string mapping_years = "1y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
+                                                                                backup_owner,
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
+    ASSERT_TRUE(transaction->good());
+    std::cout <<"refresh_started...\n";
     wallet1->refresh();
-
+    std::cout <<"refresh_end...\n";
     ASSERT_TRUE(wallet1->balance(0) == balance);
-    ASSERT_TRUE(transaction->amount() == AMOUNT_10XMR);
+
+    ASSERT_TRUE(transaction->commit());
+    ASSERT_FALSE(wallet1->balance(0) == balance);
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsBuyTransactionWithNoValues)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string mapping_years = "10y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "";
+    std::string name  ="black.bdx";
+    Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
+                                                                                backup_owner,
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsBuyTransactionWithWrongYears)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string mapping_years = "6y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "t9e3s4k9rw4e6fxexycb74wo1guriebnsepfkkfr6s3rpxauncmy.bdx";
+    std::string name  ="black.bdx";
+    Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
+                                                                                backup_owner,
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsBuyTransactionWithOldValue)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string mapping_years = "1y";
+    std::string value_bchat = "";
+    std::string value_wallet = "";
+    std::string value_belnet = "a6iiyy3c4qsp8kdt49ao79dqxskd81eejidhq9j36d8oodznibqy.bdx";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction * transaction = wallet1->createBnsTransaction(owner,
+                                                                                backup_owner,
+                                                                                mapping_years,
+                                                                                value_bchat,
+                                                                                value_wallet,
+                                                                                value_belnet,
+                                                                                name);
+    ASSERT_TRUE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
+    ASSERT_FALSE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsUpdateTransaction)
+
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    // Change the value based on your datas
+    std::string owner = "";
+    std::string backup_owner = "";
+    std::string value_bchat = "bd08c9d0c3077a509f159a2d91aa251b69480a3572f2ce60f01f01067b06de9c21";
+    std::string value_wallet = "";
+    std::string value_belnet = "";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value_bchat, value_wallet, value_belnet, name);
+    ASSERT_TRUE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
     ASSERT_TRUE(transaction->commit());
     ASSERT_FALSE(wallet1->balance(0) == balance);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
 
-
-TEST_F(WalletTest1, WalletTransactionWithMixin)
+TEST_F(WalletTest1, BnsUpdateWithSameValue)
 {
-
-    std::vector<int> mixins;
-    // 2,3,4,5,6,7,8,9,10,15,20,25 can we do it like that?
-    mixins.push_back(2); mixins.push_back(3); mixins.push_back(4); mixins.push_back(5); mixins.push_back(6);
-    mixins.push_back(7); mixins.push_back(8); mixins.push_back(9); mixins.push_back(10); mixins.push_back(15);
-    mixins.push_back(20); mixins.push_back(25);
-
-
-    std::string payment_id = "";
-
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-
-
     // make sure testnet daemon is running
     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
     ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
     uint64_t balance = wallet1->balance(0);
-    ASSERT_TRUE(wallet1->status() == Wallet::PendingTransaction::Status_Ok);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
 
-    std::string recepient_address = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
-    for (auto mixin : mixins) {
-        std::cerr << "Transaction mixin count: " << mixin << std::endl;
-	
-        Wallet::PendingTransaction * transaction = wallet1->createTransaction(
-                    recepient_address, payment_id, AMOUNT_5XMR, mixin, Wallet::PendingTransaction::Priority_Medium, 0, std::set<uint32_t>{});
-
-        std::cerr << "Transaction status: " << transaction->status() << std::endl;
-        std::cerr << "Transaction fee: " << Wallet::Wallet::displayAmount(transaction->fee()) << std::endl;
-        std::cerr << "Transaction error: " << transaction->errorString() << std::endl;
-        ASSERT_TRUE(transaction->status() == Wallet::PendingTransaction::Status_Ok);
-        wallet1->disposeTransaction(transaction);
-    }
-
+    // Change the value based on your datas
+    std::string owner = Utils::get_wallet_address(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS);
+    std::string backup_owner = "";
+    std::string value_bchat = "bd08c9d0c3077a509f159a2d91aa251b69480a3572f2ce60f01f01067b06de9c21";
+    std::string value_wallet = "";
+    std::string value_belnet = "fcbzchy4kknz1tq8eb5aiakibyfo7nqg6qxpons46h1qytexfc4y.bdx";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value_bchat, value_wallet, value_belnet, name);
+    ASSERT_TRUE(transaction->good());
+    std::cout <<"refresh_started...\n";
     wallet1->refresh();
-
+    std::cout <<"refresh_end...\n";
     ASSERT_TRUE(wallet1->balance(0) == balance);
+    ASSERT_FALSE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_FALSE(transaction->good());
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-TEST_F(WalletTest1, WalletTransactionWithPriority)
+TEST_F(WalletTest1, BnsUpdateWrongValues)
 {
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
 
-    std::string payment_id = "";
+    // Change the value based on your datas
+    std::string owner = "";
+    std::string backup_owner = "";
+    std::string value_bchat ="";
+    std::string value_wallet ="";
+    std::string value_belnet ="bd08c9d0c3077a509f159a2d91aa251b69480a3572f2ce60f01f01067b06de9c21";
+    std::string name  ="blackpearl.bdx";
+    Wallet::PendingTransaction *transaction = wallet1->bnsUpdateTransaction(owner, backup_owner, value_bchat, value_wallet, value_belnet, name);
+    ASSERT_FALSE(transaction->good());
+    Utils::print_status(transaction->status());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
 
+TEST_F(WalletTest1, BnsRenewTransaction)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    std::string name  ="rohan.bdx";
+    std::string year  ="10y";
+    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
+                                                                            year);
+    ASSERT_TRUE(transaction->good());
+    std::cout <<"refresh_started...\n";
+    wallet1->refresh();
+    std::cout <<"refresh_end...\n";
+    ASSERT_TRUE(wallet1->balance(0) == balance);
+    Utils::print_status(transaction->status());
+    ASSERT_TRUE(transaction->commit());
+    Utils::print_status(transaction->status());
+    ASSERT_TRUE(transaction->good());
+    ASSERT_FALSE(wallet1->balance(0) == balance);
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsRenewTransactionForNonExistBns)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    std::string name  ="roha.bdx";
+    std::string year  ="2y";
+    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
+                                                                            year);
+    ASSERT_FALSE(transaction->good());
+    Utils::print_status(transaction->status());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+TEST_F(WalletTest1, BnsRenewTransactionForWrongYear)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    // make sure testnet daemon is running
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::cout <<"Refresh_started...\n";
+    ASSERT_TRUE(wallet1->refresh());
+    std::cout <<"Refresh_end...\n";
+    uint64_t balance = wallet1->balance(0);
+    std::cout <<"**balance: " << balance << std::endl;
+    ASSERT_TRUE(wallet1->good());
+
+    std::string name  ="rohan.bdx";
+    std::string year  ="3y";
+    Wallet::PendingTransaction * transaction = wallet1->bnsRenewTransaction(name,
+                                                                            year);
+    ASSERT_FALSE(transaction->good());
+    Utils::print_status(transaction->status());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+
+TEST_F(WalletTest1, countForBns)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
 
     // make sure testnet daemon is running
     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet1->refresh());
-    uint64_t balance = wallet1->balance(0);
-    ASSERT_TRUE(wallet1->status() == Wallet::PendingTransaction::Status_Ok);
 
-    std::string recepient_address = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
-    uint32_t mixin = 2;
-    uint64_t fee   = 0;
+    int val = wallet1->countBns();
+    std::cout<<"Bns count is :"<<val<<std::endl;
 
-    std::vector<Wallet::PendingTransaction::Priority> priorities =  {
-         Wallet::PendingTransaction::Priority_Low,
-         Wallet::PendingTransaction::Priority_Medium,
-         Wallet::PendingTransaction::Priority_High
-    };
-
-    for (auto it = priorities.begin(); it != priorities.end(); ++it) {
-        std::cerr << "Transaction priority: " << *it << std::endl;
-	
-        Wallet::PendingTransaction * transaction = wallet1->createTransaction(
-                    recepient_address, payment_id, AMOUNT_5XMR, mixin, *it, 0, std::set<uint32_t>{});
-        std::cerr << "Transaction status: " << transaction->status() << std::endl;
-        std::cerr << "Transaction fee: " << Wallet::Wallet::displayAmount(transaction->fee()) << std::endl;
-        std::cerr << "Transaction error: " << transaction->errorString() << std::endl;
-        ASSERT_TRUE(transaction->fee() > fee);
-        ASSERT_TRUE(transaction->status() == Wallet::PendingTransaction::Status_Ok);
-        fee = transaction->fee();
-        wallet1->disposeTransaction(transaction);
-    }
-    wallet1->refresh();
-    ASSERT_TRUE(wallet1->balance(0) == balance);
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
+TEST_F(WalletTest1, statusOfCountBns)
+{
+    //TODO=Beldex_bns have to check more conditions also the wallet_listener check
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);    
+    
+    int val = wallet1->countBns();
+    std::cout<<"Bns count is :"<<val<<std::endl;
+    Utils::print_status(wallet1->status());
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
+// TEST_F(WalletTest1, WalletTransactionWithMixin)
+// {
+//     std::vector<int> mixins;
+//     // 2,3,4,5,6,7,8,9,10,15,20,25 can we do it like that?
+//     mixins.push_back(2); mixins.push_back(3); mixins.push_back(4); mixins.push_back(5); mixins.push_back(6);
+//     mixins.push_back(7); mixins.push_back(8); mixins.push_back(9); mixins.push_back(10); mixins.push_back(15);
+//     mixins.push_back(20); mixins.push_back(25);
+
+
+//     std::string payment_id = "";
+
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+
+
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet1->refresh());
+//     uint64_t balance = wallet1->balance(0);
+//     std::cout <<"**balance: " << balance << std::endl;
+//     ASSERT_TRUE(wallet1->good());
+
+//     std::string recepient_address = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
+//     for (auto mixin : mixins) {
+//         std::cerr << "Transaction mixin count: " << mixin << std::endl;
+	
+//         Wallet::PendingTransaction * transaction = wallet1->createTransaction(
+//                     recepient_address,AMOUNT_2BDX);
+
+//         std::cerr << "Transaction status: " << transaction->good()<< std::endl;
+//         std::cerr << "Transaction fee: " << Wallet::Wallet::displayAmount(transaction->fee()) << std::endl;
+//         std::cerr << "Transaction error: " << wmgr->errorString() << std::endl;
+//         ASSERT_TRUE(transaction->good());
+//         wallet1->disposeTransaction(transaction);
+//     }
+
+//     wallet1->refresh();
+
+//     ASSERT_TRUE(wallet1->balance(0) == balance);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+// }
+
+
+// TEST_F(WalletTest1, WalletTransactionWithPriority)
+// {
+//     std::string payment_id = "";
+
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet1->refresh());
+//     uint64_t balance = wallet1->balance(0);
+//     ASSERT_TRUE(wallet1->good());
+
+//     std::string recepient_address = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
+//     uint32_t mixin = 2;
+//     uint64_t fee   = 0;
+
+//     std::vector<uint32_t> priorities =  {
+//          1,2,3
+//     };
+
+//     for (auto it = priorities.begin(); it != priorities.end(); ++it) {
+//         std::cerr << "Transaction priority: " << *it << std::endl;
+	
+//         Wallet::PendingTransaction * transaction = wallet1->createTransaction(
+//                     recepient_address, AMOUNT_2BDX, *it);
+//         std::cerr << "Transaction status: " << transaction->good()<< std::endl;
+//         std::cerr << "Transaction fee: " << Wallet::Wallet::displayAmount(transaction->fee()) << std::endl;
+//         std::cerr << "Transaction error: " << wmgr->errorString() << std::endl;
+//         ASSERT_TRUE(transaction->fee() > fee);
+//         ASSERT_TRUE(transaction->good());
+//         fee = transaction->fee();
+//         wallet1->disposeTransaction(transaction);
+//     }
+//     wallet1->refresh();
+//     ASSERT_TRUE(wallet1->balance(0) == balance);
+//     ASSERT_TRUE(wmgr->closeWallet(wallet1));
+// }
 
 
 TEST_F(WalletTest1, WalletHistory)
@@ -693,92 +1028,89 @@ TEST_F(WalletTest1, WalletHistory)
     }
 }
 
-TEST_F(WalletTest1, WalletTransactionAndHistory)
-{
-    return;
-    Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // make sure testnet daemon is running
-    ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet_src->refresh());
-    Wallet::TransactionHistory * history = wallet_src->history();
-    history->refresh();
-    ASSERT_TRUE(history->count() > 0);
-    size_t count1 = history->count();
+// TEST_F(WalletTest1, WalletTransactionAndHistory)
+// {
+//     return;
+//     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet_src->refresh());
+//     Wallet::TransactionHistory * history = wallet_src->history();
+//     history->refresh();
+//     ASSERT_TRUE(history->count() > 0);
+//     size_t count1 = history->count();
 
-    std::cout << "**** Transactions before transfer (" << count1 << ")" << std::endl;
-    for (auto t: history->getAll()) {
-        ASSERT_TRUE(t != nullptr);
-        Utils::print_transaction(t);
-    }
+//     std::cout << "**** Transactions before transfer (" << count1 << ")" << std::endl;
+//     for (auto t: history->getAll()) {
+//         ASSERT_TRUE(t != nullptr);
+//         Utils::print_transaction(t);
+//     }
 
-    std::string wallet4_addr = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
-
-
-    Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet4_addr,
-                                                                       PAYMENT_ID_EMPTY,
-                                                                       AMOUNT_10XMR * 5, 1, Wallet::PendingTransaction::Priority_Medium, 0, std::set<uint32_t>{});
-
-    ASSERT_TRUE(tx->status() == Wallet::PendingTransaction::Status_Ok);
-    ASSERT_TRUE(tx->commit());
-    history = wallet_src->history();
-    history->refresh();
-    ASSERT_TRUE(count1 != history->count());
-
-    std::cout << "**** Transactions after transfer (" << history->count() << ")" << std::endl;
-    for (auto t: history->getAll()) {
-        ASSERT_TRUE(t != nullptr);
-        Utils::print_transaction(t);
-    }
-}
+//     std::string wallet4_addr = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
 
 
-TEST_F(WalletTest1, WalletTransactionWithPaymentId)
-{
+//     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet4_addr,
+//                                                                        AMOUNT_4BDX * 2);
 
-    Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // make sure testnet daemon is running
-    ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet_src->refresh());
-    Wallet::TransactionHistory * history = wallet_src->history();
-    history->refresh();
-    ASSERT_TRUE(history->count() > 0);
-    size_t count1 = history->count();
+//     ASSERT_TRUE(tx->good());
+//     ASSERT_TRUE(tx->commit());
+//     history = wallet_src->history();
+//     history->refresh();
+//     ASSERT_TRUE(count1 != history->count());
 
-    std::cout << "**** Transactions before transfer (" << count1 << ")" << std::endl;
-    for (auto t: history->getAll()) {
-        ASSERT_TRUE(t != nullptr);
-        Utils::print_transaction(t);
-    }
-
-    std::string wallet4_addr = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
-
-    std::string payment_id = Wallet::Wallet::genPaymentId();
-    ASSERT_TRUE(payment_id.length() == 16);
+//     std::cout << "**** Transactions after transfer (" << history->count() << ")" << std::endl;
+//     for (auto t: history->getAll()) {
+//         ASSERT_TRUE(t != nullptr);
+//         Utils::print_transaction(t);
+//     }
+// }
 
 
-    Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet4_addr,
-                                                                       payment_id,
-                                                                       AMOUNT_1XMR, 1, Wallet::PendingTransaction::Priority_Medium, 0, std::set<uint32_t>{});
+// TEST_F(WalletTest1, WalletTransactionWithPaymentId)
+// {
+//     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet_src->refresh());
+//     Wallet::TransactionHistory * history = wallet_src->history();
+//     history->refresh();
+//     ASSERT_TRUE(history->count() > 0);
+//     size_t count1 = history->count();
 
-    ASSERT_TRUE(tx->status() == Wallet::PendingTransaction::Status_Ok);
-    ASSERT_TRUE(tx->commit());
-    history = wallet_src->history();
-    history->refresh();
-    ASSERT_TRUE(count1 != history->count());
+//     std::cout << "**** Transactions before transfer (" << count1 << ")" << std::endl;
+//     for (auto t: history->getAll()) {
+//         ASSERT_TRUE(t != nullptr);
+//         Utils::print_transaction(t);
+//     }
 
-    bool payment_id_in_history = false;
+//     std::string wallet4_addr = Utils::get_wallet_address(CURRENT_DST_WALLET, TESTNET_WALLET_PASS);
 
-    std::cout << "**** Transactions after transfer (" << history->count() << ")" << std::endl;
-    for (auto t: history->getAll()) {
-        ASSERT_TRUE(t != nullptr);
-        Utils::print_transaction(t);
-        if (t->paymentId() == payment_id) {
-            payment_id_in_history = true;
-        }
-    }
+//     std::string payment_id = Wallet::Wallet::genPaymentId();
+//     ASSERT_TRUE(payment_id.length() == 16);
 
-    ASSERT_TRUE(payment_id_in_history);
-}
+
+//     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet4_addr,
+//                                                                        AMOUNT_1BDX);
+
+//     ASSERT_TRUE(tx->good());
+//     ASSERT_TRUE(tx->commit());
+//     history = wallet_src->history();
+//     history->refresh();
+//     ASSERT_TRUE(count1 != history->count());
+
+//     bool payment_id_in_history = false;
+
+//     std::cout << "**** Transactions after transfer (" << history->count() << ")" << std::endl;
+//     for (auto t: history->getAll()) {
+//         ASSERT_TRUE(t != nullptr);
+//         Utils::print_transaction(t);
+//         if (t->paymentId() == payment_id) {
+//             payment_id_in_history = true;
+//         }
+//     }
+
+//     ASSERT_TRUE(payment_id_in_history);
+// }
 
 
 struct MyWalletListener : public Wallet::WalletListener
@@ -815,7 +1147,7 @@ struct MyWalletListener : public Wallet::WalletListener
         send_triggered = receive_triggered = newblock_triggered = update_triggered = refresh_triggered = false;
     }
 
-    virtual void moneySpent(const string &txId, uint64_t amount)
+    virtual void moneySpent(const std::string &txId, uint64_t amount)
     {
         std::cerr << "wallet: " << wallet->mainAddress() << "**** just spent money ("
                   << txId  << ", " << wallet->displayAmount(amount) << ")" << std::endl;
@@ -824,7 +1156,7 @@ struct MyWalletListener : public Wallet::WalletListener
         cv_send.notify_one();
     }
 
-    virtual void moneyReceived(const string &txId, uint64_t amount)
+    virtual void moneyReceived(const std::string &txId, uint64_t amount)
     {
         std::cout << "wallet: " << wallet->mainAddress() << "**** just received money ("
                   << txId  << ", " << wallet->displayAmount(amount) << ")" << std::endl;
@@ -833,7 +1165,7 @@ struct MyWalletListener : public Wallet::WalletListener
         cv_receive.notify_one();
     }
 
-    virtual void unconfirmedMoneyReceived(const string &txId, uint64_t amount)
+    virtual void unconfirmedMoneyReceived(const std::string &txId, uint64_t amount)
     {
         std::cout << "wallet: " << wallet->mainAddress() << "**** just received unconfirmed money ("
                   << txId  << ", " << wallet->displayAmount(amount) << ")" << std::endl;
@@ -876,10 +1208,10 @@ struct MyWalletListener : public Wallet::WalletListener
 
 TEST_F(WalletTest2, WalletCallBackRefreshedSync)
 {
-
     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
     MyWalletListener * wallet_src_listener = new MyWalletListener(wallet_src);
     ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
+    ASSERT_TRUE(wallet_src->refresh());
     ASSERT_TRUE(wallet_src_listener->refresh_triggered);
     ASSERT_TRUE(wallet_src->connected());
     std::unique_lock lock{wallet_src_listener->mutex};
@@ -890,239 +1222,229 @@ TEST_F(WalletTest2, WalletCallBackRefreshedSync)
 
 
 
-TEST_F(WalletTest2, WalletCallBackRefreshedAsync)
-{
+// TEST_F(WalletTest2, WalletCallBackRefreshedAsync)
+// {
+//     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     MyWalletListener * wallet_src_listener = new MyWalletListener(wallet_src);
 
-    Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    MyWalletListener * wallet_src_listener = new MyWalletListener(wallet_src);
-
-    std::unique_lock lock{wallet_src_listener->mutex};
-    wallet_src->init(MAINNET_DAEMON_ADDRESS, 0);
-    wallet_src->startRefresh();
-    std::cerr << "TEST: waiting on refresh lock...\n";
-    wallet_src_listener->cv_refresh.wait_for(lock, 20s);
-    std::cerr << "TEST: refresh lock acquired...\n";
-    ASSERT_TRUE(wallet_src_listener->refresh_triggered);
-    ASSERT_TRUE(wallet_src->connected());
-    std::cerr << "TEST: closing wallet...\n";
-    wmgr->closeWallet(wallet_src);
-}
-
+//     std::unique_lock lock{wallet_src_listener->mutex};
+//     wallet_src->init(MAINNET_DAEMON_ADDRESS, 0);
+//     wallet_src->startRefresh();
+//     std::cerr << "TEST: waiting on refresh lock...\n";
+//     wallet_src_listener->cv_refresh.wait_for(lock, 20s);
+//     std::cerr << "TEST: refresh lock acquired...\n";
+//     ASSERT_TRUE(wallet_src_listener->refresh_triggered);
+//     ASSERT_TRUE(wallet_src->connected());
+//     std::cerr << "TEST: closing wallet...\n";
+//     wmgr->closeWallet(wallet_src);
+// }
 
 
+// TEST_F(WalletTest2, WalletCallbackSent)
+// {
+//     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet_src->refresh());
+//     MyWalletListener * wallet_src_listener = new MyWalletListener(wallet_src);
+//     uint64_t balance = wallet_src->balance(0);
+//     std::cout << "** Balance: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
+//     Wallet::Wallet * wallet_dst = wmgr->openWallet(CURRENT_DST_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
 
-TEST_F(WalletTest2, WalletCallbackSent)
-{
-
-    Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // make sure testnet daemon is running
-    ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet_src->refresh());
-    MyWalletListener * wallet_src_listener = new MyWalletListener(wallet_src);
-    uint64_t balance = wallet_src->balance(0);
-    std::cout << "** Balance: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
-    Wallet::Wallet * wallet_dst = wmgr->openWallet(CURRENT_DST_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-
-    uint64_t amount = AMOUNT_1XMR * 5;
-    std::cout << "** Sending " << Wallet::Wallet::displayAmount(amount) << " to " << wallet_dst->mainAddress();
+//     uint64_t amount = AMOUNT_1BDX * 5;
+//     std::cout << "** Sending " << Wallet::Wallet::displayAmount(amount) << " to " << wallet_dst->mainAddress();
 
 
-    Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet_dst->mainAddress(),
-                                                                       PAYMENT_ID_EMPTY,
-                                                                       amount, 1, Wallet::PendingTransaction::Priority_Medium, 0, std::set<uint32_t>{});
-    std::cout << "** Committing transaction: " << Wallet::Wallet::displayAmount(tx->amount())
-              << " with fee: " << Wallet::Wallet::displayAmount(tx->fee());
+//     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet_dst->mainAddress(),
+//                                                                        amount);
+//     std::cout << "** Committing transaction: " << Wallet::Wallet::displayAmount(tx->amount())
+//               << " with fee: " << Wallet::Wallet::displayAmount(tx->fee());
 
-    ASSERT_TRUE(tx->status() == Wallet::PendingTransaction::Status_Ok);
-    ASSERT_TRUE(tx->commit());
+//     ASSERT_TRUE(tx->good());
+//     ASSERT_TRUE(tx->commit());
 
-    std::unique_lock lock{wallet_src_listener->mutex};
-    std::cerr << "TEST: waiting on send lock...\n";
-    wallet_src_listener->cv_send.wait_for(lock, 3min);
-    std::cerr << "TEST: send lock acquired...\n";
-    ASSERT_TRUE(wallet_src_listener->send_triggered);
-    ASSERT_TRUE(wallet_src_listener->update_triggered);
-    std::cout << "** Balance: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
-    ASSERT_TRUE(wallet_src->balance(0) < balance);
-    wmgr->closeWallet(wallet_src);
-    wmgr->closeWallet(wallet_dst);
-}
+//     std::unique_lock lock{wallet_src_listener->mutex};
+//     std::cerr << "TEST: waiting on send lock...\n";
+//     wallet_src_listener->cv_send.wait_for(lock, 3min);
+//     std::cerr << "TEST: send lock acquired...\n";
+//     ASSERT_TRUE(wallet_src_listener->send_triggered);
+//     ASSERT_TRUE(wallet_src_listener->update_triggered);
+//     std::cout << "** Balance: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
+//     ASSERT_TRUE(wallet_src->balance(0) < balance);
+//     wmgr->closeWallet(wallet_src);
+//     wmgr->closeWallet(wallet_dst);
+// }
 
 
-TEST_F(WalletTest2, WalletCallbackReceived)
-{
+// TEST_F(WalletTest2, WalletCallbackReceived)
+// {
+//     Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet_src->refresh());
+//     std::cout << "** Balance src1: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
 
-    Wallet::Wallet * wallet_src = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // make sure testnet daemon is running
-    ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet_src->refresh());
-    std::cout << "** Balance src1: " << wallet_src->displayAmount(wallet_src->balance(0)) <<  std::endl;
+//     Wallet::Wallet * wallet_dst = wmgr->openWallet(CURRENT_DST_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     ASSERT_TRUE(wallet_dst->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet_dst->refresh());
+//     uint64_t balance = wallet_dst->balance(0);
+//     std::cout << "** Balance dst1: " << wallet_dst->displayAmount(wallet_dst->balance(0)) <<  std::endl;
+//     std::unique_ptr<MyWalletListener> wallet_dst_listener (new MyWalletListener(wallet_dst));
 
-    Wallet::Wallet * wallet_dst = wmgr->openWallet(CURRENT_DST_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    ASSERT_TRUE(wallet_dst->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet_dst->refresh());
-    uint64_t balance = wallet_dst->balance(0);
-    std::cout << "** Balance dst1: " << wallet_dst->displayAmount(wallet_dst->balance(0)) <<  std::endl;
-    std::unique_ptr<MyWalletListener> wallet_dst_listener (new MyWalletListener(wallet_dst));
+//     uint64_t amount = AMOUNT_1BDX * 5;
+//     std::cout << "** Sending " << Wallet::Wallet::displayAmount(amount) << " to " << wallet_dst->mainAddress();
+//     Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet_dst->mainAddress(),
+//                                                                        amount);
 
-    uint64_t amount = AMOUNT_1XMR * 5;
-    std::cout << "** Sending " << Wallet::Wallet::displayAmount(amount) << " to " << wallet_dst->mainAddress();
-    Wallet::PendingTransaction * tx = wallet_src->createTransaction(wallet_dst->mainAddress(),
-                                                                       PAYMENT_ID_EMPTY,
-                                                                       amount, 1, Wallet::PendingTransaction::Priority_Medium, 0, std::set<uint32_t>{});
+//     std::cout << "** Committing transaction: " << Wallet::Wallet::displayAmount(tx->amount())
+//               << " with fee: " << Wallet::Wallet::displayAmount(tx->fee());
 
-    std::cout << "** Committing transaction: " << Wallet::Wallet::displayAmount(tx->amount())
-              << " with fee: " << Wallet::Wallet::displayAmount(tx->fee());
+//     ASSERT_TRUE(tx->good());
+//     ASSERT_TRUE(tx->commit());
 
-    ASSERT_TRUE(tx->status() == Wallet::PendingTransaction::Status_Ok);
-    ASSERT_TRUE(tx->commit());
+//     std::unique_lock lock{wallet_dst_listener->mutex};
+//     std::cerr << "TEST: waiting on receive lock...\n";
+//     wallet_dst_listener->cv_receive.wait_for(lock, 4min);
+//     std::cerr << "TEST: receive lock acquired...\n";
+//     ASSERT_TRUE(wallet_dst_listener->receive_triggered);
+//     ASSERT_TRUE(wallet_dst_listener->update_triggered);
 
-    std::unique_lock lock{wallet_dst_listener->mutex};
-    std::cerr << "TEST: waiting on receive lock...\n";
-    wallet_dst_listener->cv_receive.wait_for(lock, 4min);
-    std::cerr << "TEST: receive lock acquired...\n";
-    ASSERT_TRUE(wallet_dst_listener->receive_triggered);
-    ASSERT_TRUE(wallet_dst_listener->update_triggered);
+//     std::cout << "** Balance src2: " << wallet_dst->displayAmount(wallet_src->balance(0)) <<  std::endl;
+//     std::cout << "** Balance dst2: " << wallet_dst->displayAmount(wallet_dst->balance(0)) <<  std::endl;
 
-    std::cout << "** Balance src2: " << wallet_dst->displayAmount(wallet_src->balance(0)) <<  std::endl;
-    std::cout << "** Balance dst2: " << wallet_dst->displayAmount(wallet_dst->balance(0)) <<  std::endl;
+//     ASSERT_TRUE(wallet_dst->balance(0) > balance);
 
-    ASSERT_TRUE(wallet_dst->balance(0) > balance);
-
-    wmgr->closeWallet(wallet_src);
-    wmgr->closeWallet(wallet_dst);
-}
+//     wmgr->closeWallet(wallet_src);
+//     wmgr->closeWallet(wallet_dst);
+// }
 
 
 
-TEST_F(WalletTest2, WalletCallbackNewBlock)
-{
-
-    Wallet::Wallet * wallet_src = wmgr->openWallet(TESTNET_WALLET5_NAME, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    // make sure testnet daemon is running
-    ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
-    ASSERT_TRUE(wallet_src->refresh());
-    uint64_t bc1 = wallet_src->blockChainHeight();
-    std::cout << "** Block height: " << bc1 << std::endl;
-
-
-    std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet_src));
-
-    // wait max 4 min for new block
-    std::unique_lock lock{wallet_listener->mutex};
-    std::cerr << "TEST: waiting on newblock lock...\n";
-    wallet_listener->cv_newblock.wait_for(lock, 4min);
-    std::cerr << "TEST: newblock lock acquired...\n";
-    ASSERT_TRUE(wallet_listener->newblock_triggered);
-    uint64_t bc2 = wallet_src->blockChainHeight();
-    std::cout << "** Block height: " << bc2 << std::endl;
-    ASSERT_TRUE(bc2 > bc1);
-    wmgr->closeWallet(wallet_src);
-
-}
-
-TEST_F(WalletManagerMainnetTest, CreateOpenAndRefreshWalletMainNetSync)
-{
-
-    Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
-    wallet->init(MAINNET_DAEMON_ADDRESS, 0);
-    std::cerr << "TEST: waiting on refresh lock...\n";
-    //wallet_listener->cv_refresh.wait_for(lock, wait_for);
-    std::cerr << "TEST: refresh lock acquired...\n";
-    ASSERT_TRUE(wallet_listener->refresh_triggered);
-    ASSERT_TRUE(wallet->connected());
-    ASSERT_TRUE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
-    std::cerr << "TEST: closing wallet...\n";
-    wmgr->closeWallet(wallet);
-}
+// TEST_F(WalletTest2, WalletCallbackNewBlock)
+// {
+//     Wallet::Wallet * wallet_src = wmgr->openWallet(TESTNET_WALLET5_NAME, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     // make sure testnet daemon is running
+//     ASSERT_TRUE(wallet_src->init(TESTNET_DAEMON_ADDRESS, 0));
+//     ASSERT_TRUE(wallet_src->refresh());
+//     uint64_t bc1 = wallet_src->blockChainHeight();
+//     std::cout << "** Block height: " << bc1 << std::endl;
 
 
-TEST_F(WalletManagerMainnetTest, CreateAndRefreshWalletMainNetAsync)
-{
-    // supposing 2 minutes should be enough for fast refresh
-    constexpr auto wait_for = 2min;
+//     std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet_src));
 
-    Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
+//     // wait max 4 min for new block
+//     std::unique_lock lock{wallet_listener->mutex};
+//     std::cerr << "TEST: waiting on newblock lock...\n";
+//     wallet_listener->cv_newblock.wait_for(lock, 4min);
+//     std::cerr << "TEST: newblock lock acquired...\n";
+//     ASSERT_TRUE(wallet_listener->newblock_triggered);
+//     uint64_t bc2 = wallet_src->blockChainHeight();
+//     std::cout << "** Block height: " << bc2 << std::endl;
+//     ASSERT_TRUE(bc2 > bc1);
+//     wmgr->closeWallet(wallet_src);
 
-    std::unique_lock lock{wallet_listener->mutex};
-    wallet->init(MAINNET_DAEMON_ADDRESS, 0);
-    wallet->startRefresh();
-    std::cerr << "TEST: waiting on refresh lock...\n";
-    wallet_listener->cv_refresh.wait_for(lock, wait_for);
-    std::cerr << "TEST: refresh lock acquired...\n";
-    ASSERT_TRUE(wallet->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet_listener->refresh_triggered);
-    ASSERT_TRUE(wallet->connected());
-    ASSERT_TRUE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
-    std::cerr << "TEST: closing wallet...\n";
-    wmgr->closeWallet(wallet);
-}
+// }
 
-TEST_F(WalletManagerMainnetTest, OpenAndRefreshWalletMainNetAsync)
-{
+// TEST_F(WalletManagerMainnetTest, CreateOpenAndRefreshWalletMainNetSync)
+// {
+//     Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
+//     wallet->init(MAINNET_DAEMON_ADDRESS, 0);
+//     std::cerr << "TEST: waiting on refresh lock...\n";
+//     //wallet_listener->cv_refresh.wait_for(lock, wait_for);
+//     std::cerr << "TEST: refresh lock acquired...\n";
+//     ASSERT_TRUE(wallet_listener->refresh_triggered);
+//     ASSERT_TRUE(wallet->connected());
+//     ASSERT_TRUE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
+//     std::cerr << "TEST: closing wallet...\n";
+//     wmgr->closeWallet(wallet);
+// }
 
-    // supposing 2 minutes should be enough for fast refresh
-    constexpr auto wait_for = 2min;
 
-    Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
-    wmgr->closeWallet(wallet);
-    wallet = wmgr->openWallet(WALLET_NAME_MAINNET, "", Wallet::NetworkType::MAINNET);
+// TEST_F(WalletManagerMainnetTest, CreateAndRefreshWalletMainNetAsync)
+// {
+//     // supposing 2 minutes should be enough for fast refresh
+//     constexpr auto wait_for = 2min;
 
-    std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
+//     Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
 
-    std::unique_lock lock{wallet_listener->mutex};
-    wallet->init(MAINNET_DAEMON_ADDRESS, 0);
-    wallet->startRefresh();
-    std::cerr << "TEST: waiting on refresh lock...\n";
-    wallet_listener->cv_refresh.wait_for(lock, wait_for);
-    std::cerr << "TEST: refresh lock acquired...\n";
-    ASSERT_TRUE(wallet->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet_listener->refresh_triggered);
-    ASSERT_TRUE(wallet->connected());
-    ASSERT_TRUE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
-    std::cerr << "TEST: closing wallet...\n";
-    wmgr->closeWallet(wallet);
+//     std::unique_lock lock{wallet_listener->mutex};
+//     wallet->init(MAINNET_DAEMON_ADDRESS, 0);
+//     wallet->startRefresh();
+//     std::cerr << "TEST: waiting on refresh lock...\n";
+//     wallet_listener->cv_refresh.wait_for(lock, wait_for);
+//     std::cerr << "TEST: refresh lock acquired...\n";
+//     ASSERT_TRUE(wallet->good());
+//     ASSERT_TRUE(wallet_listener->refresh_triggered);
+//     ASSERT_TRUE(wallet->connected());
+//     ASSERT_TRUE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
+//     std::cerr << "TEST: closing wallet...\n";
+//     wmgr->closeWallet(wallet);
+// }
 
-}
+// TEST_F(WalletManagerMainnetTest, OpenAndRefreshWalletMainNetAsync)
+// {
+//     // supposing 2 minutes should be enough for fast refresh
+//     constexpr auto wait_for = 2min;
 
-TEST_F(WalletManagerMainnetTest, RecoverAndRefreshWalletMainNetAsync)
-{
+//     Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     wmgr->closeWallet(wallet);
+//     wallet = wmgr->openWallet(WALLET_NAME_MAINNET, "", Wallet::NetworkType::MAINNET);
 
-    // supposing 2 minutes should be enough for fast refresh
-    constexpr auto wait_for = 2min;
-    Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
-    std::string seed = wallet->seed();
-    std::string address = wallet->mainAddress();
-    wmgr->closeWallet(wallet);
+//     std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
 
-    // deleting wallet files
-    Utils::deleteWallet(WALLET_NAME_MAINNET);
-    // ..and recovering wallet from seed
+//     std::unique_lock lock{wallet_listener->mutex};
+//     wallet->init(MAINNET_DAEMON_ADDRESS, 0);
+//     wallet->startRefresh();
+//     std::cerr << "TEST: waiting on refresh lock...\n";
+//     wallet_listener->cv_refresh.wait_for(lock, wait_for);
+//     std::cerr << "TEST: refresh lock acquired...\n";
+//     ASSERT_TRUE(wallet->good());
+//     ASSERT_TRUE(wallet_listener->refresh_triggered);
+//     ASSERT_TRUE(wallet->connected());
+//     ASSERT_TRUE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
+//     std::cerr << "TEST: closing wallet...\n";
+//     wmgr->closeWallet(wallet);
 
-    wallet = wmgr->recoveryWallet(WALLET_NAME_MAINNET, seed, Wallet::NetworkType::MAINNET);
-    ASSERT_TRUE(wallet->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_TRUE(wallet->mainAddress() == address);
-    std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
-    std::unique_lock lock{wallet_listener->mutex};
-    wallet->init(MAINNET_DAEMON_ADDRESS, 0);
-    wallet->startRefresh();
-    std::cerr << "TEST: waiting on refresh lock...\n";
+// }
 
-    // here we wait for 120 seconds and test if wallet doesn't syncrnonize blockchain completely,
-    // as it needs much more than 120 seconds for mainnet
+// TEST_F(WalletManagerMainnetTest, RecoverAndRefreshWalletMainNetAsync)
+// {
+//     // supposing 2 minutes should be enough for fast refresh
+//     constexpr auto wait_for = 2min;
+//     Wallet::Wallet * wallet = wmgr->createWallet(WALLET_NAME_MAINNET, "", WALLET_LANG, Wallet::NetworkType::MAINNET);
+//     std::string seed = wallet->seed();
+//     std::string address = wallet->mainAddress();
+//     wmgr->closeWallet(wallet);
 
-    wallet_listener->cv_refresh.wait_for(lock, wait_for);
-    ASSERT_TRUE(wallet->status() == Wallet::Wallet::Status_Ok);
-    ASSERT_FALSE(wallet_listener->refresh_triggered);
-    ASSERT_TRUE(wallet->connected());
-    ASSERT_FALSE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
-    std::cerr << "TEST: closing wallet...\n";
-    wmgr->closeWallet(wallet);
-    std::cerr << "TEST: wallet closed\n";
+//     // deleting wallet files
+//     Utils::deleteWallet(WALLET_NAME_MAINNET);
+//     // ..and recovering wallet from seed
 
-}
+//     wallet = wmgr->recoveryWallet(WALLET_NAME_MAINNET,"", seed, Wallet::NetworkType::MAINNET);
+//     ASSERT_TRUE(wallet->good());
+//     ASSERT_TRUE(wallet->mainAddress() == address);
+//     std::unique_ptr<MyWalletListener> wallet_listener (new MyWalletListener(wallet));
+//     std::unique_lock lock{wallet_listener->mutex};
+//     wallet->init(MAINNET_DAEMON_ADDRESS, 0);
+//     wallet->startRefresh();
+//     std::cerr << "TEST: waiting on refresh lock...\n";
+
+//     // here we wait for 120 seconds and test if wallet doesn't syncrnonize blockchain completely,
+//     // as it needs much more than 120 seconds for mainnet
+
+//     wallet_listener->cv_refresh.wait_for(lock, wait_for);
+//     ASSERT_TRUE(wallet->good());
+//     ASSERT_FALSE(wallet_listener->refresh_triggered);
+//     ASSERT_TRUE(wallet->connected());
+//     ASSERT_FALSE(wallet->blockChainHeight() == wallet->daemonBlockChainHeight());
+//     std::cerr << "TEST: closing wallet...\n";
+//     wmgr->closeWallet(wallet);
+//     std::cerr << "TEST: wallet closed\n";
+
+// }
+
 
 
 

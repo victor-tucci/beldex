@@ -168,11 +168,11 @@ namespace cryptonote
     return result;
   }
   //---------------------------------------------------------------------------
-  bool checkpoints::block_added(const cryptonote::block& block, const std::vector<cryptonote::transaction>& txs, checkpoint_t const *checkpoint)
+  void checkpoints::block_add(const block_add_info& info)
   {
-    uint64_t const height = get_block_height(block);
-    if (height < master_nodes::CHECKPOINT_STORE_PERSISTENTLY_INTERVAL || block.major_version < network_version_13_checkpointing)
-      return true;
+    uint64_t const height = get_block_height(info.block);
+    if (height < master_nodes::CHECKPOINT_STORE_PERSISTENTLY_INTERVAL || info.block.major_version < network_version_13_checkpointing)
+      return;
 
     uint64_t end_cull_height = 0;
     {
@@ -204,13 +204,11 @@ namespace cryptonote
       }
     }
 
-    if (checkpoint)
-        update_checkpoint(*checkpoint);
-
-    return true;
+    if (info.checkpoint)
+        update_checkpoint(*info.checkpoint);
   }
   //---------------------------------------------------------------------------
-  void checkpoints::blockchain_detached(uint64_t height, bool /*by_pop_blocks*/)
+  void checkpoints::blockchain_detached(uint64_t height)
   {
     m_last_cull_height = std::min(m_last_cull_height, height);
 

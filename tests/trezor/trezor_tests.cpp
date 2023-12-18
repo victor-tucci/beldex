@@ -31,7 +31,6 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/account.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
-#include "epee/misc_language.h"
 #include "epee/string_tools.h"
 
 using namespace cryptonote;

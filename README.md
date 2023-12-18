@@ -44,18 +44,14 @@ library archives (`.a`).
 | CMake        | 3.10          | NO       | `cmake`                | `cmake`      | `cmake`             | NO       |                  |
 | pkg-config   | any           | NO       | `pkg-config`           | `base-devel` | `pkgconf`           | NO       |                  |
 | Boost        | 1.65          | NO       | `libboost-all-dev`[2]  | `boost`      | `boost-devel`       | NO       | C++ libraries    |
-| OpenSSL      | basically any | NO       | `libssl-dev`           | `openssl`    | `openssl-devel`     | NO       | sha256 sum       |
 | libzmq       | 4.3.0         | YES      | `libzmq3-dev`          | `zeromq`     | `zeromq-devel`      | NO       | ZeroMQ library   |
 | sqlite3      | ?             | YES      | `libsqlite3-dev`       | `sqlite`     | `sqlite-devel`      | NO       | Beldex Name System |
-| libunbound   | 1.4.16        | NO       | `libunbound-dev`       | `unbound`    | `unbound-devel`     | NO       | DNS resolver     |
 | libsodium    | 1.0.9         | YES      | `libsodium-dev`        | `libsodium`  | `libsodium-devel`   | NO       | cryptography     |
-| libcurl      | 4.0           | NO       | `libcurl4-openssl-dev` | `curl`       | `curl-devel`        | NO       | HTTP RPC         |
+| libcurl      | 4.0           | NO       | `curl`                 | `curl-devel` | NO                  | HTTP     | RPC              |
 | libuv (Win)  | any           | NO       | (Windows only)         | --           | --                  | NO       | RPC event loop   |
 | libunwind    | any           | NO       | `libunwind8-dev`       | `libunwind`  | `libunwind-devel`   | YES      | Stack traces     |
 | liblzma      | any           | NO       | `liblzma-dev`          | `xz`         | `xz-devel`          | YES      | For libunwind    |
 | libreadline  | 6.3.0         | NO       | `libreadline-dev`      | `readline`   | `readline-devel`    | YES      | Input editing    |
-| ldns         | 1.6.17        | NO       | `libldns-dev`          | `ldns`       | `ldns-devel`        | YES      | SSL toolkit      |
-| expat        | 1.1           | NO       | `libexpat1-dev`        | `expat`      | `expat-devel`       | YES      | XML parsing      |
 | Doxygen      | any           | NO       | `doxygen`              | `doxygen`    | `doxygen`           | YES      | Documentation    |
 | Graphviz     | any           | NO       | `graphviz`             | `graphviz`   | `graphviz`          | YES      | Documentation    |
 | Qt tools     | 5.x           | NO       | `qttools5-dev`         | `qt5-tools`  | `qt5-linguist`      | YES      | Translations     |
@@ -74,14 +70,14 @@ breakdown of the minimum set of required boost packages.
 Install all dependencies at once on Debian/Ubuntu:
 
 ```
-sudo apt update && sudo apt install build-essential cmake pkg-config libboost-all-dev libssl-dev libzmq3-dev libunbound-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev doxygen graphviz libpgm-dev libsqlite3-dev libcurl4-openssl-dev
+sudo apt update && sudo apt install build-essential cmake pkg-config libboost-all-dev libzmq3-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev doxygen graphviz libpgm-dev libsqlite3-dev curl
 ```
 
 Install all dependencies at once on macOS with the provided Brewfile:
 ``` brew update && brew bundle --file=contrib/brew/Brewfile ```
 
 FreeBSD one liner for required to build dependencies
-```pkg install git gmake cmake pkgconf boost-libs libzmq4 libsodium sqlite3 openssl unbound miniupnpc```
+```pkg install git gmake cmake pkgconf boost-libs libzmq4 libsodium sqlite3 miniupnpc```
 
 ### Cloning the repository
 
@@ -202,13 +198,13 @@ application.
     To build for 64-bit Windows:
 
     ```bash
-    pacman -S git mingw-w64-x86_64-toolchain make mingw-w64-x86_64-cmake mingw-w64-x86_64-boost mingw-w64-x86_64-openssl mingw-w64-x86_64-zeromq mingw-w64-x86_64-libsodium mingw-w64-x86_64-hidapi mingw-w64-x86_64-sqlite3 mingw-w64-x86_64-unbound
+    pacman -S git mingw-w64-x86_64-toolchain make mingw-w64-x86_64-cmake mingw-w64-x86_64-boost mingw-w64-x86_64-zeromq mingw-w64-x86_64-libsodium mingw-w64-x86_64-hidapi mingw-w64-x86_64-sqlite3
     ```
 
     To build for 32-bit Windows:
 
     ```bash
-    pacman -S git mingw-w64-i686-toolchain make mingw-w64-i686-cmake mingw-w64-i686-boost mingw-w64-i686-openssl mingw-w64-i686-zeromq mingw-w64-i686-libsodium mingw-w64-i686-hidapi mingw-w64-i686-sqlite3 mingw-w64-i686-unbound
+    pacman -S git mingw-w64-i686-toolchain make mingw-w64-i686-cmake mingw-w64-i686-boost mingw-w64-i686-zeromq mingw-w64-i686-libsodium mingw-w64-i686-hidapi mingw-w64-i686-sqlite3
     ```
 
 * Close and reopen the MSYS MinGW shell via `MSYS2 MinGW 64-bit` shortcut on

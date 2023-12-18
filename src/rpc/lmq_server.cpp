@@ -1,6 +1,7 @@
 
 #include "lmq_server.h"
 #include "oxenmq/oxenmq.h"
+#include <fmt/core.h>
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
@@ -64,10 +65,10 @@ auto as_x_pubkeys(const std::vector<std::string>& pk_strings) {
   std::vector<crypto::x25519_public_key> pks;
   pks.reserve(pk_strings.size());
   for (const auto& pkstr : pk_strings) {
-    if (pkstr.size() != 64 || !oxenmq::is_hex(pkstr))
+    if (pkstr.size() != 64 || !oxenc::is_hex(pkstr))
       throw std::runtime_error("Invalid LMQ login pubkey: '" + pkstr + "'; expected 64-char hex pubkey");
     pks.emplace_back();
-    oxenmq::to_hex(pkstr.begin(), pkstr.end(), reinterpret_cast<char *>(&pks.back()));
+    oxenc::to_hex(pkstr.begin(), pkstr.end(), reinterpret_cast<char *>(&pks.back()));
   }
   return pks;
 }
@@ -313,7 +314,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
     }
   });
 
-  core_.get_blockchain_storage().hook_block_added(*this);
+  core_.get_blockchain_storage().hook_block_post_add([this] (const auto& info) { send_block_notifications(info.block); return true; });
   core_.get_pool().add_notify([this](const crypto::hash& id, const transaction& tx, const std::string& blob, const tx_pool_options& opts) {
       send_mempool_notifications(id, tx, blob, opts);
   });
@@ -355,15 +356,13 @@ static void send_notifies(Mutex& mutex, Subs& subs, const char* desc, Call call)
   }
 }
 
-bool omq_rpc::block_added(const block& block, const std::vector<transaction>& txs, const checkpoint_t *)
+void omq_rpc::send_block_notifications(const block& block)
 {
   auto& omq = core_.get_omq();
-  std::string height = std::to_string(get_block_height(block));
+  std::string height = fmt::format("{}", get_block_height(block));
   send_notifies(subs_mutex_, block_subs_, "block", [&](auto& conn, auto& sub) {
     omq.send(conn, "notify.block", height, std::string_view{block.hash.data, sizeof(block.hash.data)});
   });
-
-  return true;
 }
 
 void omq_rpc::send_mempool_notifications(const crypto::hash& id, const transaction& tx, const std::string& blob, const tx_pool_options& opts)

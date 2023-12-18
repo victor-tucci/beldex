@@ -28,7 +28,7 @@
 
 #include "db_lmdb.h"
 
-#include <boost/format.hpp>
+#include <fmt/core.h>
 #include <boost/circular_buffer.hpp>
 #include <boost/endian/conversion.hpp>
 #include <memory>
@@ -41,6 +41,7 @@
 #include "common/file.h"
 #include "common/pruning.h"
 #include "common/hex.h"
+#include "common/median.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "crypto/crypto.h"
 #include "epee/profile_tools.h"
@@ -711,7 +712,7 @@ bool BlockchainLMDB::need_resize(uint64_t threshold_size) const
   LOG_PRINT_L3("Space remaining: " << mei.me_mapsize - size_used);
   LOG_PRINT_L3("Size threshold:  " << threshold_size);
   float resize_percent = RESIZE_PERCENT;
-  LOG_PRINT_L3(boost::format("Percent used: %.04f  Percent threshold: %.04f") % (100.*size_used/mei.me_mapsize) % (100.*resize_percent));
+  LOG_PRINT_L3(fmt::format("Percent used: {:.04f}  Percent threshold: {:.04f}", 100. * size_used / mei.me_mapsize, 100. * resize_percent));
 
   if (threshold_size > 0)
   {
@@ -1997,6 +1998,9 @@ bool BlockchainLMDB::get_txpool_tx_blob(const crypto::hash& txid, cryptonote::bl
     return false;
   if (result != 0)
       throw1(DB_ERROR(lmdb_error("Error finding txpool tx blob: ", result).c_str()));
+
+  if (v.mv_size == 0)
+      throw1(DB_ERROR("Error finding txpool tx blob: tx is present, but data is empty"));
 
   bd.assign(reinterpret_cast<const char*>(v.mv_data), v.mv_size);
   return true;
@@ -4698,13 +4702,13 @@ void BlockchainLMDB::fixup(cryptonote::network_type nettype)
           if (is_hard_fork_at_least(nettype, cryptonote::network_version_17_POS, curr_height)
               && block_header_has_POS_components(get_block_header_from_height(curr_height)))
           {
-            diff = POS_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME_V17
+            diff = POS_FIXED_DIFFICULTY; // TARGET_BLOCK_TIME
           }
           else
           {
             diff = next_difficulty_v2(timestamps,
                                       difficulties,
-                                      tools::to_seconds(TARGET_BLOCK_TIME), //use OLD BLOCK_TIME
+                                      tools::to_seconds(TARGET_BLOCK_TIME_OLD), //use OLD BLOCK_TIME
                                       difficulty_mode(nettype, curr_height + 1));
           }
         }
@@ -5765,7 +5769,7 @@ void BlockchainLMDB::migrate_3_4()
       if (past_long_term_weight)
       {
         std::vector<uint64_t> weights(long_term_block_weights.begin(), long_term_block_weights.end());
-        uint64_t long_term_effective_block_median_weight = std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5, epee::misc_utils::median(weights));
+        uint64_t long_term_effective_block_median_weight = std::max<uint64_t>(CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5,  tools::median(weights));
         long_term_block_weight = std::min<uint64_t>(bi.bi_weight, long_term_effective_block_median_weight + long_term_effective_block_median_weight * 2 / 5);
       }
       else
