@@ -3446,8 +3446,8 @@ namespace cryptonote { namespace rpc {
       if (cur_version < required) {
         res.status = fmt::format("Outdated {}. Current: {}.{}.{}, Required: {}.{}.{}",name, cur_version[0], cur_version[1], cur_version[2], required[0], required[1], required[2]);
         MERROR(res.status);
-      } else if (!pubkey_ed25519.empty() // TODO: once belnet & ss are always sending this we can remove this empty bypass
-          && pubkey_ed25519 != our_pubkey_ed25519) {
+      } else if (!pubkey_ed25519.empty() && !(pubkey_ed25519.find_first_not_of('0') == std::string_view::npos) // TODO: once belnet & ss are always sending this we can remove this empty bypass
+          && (pubkey_ed25519 != our_pubkey_ed25519)) {
         res.status = fmt::format("Invalid {} pubkey: expected {}, received {}", name, our_pubkey_ed25519, pubkey_ed25519);
         MERROR(res.status);
       } else {
@@ -3835,7 +3835,7 @@ namespace cryptonote { namespace rpc {
     if (req.encrypted_value.size() % 2 != 0)
       throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value length not divisible by 2, length=" + std::to_string(req.encrypted_value.size())};
 
-    if (req.encrypted_value.size() >= (bns::mapping_value::BUFFER_SIZE * 2))
+    if ((req.encrypted_value.size() >= (bns::mapping_value::BUFFER_SIZE * 2)) && !(req.type =="wallet"))
       throw rpc_error{ERROR_INVALID_VALUE_LENGTH, "Value too long to decrypt=" + req.encrypted_value};
 
     if (!oxenc::is_hex(req.encrypted_value))

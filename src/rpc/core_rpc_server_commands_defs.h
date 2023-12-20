@@ -1689,8 +1689,8 @@ BELDEX_RPC_DOC_INTROSPECT
     struct response
     {
       std::string status;       // General RPC error code. "OK" means everything looks good.
-      int64_t emission_amount; // Amount of coinbase reward in atomic units.
-      int64_t fee_amount;      // Amount of fees in atomic units.
+      uint64_t emission_amount; // Amount of coinbase reward in atomic units.
+      int64_t fee_amount;       // Amount of fees in atomic units.
       int64_t burn_amount;      // Amount of burnt beldex.
 
       KV_MAP_SERIALIZABLE
