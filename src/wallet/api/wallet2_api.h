@@ -928,6 +928,13 @@ struct Wallet
                                                     std::set<uint32_t> subaddr_indices = {}) = 0;
     
     /*!
+     * \brief setBnsRecord - attach an name and namehash to a wallet cache attribute
+     * \param name - the key
+     * \return true if successful, false otherwise
+     */
+    virtual bool setBnsRecord(const std::string &name) = 0;
+
+    /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
      * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
      *                          after object returned

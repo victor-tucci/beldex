@@ -1605,7 +1605,8 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
         bool error = false;
         auto w = wallet();
         for (size_t i = 0; i < dst_addr.size() && !error; i++) {
-            if(!cryptonote::get_account_address_from_str(info, m_wallet_ptr->nettype(), dst_addr[i])) {
+            std::optional<std::string> address = w->resolve_address(dst_addr[i]);
+		    if(!cryptonote::get_account_address_from_str(info, m_wallet_ptr->nettype(), *address)) {
                 // TODO: copy-paste 'if treating as an address fails, try as url' from simplewallet.cpp:1982
                 setStatusError(tr("Invalid destination address"));
                 error = true;
@@ -2121,6 +2122,24 @@ PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::strin
     // Resume refresh thread
     startRefresh();
     return transaction;
+}
+
+EXPORT
+bool WalletImpl::setBnsRecord(const std::string &name)
+{
+    std::string reason;
+    auto name_str = tools::lowercase_ascii_string(name);
+    if (bns::validate_bns_name(name_str, &reason))
+    {
+        std::string name_hash_str = bns::name_to_base64_hash(name);
+        tools::wallet2::bns_detail detail = {
+                name_str,
+                name_hash_str};
+        wallet()->set_bns_cache_record(detail);
+        return true;
+    }
+    setStatusError(tr("Invalid BNS name '" + name_str + "': " + reason));
+    return false;
 }
 
 EXPORT
