@@ -420,6 +420,11 @@ struct stakeInfo{
     bool decommissioned = false;
 };
 
+struct bnsInfo{
+    uint64_t update_height, expiration_height;
+    std::string name_hash, name, owner, backup_owner, value_bchat, value_wallet, value_belnet, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value;
+};
+
 /**
  * @brief Interface for wallet operations.
  *        TODO: check if /include/IWallet.h is still actual
@@ -933,6 +938,11 @@ struct Wallet
      * \return true if successful, false otherwise
      */
     virtual bool setBnsRecord(const std::string &name) = 0;
+
+    /*!
+     * \return struct bnsInfo
+     */
+    virtual std::vector<bnsInfo>* MyBns() const = 0;
 
     /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.

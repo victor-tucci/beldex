@@ -2143,6 +2143,99 @@ bool WalletImpl::setBnsRecord(const std::string &name)
 }
 
 EXPORT
+std::vector<bnsInfo>* WalletImpl::MyBns() const
+{
+    std::vector<bnsInfo>* my_bns = new std::vector<bnsInfo>;
+
+    auto w = wallet();
+
+    std::vector<std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::response_entry>> rpc_results;
+    std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::request> requests(1);
+
+    std::unordered_map<std::string, tools::wallet2::bns_detail> cache = w->get_bns_cache();
+
+    for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+    {
+        if (requests.back().entries.size() >= cryptonote::rpc::BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES)
+            requests.emplace_back();
+        requests.back().entries.push_back(w->get_subaddress_as_str({0, index}));
+    }
+
+    rpc_results.reserve(requests.size());
+    for (auto const &request : requests)
+    {
+        auto [success, result] = w->bns_owners_to_names(request);
+        if (!success)
+        {
+            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+        }
+        rpc_results.emplace_back(std::move(result));
+    }
+
+    auto nettype = w->nettype();
+    for (size_t i = 0; i < rpc_results.size(); i++)
+    {
+        auto const &rpc = rpc_results[i];
+        for (auto const &entry : rpc)
+        {
+            std::string_view name;
+            std::string value_bchat, value_wallet, value_belnet;
+            if (auto got = cache.find(entry.name_hash); got != cache.end())
+            {
+                name = got->second.name;
+                //BCHAT
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::bchat;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_bchat_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_bchat = mv.to_readable_value(nettype, type);
+                }
+                //WALLET
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::wallet;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_wallet_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_wallet = mv.to_readable_value(nettype,type);
+                }
+                //BELNET
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::belnet;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_belnet_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_belnet = mv.to_readable_value(nettype, type);
+                }
+            }
+            auto &info = my_bns->emplace_back();
+            info.name_hash = entry.name_hash;
+            if(!name.empty())
+                info.name = std::string(name);
+            if (!value_bchat.empty())
+                info.value_bchat = value_bchat;
+            if (!value_wallet.empty())
+                info.value_wallet = value_wallet;
+            if (!value_belnet.empty())
+                info.value_belnet = value_belnet;
+            info.owner = entry.owner;
+            if (entry.backup_owner)
+                info.backup_owner = *entry.backup_owner;
+            info.update_height = entry.update_height;
+            if (entry.expiration_height)
+                info.expiration_height = *entry.expiration_height;
+            if(!entry.encrypted_bchat_value.empty())
+                info.encrypted_bchat_value = entry.encrypted_bchat_value;
+            if(!entry.encrypted_wallet_value.empty())
+                info.encrypted_wallet_value = entry.encrypted_wallet_value;
+            if(!entry.encrypted_belnet_value.empty())
+                info.encrypted_belnet_value = entry.encrypted_belnet_value;
+        }
+    }
+    return my_bns;
+}
+
+EXPORT
 PendingTransaction *WalletImpl::createSweepUnmixableTransaction()
 
 {
