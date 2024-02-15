@@ -421,8 +421,18 @@ struct stakeInfo{
 };
 
 struct bnsInfo{
-    uint64_t update_height, expiration_height;
-    std::string name_hash, name, owner, backup_owner, value_bchat, value_wallet, value_belnet, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value;
+    uint64_t update_height; 
+    uint64_t expiration_height;
+    std::string name_hash; 
+    std::string name; 
+    std::string owner; 
+    std::string backup_owner; 
+    std::string value_bchat; 
+    std::string value_wallet; 
+    std::string value_belnet; 
+    std::string encrypted_bchat_value;
+    std::string encrypted_wallet_value;
+    std::string encrypted_belnet_value;
 };
 
 /**

@@ -1940,6 +1940,11 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
             }
             pendingTxPostProcess(transaction);
 
+            if (good() && !setBnsRecord(name)) {
+                LOG_PRINT_L1(__FUNCTION__ << "BNS records are not being cached properly");
+                break;
+            }
+
         }catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?
             setStatusError(tr("daemon is busy. Please try again later."));
@@ -2210,26 +2215,17 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
             }
             auto &info = my_bns->emplace_back();
             info.name_hash = entry.name_hash;
-            if(!name.empty())
-                info.name = std::string(name);
-            if (!value_bchat.empty())
-                info.value_bchat = value_bchat;
-            if (!value_wallet.empty())
-                info.value_wallet = value_wallet;
-            if (!value_belnet.empty())
-                info.value_belnet = value_belnet;
+            info.name = name.empty() ? "(none)" : std::string(name);
+            info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
+            info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
+            info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
             info.owner = entry.owner;
-            if (entry.backup_owner)
-                info.backup_owner = *entry.backup_owner;
+            info.backup_owner = entry.backup_owner? *entry.backup_owner : "(none)";
             info.update_height = entry.update_height;
-            if (entry.expiration_height)
-                info.expiration_height = *entry.expiration_height;
-            if(!entry.encrypted_bchat_value.empty())
-                info.encrypted_bchat_value = entry.encrypted_bchat_value;
-            if(!entry.encrypted_wallet_value.empty())
-                info.encrypted_wallet_value = entry.encrypted_wallet_value;
-            if(!entry.encrypted_belnet_value.empty())
-                info.encrypted_belnet_value = entry.encrypted_belnet_value;
+            info.expiration_height = entry.expiration_height ? *entry.expiration_height : 0;
+            info.encrypted_bchat_value = entry.encrypted_bchat_value.empty() ? "(none)" : entry.encrypted_bchat_value;
+            info.encrypted_wallet_value = entry.encrypted_wallet_value.empty() ? "(none)" : entry.encrypted_wallet_value;
+            info.encrypted_belnet_value = entry.encrypted_belnet_value.empty() ? "(none)" : entry.encrypted_belnet_value;
         }
     }
     return my_bns;
