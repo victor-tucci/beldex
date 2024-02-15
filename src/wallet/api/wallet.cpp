@@ -1826,6 +1826,11 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
             }
             pendingTxPostProcess(transaction);
 
+            if (good() && !setBnsRecord(name)) {
+                LOG_PRINT_L1(__FUNCTION__ << "BNS records are not being cached properly");
+                break;
+            }
+
         }catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?
             setStatusError(tr("daemon is busy. Please try again later."));
