@@ -930,6 +930,30 @@ TEST_F(WalletTest1, statusOfCountBns)
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
+TEST_F(WalletTest1, bnsByOwner)
+{
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+    std::vector<Wallet::bnsInfo> data = *(wallet1->MyBns());
+
+    for (const auto& info : data) {
+        std::cout << "name_hash :" << info.name_hash << std::endl;
+        std::cout << "name :" << info.name << std::endl;
+        std::cout << "value_bchat :" << info.value_bchat << std::endl;
+        std::cout << "value_wallet :" << info.value_wallet << std::endl;
+        std::cout << "value_belnet :" << info.value_belnet << std::endl;
+        std::cout << "owner :" << info.owner << std::endl;
+        std::cout << "backup_owner :" << info.backup_owner << std::endl;
+        std::cout << "update_height :" << info.update_height << std::endl;
+        std::cout << "expiration_height :" << info.expiration_height << std::endl;
+        std::cout << "encrypted_bchat_value :" << info.encrypted_bchat_value << std::endl;
+        std::cout << "encrypted_wallet_value :" << info.encrypted_wallet_value << std::endl;
+        std::cout << "encrypted_belnet_value :" << info.encrypted_belnet_value << std::endl;
+    }
+
+    ASSERT_TRUE(wmgr->closeWallet(wallet1));
+}
+
 // TEST_F(WalletTest1, WalletTransactionWithMixin)
 // {
 //     std::vector<int> mixins;
