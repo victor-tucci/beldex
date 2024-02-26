@@ -1746,6 +1746,116 @@ PendingTransaction *WalletImpl::createTransaction(const std::string &dst_addr, s
 }
 
 EXPORT
+PendingTransaction *WalletImpl::createSweepAllTransaction(uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+{
+    clearStatus();
+    // Pause refresh thread while creating transaction
+    pauseRefresh();
+
+    cryptonote::address_parse_info info;
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do{
+        auto w = wallet();
+        std::vector<uint8_t> extra;
+        std::string extra_nonce;
+
+        std::string addr = w->get_subaddress_as_str({0, 0});
+        if (!cryptonote::get_account_address_from_str(info, w->nettype(), addr)){
+            setStatusError(tr("failed to parse address"));
+            break;
+        }
+
+        if (info.has_payment_id) {
+            if (!extra_nonce.empty()) {
+                setStatusError(tr("a single transaction cannot use more than one payment id"));
+                break;
+            }
+            set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, info.payment_id);
+        }
+        if (!extra_nonce.empty() && !add_extra_nonce_to_tx_extra(extra, extra_nonce)) {
+            setStatusError(tr("failed to set up payment id, though it was decoded correctly"));
+            break;
+        }
+        try {
+            transaction->m_pending_tx = w->create_transactions_all(0, info.address, info.is_subaddress, 1, CRYPTONOTE_DEFAULT_TX_MIXIN, 0 /* unlock_time */,
+                                                                            priority,
+                                                                            extra, subaddr_account, subaddr_indices);
+            pendingTxPostProcess(transaction);
+
+        } catch (const tools::error::daemon_busy&) {
+            // TODO: make it translatable with "tr"?
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") +  e.to_string());
+        } catch (const tools::error::get_outs_error&) {
+            setStatusError(tr("failed to get outputs to mix"));
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            setStatusError("");
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            setStatusError("");
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            setStatusError("");
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee())  %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) <<  e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big& e) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+    }while(false);
+
+    transaction->m_status = status();
+    // Resume refresh thread
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
 bool WalletImpl::bns_validate_years(std::string_view map_years, bns::mapping_years *mapping_years)
 {
     LOG_PRINT_L1(__FUNCTION__ << "Check bns year");
@@ -2150,6 +2260,20 @@ bool WalletImpl::setBnsRecord(const std::string &name)
     }
     setStatusError(tr("Invalid BNS name '" + name_str + "': " + reason));
     return false;
+}
+
+EXPORT
+std::string WalletImpl::nameToNamehash(const std::string &name)
+{
+    std::string reason;
+    auto name_str = tools::lowercase_ascii_string(name);
+    if (bns::validate_bns_name(name_str, &reason))
+    {
+        std::string name_hash_str = bns::name_to_base64_hash(name);
+        return name_hash_str;
+    }
+    setStatusError(tr("Invalid BNS name '" + name_str + "': " + reason));
+    return "";
 }
 
 EXPORT
