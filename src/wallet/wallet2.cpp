@@ -6483,6 +6483,7 @@ std::optional<std::string> wallet2::resolve_address(std::string address, uint64_
   if (cryptonote::get_account_address_from_str(info, m_nettype, address))
   {
     result = true;
+    return address;
   } else {
     std::string name = tools::lowercase_ascii_string(std::move(address));
     std::string reason;
