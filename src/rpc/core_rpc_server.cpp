@@ -3546,6 +3546,52 @@ namespace cryptonote { namespace rpc {
     res.status = STATUS_OK;
     return res;
   }
+
+  //------------------------------------------------------------------------------------------------------------------------------
+  BNS_LOOKUP::response core_rpc_server::invoke(BNS_LOOKUP::request&& req, rpc_context context)
+  {
+    BNS_LOOKUP::response res{};
+
+    std::string name = tools::lowercase_ascii_string(std::move(req.name));
+    
+    BNS_NAMES_TO_OWNERS::request name_to_owner_req{};
+    name_to_owner_req.entries.push_back(bns::name_to_base64_hash(name));   
+    auto name_to_owner_res = invoke(std::move(name_to_owner_req), context);
+
+    if(name_to_owner_res.entries.size() != 1){
+        throw rpc_error{ERROR_INVALID_RESULT, "Invalid data returned from BNS_NAMES_TO_OWNERS"};
+    }
+
+    auto entries = name_to_owner_res.entries.back();
+    {
+      res.name_hash                                         = entries.name_hash;
+      res.owner                                             = entries.owner;
+      if (entries.backup_owner) res.backup_owner            = entries.backup_owner;
+      res.expiration_height                                 = entries.expiration_height;
+      res.update_height                                     = entries.update_height;
+      res.txid                                              = entries.txid;
+
+      if(!entries.encrypted_bchat_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "bchat", entries.encrypted_bchat_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.bchat_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_belnet_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "belnet", entries.encrypted_belnet_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.belnet_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_wallet_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries.encrypted_wallet_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.wallet_value = bns_value_decrypt_res.value;
+      }
+    }
+
+    res.status = STATUS_OK;
+    return res;
+  }
+
   //------------------------------------------------------------------------------------------------------------------------------
   BNS_OWNERS_TO_NAMES::response core_rpc_server::invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context)
   {
