@@ -268,6 +268,7 @@ namespace cryptonote::rpc {
     TEST_TRIGGER_P2P_RESYNC::response                   invoke(TEST_TRIGGER_P2P_RESYNC::request&& req, rpc_context context);
     TEST_TRIGGER_UPTIME_PROOF::response                 invoke(TEST_TRIGGER_UPTIME_PROOF::request&& req, rpc_context context);
     BNS_NAMES_TO_OWNERS::response                       invoke(BNS_NAMES_TO_OWNERS::request&& req, rpc_context context);
+    BNS_LOOKUP::response                                invoke(BNS_LOOKUP::request&& req, rpc_context context);
     BNS_OWNERS_TO_NAMES::response                       invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context);
     BNS_RESOLVE::response                               invoke(BNS_RESOLVE::request&& req, rpc_context context);
     BNS_VALUE_DECRYPT::response                         invoke(BNS_VALUE_DECRYPT::request&& req, rpc_context context);
