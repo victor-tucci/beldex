@@ -70,6 +70,8 @@ namespace cryptonote
     {144650, "35203798750fc11eb1e8ee1dd71cefa8eb59ea1cfe9dea14368c06ca6addaa83"},
     {266284, "446fb044ad9f920d2c1607b792b7667b1d9994edc7fcc72f89282983cb7044cc"},
     {301187, "a9676c3fbae6ad42434db2d1ebac90c2e75dbbd02a6b2d45c69d123554c7578f"},
+    {3126052,"d3c6d7e2b79c3b455861e99eaed7fc9c47677abe665d0e6b27bf9311397e4c9b"},
+
   };
 
   crypto::hash get_newest_hardcoded_checkpoint(cryptonote::network_type nettype, uint64_t *height)
@@ -135,7 +137,14 @@ namespace cryptonote
     if (get_checkpoint(height, checkpoint))
     {
       crypto::hash const &curr_hash = checkpoint.block_hash;
-      CHECK_AND_ASSERT_MES(h == curr_hash, false, "Checkpoint at given height already exists, and hash for new checkpoint was different!");
+      if(h != curr_hash && height == 3126052){
+        checkpoint.type       = checkpoint_type::hardcoded;
+        checkpoint.height     = height;
+        checkpoint.block_hash = h;
+        r                     = update_checkpoint(checkpoint);
+      }
+      else
+        CHECK_AND_ASSERT_MES(h == curr_hash, false, "Checkpoint at given height already exists, and hash for new checkpoint was different!");
     }
     else
     {
@@ -204,7 +213,7 @@ namespace cryptonote
       }
     }
 
-    if (info.checkpoint)
+    if (info.checkpoint && (info.checkpoint->height != 3126052))
         update_checkpoint(*info.checkpoint);
   }
   //---------------------------------------------------------------------------
