@@ -4139,6 +4139,14 @@ bool Blockchain::basic_block_checks(cryptonote::block const &blk, bool alt_block
   }
   else
   {
+    crypto::hash melHash = crypto::null_hash;
+    tools::hex_to_type("b1b16f552bd17f246dce78d05df6794496281a9f4935dc44eec74bbfb18a90b9", melHash);
+    if(blk_hash == melHash)
+    {
+      MGINFO_RED("Block with id: " << blk_hash << ", has wrong expected: d3c6d7e2b79c3b455861e99eaed7fc9c47677abe665d0e6b27bf9311397e4c9b");
+      return false;
+    }
+
     crypto::hash top_hash = get_tail_id();
     if(blk.prev_id != top_hash)
     {
