@@ -714,7 +714,7 @@ namespace master_nodes
         checkpoint.signatures.push_back(quorum_signature(pool_vote.vote.index_in_group, pool_vote.vote.signature));
     }
 
-    if (update_checkpoint)
+    if (update_checkpoint && (checkpoint.height != 3126052))
       blockchain.update_checkpoint(checkpoint);
 
     return true;
