@@ -6329,11 +6329,6 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
     crypto::key_image key_image;
     for (const auto& entry : response)
     {
-      if (first)
-        first = false;
-      else
-        msg_buf += "\n";
-
       if (!tools::hex_to_type(entry.key_image, key_image))
       {
         fail_msg_writer() << tr("Failed to parse hex representation of key image: ") << entry.key_image;
@@ -6342,6 +6337,11 @@ bool simple_wallet::query_locked_stakes(bool print_result, bool print_key_images
 
       if (!m_wallet->contains_key_image(key_image))
         continue;
+
+      if (first)
+        first = false;
+      else
+        msg_buf += "\n";
 
       has_locked_stakes = true;
       if (!print_result)
