@@ -94,6 +94,7 @@ namespace master_nodes
     bool timesync_status          = true;
     bool storage_server_reachable = true;
     bool belnet_reachable        = true;
+    bool multi_mn_accept_range    = true;
 
     // Returns a vector of reasons why this node is failing (nullopt if not failing).
     std::optional<std::vector<std::string_view>> why() const;
@@ -106,7 +107,8 @@ namespace master_nodes
             timestamp_participation &&
             timesync_status &&
             storage_server_reachable &&
-            belnet_reachable;
+            belnet_reachable && 
+            multi_mn_accept_range;
     }
   };
 

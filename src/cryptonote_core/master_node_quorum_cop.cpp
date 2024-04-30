@@ -60,6 +60,7 @@ namespace master_nodes
     if (!timesync_status) results.push_back("Too many missed timesync replies."sv);
     if (!storage_server_reachable) results.push_back("Storage server is not reachable."sv);
     if (!belnet_reachable) results.push_back("Belnet router is not reachable."sv);
+    if (!multi_mn_accept_range) results.push_back("This Master Node IP Reached Maximum acceptable Range."sv);
     return results;
   }
 
@@ -106,6 +107,43 @@ namespace master_nodes
       timesync_status          = proof.timesync_status;
 
     });
+
+    if (hf_version > cryptonote::network_version_12_security_signature) {
+      auto mn_infos = m_core.get_master_node_list_state();
+      std::vector<std::pair<crypto::public_key, uint64_t>> multi_mns;
+      
+      // Find the MultiMaster nodes
+      for (auto &mn_info : mn_infos)
+      {
+        m_core.get_master_node_list().access_proof(mn_info.pubkey, [&](const proof_info &proof) {
+          if(ips[0].first == proof.proof->public_ip)
+            multi_mns.push_back({mn_info.pubkey, mn_info.info->registration_height});
+        });
+      }
+
+      // Sort the list
+      std::sort(multi_mns.begin(), multi_mns.end(), [](const auto &a, const auto &b){
+        return a.second < b.second;
+      });
+
+      // Find the position of pubkey in the vector
+      auto position = std::find_if(multi_mns.begin(), multi_mns.end(), [&](const auto &pair){
+        return pair.first == pubkey;
+      });
+
+      // Check if "pubkey" is found
+      if (position != multi_mns.end()) {
+        int my_position = position - multi_mns.begin();
+        // LOG_PRINT_L2("Position of 'pubkey' in the MN_list: " << pubkey << ", " << my_position);
+        if (my_position >= 3)
+        {
+          std::cout << "This Master Node reached maximum multinode: " << pubkey << std::endl;
+          LOG_PRINT_L1("This Master Node reached maximum multinode: " << pubkey);
+          result.multi_mn_accept_range = false;
+        }
+      }
+    }
+
     std::chrono::seconds time_since_last_uptime_proof{std::time(nullptr) - timestamp};
 
     bool check_uptime_obligation     = true;
@@ -294,6 +332,7 @@ namespace master_nodes
         if (!test_results.POS_participation) reason |= cryptonote::Decommission_Reason::missed_POS_participations;
         if (!test_results.storage_server_reachable) reason |= cryptonote::Decommission_Reason::storage_server_unreachable;
         if (!test_results.belnet_reachable) reason |= cryptonote::Decommission_Reason::belnet_unreachable;
+        if (!test_results.multi_mn_accept_range) reason |= cryptonote::Decommission_Reason::multi_mn_accept_range;
         if (!test_results.timestamp_participation) reason |= cryptonote::Decommission_Reason::timestamp_response_unreachable;
         if (!test_results.timesync_status) reason |= cryptonote::Decommission_Reason::timesync_status_out_of_sync;
       
@@ -361,7 +400,7 @@ namespace master_nodes
             LOG_PRINT_L0(tools::join("\n", *why));
           else
             LOG_PRINT_L0("Master Node is passing all local tests");
-          LOG_PRINT_L0("(Note that some tests, such as storage server and belnet reachability, can only assessed by remote master nodes)");
+          LOG_PRINT_L0("(Note that some tests, such as storage server, belnet reachability and multi_mn_accept_range, can only assessed by remote master nodes)");
         }
       }else{
           LOG_PRINT_L0("process_quorums: Cant be voted on my Master Node");
