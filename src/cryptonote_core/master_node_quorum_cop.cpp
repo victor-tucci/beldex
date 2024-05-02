@@ -77,7 +77,7 @@ namespace master_nodes
 
   // Perform master node tests -- this returns true if the server node is in a good state, that is,
   // has submitted uptime proofs, participated in required quorums, etc.
-  master_node_test_results quorum_cop::check_master_node(uint8_t hf_version, const crypto::public_key &pubkey, const master_node_info &info) const
+  master_node_test_results quorum_cop::check_master_node(std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list, uint8_t hf_version, const crypto::public_key &pubkey, const master_node_info &info) const
   {
     const auto& netconf = m_core.get_net_config();
 
@@ -109,17 +109,8 @@ namespace master_nodes
     });
 
     if (hf_version > cryptonote::network_version_12_security_signature) {
-      auto mn_infos = m_core.get_master_node_list_state();
-      std::vector<std::pair<crypto::public_key, uint64_t>> multi_mns;
-      
-      // Find the MultiMaster nodes
-      for (auto &mn_info : mn_infos)
-      {
-        m_core.get_master_node_list().access_proof(mn_info.pubkey, [&](const proof_info &proof) {
-          if(ips[0].first == proof.proof->public_ip)
-            multi_mns.push_back({mn_info.pubkey, mn_info.info->registration_height});
-        });
-      }
+
+      std::vector<std::pair<crypto::public_key, uint64_t>> multi_mns = multi_mns_list[ips[0].first];
 
       // Sort the list
       std::sort(multi_mns.begin(), multi_mns.end(), [](const auto &a, const auto &b){
@@ -137,7 +128,7 @@ namespace master_nodes
         // LOG_PRINT_L2("Position of 'pubkey' in the MN_list: " << pubkey << ", " << my_position);
         if (my_position >= 3)
         {
-          std::cout << "This Master Node reached maximum multinode: " << pubkey << std::endl;
+          MGINFO("This Master Node reached maximum multinode: " << pubkey);
           LOG_PRINT_L1("This Master Node reached maximum multinode: " << pubkey);
           result.multi_mn_accept_range = false;
         }
@@ -268,7 +259,7 @@ namespace master_nodes
     return result;
   }
 
-  void quorum_cop::handling_master_nodes_states(uint8_t const obligations_height_hf_version_,uint8_t const hf_version,std::shared_ptr<const master_nodes::quorum> quorum,int index_in_group,uint64_t const latest_height)
+  void quorum_cop::handling_master_nodes_states(std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list, uint8_t const obligations_height_hf_version_,uint8_t const hf_version,std::shared_ptr<const master_nodes::quorum> quorum,int index_in_group,uint64_t const latest_height)
   {
       //
       // NOTE: I am in the quorum
@@ -278,6 +269,7 @@ namespace master_nodes
     const auto& my_keys = m_core.get_master_keys();
     std::unique_lock lock{m_lock};
     int good = 0, total = 0;
+    auto start = std::chrono::system_clock::now();
 
     for (size_t node_index = 0; node_index < quorum->workers.size(); ++worker_it, ++node_index)
     {
@@ -297,7 +289,7 @@ namespace master_nodes
         continue;
       }
 
-      auto test_results = check_master_node(obligations_height_hf_version_, node_key, info);  //MN proof Testing
+      auto test_results = check_master_node(multi_mns_list, obligations_height_hf_version_, node_key, info);  //MN proof Testing
       bool passed       = test_results.passed();
       LOG_PRINT_L3("process_quorums: check_master_node passed:");//TODO:VOTE
       LOG_PRINT_L3("NODE KEY:" << quorum->workers[node_index]);
@@ -369,11 +361,15 @@ namespace master_nodes
       if (!handle_vote(vote, vvc,hf_version))
         LOG_ERROR("Failed to add state change vote; reason: " << print_vote_verification_context(vvc, &vote));
     }
+
+    auto end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    MGINFO("Elapsed time: " << elapsed_seconds.count() << "s");
     if (good > 0)
       LOG_PRINT_L3(good << " of " << total << " master nodes are active and passing checks; no state change votes required");
   }
 
-  void quorum_cop::handling_my_master_node_states(uint8_t const obligations_height_hf_version,uint8_t const hf_version,bool &tested_myself_once_per_block,std::chrono::seconds live_time)
+  void quorum_cop::handling_my_master_node_states(std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list, uint8_t const obligations_height_hf_version,uint8_t const hf_version,bool &tested_myself_once_per_block,std::chrono::seconds live_time)
   {
     const auto& my_keys = m_core.get_master_keys();
     const auto states_array = m_core.get_master_node_list_state({my_keys.pub});
@@ -383,7 +379,7 @@ namespace master_nodes
       if (info.can_be_voted_on(m_obligations_height))
       {
         tested_myself_once_per_block = true;
-        auto my_test_results = check_master_node(obligations_height_hf_version, my_keys.pub, info);
+        auto my_test_results = check_master_node(multi_mns_list, obligations_height_hf_version, my_keys.pub, info);
         const bool print_failings = info.is_decommissioned() ||
           (info.is_active() && !my_test_results.passed() &&
             // Don't warn uptime proofs if the daemon is just recently started and is candidate for testing (i.e. restarting the daemon)
@@ -455,10 +451,26 @@ namespace master_nodes
 
   void quorum_cop::process_quorums(cryptonote::block const &block)
   {
+    MGINFO("Process_quorums function called");
     uint8_t const hf_version = block.major_version;
     if (hf_version < cryptonote::network_version_9_master_nodes)
       return;
 
+    auto start = std::chrono::system_clock::now();
+    auto mn_infos = m_core.get_master_node_list_state();
+    std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list;
+    // Find the MultiMaster nodes 2000
+    for (auto &mn_info : mn_infos)
+    {
+      m_core.get_master_node_list().access_proof(mn_info.pubkey, [&](const proof_info &proof) {
+        // if(ips[0].first == proof.proof->public_ip)
+        auto& entry = multi_mns_list[proof.proof->public_ip];
+        entry.push_back({mn_info.pubkey, mn_info.info->registration_height});          // multi_mns.push_back({mn_info.pubkey, mn_info.info->registration_height});
+      });
+    }
+    auto end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    MGINFO("Time For MN_list_fetch: " << elapsed_seconds.count() << "s");
     const auto& netconf = m_core.get_net_config();
 
     uint64_t const REORG_SAFETY_BUFFER_BLOCKS = (hf_version >= cryptonote::network_version_13_checkpointing)
@@ -558,7 +570,7 @@ namespace master_nodes
             int index_in_group = voting_enabled ? find_index_in_quorum_group(quorum->validators, my_keys.pub) : -1;
             if (index_in_group >= 0)
             {
-              handling_master_nodes_states(obligations_height_hf_version,hf_version,quorum,index_in_group,latest_height);
+              handling_master_nodes_states(multi_mns_list,obligations_height_hf_version,hf_version,quorum,index_in_group,latest_height);
             }
             else if (!tested_myself_once_per_block && (find_index_in_quorum_group(quorum->workers, my_keys.pub) >= 0))
             {
@@ -566,7 +578,7 @@ namespace master_nodes
               // being tested. If so, check if we would be decommissioned
               // based on _our_ data and if so, report it to the user so they
               // know about it.
-              handling_my_master_node_states(obligations_height_hf_version,hf_version,tested_myself_once_per_block,live_time);
+              handling_my_master_node_states(multi_mns_list,obligations_height_hf_version,hf_version,tested_myself_once_per_block,live_time);
             }
           }
         }
