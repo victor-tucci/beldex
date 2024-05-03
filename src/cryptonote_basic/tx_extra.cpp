@@ -124,6 +124,7 @@ std::vector<std::string> readable_reasons(uint16_t decomm_reason) {
   if (decomm_reason & timestamp_response_unreachable) results.push_back("Unreachable for Timestamp Check");
   if (decomm_reason & timesync_status_out_of_sync) results.push_back("Time out of sync");
   if (decomm_reason & belnet_unreachable) results.push_back("Belnet Unreachable");
+  if (decomm_reason & multi_mn_accept_range_not_met) results.push_back("Multi MN accept Range Not Met");
   return results;
 }
 
@@ -136,6 +137,7 @@ std::vector<std::string> coded_reasons(uint16_t decomm_reason) {
   if (decomm_reason & timestamp_response_unreachable) results.push_back("timecheck");
   if (decomm_reason & timesync_status_out_of_sync) results.push_back("timesync");
   if (decomm_reason & belnet_unreachable) results.push_back("belnet");
+  if (decomm_reason & multi_mn_accept_range_not_met) results.push_back("multi_mn_range");
   return results;
 }
 

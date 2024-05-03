@@ -324,7 +324,7 @@ namespace master_nodes
         if (!test_results.POS_participation) reason |= cryptonote::Decommission_Reason::missed_POS_participations;
         if (!test_results.storage_server_reachable) reason |= cryptonote::Decommission_Reason::storage_server_unreachable;
         if (!test_results.belnet_reachable) reason |= cryptonote::Decommission_Reason::belnet_unreachable;
-        if (!test_results.multi_mn_accept_range) reason |= cryptonote::Decommission_Reason::multi_mn_accept_range;
+        if (!test_results.multi_mn_accept_range) reason |= cryptonote::Decommission_Reason::multi_mn_accept_range_not_met;
         if (!test_results.timestamp_participation) reason |= cryptonote::Decommission_Reason::timestamp_response_unreachable;
         if (!test_results.timesync_status) reason |= cryptonote::Decommission_Reason::timesync_status_out_of_sync;
       

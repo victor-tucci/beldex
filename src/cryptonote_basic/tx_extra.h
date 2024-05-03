@@ -435,7 +435,7 @@ namespace cryptonote
     timestamp_response_unreachable = 1 << 4,
     timesync_status_out_of_sync = 1 << 5,
     belnet_unreachable = 1 << 6,
-    multi_mn_accept_range = 1 << 7,
+    multi_mn_accept_range_not_met = 1 << 7,
   };
 
   // Returns human-readable reason strings (e.g. "Missed Uptime Proofs") for the given reason bits
