@@ -108,7 +108,7 @@ namespace master_nodes
 
     });
 
-    if (hf_version > cryptonote::network_version_12_security_signature) {
+    if (hf_version >= cryptonote::network_version_19) {
 
       std::vector<std::pair<crypto::public_key, uint64_t>> multi_mns = multi_mns_list[ips[0].first];
 
@@ -125,10 +125,8 @@ namespace master_nodes
       // Check if "pubkey" is found
       if (position != multi_mns.end()) {
         int my_position = position - multi_mns.begin();
-        // LOG_PRINT_L2("Position of 'pubkey' in the MN_list: " << pubkey << ", " << my_position);
         if (my_position >= 3)
         {
-          MGINFO("This Master Node reached maximum multinode: " << pubkey);
           LOG_PRINT_L1("This Master Node reached maximum multinode: " << pubkey);
           result.multi_mn_accept_range = false;
         }
@@ -269,7 +267,6 @@ namespace master_nodes
     const auto& my_keys = m_core.get_master_keys();
     std::unique_lock lock{m_lock};
     int good = 0, total = 0;
-    auto start = std::chrono::system_clock::now();
 
     for (size_t node_index = 0; node_index < quorum->workers.size(); ++worker_it, ++node_index)
     {
@@ -362,9 +359,6 @@ namespace master_nodes
         LOG_ERROR("Failed to add state change vote; reason: " << print_vote_verification_context(vvc, &vote));
     }
 
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    MGINFO("Elapsed time: " << elapsed_seconds.count() << "s");
     if (good > 0)
       LOG_PRINT_L3(good << " of " << total << " master nodes are active and passing checks; no state change votes required");
   }
@@ -451,26 +445,20 @@ namespace master_nodes
 
   void quorum_cop::process_quorums(cryptonote::block const &block)
   {
-    MGINFO("Process_quorums function called");
     uint8_t const hf_version = block.major_version;
     if (hf_version < cryptonote::network_version_9_master_nodes)
       return;
 
-    auto start = std::chrono::system_clock::now();
     auto mn_infos = m_core.get_master_node_list_state();
     std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list;
-    // Find the MultiMaster nodes 2000
+    // Find the MultiMaster nodes
     for (auto &mn_info : mn_infos)
     {
       m_core.get_master_node_list().access_proof(mn_info.pubkey, [&](const proof_info &proof) {
-        // if(ips[0].first == proof.proof->public_ip)
         auto& entry = multi_mns_list[proof.proof->public_ip];
-        entry.push_back({mn_info.pubkey, mn_info.info->registration_height});          // multi_mns.push_back({mn_info.pubkey, mn_info.info->registration_height});
+        entry.push_back({mn_info.pubkey, mn_info.info->registration_height});
       });
     }
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_seconds = end - start;
-    MGINFO("Time For MN_list_fetch: " << elapsed_seconds.count() << "s");
     const auto& netconf = m_core.get_net_config();
 
     uint64_t const REORG_SAFETY_BUFFER_BLOCKS = (hf_version >= cryptonote::network_version_13_checkpointing)
