@@ -60,6 +60,7 @@ namespace master_nodes
     if (!timesync_status) results.push_back("Too many missed timesync replies."sv);
     if (!storage_server_reachable) results.push_back("Storage server is not reachable."sv);
     if (!belnet_reachable) results.push_back("Belnet router is not reachable."sv);
+    if (!multi_mn_accept_range) results.push_back("This Master Node IP Reached Maximum acceptable Range."sv);
     return results;
   }
 
@@ -76,7 +77,7 @@ namespace master_nodes
 
   // Perform master node tests -- this returns true if the server node is in a good state, that is,
   // has submitted uptime proofs, participated in required quorums, etc.
-  master_node_test_results quorum_cop::check_master_node(uint8_t hf_version, const crypto::public_key &pubkey, const master_node_info &info) const
+  master_node_test_results quorum_cop::check_master_node(std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list, uint8_t hf_version, const crypto::public_key &pubkey, const master_node_info &info) const
   {
     const auto& netconf = m_core.get_net_config();
 
@@ -106,6 +107,32 @@ namespace master_nodes
       timesync_status          = proof.timesync_status;
 
     });
+
+    if (hf_version >= cryptonote::network_version_19) {
+
+      std::vector<std::pair<crypto::public_key, uint64_t>> multi_mns = multi_mns_list[ips[0].first];
+
+      // Sort the list
+      std::sort(multi_mns.begin(), multi_mns.end(), [](const auto &a, const auto &b){
+        return a.second < b.second;
+      });
+
+      // Find the position of pubkey in the vector
+      auto position = std::find_if(multi_mns.begin(), multi_mns.end(), [&](const auto &pair){
+        return pair.first == pubkey;
+      });
+
+      // Check if "pubkey" is found
+      if (position != multi_mns.end()) {
+        int my_position = position - multi_mns.begin();
+        if (my_position >= 3)
+        {
+          LOG_PRINT_L1("This Master Node reached maximum multinode: " << pubkey);
+          result.multi_mn_accept_range = false;
+        }
+      }
+    }
+
     std::chrono::seconds time_since_last_uptime_proof{std::time(nullptr) - timestamp};
 
     bool check_uptime_obligation     = true;
@@ -230,7 +257,7 @@ namespace master_nodes
     return result;
   }
 
-  void quorum_cop::handling_master_nodes_states(uint8_t const obligations_height_hf_version_,uint8_t const hf_version,std::shared_ptr<const master_nodes::quorum> quorum,int index_in_group,uint64_t const latest_height)
+  void quorum_cop::handling_master_nodes_states(std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list, uint8_t const obligations_height_hf_version_,uint8_t const hf_version,std::shared_ptr<const master_nodes::quorum> quorum,int index_in_group,uint64_t const latest_height)
   {
       //
       // NOTE: I am in the quorum
@@ -259,7 +286,7 @@ namespace master_nodes
         continue;
       }
 
-      auto test_results = check_master_node(obligations_height_hf_version_, node_key, info);  //MN proof Testing
+      auto test_results = check_master_node(multi_mns_list, obligations_height_hf_version_, node_key, info);  //MN proof Testing
       bool passed       = test_results.passed();
       LOG_PRINT_L3("process_quorums: check_master_node passed:");//TODO:VOTE
       LOG_PRINT_L3("NODE KEY:" << quorum->workers[node_index]);
@@ -294,6 +321,7 @@ namespace master_nodes
         if (!test_results.POS_participation) reason |= cryptonote::Decommission_Reason::missed_POS_participations;
         if (!test_results.storage_server_reachable) reason |= cryptonote::Decommission_Reason::storage_server_unreachable;
         if (!test_results.belnet_reachable) reason |= cryptonote::Decommission_Reason::belnet_unreachable;
+        if (!test_results.multi_mn_accept_range) reason |= cryptonote::Decommission_Reason::multi_mn_accept_range_not_met;
         if (!test_results.timestamp_participation) reason |= cryptonote::Decommission_Reason::timestamp_response_unreachable;
         if (!test_results.timesync_status) reason |= cryptonote::Decommission_Reason::timesync_status_out_of_sync;
       
@@ -330,11 +358,12 @@ namespace master_nodes
       if (!handle_vote(vote, vvc,hf_version))
         LOG_ERROR("Failed to add state change vote; reason: " << print_vote_verification_context(vvc, &vote));
     }
+
     if (good > 0)
       LOG_PRINT_L3(good << " of " << total << " master nodes are active and passing checks; no state change votes required");
   }
 
-  void quorum_cop::handling_my_master_node_states(uint8_t const obligations_height_hf_version,uint8_t const hf_version,bool &tested_myself_once_per_block,std::chrono::seconds live_time)
+  void quorum_cop::handling_my_master_node_states(std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list, uint8_t const obligations_height_hf_version,uint8_t const hf_version,bool &tested_myself_once_per_block,std::chrono::seconds live_time)
   {
     const auto& my_keys = m_core.get_master_keys();
     const auto states_array = m_core.get_master_node_list_state({my_keys.pub});
@@ -344,7 +373,7 @@ namespace master_nodes
       if (info.can_be_voted_on(m_obligations_height))
       {
         tested_myself_once_per_block = true;
-        auto my_test_results = check_master_node(obligations_height_hf_version, my_keys.pub, info);
+        auto my_test_results = check_master_node(multi_mns_list, obligations_height_hf_version, my_keys.pub, info);
         const bool print_failings = info.is_decommissioned() ||
           (info.is_active() && !my_test_results.passed() &&
             // Don't warn uptime proofs if the daemon is just recently started and is candidate for testing (i.e. restarting the daemon)
@@ -361,7 +390,7 @@ namespace master_nodes
             LOG_PRINT_L0(tools::join("\n", *why));
           else
             LOG_PRINT_L0("Master Node is passing all local tests");
-          LOG_PRINT_L0("(Note that some tests, such as storage server and belnet reachability, can only assessed by remote master nodes)");
+          LOG_PRINT_L0("(Note that some tests, such as storage server, belnet reachability and multi_mn_accept_range, can only assessed by remote master nodes)");
         }
       }else{
           LOG_PRINT_L0("process_quorums: Cant be voted on my Master Node");
@@ -420,6 +449,16 @@ namespace master_nodes
     if (hf_version < cryptonote::network_version_9_master_nodes)
       return;
 
+    auto mn_infos = m_core.get_master_node_list_state();
+    std::map<uint32_t, std::vector<std::pair<crypto::public_key, uint64_t>>> multi_mns_list;
+    // Find the MultiMaster nodes
+    for (auto &mn_info : mn_infos)
+    {
+      m_core.get_master_node_list().access_proof(mn_info.pubkey, [&](const proof_info &proof) {
+        auto& entry = multi_mns_list[proof.proof->public_ip];
+        entry.push_back({mn_info.pubkey, mn_info.info->registration_height});
+      });
+    }
     const auto& netconf = m_core.get_net_config();
 
     uint64_t const REORG_SAFETY_BUFFER_BLOCKS = (hf_version >= cryptonote::network_version_13_checkpointing)
@@ -519,7 +558,7 @@ namespace master_nodes
             int index_in_group = voting_enabled ? find_index_in_quorum_group(quorum->validators, my_keys.pub) : -1;
             if (index_in_group >= 0)
             {
-              handling_master_nodes_states(obligations_height_hf_version,hf_version,quorum,index_in_group,latest_height);
+              handling_master_nodes_states(multi_mns_list,obligations_height_hf_version,hf_version,quorum,index_in_group,latest_height);
             }
             else if (!tested_myself_once_per_block && (find_index_in_quorum_group(quorum->workers, my_keys.pub) >= 0))
             {
@@ -527,7 +566,7 @@ namespace master_nodes
               // being tested. If so, check if we would be decommissioned
               // based on _our_ data and if so, report it to the user so they
               // know about it.
-              handling_my_master_node_states(obligations_height_hf_version,hf_version,tested_myself_once_per_block,live_time);
+              handling_my_master_node_states(multi_mns_list,obligations_height_hf_version,hf_version,tested_myself_once_per_block,live_time);
             }
           }
         }
