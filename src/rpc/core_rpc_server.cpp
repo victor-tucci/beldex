@@ -810,6 +810,7 @@ namespace cryptonote { namespace rpc {
 
             case bns::mapping_type::bchat: bns.type = "bchat"; break;
             case bns::mapping_type::wallet:  bns.type = "wallet"; break;
+            case bns::mapping_type::eth_addr:  bns.type = "eth_addr"; break;
 
             case bns::mapping_type::update_record_internal: [[fallthrough]];
             case bns::mapping_type::_count:
@@ -828,6 +829,8 @@ namespace cryptonote { namespace rpc {
           bns.value_wallet = oxenc::to_hex(x.encrypted_wallet_value);
         if (!x.encrypted_belnet_value.empty())
           bns.value_belnet = oxenc::to_hex(x.encrypted_belnet_value);
+        if (!x.encrypted_eth_addr_value.empty())
+          bns.value_eth_addr = oxenc::to_hex(x.encrypted_eth_addr_value);
         _load_owner(bns.owner, x.owner);
         _load_owner(bns.backup_owner, x.backup_owner);
       }

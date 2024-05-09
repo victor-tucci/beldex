@@ -313,6 +313,7 @@ namespace rpc {
         std::optional<std::string> value_bchat;  // The encrypted value of the record, in hex for the bchat.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> value_wallet; // The encrypted value of the record, in hex for the wallet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> value_belnet; // The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
+        std::optional<std::string> value_eth_addr;// The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> owner;        // The owner of this record; this can be a main wallet, wallet subaddress, or a plain public key.
         std::optional<std::string> backup_owner; // Backup owner wallet/pubkey of the record, if provided.
         KV_MAP_SERIALIZABLE

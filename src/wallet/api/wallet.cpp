@@ -1923,6 +1923,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
                                                      value_bchat.size() ? &value_bchat : nullptr,
                                                      value_wallet.size() ? &value_wallet : nullptr,
                                                      value_belnet.size() ? &value_belnet : nullptr,
+                                                     nullptr,
                                                      &reason,
                                                      priority,
                                                      subaddr_account,

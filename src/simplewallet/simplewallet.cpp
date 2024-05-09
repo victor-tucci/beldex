@@ -6463,6 +6463,7 @@ static constexpr auto BNS_VALUE_PREFIX        = "value="sv;
 static constexpr auto BNS_VALUE_BCHAT_PREFIX         = "bchat_id="sv;
 static constexpr auto BNS_VALUE_WALLET_PREFIX        = "address="sv;
 static constexpr auto BNS_VALUE_BELNET_PREFIX        = "belnet_id="sv;
+static constexpr auto BNS_VALUE_ETH_ADDR_PREFIX      = "eth="sv;
 static constexpr auto BNS_SIGNATURE_PREFIX    = "signature="sv;
 
 static char constexpr NULL_STR[] = "(none)";
@@ -6473,9 +6474,9 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
   
-  auto [owner, backup_owner,value_bchat,value_wallet,value_belnet,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_YEAR_PREFIX);
+  auto [owner, backup_owner,value_bchat,value_wallet,value_belnet,value_eth_addr,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_VALUE_ETH_ADDR_PREFIX, BNS_YEAR_PREFIX);
   
-  if (args.size() != 1 || (value_bchat.empty() && value_wallet.empty() && value_belnet.empty()))
+  if (args.size() != 1 || (value_bchat.empty() && value_wallet.empty() && value_belnet.empty() && value_eth_addr.empty()))
   {
     PRINT_USAGE(USAGE_BNS_BUY_MAPPING);
     return true;
@@ -6517,6 +6518,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
                                                      value_bchat.size() ? &value_bchat : nullptr,
                                                      value_wallet.size() ? &value_wallet : nullptr,
                                                      value_belnet.size() ? &value_belnet : nullptr,
+                                                     value_eth_addr.size() ? &value_eth_addr : nullptr,
                                                      &reason,
                                                      priority,
                                                      m_current_subaddress_account,
@@ -6545,6 +6547,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "(none)" : value_bchat));
     fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "(none)" : value_wallet));
     fmt::print(fmt::format(tr("Value belnet : {}\n"), value_belnet.empty() ? "(none)" : value_belnet));
+    fmt::print(fmt::format(tr("Value ethAddr: {}\n"), value_eth_addr.empty() ? "(none)" : value_belnet));
     fmt::print(fmt::format(tr("Owner        : {}\n"), owner.empty() ? m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0}) + " (this wallet) " : owner)); 
     if(backup_owner.size()) 
     {

@@ -35,6 +35,7 @@ constexpr size_t DOMAIN_NAME_MAX_NOHYPHEN = 32 + 4; // If the name does not cont
 constexpr size_t BELNET_ADDRESS_BINARY_LENGTH    = sizeof(crypto::ed25519_public_key);
 constexpr size_t BCHAT_DISPLAY_NAME_MAX         = 64;
 constexpr size_t BCHAT_PUBLIC_KEY_BINARY_LENGTH = 1 + sizeof(crypto::ed25519_public_key); // Bchat keys at prefixed with 0xbd + ed25519 key
+constexpr size_t ETH_ADDR_BINARY_LENGTH = 20; // Bchat keys at prefixed with 0xbd + ed25519 key
 
 constexpr size_t NAME_HASH_SIZE = sizeof(crypto::hash);
 constexpr size_t NAME_HASH_SIZE_B64_MIN = (4*NAME_HASH_SIZE + 2) / 3; // No padding
@@ -49,7 +50,6 @@ constexpr char BNS_WALLET_TYPE_INTEGRATED = 0x02;
 struct mapping_value
 {
   static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
-  // static size_t constexpr BUFFER_SIZE_TOTAL = (WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID + BELNET_ADDRESS_BINARY_LENGTH + BCHAT_PUBLIC_KEY_BINARY_LENGTH) + 3*SODIUM_ENCRYPTION_EXTRA_BYTES;
 
   std::array<uint8_t, BUFFER_SIZE> buffer;
   bool encrypted;

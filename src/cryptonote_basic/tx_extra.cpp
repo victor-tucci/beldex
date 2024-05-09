@@ -10,6 +10,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     const std::string& encrypted_bchat_value,
     const std::string& encrypted_wallet_value,
     const std::string& encrypted_belnet_value,
+    const std::string& encrypted_eth_addr_value,
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
@@ -41,6 +42,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
   {
     result.fields |= bns::extra_field::encrypted_belnet_value;
     result.encrypted_belnet_value = encrypted_belnet_value;
+  }
+
+  if (encrypted_eth_addr_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_eth_addr_value;
+    result.encrypted_eth_addr_value = encrypted_eth_addr_value;
   }
 
   result.prev_txid = prev_txid;

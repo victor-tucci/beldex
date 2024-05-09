@@ -8665,6 +8665,7 @@ struct bns_prepared_args
   bns::mapping_value      encrypted_bchat_value;
   bns::mapping_value      encrypted_wallet_value;
   bns::mapping_value      encrypted_belnet_value;
+  bns::mapping_value      encrypted_eth_addr_value;
   crypto::hash            name_hash;
   bns::generic_owner      owner;
   bns::generic_owner      backup_owner;
@@ -8705,6 +8706,7 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
                                                                   std::string const *value_bchat,
                                                                   std::string const *value_wallet,
                                                                   std::string const *value_belnet,
+                                                                  std::string const *value_eth_addr,
                                                                   std::string const *owner,
                                                                   std::string const *backup_owner,
                                                                   bool make_signature,
@@ -8731,6 +8733,18 @@ static bns_prepared_args prepare_tx_extra_beldex_name_system_values(wallet2 cons
       return {};
 
     if (!result.encrypted_bchat_value.encrypt(name, &result.name_hash))
+    {
+      if (reason) *reason = "Fail to encrypt mapping value=" + *value_bchat;
+      return {};
+    }
+  }
+
+  if (value_eth_addr)
+  {
+    if (!bns::mapping_value::validate(wallet.nettype(), bns::mapping_type::eth_addr, *value_eth_addr, &result.encrypted_eth_addr_value, reason))
+      return {};
+
+    if (!result.encrypted_eth_addr_value.encrypt(name, &result.name_hash))
     {
       if (reason) *reason = "Fail to encrypt mapping value=" + *value_bchat;
       return {};
@@ -8833,6 +8847,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
                                                                     std::string const *value_bchat,
                                                                     std::string const *value_wallet,
                                                                     std::string const *value_belnet,
+                                                                    std::string const *value_eth_addr,
                                                                     std::string *reason,
                                                                     uint32_t priority,
                                                                     uint32_t account_index,
@@ -8840,12 +8855,31 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
 {
   std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> response;
   constexpr bool make_signature = false;
-  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, value_bchat, value_wallet, value_belnet, owner, backup_owner, make_signature, bns::bns_tx_type::buy, account_index, reason, &response);
+  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, value_bchat, value_wallet, value_belnet,value_eth_addr, owner, backup_owner, make_signature, bns::bns_tx_type::buy, account_index, reason, &response);
   if (!owner)
     prepared_args.owner = bns::make_monero_owner(get_subaddress({account_index, 0}), account_index != 0);
 
   if (!prepared_args)
     return {};
+
+  std::string eth_encrypt_val = oxenc::to_hex(prepared_args.encrypted_eth_addr_value.to_string());
+  std::cout << "encrypted eth value : " << eth_encrypt_val << std::endl;
+  
+  bns::mapping_value eth_addr{};
+  {
+      if (!eth_encrypt_val.empty())
+      {
+        std::cout << "decryption started\n";
+        eth_addr.len = eth_encrypt_val.size() / 2;
+        eth_addr.encrypted = true;
+        oxenc::from_hex(eth_encrypt_val.begin(), eth_encrypt_val.end(), eth_addr.buffer.begin());
+        if (!eth_addr.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::eth_addr))
+        {
+          std::cout << "Failed to decrypt the mapping value=" << eth_encrypt_val <<"\n";
+        }
+      }
+  }
+  std::cout << "eth_address decrypt: " << eth_addr.to_readable_value(nettype(), bns::mapping_type::eth_addr) <<"\n";
 
   std::vector<uint8_t> extra;
   auto entry = cryptonote::tx_extra_beldex_name_system::make_buy(
@@ -8856,6 +8890,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
       prepared_args.encrypted_bchat_value.to_string(),
       prepared_args.encrypted_wallet_value.to_string(),
       prepared_args.encrypted_belnet_value.to_string(),
+      prepared_args.encrypted_eth_addr_value.to_string(),
       prepared_args.prev_txid);
   add_beldex_name_system_to_tx_extra(extra, entry);
 
@@ -8915,7 +8950,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_renewal_tx(
     )
 {
   constexpr bool make_signature = false;
-  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, nullptr, nullptr, nullptr, nullptr, nullptr, make_signature, bns::bns_tx_type::renew, account_index, reason, response);
+  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, make_signature, bns::bns_tx_type::renew, account_index, reason, response);
 
   if (!prepared_args)
     return {};
@@ -8968,7 +9003,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
   }
 
   bool make_signature = signature == nullptr;
-  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, value_bchat, value_wallet, value_belnet, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, response);
+  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, value_bchat, value_wallet, value_belnet, nullptr, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, response);
   if (!prepared_args) return {};
 
   if (!make_signature)
@@ -9046,7 +9081,7 @@ bool wallet2::bns_make_update_mapping_signature(std::string name,
 {
   std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> response;
   constexpr bool make_signature = true;
-  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, tx_priority_unimportant, name, value_bchat, value_wallet, value_belnet, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, &response);
+  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, tx_priority_unimportant, name, value_bchat, value_wallet, value_belnet, nullptr, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, &response);
   if (!prepared_args) return false;
 
   if (prepared_args.prev_txid == crypto::null_hash)

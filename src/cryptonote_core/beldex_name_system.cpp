@@ -945,6 +945,26 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
       oxenc::from_base32z(value.begin(), value.begin() + 52, blob->buffer.begin());
     }
   }
+  else if(type == mapping_type::eth_addr)
+  {
+    std::string_view value_eth = value.substr(2);
+    std::cout << "value_eth : " << value_eth << std::endl;
+    if(check_condition(value_eth.size() != 2*ETH_ADDR_BINARY_LENGTH, reason, "The value=", value, " is not the required ", 2*ETH_ADDR_BINARY_LENGTH, "-character hex string eth address, length=", value.size()))
+      return false;
+    
+    if (check_condition(!oxenc::is_hex(value_eth), reason, ", specifies name -> value mapping where the value is not a hex string given value="))
+      return false;
+
+    if (check_condition(!tools::starts_with(value, "0x"), reason, "BNS type=eth_addr, specifies mapping from name -> ed25519 key where the key is not prefixed with 0x, given ed25519=", value))
+      return false;
+
+    if (blob) // NOTE: Given blob, write the binary output
+    {
+      blob->len = value_eth.size() / 2;
+      assert(blob->len <= blob->buffer.size());
+      oxenc::from_hex(value_eth.begin(), value_eth.end(), blob->buffer.begin());
+    }
+  }
   else
   {
     assert(type == mapping_type::bchat);
@@ -994,6 +1014,10 @@ bool mapping_value::validate_encrypted(mapping_type type, std::string_view value
     // Allow an HF15 argon2 encrypted value which doesn't contain a nonce:
     if (value.size() == value_len - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES)
       value_len -= crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
+  }
+  else if (type == mapping_type::eth_addr)
+  {
+    value_len += ETH_ADDR_BINARY_LENGTH;
   }
   else
   {
@@ -1203,6 +1227,9 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
     if (check_condition(!bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value) && bns_extra.encrypted_belnet_value.size(), reason, tx, ", ", bns_extra_string(nettype, bns_extra), VALUE_SPECIFIED_BUT_NOT_REQUESTED, "encrypted_belnet_value"))
       return false;
 
+    if (check_condition(!bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value) && bns_extra.encrypted_eth_addr_value.size(), reason, tx, ", ", bns_extra_string(nettype, bns_extra), VALUE_SPECIFIED_BUT_NOT_REQUESTED, "encrypted_eth_addr_value"))
+      return false;
+
     if (check_condition(!bns_extra.field_is_set(bns::extra_field::owner) && bns_extra.owner, reason, tx, ", ", bns_extra_string(nettype, bns_extra), VALUE_SPECIFIED_BUT_NOT_REQUESTED, "owner"))
       return false;
 
@@ -1257,6 +1284,12 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
     if (bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value))
     {
       if (!mapping_value::validate_encrypted(mapping_type::belnet, bns_extra.encrypted_belnet_value, nullptr, reason))
+        return false;
+    }
+
+    if (bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value))
+    {
+      if (!mapping_value::validate_encrypted(mapping_type::eth_addr, bns_extra.encrypted_eth_addr_value, nullptr, reason))
         return false;
     }
 
@@ -1457,6 +1490,7 @@ bool mapping_value::decrypt(std::string_view name, mapping_type type, const cryp
   {
     switch(type) {
       case mapping_type::bchat: dec_length = BCHAT_PUBLIC_KEY_BINARY_LENGTH; break;
+      case mapping_type::eth_addr: dec_length = ETH_ADDR_BINARY_LENGTH; break;
       case mapping_type::belnet: dec_length = BELNET_ADDRESS_BINARY_LENGTH; break;
       case mapping_type::wallet: //Wallet type has variable type, check performed in check_length
         if (auto plain_len = len - crypto_aead_xchacha20poly1305_ietf_ABYTES - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;

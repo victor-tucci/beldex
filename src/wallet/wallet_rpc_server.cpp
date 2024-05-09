@@ -3132,6 +3132,7 @@ namespace {
                                                                                       req.value_bchat.size() ? &req.value_bchat : nullptr,
                                                                                       req.value_wallet.size() ? &req.value_wallet : nullptr,
                                                                                       req.value_belnet.size() ? &req.value_belnet : nullptr,
+                                                                                      nullptr,
                                                                                       &reason,
                                                                                       req.priority,
                                                                                       req.account_index,
