@@ -8862,25 +8862,6 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
   if (!prepared_args)
     return {};
 
-  std::string eth_encrypt_val = oxenc::to_hex(prepared_args.encrypted_eth_addr_value.to_string());
-  std::cout << "encrypted eth value : " << eth_encrypt_val << std::endl;
-  
-  bns::mapping_value eth_addr{};
-  {
-      if (!eth_encrypt_val.empty())
-      {
-        std::cout << "decryption started\n";
-        eth_addr.len = eth_encrypt_val.size() / 2;
-        eth_addr.encrypted = true;
-        oxenc::from_hex(eth_encrypt_val.begin(), eth_encrypt_val.end(), eth_addr.buffer.begin());
-        if (!eth_addr.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::eth_addr))
-        {
-          std::cout << "Failed to decrypt the mapping value=" << eth_encrypt_val <<"\n";
-        }
-      }
-  }
-  std::cout << "eth_address decrypt: " << eth_addr.to_readable_value(nettype(), bns::mapping_type::eth_addr) <<"\n";
-
   std::vector<uint8_t> extra;
   auto entry = cryptonote::tx_extra_beldex_name_system::make_buy(
       prepared_args.owner,

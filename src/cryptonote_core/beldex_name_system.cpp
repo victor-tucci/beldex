@@ -85,6 +85,7 @@ enum struct mapping_record_column
   backup_owner_id,
   update_height,
   expiration_height,
+  encrypted_eth_addr_value,
   _count,
 };
 
@@ -119,7 +120,12 @@ std::string bns::mapping_value::to_readable_value(cryptonote::network_type netty
     } else {
       result = oxenc::to_hex(to_view());
     }
-  } else {
+  }
+  else if (type == bns::mapping_type::eth_addr)
+  {
+    result = "0x" + oxenc::to_hex(to_view());
+  }
+   else {
     result = oxenc::to_hex(to_view());
   }
 
@@ -378,7 +384,21 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
   get(statement, mapping_record_column::owner_id, result.owner_id);
   get(statement, mapping_record_column::backup_owner_id, result.backup_owner_id);
 
-  // Copy encrypted_bchat_value
+  // Copy encrypted_eth_addr_value
+  {
+    auto value = get<std::string_view>(statement, mapping_record_column::encrypted_eth_addr_value);
+    if(!value.empty()){
+      if (value.size() > result.encrypted_eth_addr_value.buffer.size())
+      {
+        MERROR("Unexpected encrypted Ethereum address value with size=" << value.size() << ", in BNS db larger than the available size=" << result.encrypted_eth_addr_value.buffer.size());
+        return result;
+      }
+      result.encrypted_eth_addr_value.len = value.size();
+      result.encrypted_eth_addr_value.encrypted = true;
+      std::memcpy(&result.encrypted_eth_addr_value.buffer[0], value.data(), value.size());
+    }
+  }
+    // Copy encrypted_bchat_value
   {
     auto value = get<std::string_view>(statement, mapping_record_column::encrypted_bchat_value);
     if(!value.empty()){
@@ -1102,7 +1122,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
   std::string name_hash           = hash_to_base64(bns_extra.name_hash);
   bns::mapping_record mapping     = bns_db.get_mapping(name_hash);
 
-  if (bns_extra.is_updating())
+  if (bns_extra.is_updating()) //TODO-eth-check
   {
     // Updating: the mapping must exist and be active, the updated fields must actually change from
     // the current value, and a valid signature over the updated values must be present.
@@ -1584,7 +1604,8 @@ bool build_default_tables(name_system_db& bns_db)
     owner_id INTEGER NOT NULL REFERENCES owner(id),
     backup_owner_id INTEGER REFERENCES owner(id),
     update_height INTEGER NOT NULL,
-    expiration_height INTEGER NOT NULL
+    expiration_height INTEGER NOT NULL,
+    encrypted_eth_addr_value BLOB
 )";
 
   const std::string BUILD_TABLE_SQL = R"(
@@ -1621,16 +1642,16 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
   // In Beldex v5.0.0 we dropped some columns that are no longer needed, but SQLite can't do this easily:
   // instead we have to manually recreate the table, so check it and see if the type or
   // encrypted_value columns still exist: if so, we need to recreate.
-  bool need_mappings_migration = false;
+  bool need_mappings_migration = true;
   {
     sql_compiled_statement mappings_info{bns_db};
     mappings_info.compile("PRAGMA table_info(mappings)", false);
     while (step(mappings_info) == SQLITE_ROW)
     {
       auto name = get<std::string_view>(mappings_info, 1);
-      if (name == "type" || name == "encrypted_value")
+      if (name == "encrypted_eth_addr_value" )
       {
-        need_mappings_migration = true;
+        need_mappings_migration = false;
         break;
       }
     }
@@ -1641,14 +1662,7 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
     LOG_PRINT_L1("Migrating BNS mappings database to new format");
     const std::string migrate = R"(
 BEGIN TRANSACTION;
-ALTER TABLE mappings RENAME TO mappings_old;
-CREATE TABLE mappings ()" + mappings_columns + R"();
-DROP TABLE mappings_old;
-DELETE FROM owner;
-CREATE UNIQUE INDEX name_type_update ON mappings(name_hash, update_height DESC);
-CREATE INDEX owner_id_index ON mappings(owner_id);
-CREATE INDEX backup_owner_index ON mappings(backup_owner_id);
-CREATE INDEX mapping_type_name_exp ON mappings(name_hash, expiration_height DESC);
+ALTER TABLE mappings ADD COLUMN encrypted_eth_addr_value BLOB;
 COMMIT TRANSACTION;
 )";
 
@@ -1782,7 +1796,7 @@ DELETE FROM owner
 WHERE NOT EXISTS (SELECT * FROM mappings WHERE owner.id = mappings.owner_id)
 AND NOT EXISTS   (SELECT * FROM mappings WHERE owner.id = mappings.backup_owner_id))"sv;
 
-  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, expiration_height) VALUES (?,?,?,?,?,?,?,?,?)"sv;
+  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, expiration_height, encrypted_eth_addr_value) VALUES (?,?,?,?,?,?,?,?,?,?)"sv;
   constexpr auto SAVE_OWNER_STR    = "INSERT INTO owner (address) VALUES (?)"sv;
   constexpr auto SAVE_SETTINGS_STR = "INSERT OR REPLACE INTO settings (id, top_height, top_hash, version) VALUES (1,?,?,?)"sv;
 
@@ -1985,7 +1999,7 @@ std::pair<std::string, std::vector<update_variant>> update_record_query(name_sys
 
   sql.reserve(500);
   sql += R"(
-INSERT INTO mappings (name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_bchat_value,encrypted_wallet_value,encrypted_belnet_value)
+INSERT INTO mappings (name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value)
 SELECT                name_hash, ?,    ?)";
 
   bind.emplace_back(blob_view{tx_hash.data, sizeof(tx_hash)});
@@ -2057,6 +2071,14 @@ SELECT                name_hash, ?,    ?)";
     }
     else
       sql += ", encrypted_belnet_value";  
+    
+    if (entry.field_is_set(bns::extra_field::encrypted_eth_addr_value))
+    {
+      sql += ", ?";
+      bind.emplace_back(blob_view{entry.encrypted_eth_addr_value});
+    }
+    else
+      sql += ", encrypted_eth_addr_value";  
   }
 
   sql += suffix;
@@ -2186,7 +2208,7 @@ struct bns_update_history
 
 void bns_update_history::update(uint64_t height, cryptonote::tx_extra_beldex_name_system const &bns_extra)
 {
-  if (bns_extra.field_is_set(bns::extra_field::encrypted_bchat_value) || bns_extra.field_is_set(bns::extra_field::encrypted_wallet_value) || bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value))
+  if (bns_extra.field_is_set(bns::extra_field::encrypted_bchat_value) || bns_extra.field_is_set(bns::extra_field::encrypted_wallet_value) || bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value) || bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value))
     value_last_update_height = height;
 
   if (bns_extra.field_is_set(bns::extra_field::owner))
@@ -2247,7 +2269,12 @@ bool name_system_db::save_mapping(crypto::hash const &tx_hash, cryptonote::tx_ex
     bind(statement, mapping_record_column::encrypted_belnet_value,blob_view{});
   else
     bind(statement, mapping_record_column::encrypted_belnet_value, blob_view{src.encrypted_belnet_value});
-
+  
+  if(src.encrypted_eth_addr_value.empty())
+    bind(statement, mapping_record_column::encrypted_eth_addr_value,blob_view{});
+  else
+    bind(statement, mapping_record_column::encrypted_eth_addr_value, blob_view{src.encrypted_eth_addr_value});
+  
   bind(statement, mapping_record_column::txid, blob_view{tx_hash.data, sizeof(tx_hash)});
   bind(statement, mapping_record_column::update_height, height);
   bind(statement, mapping_record_column::expiration_height, expiration);

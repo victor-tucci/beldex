@@ -3543,6 +3543,7 @@ namespace cryptonote { namespace rpc {
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);
+        entry.encrypted_eth_addr_value                         = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
       }
     }
 
@@ -3652,6 +3653,7 @@ namespace cryptonote { namespace rpc {
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);
+      entry.encrypted_eth_addr_value = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
     }
 
     res.status = STATUS_OK;

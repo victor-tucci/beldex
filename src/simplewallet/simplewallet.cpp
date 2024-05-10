@@ -6547,7 +6547,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
     fmt::print(fmt::format(tr("Value bchat  : {}\n"), value_bchat.empty() ? "(none)" : value_bchat));
     fmt::print(fmt::format(tr("Value wallet : {}\n"), value_wallet.empty() ? "(none)" : value_wallet));
     fmt::print(fmt::format(tr("Value belnet : {}\n"), value_belnet.empty() ? "(none)" : value_belnet));
-    fmt::print(fmt::format(tr("Value ethAddr: {}\n"), value_eth_addr.empty() ? "(none)" : value_belnet));
+    fmt::print(fmt::format(tr("Value ethAddr: {}\n"), value_eth_addr.empty() ? "(none)" : value_eth_addr));
     fmt::print(fmt::format(tr("Owner        : {}\n"), owner.empty() ? m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0}) + " (this wallet) " : owner)); 
     if(backup_owner.size()) 
     {
@@ -6705,7 +6705,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
                                                         value_belnet.size() ? &value_belnet : nullptr,
                                                         owner.size() ? &owner : nullptr,
                                                         backup_owner.size() ? &backup_owner : nullptr,
-                                                        signature.size() ? &signature : nullptr,
+                                  integration-eth-address-in-bns                      signature.size() ? &signature : nullptr,
                                                         &reason,
                                                         priority,
                                                         m_current_subaddress_account,
@@ -7046,6 +7046,13 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
       return false;
     }
 
+    auto& enc_eth_hex = mapping.encrypted_eth_addr_value;
+    if (mapping.entry_index >= args.size() || !oxenc::is_hex(enc_eth_hex) || enc_eth_hex.size() > 2*bns::mapping_value::BUFFER_SIZE)
+    {
+      fail_msg_writer() << "Received invalid BNS mapping data from beldexd";
+      return false;
+    }
+    
     // Print any skipped (i.e. not registered) results:
     for (size_t i = last_index + 1; i < mapping.entry_index; i++)
       fail_msg_writer() << args[i] << " not found\n";
@@ -7104,6 +7111,23 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
       }
     }
 
+    //ETH_ADDRESS
+    bns::mapping_value value_eth{};
+    {
+      if (!enc_eth_hex.empty())
+      {
+        value_eth.len = enc_eth_hex.size() / 2;
+        value_eth.encrypted = true;
+        oxenc::from_hex(enc_eth_hex.begin(), enc_eth_hex.end(), value_eth.buffer.begin());
+
+        if (!value_eth.decrypt(name, bns::mapping_type::eth_addr))
+        {
+          fail_msg_writer() << "Failed to decrypt the mapping eth_value=" << enc_eth_hex;
+          return false;
+        }
+      }
+    }
+
     auto writer = tools::msg_writer();
     writer
       << fmt::format(fg(fmt::color::sky_blue), "    Name                   : {}", name);
@@ -7113,6 +7137,8 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
       << "\n    Value wallet           : " << value_wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet);      
     if(!enc_belnet_hex.empty()) writer
       << "\n    Value belnet           : " << value_belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet);
+    if(!enc_eth_hex.empty()) writer
+      << "\n    Value ethAddress       : " << value_eth.to_readable_value(m_wallet->nettype(), bns::mapping_type::eth_addr);
     writer
       << "\n    Owner                  : " << mapping.owner;
     if (mapping.backup_owner) writer
@@ -7127,6 +7153,8 @@ bool simple_wallet::bns_lookup(std::vector<std::string> args)
       << "\n    Encrypted wallet value : " << (enc_wallet_hex.empty() ? "(none)" :enc_wallet_hex);
     writer
       << "\n    Encrypted belnet value : " << (enc_belnet_hex.empty() ? "(none)" :enc_belnet_hex);
+    writer
+      << "\n    Encrypted Eth value    : " << (enc_eth_hex.empty() ? "(none)" :enc_eth_hex);
     writer
       << "\n";
 
@@ -7205,7 +7233,7 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
     for (auto const &entry : rpc)
     {
       std::string_view name;
-      std::string value_bchat, value_wallet, value_belnet;
+      std::string value_bchat, value_wallet, value_belnet, value_eth;
       if (auto got = cache.find(entry.name_hash); got != cache.end())
       {
         name = got->second.name;
@@ -7233,6 +7261,15 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
               && mv.decrypt(name, type))
             value_belnet = mv.to_readable_value(nettype, type);
         }
+        
+        //ETH_ADDRESS
+        {
+          bns::mapping_value mv;
+          const auto type = bns::mapping_type::eth_addr;
+          if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_eth_addr_value), &mv)
+              && mv.decrypt(name, type))
+            value_eth = mv.to_readable_value(nettype, type);
+        }
       }
 
       auto writer = tools::msg_writer();
@@ -7246,6 +7283,8 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
         << "\n    Value wallet           : " << value_wallet;
       if (!value_belnet.empty()) writer
         << "\n    Value belnet           : " << value_belnet;
+      if (!value_eth.empty()) writer
+        << "\n    Value ethAddress       : " << value_eth;  
       writer
         << "\n    Owner                  : " << entry.owner;
       if (entry.backup_owner) writer
@@ -7260,6 +7299,8 @@ bool simple_wallet::bns_by_owner(const std::vector<std::string>& args)
         << "\n    Encrypted wallet value : " << (entry.encrypted_wallet_value.empty() ? "(none)" : entry.encrypted_wallet_value);
       writer
         << "\n    Encrypted belnet value : " << (entry.encrypted_belnet_value.empty() ? "(none)" : entry.encrypted_belnet_value);
+      writer
+        << "\n    Encrypted Eth value    : " << (entry.encrypted_eth_addr_value.empty() ? "(none)" : entry.encrypted_eth_addr_value);
       writer
         << "\n";
     }

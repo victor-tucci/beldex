@@ -49,7 +49,7 @@ constexpr char BNS_WALLET_TYPE_INTEGRATED = 0x02;
 
 struct mapping_value
 {
-  static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
+  static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH, ETH_ADDR_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
 
   std::array<uint8_t, BUFFER_SIZE> buffer;
   bool encrypted;
@@ -148,7 +148,7 @@ constexpr uint16_t db_mapping_type(bns::mapping_type type) {
   return static_cast<uint16_t>(type);
 }
 constexpr std::string_view db_mapping_value(bns::mapping_type type) {
-  switch(type)
+  switch(type) //TODO-eth-check
   {
     case mapping_type::bchat: return "encrypted_bchat_value"sv;
     case mapping_type::wallet: return "encrypted_wallet_value"sv;
@@ -239,6 +239,7 @@ struct mapping_record
   int64_t       backup_owner_id;
   generic_owner owner;
   generic_owner backup_owner;
+  mapping_value encrypted_eth_addr_value;
 };
 
 struct name_system_db;

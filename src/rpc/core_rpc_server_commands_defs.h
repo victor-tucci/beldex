@@ -2461,7 +2461,7 @@ namespace rpc {
       uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
-
+      std::string encrypted_eth_addr_value;     // The encrypted ethereum address.
       KV_MAP_SERIALIZABLE
     };
 
@@ -2534,7 +2534,7 @@ namespace rpc {
       uint64_t    update_height;                // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
-
+      std::string encrypted_eth_addr_value;     // The encrypted ethereum address.
       KV_MAP_SERIALIZABLE
     };
 
@@ -2572,7 +2572,7 @@ namespace rpc {
 
     struct request
     {
-      uint16_t type;         // The BNS type (mandatory); currently supported values are: 0 = bchat, 1 = wallet, 2 = belnet.
+      uint16_t type;         // The BNS type (mandatory); currently supported values are: 0 = bchat, 1 = wallet, 2 = belnet. 6=eth_addr
       std::string name_hash; // The 32-byte BLAKE2b hash of the name to look up, encoded as 64 hex digits or 44/43 base64 characters (with/without padding).
 
       KV_MAP_SERIALIZABLE
