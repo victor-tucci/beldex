@@ -594,6 +594,7 @@ namespace cryptonote
         std::string_view encrypted_bchat_value,
         std::string_view encrypted_wallet_value,
         std::string_view encrypted_belnet_value,
+        std::string_view encrypted_eth_addr_value,
         const bns::generic_owner* owner,
         const bns::generic_owner* backup_owner,
         const crypto::hash& prev_txid);

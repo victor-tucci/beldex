@@ -968,7 +968,6 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
   else if(type == mapping_type::eth_addr)
   {
     std::string_view value_eth = value.substr(2);
-    std::cout << "value_eth : " << value_eth << std::endl;
     if(check_condition(value_eth.size() != 2*ETH_ADDR_BINARY_LENGTH, reason, "The value=", value, " is not the required ", 2*ETH_ADDR_BINARY_LENGTH, "-character hex string eth address, length=", value.size()))
       return false;
     

@@ -8968,6 +8968,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
                                                                        std::string const *value_bchat,
                                                                        std::string const *value_wallet,
                                                                        std::string const *value_belnet,
+                                                                       std::string const *value_eth_addr,
                                                                        std::string const *owner,
                                                                        std::string const *backup_owner,
                                                                        std::string const *signature,
@@ -8977,14 +8978,14 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
                                                                        std::set<uint32_t> subaddr_indices,
                                                                        std::vector<cryptonote::rpc::BNS_NAMES_TO_OWNERS::response_entry> *response)
 {
-  if (!value_bchat && !value_wallet && !value_belnet && !owner && !backup_owner)
+  if (!value_bchat && !value_wallet && !value_belnet && !value_eth_addr && !owner && !backup_owner)
   {
-    if (reason) *reason = "Value_bchat, Value_wallet, Value_belnet, owner and backup owner are not specified. Atleast one field must be specified for updating the BNS record";
+    if (reason) *reason = "Value_bchat, Value_wallet, Value_belnet, value_eth_owner, owner and backup owner are not specified. Atleast one field must be specified for updating the BNS record";
     return {};
   }
 
   bool make_signature = signature == nullptr;
-  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, value_bchat, value_wallet, value_belnet, nullptr, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, response);
+  bns_prepared_args prepared_args = prepare_tx_extra_beldex_name_system_values(*this, priority, name, value_bchat, value_wallet, value_belnet, value_eth_addr, owner, backup_owner, make_signature, bns::bns_tx_type::update, account_index, reason, response);
   if (!prepared_args) return {};
 
   if (!make_signature)
@@ -9002,6 +9003,7 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_update_mapping_tx(std::stri
                                                                   prepared_args.encrypted_bchat_value.to_view(),
                                                                   prepared_args.encrypted_wallet_value.to_view(),
                                                                   prepared_args.encrypted_belnet_value.to_view(),
+                                                                  prepared_args.encrypted_eth_addr_value.to_view(),
                                                                   owner ? &prepared_args.owner : nullptr,
                                                                   backup_owner ? &prepared_args.backup_owner : nullptr,
                                                                   prepared_args.prev_txid);

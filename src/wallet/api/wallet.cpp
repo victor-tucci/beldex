@@ -2040,6 +2040,7 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
                                                         value_bchat.size() ? &value_bchat : nullptr,
                                                         value_wallet.size() ? &value_wallet : nullptr,
                                                         value_belnet.size() ? &value_belnet : nullptr,
+                                                        nullptr,
                                                         owner.size() ? &owner : nullptr,
                                                         backup_owner.size() ? &backup_owner : nullptr,
                                                         nullptr,

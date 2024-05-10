@@ -6667,7 +6667,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account))
     return false;
 
-  auto [owner, backup_owner, value_bchat, value_wallet, value_belnet, signature] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_VALUE_BCHAT_PREFIX, BNS_VALUE_WALLET_PREFIX, BNS_VALUE_BELNET_PREFIX, BNS_SIGNATURE_PREFIX);
+  auto [owner, backup_owner, value_bchat, value_wallet, value_belnet, value_eth_addr, signature] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_VALUE_BCHAT_PREFIX, BNS_VALUE_WALLET_PREFIX, BNS_VALUE_BELNET_PREFIX, BNS_VALUE_ETH_ADDR_PREFIX, BNS_SIGNATURE_PREFIX);
   if (args.size() != 1)
   {
     PRINT_USAGE(USAGE_BNS_UPDATE_MAPPING);
@@ -6703,9 +6703,10 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
                                                         value_bchat.size() ? &value_bchat : nullptr,
                                                         value_wallet.size() ? &value_wallet : nullptr,
                                                         value_belnet.size() ? &value_belnet : nullptr,
+                                                        value_eth_addr.size() ? &value_eth_addr : nullptr,
                                                         owner.size() ? &owner : nullptr,
                                                         backup_owner.size() ? &backup_owner : nullptr,
-                                  integration-eth-address-in-bns                      signature.size() ? &signature : nullptr,
+                                                        signature.size() ? &signature : nullptr,
                                                         &reason,
                                                         priority,
                                                         m_current_subaddress_account,
@@ -6735,6 +6736,14 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     auto &enc_belnet_hex = response[0].encrypted_belnet_value;
     if (!oxenc::is_hex(enc_belnet_hex) || enc_belnet_hex.size() > 2 * bns::mapping_value::BUFFER_SIZE)
+    {
+      LOG_ERROR("invalid BNS data returned from beldexd");
+      fail_msg_writer() << tr("invalid BNS data returned from beldexd");
+      return true;
+    }
+    
+    auto &enc_eth_hex = response[0].encrypted_eth_addr_value;
+    if (!oxenc::is_hex(enc_eth_hex) || enc_eth_hex.size() > 2 * bns::mapping_value::BUFFER_SIZE)
     {
       LOG_ERROR("invalid BNS data returned from beldexd");
       fail_msg_writer() << tr("invalid BNS data returned from beldexd");
@@ -6789,6 +6798,22 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
       }
     }
 
+    //ETH_ADDRESS
+    bns::mapping_value eth_addr{};
+    {
+      if (!enc_eth_hex.empty())
+      {
+        eth_addr.len = enc_eth_hex.size() / 2;
+        eth_addr.encrypted = true;
+        oxenc::from_hex(enc_eth_hex.begin(), enc_eth_hex.end(), eth_addr.buffer.begin());
+        if (!eth_addr.decrypt(tools::lowercase_ascii_string(name), bns::mapping_type::eth_addr))
+        {
+          fail_msg_writer() << "Failed to decrypt the mapping value=" << enc_eth_hex;
+          return false;
+        }
+      }
+    }
+
     std::vector<cryptonote::address_parse_info> dsts;
     cryptonote::address_parse_info info = {};
     info.address = m_wallet->get_subaddress({m_current_subaddress_account, 0});
@@ -6829,6 +6854,16 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
     else
     {
       fmt::print(fmt::format(tr("Value belnet     : {} (unchanged)\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
+    }
+   
+    if (value_eth_addr.size())
+    {
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value ethAddr : {}\n"), !enc_eth_hex.empty() ? eth_addr.to_readable_value(m_wallet->nettype(), bns::mapping_type::eth_addr) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value ethAddr : {}\n"), value_eth_addr));
+    }
+    else
+    {
+      fmt::print(fmt::format(tr("Value ethAddr     : {} (unchanged)\n"), !enc_eth_hex.empty() ? eth_addr.to_readable_value(m_wallet->nettype(), bns::mapping_type::eth_addr) : "(none)"));
     }
 
     if (owner.size())

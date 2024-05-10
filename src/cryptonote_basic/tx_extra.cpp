@@ -78,6 +78,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     std::string_view encrypted_bchat_value,
     std::string_view encrypted_wallet_value,
     std::string_view encrypted_belnet_value,
+    std::string_view encrypted_eth_addr_value,
     const bns::generic_owner* owner,
     const bns::generic_owner* backup_owner,
     const crypto::hash& prev_txid)
@@ -104,6 +105,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
   {
     result.fields |= bns::extra_field::encrypted_belnet_value;
     result.encrypted_belnet_value = std::string{encrypted_belnet_value};
+  }
+  
+  if (encrypted_eth_addr_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_eth_addr_value;
+    result.encrypted_eth_addr_value = std::string{encrypted_eth_addr_value};
   }
 
   if (owner)

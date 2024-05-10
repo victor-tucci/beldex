@@ -3210,6 +3210,7 @@ namespace {
                                                req.value_bchat.empty()  ? nullptr : &req.value_bchat,
                                                req.value_wallet.empty() ? nullptr : &req.value_wallet,
                                                req.value_belnet.empty() ? nullptr : &req.value_belnet,
+                                               nullptr,
                                                req.owner.empty()        ? nullptr : &req.owner,
                                                req.backup_owner.empty() ? nullptr : &req.backup_owner,
                                                req.signature.empty()    ? nullptr : &req.signature,
