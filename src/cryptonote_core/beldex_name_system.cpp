@@ -695,7 +695,7 @@ static void append_owner(std::string& buffer, const bns::generic_owner* owner)
   }
 }
 
-std::string tx_extra_signature(std::string_view value_bchat,std::string_view value_wallet,std::string_view value_belnet, bns::generic_owner const *owner, bns::generic_owner const *backup_owner, crypto::hash const &prev_txid)
+std::string tx_extra_signature(std::string_view value_bchat,std::string_view value_wallet,std::string_view value_belnet, std::string_view value_eth_addr, bns::generic_owner const *owner, bns::generic_owner const *backup_owner, crypto::hash const &prev_txid)
 {
   static_assert(sizeof(crypto::hash) == crypto_generichash_BYTES, "Using libsodium generichash for signature hash, require we fit into crypto::hash");
   if (value_bchat.size() > mapping_value::BUFFER_SIZE)
@@ -713,12 +713,18 @@ std::string tx_extra_signature(std::string_view value_bchat,std::string_view val
     MERROR("Unexpected value len=" << value_belnet.size() << " greater than the expected capacity=" << mapping_value::BUFFER_SIZE);
     return ""s;
   }
+  else if (value_eth_addr.size() > mapping_value::BUFFER_SIZE)
+  {
+    MERROR("Unexpected value len=" << value_eth_addr.size() << " greater than the expected capacity=" << mapping_value::BUFFER_SIZE);
+    return ""s;
+  }
 
   std::string result;
-  result.reserve(3 * mapping_value::BUFFER_SIZE + sizeof(*owner) + sizeof(*backup_owner) + sizeof(prev_txid));
+  result.reserve(4 * mapping_value::BUFFER_SIZE + sizeof(*owner) + sizeof(*backup_owner) + sizeof(prev_txid));
   result += value_bchat;
   result += value_wallet;
   result += value_belnet;
+  result += value_eth_addr;
 
   append_owner(result, owner);
   append_owner(result, backup_owner);
@@ -1121,7 +1127,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
   std::string name_hash           = hash_to_base64(bns_extra.name_hash);
   bns::mapping_record mapping     = bns_db.get_mapping(name_hash);
 
-  if (bns_extra.is_updating()) //TODO-eth-check
+  if (bns_extra.is_updating())
   {
     // Updating: the mapping must exist and be active, the updated fields must actually change from
     // the current value, and a valid signature over the updated values must be present.
@@ -1142,6 +1148,9 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
     if (check_condition(bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value) && bns_extra.encrypted_belnet_value == mapping.encrypted_belnet_value.to_view(), reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), SPECIFYING_SAME_VALUE_ERR, "value"))
       return false;
 
+    if (check_condition(bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value) && bns_extra.encrypted_eth_addr_value == mapping.encrypted_eth_addr_value.to_view(), reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), SPECIFYING_SAME_VALUE_ERR, "value"))
+      return false;
+
     if (check_condition(bns_extra.field_is_set(bns::extra_field::owner) && bns_extra.owner == mapping.owner, reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), SPECIFYING_SAME_VALUE_ERR, "owner"))
       return false;
 
@@ -1153,6 +1162,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
         bns_extra.encrypted_bchat_value,
         bns_extra.encrypted_wallet_value,
         bns_extra.encrypted_belnet_value,
+        bns_extra.encrypted_eth_addr_value,
         bns_extra.field_is_set(bns::extra_field::owner) ? &bns_extra.owner : nullptr,
         bns_extra.field_is_set(bns::extra_field::backup_owner) ? &bns_extra.backup_owner : nullptr,
         expected_prev_txid);
@@ -1189,6 +1199,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
         bns_extra.encrypted_bchat_value,
         bns_extra.encrypted_wallet_value,
         bns_extra.encrypted_belnet_value,
+        bns_extra.encrypted_eth_addr_value,
         bns_extra.field_is_set(bns::extra_field::owner) ? &bns_extra.owner : nullptr,
         bns_extra.field_is_set(bns::extra_field::backup_owner) ? &bns_extra.backup_owner : nullptr,
         expected_prev_txid);
@@ -1308,6 +1319,10 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
 
     if (bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value))
     {
+      // BNS Allowed type Validation
+      if (check_condition(hf_version < cryptonote::network_version_19, reason, tx, ", ", bns_extra_string(nettype, bns_extra)," specifying eth_addr is disallowed in HF", +static_cast<uint8_t>(hf_version)))
+        return false;
+
       if (!mapping_value::validate_encrypted(mapping_type::eth_addr, bns_extra.encrypted_eth_addr_value, nullptr, reason))
         return false;
     }
@@ -1342,7 +1357,7 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
 }
 
 bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version, bns::mapping_type *mapping_type, std::string *reason)
-{
+{ //TODO-eth-addr
   std::string mapping = tools::lowercase_ascii_string(mapping_type_str);
   std::optional<bns::mapping_type> mapping_type_;
   if (tools::string_iequal(mapping, "bchat"))
@@ -2008,7 +2023,7 @@ SELECT                name_hash, ?,    ?)";
 
   if (entry.is_renewing())
   {
-    sql += ", expiration_height + ?, owner_id, backup_owner_id, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value";
+    sql += ", expiration_height + ?, owner_id, backup_owner_id, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value";
     bind.emplace_back(expiry_blocks(bns_db.network_type(), entry.mapping_years).value_or(0));
   }
   else

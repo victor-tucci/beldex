@@ -8686,6 +8686,7 @@ static bool try_generate_bns_signature(wallet2 const &wallet, std::string const 
       result.encrypted_bchat_value.to_view(),
       result.encrypted_wallet_value.to_view(),
       result.encrypted_belnet_value.to_view(),
+      result.encrypted_eth_addr_value.to_view(),
       new_owner ? &result.owner : nullptr,
       new_backup_owner ? &result.backup_owner : nullptr,
       result.prev_txid);

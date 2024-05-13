@@ -3553,7 +3553,7 @@ namespace cryptonote { namespace rpc {
 
   //------------------------------------------------------------------------------------------------------------------------------
   BNS_LOOKUP::response core_rpc_server::invoke(BNS_LOOKUP::request&& req, rpc_context context)
-  {
+  { //TODO-eth-addr
     BNS_LOOKUP::response res{};
 
     std::string name = tools::lowercase_ascii_string(std::move(req.name));

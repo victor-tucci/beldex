@@ -148,11 +148,12 @@ constexpr uint16_t db_mapping_type(bns::mapping_type type) {
   return static_cast<uint16_t>(type);
 }
 constexpr std::string_view db_mapping_value(bns::mapping_type type) {
-  switch(type) //TODO-eth-check
+  switch(type)
   {
     case mapping_type::bchat: return "encrypted_bchat_value"sv;
     case mapping_type::wallet: return "encrypted_wallet_value"sv;
     case mapping_type::belnet: return "encrypted_belnet_value"sv;
+    case mapping_type::eth_addr: return "encrypted_eth_addr_value"sv;
     default: assert(false);             return "xx_unhandled_type"sv;
   }
 }
@@ -182,7 +183,7 @@ generic_signature  make_ed25519_signature(crypto::hash const &hash, crypto::ed25
 generic_owner      make_monero_owner(cryptonote::account_public_address const &owner, bool is_subaddress);
 generic_owner      make_ed25519_owner(crypto::ed25519_public_key const &pkey);
 bool               parse_owner_to_generic_owner(cryptonote::network_type nettype, std::string_view owner, generic_owner &key, std::string *reason);
-std::string        tx_extra_signature(std::string_view value_bchat, std::string_view value_wallet, std::string_view value_belnet, generic_owner const *owner, generic_owner const *backup_owner, crypto::hash const &prev_txid);
+std::string        tx_extra_signature(std::string_view value_bchat, std::string_view value_wallet, std::string_view value_belnet, std::string_view value_eth_addr, generic_owner const *owner, generic_owner const *backup_owner, crypto::hash const &prev_txid);
 
 enum struct bns_tx_type { lookup, buy, update, renew };
 // Converts a human readable case-insensitive string denoting the mapping type into a value suitable for storing into the BNS DB.

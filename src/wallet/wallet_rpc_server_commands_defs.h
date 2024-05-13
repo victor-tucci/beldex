@@ -2402,7 +2402,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
   // wallet knows about.  This can optionally decrypt the BNS value as well, or else just return the
   // encrypted value.
   struct BNS_KNOWN_NAMES : RPC_COMMAND
-  {
+  { //TODO-eth-addr
     static constexpr auto names() { return NAMES("bns_known_names"); }
 
     struct known_record
