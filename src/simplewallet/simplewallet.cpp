@@ -6400,6 +6400,8 @@ static std::optional<bns::mapping_type> guess_bns_type(tools::wallet2& wallet, s
       return bns::mapping_type::belnet;
     if (tools::ends_with(name, ".bdx") && tools::starts_with(value, "bd") && value.length() == 2*bns::BCHAT_PUBLIC_KEY_BINARY_LENGTH)
       return bns::mapping_type::bchat;
+    if (tools::ends_with(name, ".bdx") && tools::starts_with(value, "0x") && value.substr(2).size() == 2*bns::ETH_ADDR_BINARY_LENGTH)
+      return bns::mapping_type::eth_addr;
     if (cryptonote::is_valid_address(std::string{value}, wallet.nettype()))
       return bns::mapping_type::wallet;
 

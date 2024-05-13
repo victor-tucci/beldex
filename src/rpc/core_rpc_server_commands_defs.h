@@ -2496,6 +2496,7 @@ namespace rpc {
       std::optional<std::string> bchat_value;   // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::optional<std::string> wallet_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::optional<std::string> belnet_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::optional<std::string> eth_addr_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.

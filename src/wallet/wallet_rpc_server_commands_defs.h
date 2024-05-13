@@ -2402,7 +2402,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
   // wallet knows about.  This can optionally decrypt the BNS value as well, or else just return the
   // encrypted value.
   struct BNS_KNOWN_NAMES : RPC_COMMAND
-  { //TODO-eth-addr
+  {
     static constexpr auto names() { return NAMES("bns_known_names"); }
 
     struct known_record
@@ -2414,9 +2414,11 @@ This command is only required if the open wallet is one of the owners of a BNS r
       std::string encrypted_bchat_value;         // The encrypted value of bchat that the name maps to, in hex.
       std::string encrypted_wallet_value;        // The encrypted value of wallet that the name maps to, in hex.
       std::string encrypted_belnet_value;        // The encrypted value of belnet that the name maps to, in hex.
+      std::string encrypted_eth_addr_value;
       std::optional<std::string> value_bchat;    // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_wallet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_belnet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
+      std::optional<std::string> value_eth_addr;
       uint64_t update_height;                    // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
       std::optional<bool> expired;               // Indicates whether the record has expired. Only included in the response if "include_expired" is specified in the request.

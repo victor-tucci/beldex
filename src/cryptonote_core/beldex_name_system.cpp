@@ -1357,7 +1357,7 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
 }
 
 bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version, bns::mapping_type *mapping_type, std::string *reason)
-{ //TODO-eth-addr
+{
   std::string mapping = tools::lowercase_ascii_string(mapping_type_str);
   std::optional<bns::mapping_type> mapping_type_;
   if (tools::string_iequal(mapping, "bchat"))
@@ -1366,6 +1366,8 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
       mapping_type_ = bns::mapping_type::belnet;
   else if (tools::string_iequal(mapping, "wallet"))
       mapping_type_ = bns::mapping_type::wallet;
+  else if (tools::string_iequal(mapping, "eth_addr"))
+      mapping_type_ = bns::mapping_type::eth_addr;
   else
   {
     if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported types are: bchat, belnet, wallet";

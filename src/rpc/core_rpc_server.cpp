@@ -3553,7 +3553,7 @@ namespace cryptonote { namespace rpc {
 
   //------------------------------------------------------------------------------------------------------------------------------
   BNS_LOOKUP::response core_rpc_server::invoke(BNS_LOOKUP::request&& req, rpc_context context)
-  { //TODO-eth-addr
+  {
     BNS_LOOKUP::response res{};
 
     std::string name = tools::lowercase_ascii_string(std::move(req.name));
@@ -3589,6 +3589,11 @@ namespace cryptonote { namespace rpc {
         BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries.encrypted_wallet_value};
         auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
         res.wallet_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_eth_addr_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "eth_addr", entries.encrypted_eth_addr_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.eth_addr_value = bns_value_decrypt_res.value;
       }
     }
 

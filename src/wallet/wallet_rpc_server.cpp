@@ -3337,6 +3337,7 @@ namespace {
           res_e.encrypted_bchat_value = std::move(rec.encrypted_bchat_value);
           res_e.encrypted_wallet_value = std::move(rec.encrypted_wallet_value);
           res_e.encrypted_belnet_value = std::move(rec.encrypted_belnet_value);
+          res_e.encrypted_eth_addr_value = std::move(rec.encrypted_eth_addr_value);
           res_e.update_height = rec.update_height;
           res_e.expiration_height = rec.expiration_height;
           if (req.include_expired && res_e.expiration_height)
@@ -3352,6 +3353,19 @@ namespace {
             if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_bchat_value), &value, &errmsg)
                 && value.decrypt(res_e.name, type))
               res_e.value_bchat = value.to_readable_value(nettype, type);
+            else
+              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
+          }
+
+          //ETH_ADDR
+          if (req.decrypt && !res_e.encrypted_eth_addr_value.empty() && oxenc::is_hex(res_e.encrypted_eth_addr_value))
+          {
+            bns::mapping_value value;
+            const auto type = bns::mapping_type::eth_addr;
+            std::string errmsg;
+            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_eth_addr_value), &value, &errmsg)
+                && value.decrypt(res_e.name, type))
+              res_e.value_eth_addr = value.to_readable_value(nettype, type);
             else
               MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
           }
