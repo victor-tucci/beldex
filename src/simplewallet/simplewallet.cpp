@@ -255,11 +255,11 @@ namespace
   const char* USAGE_REQUEST_STAKE_UNLOCK("request_stake_unlock <master_node_pubkey>");
   const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes [key_images]");
 
-  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] <name>");
+  const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] [eth=<value>] <name>");
   const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] <name>");
-  const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] [signature=<hex_signature>] <name>");
+  const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] [eth=<value>] [signature=<hex_signature>] <name>");
 
-  const char* USAGE_BNS_ENCRYPT("bns_encrypt [type=bchat|wallet|belnet] <name> <value_bchat>||<value_wallet>||<value_belnet>");
+  const char* USAGE_BNS_ENCRYPT("bns_encrypt [type=bchat|wallet|belnet|eth_addr] <name> <value_bchat>||<value_wallet>||<value_belnet>||<value_eth_address>");
   const char* USAGE_BNS_MAKE_UPDATE_MAPPING_SIGNATURE("bns_make_update_mapping_signature [owner=<value>] [backup_owner=<value>] <name>");
   const char* USAGE_BNS_BY_OWNER("bns_by_owner [<owner> ...]");
   const char* USAGE_BNS_LOOKUP("bns_lookup <name> [<name> ...]");
@@ -6826,36 +6826,36 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
               << tr("Updating Beldex Name System Record") << std::endl
               << std::endl;
 
-    fmt::print(fmt::format(tr("Name             : {}\n"), name));
+    fmt::print(fmt::format(tr("Name              : {}\n"), name));
     
     if (value_bchat.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value bchat  : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
-      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value bchat  : {}\n"), value_bchat));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value bchat   : {}\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value bchat   : {}\n"), value_bchat));
     }
     else
     {
-      fmt::print(fmt::format(tr("Value bchat      : {} (unchanged)\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
+      fmt::print(fmt::format(tr("Value bchat       : {} (unchanged)\n"), !enc_bchat_hex.empty() ? bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat) : "(none)"));
     }
 
     if (value_wallet.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value wallet : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
-      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value wallet : {}\n"), value_wallet));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value wallet  : {}\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value wallet  : {}\n"), value_wallet));
     }
     else
     {
-      fmt::print(fmt::format(tr("Value wallet     : {} (unchanged)\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
+      fmt::print(fmt::format(tr("Value wallet      : {} (unchanged)\n"), !enc_wallet_hex.empty() ? wallet.to_readable_value(m_wallet->nettype(), bns::mapping_type::wallet) : "(none)"));
     }
     
     if (value_belnet.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value belnet : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
-      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value belnet : {}\n"), value_belnet));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Value belnet  : {}\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Value belnet  : {}\n"), value_belnet));
     }
     else
     {
-      fmt::print(fmt::format(tr("Value belnet     : {} (unchanged)\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
+      fmt::print(fmt::format(tr("Value belnet      : {} (unchanged)\n"), !enc_belnet_hex.empty() ? belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet) : "(none)"));
     }
    
     if (value_eth_addr.size())
@@ -6870,22 +6870,22 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     if (owner.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Owner        : {}\n"), response[0].owner));
-      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Owner        : {}\n"), owner));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Owner         : {}\n"), response[0].owner));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Owner         : {}\n"), owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Owner            : {} (unchanged)\n"), response[0].owner));
+      fmt::print(fmt::format(tr("Owner             : {} (unchanged)\n"), response[0].owner));
     }
 
     if (backup_owner.size())
     {
-      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner : {}\n"), response[0].backup_owner.value_or(NULL_STR)));
-      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Backup Owner : {}\n"), backup_owner));
+      fmt::print(fmt::fg(fmt::color::red),fmt::format(tr("Old Backup Owner  : {}\n"), response[0].backup_owner.value_or(NULL_STR)));
+      fmt::print(fmt::fg(fmt::color::light_green),fmt::format(tr("New Backup Owner  : {}\n"), backup_owner));
     }
     else
     {
-      fmt::print(fmt::format(tr("Backup Owner     : {} (unchanged)\n"), response[0].backup_owner.value_or(NULL_STR)));
+      fmt::print(fmt::format(tr("Backup Owner      : {} (unchanged)\n"), response[0].backup_owner.value_or(NULL_STR)));
     }
 
     if (value_bchat.size() && (value_bchat == bchat.to_readable_value(m_wallet->nettype(), bns::mapping_type::bchat)))
