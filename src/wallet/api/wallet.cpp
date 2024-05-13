@@ -1887,7 +1887,7 @@ bool WalletImpl::bns_validate_years(std::string_view map_years, bns::mapping_yea
 }
 
 EXPORT
-PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string& mapping_years,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet,std::string &name,
+PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string& mapping_years,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet, std::string &value_eth_addr, std::string &name,
                                                   uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {  
@@ -1923,7 +1923,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
                                                      value_bchat.size() ? &value_bchat : nullptr,
                                                      value_wallet.size() ? &value_wallet : nullptr,
                                                      value_belnet.size() ? &value_belnet : nullptr,
-                                                     nullptr,
+                                                     value_eth_addr.size() ? &value_eth_addr : nullptr,
                                                      &reason,
                                                      priority,
                                                      subaddr_account,
@@ -2014,7 +2014,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 }
 
 EXPORT
-PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet,std::string &name,
+PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet, std::string &value_eth_addr, std::string &name,
                                                   uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {  
@@ -2040,7 +2040,7 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
                                                         value_bchat.size() ? &value_bchat : nullptr,
                                                         value_wallet.size() ? &value_wallet : nullptr,
                                                         value_belnet.size() ? &value_belnet : nullptr,
-                                                        nullptr,
+                                                        value_eth_addr.size() ? &value_eth_addr : nullptr,
                                                         owner.size() ? &owner : nullptr,
                                                         backup_owner.size() ? &backup_owner : nullptr,
                                                         nullptr,

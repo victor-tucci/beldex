@@ -2458,10 +2458,10 @@ namespace rpc {
       std::string encrypted_bchat_value;        // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::string encrypted_wallet_value;       // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::string encrypted_belnet_value;       // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::string encrypted_eth_addr_value;     // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
-      std::string encrypted_eth_addr_value;     // The encrypted ethereum address.
       KV_MAP_SERIALIZABLE
     };
 
@@ -2532,10 +2532,10 @@ namespace rpc {
       std::string encrypted_bchat_value;        // The bchat encrypted value that the name maps to, in hex. This value of bchat is encrypted using the name (not the hash) as the secret.
       std::string encrypted_wallet_value;       // The wallet encrypted value that the name maps to, in hex. This value of wallet is encrypted using the name (not the hash) as the secret.
       std::string encrypted_belnet_value;       // The belnet encrypted value that the name maps to, in hex. This value of belnet is encrypted using the name (not the hash) as the secret.
+      std::string encrypted_eth_addr_value;     // The eth_address encrypted value that the name maps to, in hex. This value of eth_address is encrypted using the name (not the hash) as the secret.
       uint64_t    update_height;                // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
-      std::string encrypted_eth_addr_value;     // The encrypted ethereum address.
       KV_MAP_SERIALIZABLE
     };
 

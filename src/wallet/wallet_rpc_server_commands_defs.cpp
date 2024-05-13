@@ -1146,6 +1146,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_BUY_MAPPING::request)
   KV_SERIALIZE    (value_bchat);
   KV_SERIALIZE    (value_wallet);
   KV_SERIALIZE    (value_belnet);
+  KV_SERIALIZE    (value_eth_addr);
   KV_SERIALIZE_OPT(account_index,   (uint32_t)0);
   KV_SERIALIZE    (subaddr_indices);
   KV_SERIALIZE_OPT(priority,        (uint32_t)0);
@@ -1186,6 +1187,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_UPDATE_MAPPING::request)
   KV_SERIALIZE    (value_bchat);
   KV_SERIALIZE    (value_wallet);
   KV_SERIALIZE    (value_belnet);
+  KV_SERIALIZE    (value_eth_addr);
   KV_SERIALIZE    (owner);
   KV_SERIALIZE    (backup_owner);
   KV_SERIALIZE    (signature);

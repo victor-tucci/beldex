@@ -35,7 +35,7 @@ constexpr size_t DOMAIN_NAME_MAX_NOHYPHEN = 32 + 4; // If the name does not cont
 constexpr size_t BELNET_ADDRESS_BINARY_LENGTH    = sizeof(crypto::ed25519_public_key);
 constexpr size_t BCHAT_DISPLAY_NAME_MAX         = 64;
 constexpr size_t BCHAT_PUBLIC_KEY_BINARY_LENGTH = 1 + sizeof(crypto::ed25519_public_key); // Bchat keys at prefixed with 0xbd + ed25519 key
-constexpr size_t ETH_ADDR_BINARY_LENGTH = 20; // Bchat keys at prefixed with 0xbd + ed25519 key
+constexpr size_t ETH_ADDR_BINARY_LENGTH = 20; // Ethereum address bytes
 
 constexpr size_t NAME_HASH_SIZE = sizeof(crypto::hash);
 constexpr size_t NAME_HASH_SIZE_B64_MIN = (4*NAME_HASH_SIZE + 2) / 3; // No padding
@@ -123,10 +123,11 @@ inline std::string_view mapping_type_str(mapping_type type)
 {
   switch(type)
   {
-    case mapping_type::belnet:         return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
+    case mapping_type::belnet:        return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
     case mapping_type::bchat:         return "bchat"sv;
-    case mapping_type::wallet:          return "wallet"sv;
-    default: assert(false);             return "xx_unhandled_type"sv;
+    case mapping_type::wallet:        return "wallet"sv;
+    case mapping_type::eth_addr:      return "eth_addr"sv;
+    default: assert(false);           return "xx_unhandled_type"sv;
   }
 }
 inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os << mapping_type_str(type); }
@@ -231,6 +232,7 @@ struct mapping_record
   mapping_value encrypted_bchat_value;
   mapping_value encrypted_wallet_value;
   mapping_value encrypted_belnet_value;
+  mapping_value encrypted_eth_addr_value;
   uint64_t      register_height;
   std::optional<uint64_t> expiration_height;
   uint64_t      update_height;
@@ -240,7 +242,6 @@ struct mapping_record
   int64_t       backup_owner_id;
   generic_owner owner;
   generic_owner backup_owner;
-  mapping_value encrypted_eth_addr_value;
 };
 
 struct name_system_db;

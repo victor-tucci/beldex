@@ -1370,7 +1370,7 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
       mapping_type_ = bns::mapping_type::eth_addr;
   else
   {
-    if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported types are: bchat, belnet, wallet";
+    if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported types are: bchat, belnet, wallet and eth_addr";
     return false;
   }
 

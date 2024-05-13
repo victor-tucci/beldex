@@ -3117,10 +3117,8 @@ namespace {
     BNS_BUY_MAPPING::response res{};
 
     std::string reason;
-
-    if(req.value_bchat.empty() && req.value_wallet.empty() && req.value_belnet.empty())
-      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid Values : required atleast one of the {value_bchat, value_wallet, value_belnet}"};
-
+    if(req.value_bchat.empty() && req.value_wallet.empty() && req.value_belnet.empty() && req.value_eth_addr.empty())
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid Values : required atleast one of the {value_bchat, value_wallet, value_belnet, value_eth_addr}"};
     auto map_years = m_wallet->bns_validate_years(req.years, &reason);
     if (!map_years)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS buy years: " + reason};    
@@ -3132,7 +3130,7 @@ namespace {
                                                                                       req.value_bchat.size() ? &req.value_bchat : nullptr,
                                                                                       req.value_wallet.size() ? &req.value_wallet : nullptr,
                                                                                       req.value_belnet.size() ? &req.value_belnet : nullptr,
-                                                                                      nullptr,
+                                                                                      req.value_eth_addr.size() ? &req.value_eth_addr : nullptr,
                                                                                       &reason,
                                                                                       req.priority,
                                                                                       req.account_index,
@@ -3210,7 +3208,7 @@ namespace {
                                                req.value_bchat.empty()  ? nullptr : &req.value_bchat,
                                                req.value_wallet.empty() ? nullptr : &req.value_wallet,
                                                req.value_belnet.empty() ? nullptr : &req.value_belnet,
-                                               nullptr,
+                                               req.value_eth_addr.empty() ? nullptr : &req.value_eth_addr,
                                                req.owner.empty()        ? nullptr : &req.owner,
                                                req.backup_owner.empty() ? nullptr : &req.backup_owner,
                                                req.signature.empty()    ? nullptr : &req.signature,
