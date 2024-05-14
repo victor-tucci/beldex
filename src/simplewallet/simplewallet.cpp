@@ -6476,7 +6476,7 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices  = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
   
-  auto [owner, backup_owner,value_bchat,value_wallet,value_belnet,value_eth_addr,map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX,BNS_VALUE_BCHAT_PREFIX,BNS_VALUE_WALLET_PREFIX,BNS_VALUE_BELNET_PREFIX, BNS_VALUE_ETH_ADDR_PREFIX, BNS_YEAR_PREFIX);
+  auto [owner, backup_owner, value_bchat, value_wallet, value_belnet, value_eth_addr, map_years] = eat_named_arguments(args, BNS_OWNER_PREFIX, BNS_BACKUP_OWNER_PREFIX, BNS_VALUE_BCHAT_PREFIX, BNS_VALUE_WALLET_PREFIX, BNS_VALUE_BELNET_PREFIX, BNS_VALUE_ETH_ADDR_PREFIX, BNS_YEAR_PREFIX);
   
   if (args.size() != 1 || (value_bchat.empty() && value_wallet.empty() && value_belnet.empty() && value_eth_addr.empty()))
   {
@@ -6510,6 +6510,9 @@ bool simple_wallet::bns_buy_mapping(std::vector<std::string> args)
       }
     }
   }
+
+  std::transform(value_eth_addr.begin(), value_eth_addr.end(), value_eth_addr.begin(),
+    [](unsigned char c){ return std::tolower(c); });
   
   try
   {
@@ -6698,6 +6701,9 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
       }
     }
   }
+  
+  std::transform(value_eth_addr.begin(), value_eth_addr.end(), value_eth_addr.begin(),
+    [](unsigned char c){ return std::tolower(c); });
   
   try
   {
@@ -6897,6 +6903,10 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
         return false;
     
     if (value_belnet.size() && (value_belnet == belnet.to_readable_value(m_wallet->nettype(), bns::mapping_type::belnet)))
+      if (!confirmAction())
+        return false;
+
+    if (value_eth_addr.size() && (value_eth_addr == eth_addr.to_readable_value(m_wallet->nettype(), bns::mapping_type::eth_addr)))
       if (!confirmAction())
         return false;
 
