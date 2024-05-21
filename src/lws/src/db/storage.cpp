@@ -515,7 +515,7 @@ namespace db
        out.push_back(block);
     }
     const std::uint64_t anchor = lmdb::to_native(out.back().id);
-    std::cout<<"Last_height_from Db : " << anchor << std::endl;
+    MINFO("Last_height_from Db : " << anchor);
     return anchor;
   }
 
@@ -987,7 +987,7 @@ namespace db
           MONERO_CHECK(bulk_insert(cur, blocks_version, epee::to_span(hashes)));
           if (current == chain.end())
           {
-            std::cout <<"last entered hash in DB : " << *current << std::endl;
+            MINFO("last entered hash in DB : " << *current);
             return success();
           }           
           hashes.clear();
