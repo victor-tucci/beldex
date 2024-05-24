@@ -120,7 +120,7 @@ public:
      * present; true if the signature was accepted and stored; and throws a
      * `flash_tx::signature_verification_error` if the signature fails validation.
      */
-    bool add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_nodes::master_node_list &snl);
+    bool add_signature(subquorum q, int position, bool approved, const crypto::signature &sig, const master_nodes::master_node_list &mnl);
 
     /**
      * Adds a signature for the given quorum and position without checking it for validity (i.e.
@@ -162,7 +162,7 @@ public:
     uint64_t quorum_height(subquorum q) const { return quorum_height(height, q); }
 
     /// Returns the pubkey of the referenced master node, or null if there is no such master node.
-    crypto::public_key get_mn_pubkey(subquorum q, int position, const master_nodes::master_node_list &snl) const;
+    crypto::public_key get_mn_pubkey(subquorum q, int position, const master_nodes::master_node_list &mnl) const;
 
     /// Returns the hashed signing value for this flash TX for a tx with status `approved`.  The
     /// result is a fast hash of the height + tx hash + approval value.  Lock not required.

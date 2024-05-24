@@ -515,7 +515,7 @@ namespace db
        out.push_back(block);
     }
     const std::uint64_t anchor = lmdb::to_native(out.back().id);
-    std::cout<<"Last_height_from Db : " << anchor << std::endl;
+    MINFO("Last_height_from Db : " << anchor);
     return anchor;
   }
 
@@ -987,7 +987,7 @@ namespace db
           MONERO_CHECK(bulk_insert(cur, blocks_version, epee::to_span(hashes)));
           if (current == chain.end())
           {
-            std::cout <<"last entered hash in DB : " << *current << std::endl;
+            MINFO("last entered hash in DB : " << *current);
             return success();
           }           
           hashes.clear();
@@ -1258,6 +1258,24 @@ namespace db
     MONERO_PRECOND(db != nullptr);
     return db->try_write([this, height, addresses] (MDB_txn& txn) -> expect<std::vector<account_address>>
     {
+      {
+        cursor::blocks blocks_cur;
+        MONERO_CHECK(check_cursor(txn, this->db->tables.blocks, blocks_cur));
+
+        MDB_val key = lmdb::to_val(blocks_version);
+        MDB_val value{};
+
+        MONERO_LMDB_CHECK(mdb_cursor_get(blocks_cur.get(), &key, &value, MDB_SET));
+        MONERO_LMDB_CHECK(mdb_cursor_get(blocks_cur.get(), &key, &value, MDB_LAST_DUP));
+
+        const expect<block_id> current_height =
+          blocks.get_value<MONERO_FIELD(block_info, id)>(value);
+        if (!current_height)
+          return current_height.error();
+        if (*current_height < height)
+          return {error::bad_height};
+      }
+      
       std::vector<account_address> updated{};
       updated.reserve(addresses.size());
 

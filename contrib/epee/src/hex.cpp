@@ -103,10 +103,10 @@ namespace epee
       for(size_t i = 0; i < s.size(); i += 2)
       {
         int tmp = *src++;
-        tmp = epee::misc_utils::parse::isx[tmp];
+        tmp = epee::misc_utils::parse::detail::isx[tmp];
         if (tmp == 0xff) return false;
         int t2 = *src++;
-        t2 = epee::misc_utils::parse::isx[t2];
+        t2 = epee::misc_utils::parse::detail::isx[t2];
         if (t2 == 0xff) return false;
         *dst++ = (tmp << 4) | t2;
       }

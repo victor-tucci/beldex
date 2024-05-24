@@ -42,7 +42,6 @@ namespace cryptonote
   {
     virtual bool relay_block(NOTIFY_NEW_FLUFFY_BLOCK::request& arg, cryptonote_connection_context& exclude_context)=0;
     virtual bool relay_transactions(NOTIFY_NEW_TRANSACTIONS::request& arg, cryptonote_connection_context& exclude_context)=0;
-    virtual bool relay_uptime_proof_v12(NOTIFY_UPTIME_PROOF_V12::request& arg, cryptonote_connection_context& exclude_context)=0;
     virtual bool relay_uptime_proof(NOTIFY_UPTIME_PROOF::request& arg, cryptonote_connection_context& exclude_context)=0;
     virtual bool relay_btencoded_uptime_proof(NOTIFY_BTENCODED_UPTIME_PROOF::request& arg, cryptonote_connection_context& exclude_context)=0;
     //virtual bool request_objects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, cryptonote_connection_context& context)=0;
@@ -65,10 +64,6 @@ namespace cryptonote
     virtual bool relay_master_node_votes(NOTIFY_NEW_MASTER_NODE_VOTE::request& arg, cryptonote_connection_context& exclude_context)
     {
       return false;
-    }
-    virtual bool relay_uptime_proof_v12(NOTIFY_UPTIME_PROOF_V12::request& arg, cryptonote_connection_context& exclude_context)
-    {
-          return false;
     }
     virtual bool relay_uptime_proof(NOTIFY_UPTIME_PROOF::request& arg, cryptonote_connection_context& exclude_context)
     {

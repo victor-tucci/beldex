@@ -77,8 +77,9 @@ int main(int argc, char* argv[])
 
 
   po::options_description desc("Allowed options");
+  po::options_description hidden("Hidden options");
   command_line::add_arg(desc, cryptonote::arg_data_dir);
-  nodetool::node_server<cryptonote::t_cryptonote_protocol_handler<tests::proxy_core> >::init_options(desc);
+  nodetool::node_server<cryptonote::t_cryptonote_protocol_handler<tests::proxy_core> >::init_options(desc,hidden);
 
   po::variables_map vm;
   bool r = command_line::handle_error_helper(desc, [&]()
@@ -171,7 +172,7 @@ std::vector<cryptonote::core::tx_verification_batch_info> tests::proxy_core::par
             std::cout << txi.tx_hash << "\n";
             std::cout << tx_prefix_hash << "\n";
             std::cout << tx_blobs[i].size() << "\n";
-            //std::cout << oxenmq::to_hex(tx_blob) << "\n\n";
+            //std::cout << oxenc::to_hex(tx_blob) << "\n\n";
             std::cout << obj_to_json_str(txi.tx) << "\n";
             std::cout << "\nENDTX\n";
             txi.result = txi.parsed = true;
@@ -241,11 +242,6 @@ bool tests::proxy_core::handle_incoming_block(const cryptonote::blobdata& block_
     return true;
 }
 
-bool tests::proxy_core::handle_uptime_proof_v12(const cryptonote::NOTIFY_UPTIME_PROOF_V12::request &proof, bool &my_uptime_proof_confirmation)
-{
-  // TODO: add tests for core uptime proof checking.
-  return false; // never relay these for tests.
-}
 bool tests::proxy_core::handle_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, bool &my_uptime_proof_confirmation)
 {
   // TODO: add tests for core uptime proof checking.

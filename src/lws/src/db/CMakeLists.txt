@@ -30,7 +30,6 @@ target_link_libraries(beldex-lws-db PUBLIC
     Boost::thread
     Threads::Threads
     Boost::boost
-    OpenSSL::SSL OpenSSL::Crypto
     oxenmq::oxenmq
     lmdb
     lmdb_lib

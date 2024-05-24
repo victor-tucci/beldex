@@ -5,26 +5,6 @@
 
 set(LOCAL_MIRROR "" CACHE STRING "local mirror path/URL for lib downloads")
 
-set(OPENSSL_VERSION 1.1.1k CACHE STRING "openssl version")
-set(OPENSSL_MIRROR ${LOCAL_MIRROR} https://www.openssl.org/source CACHE STRING "openssl download mirror(s)")
-set(OPENSSL_SOURCE openssl-${OPENSSL_VERSION}.tar.gz)
-set(OPENSSL_HASH SHA256=892a0875b9872acd04a9fde79b1f943075d5ea162415de3047c327df33fbaee5
-    CACHE STRING "openssl source hash")
-
-set(EXPAT_VERSION 2.3.0 CACHE STRING "expat version")
-string(REPLACE "." "_" EXPAT_TAG "R_${EXPAT_VERSION}")
-set(EXPAT_MIRROR ${LOCAL_MIRROR} https://github.com/libexpat/libexpat/releases/download/${EXPAT_TAG}
-    CACHE STRING "expat download mirror(s)")
-set(EXPAT_SOURCE expat-${EXPAT_VERSION}.tar.xz)
-set(EXPAT_HASH SHA512=dde8a9a094b18d795a0e86ca4aa68488b352dc67019e0d669e8b910ed149628de4c2a49bc3a5b832f624319336a01f9e4debe03433a43e1c420f36356d886820
-    CACHE STRING "expat source hash")
-
-set(UNBOUND_VERSION 1.13.1 CACHE STRING "unbound version")
-set(UNBOUND_MIRROR ${LOCAL_MIRROR} https://nlnetlabs.nl/downloads/unbound CACHE STRING "unbound download mirror(s)")
-set(UNBOUND_SOURCE unbound-${UNBOUND_VERSION}.tar.gz)
-set(UNBOUND_HASH SHA256=8504d97b8fc5bd897345c95d116e0ee0ddf8c8ff99590ab2b4bd13278c9f50b8
-    CACHE STRING "unbound source hash")
-
 set(BOOST_VERSION 1.76.0 CACHE STRING "boost version")
 set(BOOST_MIRROR ${LOCAL_MIRROR} https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VERSION}/source
     CACHE STRING "boost download mirror(s)")
@@ -100,7 +80,7 @@ set(ZMQ_HASH SHA512=e198ef9f82d392754caadd547537666d4fba0afd7d027749b3adae450516
     CACHE STRING "libzmq source hash")
 
 set(ZLIB_VERSION 1.2.11 CACHE STRING "zlib version")
-set(ZLIB_MIRROR ${LOCAL_MIRROR} https://zlib.net/fossils/
+set(ZLIB_MIRROR ${LOCAL_MIRROR} https://zlib.net/fossils
     CACHE STRING "zlib mirror(s)")
 set(ZLIB_SOURCE zlib-${ZLIB_VERSION}.tar.gz)
 set(ZLIB_HASH SHA512=73fd3fff4adeccd4894084c15ddac89890cd10ef105dd5e1835e1e9bbb6a49ff229713bd197d203edfa17c2727700fce65a2a235f07568212d820dca88b528ae
@@ -132,16 +112,12 @@ if (ANDROID)
   endif()
   if(CMAKE_ANDROID_ARCH_ABI MATCHES x86_64)
     set(android_clang x86_64-linux-android${ANDROID_PLATFORM_LEVEL}-clang)
-    set(openssl_machine x86_64)
   elseif(CMAKE_ANDROID_ARCH_ABI MATCHES x86)
     set(android_clang i686-linux-android${ANDROID_PLATFORM_LEVEL}-clang)
-    set(openssl_machine i686)
   elseif(CMAKE_ANDROID_ARCH_ABI MATCHES armeabi-v7a)
     set(android_clang armv7a-linux-androideabi${ANDROID_PLATFORM_LEVEL}-clang)
-    set(openssl_machine armv7)
   elseif(CMAKE_ANDROID_ARCH_ABI MATCHES arm64-v8a)
     set(android_clang aarch64-linux-android${ANDROID_PLATFORM_LEVEL}-clang)
-    set(openssl_machine aarch64)
   else()
     message(FATAL_ERROR "Don't know how to build for android arch abi ${CMAKE_ANDROID_ARCH_ABI}")
   endif()
@@ -229,6 +205,7 @@ set(build_def_BUILD_BYPRODUCTS ${DEPS_DESTDIR}/lib/lib___TARGET___.a ${DEPS_DEST
 set(build_dep_TARGET_SUFFIX "")
 
 function(build_external target)
+
   set(options TARGET_SUFFIX DEPENDS PATCH_COMMAND CONFIGURE_COMMAND BUILD_COMMAND INSTALL_COMMAND BUILD_BYPRODUCTS)
   cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "${options}")
   foreach(o ${options})
@@ -240,6 +217,7 @@ function(build_external target)
 
   string(TOUPPER "${target}" prefix)
   expand_urls(urls ${${prefix}_SOURCE} ${${prefix}_MIRROR})
+  message(STATUS "build_external_arg:${target} ${arg_CONFIGURE_COMMAND}")
   ExternalProject_Add("${target}${arg_TARGET_SUFFIX}_external"
     DEPENDS ${arg_DEPENDS}
     BUILD_IN_SOURCE ON
@@ -265,78 +243,8 @@ build_external(zlib
 )
 add_static_target(zlib zlib_external libz.a)
 
-
-
-set(openssl_configure ./config)
-set(openssl_system_env "")
-set(openssl_cc "${deps_cc}")
-if(CMAKE_CROSSCOMPILING)
-  if(ARCH_TRIPLET STREQUAL x86_64-w64-mingw32)
-    set(openssl_system_env SYSTEM=MINGW64 RC=${CMAKE_RC_COMPILER})
-  elseif(ARCH_TRIPLET STREQUAL i686-w64-mingw32)
-    set(openssl_system_env SYSTEM=MINGW64 RC=${CMAKE_RC_COMPILER})
-  elseif(ANDROID)
-    set(openssl_system_env SYSTEM=Linux MACHINE=${openssl_machine} ${cross_extra})
-    set(openssl_extra_opts no-asm)
-  elseif(IOS)
-    get_filename_component(apple_toolchain "${CMAKE_C_COMPILER}" DIRECTORY)
-    get_filename_component(apple_sdk "${CMAKE_OSX_SYSROOT}" NAME)
-    if(NOT ${apple_toolchain} MATCHES Xcode OR NOT ${apple_sdk} MATCHES "iPhone(OS|Simulator)")
-      message(FATAL_ERROR "didn't find your toolchain and sdk correctly from ${CMAKE_C_COMPILER}/${CMAKE_OSX_SYSROOT}: found toolchain=${apple_toolchain}, sdk=${apple_sdk}")
-    endif()
-    set(openssl_system_env CROSS_COMPILE=${apple_toolchain}/ CROSS_TOP=${CMAKE_DEVELOPER_ROOT} CROSS_SDK=${apple_sdk})
-    set(openssl_configure ./Configure iphoneos-cross)
-    set(openssl_cc "clang")
-  endif()
-endif()
-build_external(openssl
-  CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env CC=${openssl_cc} ${openssl_system_env} ${openssl_configure}
-    --prefix=${DEPS_DESTDIR} ${openssl_extra_opts} no-shared no-capieng no-dso no-dtls1 no-ec_nistp_64_gcc_128 no-gost
-    no-heartbeats no-md2 no-rc5 no-rdrand no-rfc3779 no-sctp no-ssl-trace no-ssl2 no-ssl3
-    no-static-engine no-tests no-weak-ssl-ciphers no-zlib-dynamic "CFLAGS=${deps_CFLAGS}"
-  INSTALL_COMMAND make install_sw
-  BUILD_BYPRODUCTS
-    ${DEPS_DESTDIR}/lib/libssl.a ${DEPS_DESTDIR}/lib/libcrypto.a
-    ${DEPS_DESTDIR}/include/openssl/ssl.h ${DEPS_DESTDIR}/include/openssl/crypto.h
-)
-add_static_target(OpenSSL::SSL openssl_external libssl.a)
-add_static_target(OpenSSL::Crypto openssl_external libcrypto.a)
-set(OPENSSL_INCLUDE_DIR ${DEPS_DESTDIR}/include)
-set(OPENSSL_VERSION 1.1.1)
-
-
-
-build_external(expat
-  CONFIGURE_COMMAND ./configure ${cross_host} --prefix=${DEPS_DESTDIR} --enable-static
-  --disable-shared --with-pic --without-examples --without-tests --without-docbook --without-xmlwf
-  "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
-)
-add_static_target(expat expat_external libexpat.a)
-
-
-set(unbound_extra)
-if(APPLE AND IOS)
-  # I have no idea why this is necessary: without this it runs `clang -E` which should work, but
-  # doesn't because... hurray ios is wonderful?
-  set(unbound_extra CPP=cpp)
-endif()
-build_external(unbound
-  DEPENDS openssl_external expat_external
-  CONFIGURE_COMMAND ./configure ${cross_host} ${cross_extra} --prefix=${DEPS_DESTDIR} --disable-shared
-  --enable-static --with-libunbound-only --with-pic --disable-gost
-  --$<IF:$<BOOL:${USE_LTO}>,enable,disable>-flto --with-ssl=${DEPS_DESTDIR}
-  --with-libexpat=${DEPS_DESTDIR}
-  "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}" ${unbound_extra}
-)
-add_static_target(libunbound unbound_external libunbound.a)
-if(WIN32)
-  set_target_properties(libunbound PROPERTIES INTERFACE_LINK_LIBRARIES "ws2_32;crypt32;iphlpapi")
-endif()
-
-
-
 set(boost_threadapi "pthread")
-set(boost_bootstrap_cxx "--cxx=${deps_cxx}")
+set(boost_bootstrap_cxx "--cxx ${deps_cxx}")
 set(boost_toolset "")
 set(boost_extra "")
 if(USE_LTO)
@@ -390,21 +298,22 @@ set(boost_buildflags "cxxflags=-fPIC")
 if(IOS)
   set(boost_buildflags)
 elseif(APPLE)
-  set(boost_buildflags "cxxflags=-fPIC -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}" "cflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+  set(boost_buildflags "cxxflags=-fPIC -isysroot ${CMAKE_OSX_SYSROOT} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}" "cflags=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+message(STATUS, "boost info: ${CMAKE_OSX_SYSROOT}")
 build_external(boost
   #  PATCH_COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam tools/build/src/user-config.jam
   ${boost_patch_commands}
   CONFIGURE_COMMAND
-    ./tools/build/src/engine/build.sh ${boost_toolset} ${boost_bootstrap_cxx}
+    ./tools/build/src/engine/build.sh --verbose ${boost_bootstrap_cxx} --cxxflags -isysroot ${CMAKE_OSX_SYSROOT} ${boost_toolset}
   BUILD_COMMAND
-    cp tools/build/src/engine/b2 .
+        cp tools/build/src/engine/b2 .
   INSTALL_COMMAND
-    ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
+    ./b2 -q variant=release link=static runtime-link=static optimization=speed ${boost_extra}
       threading=multi threadapi=${boost_threadapi} ${boost_buildflags} cxxstd=17 visibility=global
       --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
-      --prefix=${DEPS_DESTDIR} --exec-prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib --includedir=${DEPS_DESTDIR}/include
+      --prefix=${DEPS_DESTDIR} --exec-prefix=${DEPS_DESTDIR} --libdir=${DEPS_DESTDIR}/lib --includedir=${DEPS_DESTDIR}/include --includedir=${CMAKE_OSX_SYSROOT}
       --with-program_options --with-system --with-thread --with-serialization
       install
   BUILD_BYPRODUCTS
@@ -433,8 +342,8 @@ build_external(sqlite3
 add_static_target(sqlite3 sqlite3_external libsqlite3.a)
 
 
-
 if (NOT (WIN32 OR ANDROID OR IOS))
+  message(STATUS "ncurses would use but overruled ${deps_cc}")
   build_external(ncurses
     CONFIGURE_COMMAND ./configure ${cross_host} --prefix=${DEPS_DESTDIR} --without-debug --without-ada
       --without-cxx-binding --without-cxx --without-ticlib --without-tic --without-progs
@@ -443,7 +352,7 @@ if (NOT (WIN32 OR ANDROID OR IOS))
       --disable-rpath --disable-colorfgbg --disable-ext-mouse --disable-symlinks --enable-warnings
       --enable-assertions --with-default-terminfo-dir=/etc/_terminfo_
       --with-terminfo-dirs=/etc/_terminfo_ --disable-pc-files --enable-database --enable-sp-funcs
-      --disable-term-driver --enable-interop --enable-widec "CC=${CMAKE_C_COMPILER}" "CFLAGS=${deps_CFLAGS} -fPIC"
+      --disable-term-driver --enable-interop --enable-widec "CFLAGS=${deps_CFLAGS} -fPIC"
     INSTALL_COMMAND make install.libs
     BUILD_BYPRODUCTS
       ${DEPS_DESTDIR}/lib/libncursesw.a
@@ -586,6 +495,7 @@ build_external(zmq
   ${zmq_patch}
   CONFIGURE_COMMAND ./configure ${zmq_cross_host} --prefix=${DEPS_DESTDIR} --enable-static --disable-shared
     --disable-curve-keygen --enable-curve --disable-drafts --disable-libunwind --with-libsodium
+    --disable-libbsd --disable-perf
     --without-pgm --without-norm --without-vmci --without-docs --with-pic --disable-Werror
     "CC=${deps_cc}" "CXX=${deps_cxx}" "CFLAGS=-fstack-protector ${deps_CFLAGS}" "CXXFLAGS=-fstack-protector ${deps_CXXFLAGS}"
     ${cross_extra}
@@ -605,16 +515,12 @@ set_target_properties(libzmq PROPERTIES
 
 
 set(curl_extra)
-if(WIN32)
-  set(curl_ssl_opts --without-ssl --with-schannel)
-elseif(APPLE)
-  set(curl_ssl_opts --without-ssl --with-secure-transport)
+if(APPLE)
   if(IOS)
     # This CPP crap shouldn't be necessary but is because Apple's toolchain is trash
     set(curl_extra "LDFLAGS=-L${DEPS_DESTDIR}/lib -isysroot ${CMAKE_OSX_SYSROOT}" CPP=cpp)
   endif()
 else()
-  set(curl_ssl_opts --with-ssl=${DEPS_DESTDIR})
   set(curl_extra "LIBS=-pthread")
 endif()
 
@@ -646,18 +552,20 @@ foreach(curl_arch ${curl_arches})
 
   build_external(curl
     TARGET_SUFFIX ${curl_target_suffix}
-    DEPENDS openssl_external zlib_external
+    DEPENDS zlib_external
     CONFIGURE_COMMAND ./configure ${cross_host} ${cross_extra} --prefix=${curl_prefix} --disable-shared
     --enable-static --disable-ares --disable-ftp --disable-ldap --disable-laps --disable-rtsp
     --disable-dict --disable-telnet --disable-tftp --disable-pop3 --disable-imap --disable-smb
-    --disable-smtp --disable-gopher --disable-manual --disable-libcurl-option --enable-http
+    --disable-smtp --enable-dependency-tracking --disable-gopher --disable-manual --disable-libcurl-option --enable-http
     --enable-ipv6 --disable-threaded-resolver --disable-pthreads --disable-verbose --disable-sspi
     --enable-crypto-auth --disable-ntlm-wb --disable-tls-srp --disable-unix-sockets --disable-cookies
     --enable-http-auth --enable-doh --disable-mime --enable-dateparse --disable-netrc --without-libidn2
-    --disable-progress-meter --without-brotli --with-zlib=${DEPS_DESTDIR} ${curl_ssl_opts}
+    --disable-progress-meter --without-brotli --with-zlib=${DEPS_DESTDIR}
+    --without-ssl --without-schannel --without-secure-transport
+    --without-nghttp2 --without-nghttp3 --without-ngtcp2
     --without-libmetalink --without-librtmp --disable-versioned-symbols --enable-hidden-symbols
     --without-zsh-functions-dir --without-fish-functions-dir
-    "CC=${deps_cc}" "CFLAGS=${deps_noarch_CFLAGS}${cflags_extra}" ${curl_extra}
+    "CFLAGS=${deps_noarch_CFLAGS}${cflags_extra}" ${curl_extra}
     BUILD_COMMAND true
     INSTALL_COMMAND make -C lib install && make -C include install
     BUILD_BYPRODUCTS
@@ -684,9 +592,9 @@ endif()
 add_static_target(CURL::libcurl curl_external libcurl.a)
 set(libcurl_link_libs zlib)
 if(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES mingw)
-  list(APPEND libcurl_link_libs crypt32)
+  list(APPEND libcurl_link_libs ws2_32)
 elseif(APPLE)
-  list(APPEND libcurl_link_libs "-framework Security")
+  list(APPEND libcurl_link_libs "-framework SystemConfiguration")
 endif()
 set_target_properties(CURL::libcurl PROPERTIES
   INTERFACE_LINK_LIBRARIES "${libcurl_link_libs}"

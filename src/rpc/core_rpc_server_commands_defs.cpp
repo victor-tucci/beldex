@@ -153,6 +153,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_TRANSACTIONS::extra_entry::state_change)
   KV_SERIALIZE(reasons_maybe);
 KV_SERIALIZE_MAP_CODE_END()
 KV_SERIALIZE_MAP_CODE_BEGIN(GET_TRANSACTIONS::extra_entry::bns_details)
+  KV_SERIALIZE(version)  
   KV_SERIALIZE(buy)
   KV_SERIALIZE(update)
   KV_SERIALIZE(renew)
@@ -160,7 +161,9 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_TRANSACTIONS::extra_entry::bns_details)
   KV_SERIALIZE(blocks)
   KV_SERIALIZE(name_hash)
   KV_SERIALIZE(prev_txid)
-  KV_SERIALIZE(value)
+  KV_SERIALIZE(value_bchat)
+  KV_SERIALIZE(value_wallet)
+  KV_SERIALIZE(value_belnet)
   KV_SERIALIZE(owner)
   KV_SERIALIZE(backup_owner)
 KV_SERIALIZE_MAP_CODE_END()
@@ -1281,11 +1284,13 @@ KV_SERIALIZE_MAP_CODE_BEGIN(STORAGE_SERVER_PING::request)
   KV_SERIALIZE(version);
   KV_SERIALIZE(https_port);
   KV_SERIALIZE(omq_port);
+  KV_SERIALIZE(pubkey_ed25519);
 KV_SERIALIZE_MAP_CODE_END()
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BELNET_PING::request)
   KV_SERIALIZE(version);
+  KV_SERIALIZE(pubkey_ed25519);
 KV_SERIALIZE_MAP_CODE_END()
 
 
@@ -1376,10 +1381,6 @@ KV_SERIALIZE_MAP_CODE_BEGIN(REPORT_PEER_STATUS::request)
 KV_SERIALIZE_MAP_CODE_END()
 
 
-KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::request_entry)
-  KV_SERIALIZE(name_hash)
-  KV_SERIALIZE(types)
-KV_SERIALIZE_MAP_CODE_END()
 
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::request)
@@ -1390,11 +1391,12 @@ KV_SERIALIZE_MAP_CODE_END()
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::response_entry)
   KV_SERIALIZE(entry_index)
-  KV_SERIALIZE_ENUM(type)
   KV_SERIALIZE(name_hash)
   KV_SERIALIZE(owner)
   KV_SERIALIZE(backup_owner)
-  KV_SERIALIZE(encrypted_value)
+  KV_SERIALIZE(encrypted_bchat_value)
+  KV_SERIALIZE(encrypted_wallet_value)
+  KV_SERIALIZE(encrypted_belnet_value)
   KV_SERIALIZE(update_height)
   KV_SERIALIZE(expiration_height)
   KV_SERIALIZE(txid)
@@ -1414,11 +1416,12 @@ KV_SERIALIZE_MAP_CODE_END()
 
 KV_SERIALIZE_MAP_CODE_BEGIN(BNS_OWNERS_TO_NAMES::response_entry)
   KV_SERIALIZE(request_index)
-  KV_SERIALIZE_ENUM(type)
   KV_SERIALIZE(name_hash)
   KV_SERIALIZE(owner)
   KV_SERIALIZE(backup_owner)
-  KV_SERIALIZE(encrypted_value)
+  KV_SERIALIZE(encrypted_bchat_value)
+  KV_SERIALIZE(encrypted_wallet_value)
+  KV_SERIALIZE(encrypted_belnet_value)
   KV_SERIALIZE(update_height)
   KV_SERIALIZE(expiration_height)
   KV_SERIALIZE(txid)
@@ -1442,6 +1445,15 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_RESOLVE::response)
   KV_SERIALIZE(nonce)
 KV_SERIALIZE_MAP_CODE_END()
 
+KV_SERIALIZE_MAP_CODE_BEGIN(BNS_VALUE_DECRYPT::request)
+  KV_SERIALIZE(name);
+  KV_SERIALIZE(type);
+  KV_SERIALIZE(encrypted_value);
+KV_SERIALIZE_MAP_CODE_END()
+
+KV_SERIALIZE_MAP_CODE_BEGIN(BNS_VALUE_DECRYPT::response)
+  KV_SERIALIZE(value)
+KV_SERIALIZE_MAP_CODE_END()
 
 KV_SERIALIZE_MAP_CODE_BEGIN(FLUSH_CACHE::request)
   KV_SERIALIZE_OPT(bad_txs, false)

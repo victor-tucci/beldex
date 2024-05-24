@@ -446,7 +446,7 @@ namespace cryptonote
     }
 
     uint64_t expected_amount = 0;
-    if (hard_fork_version <= cryptonote::network_version_16_bns)
+    if (hard_fork_version <= cryptonote::network_version_16)
     {
       // NOTE: Use the amount actually paid out when we split the master node
       // reward (across up to 4 recipients) which may actually pay out less than
@@ -1144,8 +1144,8 @@ namespace cryptonote
     //genesis block
     bl = {};
 
-    CHECK_AND_ASSERT_MES(oxenmq::is_hex(conf.GENESIS_TX), false, "failed to parse coinbase tx from hard coded blob");
-    std::string tx_bl = oxenmq::from_hex(conf.GENESIS_TX);
+    CHECK_AND_ASSERT_MES(oxenc::is_hex(conf.GENESIS_TX), false, "failed to parse coinbase tx from hard coded blob");
+    std::string tx_bl = oxenc::from_hex(conf.GENESIS_TX);
     bool r = parse_and_validate_tx_from_blob(tx_bl, bl.miner_tx);
     CHECK_AND_ASSERT_MES(r, false, "failed to parse coinbase tx from hard coded blob");
     bl.major_version = 1;

@@ -39,6 +39,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <optional>
+#include <chrono>
 
 //  Public interface for libwallet library
 namespace Wallet {
@@ -176,6 +177,8 @@ struct TransactionInfo
     virtual ~TransactionInfo() = 0;
     virtual bool isMasterNodeReward() const = 0;
     virtual bool isMinerReward() const = 0;
+    virtual bool isStake() const =0;
+    virtual bool isBns() const =0;
     virtual int  direction() const = 0;
     virtual bool isPending() const = 0;
     virtual bool isFailed() const = 0;
@@ -409,6 +412,14 @@ struct WalletListener
 };
 
 
+struct stakeInfo{
+    std::string mn_pubkey;
+    uint64_t stake = 0;
+    std::optional<uint64_t> unlock_height;
+    bool awaiting = false;
+    bool decommissioned = false;
+};
+
 /**
  * @brief Interface for wallet operations.
  *        TODO: check if /include/IWallet.h is still actual
@@ -601,11 +612,16 @@ struct Wallet
         return result;
     }
 
+    /**
+    * @brief interface for counting number of BNS
+    */
+    virtual int countBns() = 0;
+
    /**
     * @brief listCurrentStakes - returns a list of the wallets locked stakes, provides both service node address and the staked amount
     * @return
     */
-    virtual std::vector<std::pair<std::string, uint64_t>>* listCurrentStakes() const = 0;
+    virtual std::vector<stakeInfo>* listCurrentStakes() const = 0;
 
    /**
     * @brief watchOnly - checks if wallet is watch only
@@ -614,8 +630,8 @@ struct Wallet
     virtual bool watchOnly() const = 0;
 
     /**
-     * @brief blockChainHeight - returns current blockchain height
-     * @return
+     * @brief blockChainHeight - returns current blockchain height.This is thread-safe and will
+     * not block if called from different threads.
      */
     virtual uint64_t blockChainHeight() const = 0;
 
@@ -689,6 +705,21 @@ struct Wallet
      * @brief refreshAsync - refreshes wallet asynchronously.
      */
     virtual void refreshAsync() = 0;
+
+    /**
+      * @brief refreshing - returns true if a refresh is currently underway; this is done *without*
+      * requiring a lock, unlike most other wallet-interacting functions.
+      *
+      * @param max_wait - the maximum time to try to obtain the refresh thread lock.  If this time
+      * expires without acquiring a lock, we return true, otherwise we return false.  Defaults to
+      * 50ms; can be set to 0ms to always return immediately.
+      *
+      * @return - true if the refresh thread is currently active, false otherwise.  If true, very few
+      * other methods here will work (i.e. they will block until the refresh finishes).  The most
+      * notably non-blocking, thread-safe methods that can be used when this returns true are
+      * blockChainHeight and daemonBlockChainHeight.
+      */
+    virtual bool isRefreshing(std::chrono::milliseconds max_wait = std::chrono::milliseconds{50}) = 0;
 
     /**
      * @brief rescanBlockchain - rescans the wallet, updating transactions from daemon
@@ -835,6 +866,67 @@ struct Wallet
                                                   uint32_t subaddr_account           = 0,
                                                   std::set<uint32_t> subaddr_indices = {}) = 0;
 
+    /*!
+     * \brief createBnsTransaction  creates bns transaction
+     * \param owner                 owner
+     * \param backup_owner          backup_owner
+     * \param mapping_years         years(1y,2y,5y,10y)
+     * \param value_bchat           bchat_id
+     * \param value_wallet          wallet address
+     * \param value_belnet          belnet_id
+     * \param name                  bns name
+     * \param subaddr_account       subaddress account from which the input funds are taken
+     * \param subaddr_indices       set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
+     * \return                      PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                              after object returned
+     */
+    virtual PendingTransaction *createBnsTransaction(std::string& owner,
+                                                  std::string& backup_owner,
+                                                  std::string& mapping_years,
+                                                  std::string &value_bchat,
+                                                  std::string &value_wallet,
+                                                  std::string &value_belnet,
+                                                  std::string &name,
+                                                  uint32_t priority                  = 0,
+                                                  uint32_t subaddr_account           = 0,
+                                                  std::set<uint32_t> subaddr_indices = {}) = 0;
+    /*!
+     * \brief bnsUpdateTransaction  creates bns update transaction
+     * \param owner                 owner
+     * \param backup_owner          backup_owner
+     * \param value_bchat           bchat_id
+     * \param value_wallet          wallet address
+     * \param value_belnet          belnet_id
+     * \param name                  bns name
+     * \param subaddr_account       subaddress account from which the input funds are taken
+     * \param subaddr_indices       set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
+     * \return                      PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                              after object returned
+     */
+    virtual PendingTransaction* bnsUpdateTransaction(std::string& owner,
+                                                      std::string& backup_owner,
+                                                      std::string& value_bchat,
+                                                      std::string& value_wallet,
+                                                      std::string& value_belnet,
+                                                      std::string& name,
+                                                      uint32_t priority = 0,
+                                                      uint32_t subaddr_account = 0,
+                                                      std::set<uint32_t> subaddr_indices = {}) = 0;
+    /*!
+     * \brief bnsRenewTransaction               creates bns renew transaction
+     * \param name                              bns name
+     * \param bnsyear                           years(1y,2y,5y,10y)
+     * \param m_current_subaddress_account      subaddress account from which the input funds are taken
+     * \param subaddr_indices                   set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
+     * \return                                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                                          after object returned
+     */
+    virtual PendingTransaction *bnsRenewTransaction(std::string &name,
+                                                    std::string &bnsyear,
+                                                    uint32_t priority=0,
+                                                    uint32_t m_current_subaddress_account = 0,
+                                                    std::set<uint32_t> subaddr_indices = {}) = 0;
+    
     /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
      * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
@@ -1018,7 +1110,7 @@ struct Wallet
     virtual Device getDeviceType() const = 0;
 
     /// Prepare a staking transaction; return nullptr on failure
-    virtual PendingTransaction* stakePending(const std::string& master_node_key, const uint64_t amount) = 0;
+    virtual PendingTransaction* stakePending(const std::string& master_node_key, const uint64_t& amount) = 0;
 
     virtual StakeUnlockResult* canRequestStakeUnlock(const std::string &mn_key) = 0;
 
@@ -1188,9 +1280,6 @@ struct WalletManagerBase
 
     //! returns current block target
     virtual uint64_t blockTarget() = 0;
-
-    //! resolves an OpenAlias address to a monero address
-    virtual std::string resolveOpenAlias(const std::string &address, bool &dnssec_valid) const = 0;
 };
 
 struct WalletManagerFactory

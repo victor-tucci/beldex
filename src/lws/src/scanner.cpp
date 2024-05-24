@@ -105,8 +105,15 @@ namespace lws
         cryptonote::parse_tx_extra(tx.extra, extra);
         // allow partial parsing of tx extra (similar to wallet2.cpp)
 
-        if (!cryptonote::find_tx_extra_field_by_type(extra, key))
-          return;
+        size_t pk_index = 0;
+        while(true)
+        {
+          if (!cryptonote::find_tx_extra_field_by_type(extra, key, pk_index++))
+          {
+            if (pk_index > 1)
+              break;
+          }
+        }
 
         // std::cout << "key : " << key << std::endl;
         extra_nonce.emplace();
@@ -253,7 +260,7 @@ namespace lws
       } // for all users
     }
 
-    void scan_loop(thread_sync& self, std::shared_ptr<thread_data> data) noexcept
+    void scan_loop(thread_sync& self,std::string daemon_rpc,std::shared_ptr<thread_data> data) noexcept
     {
       try
       {
@@ -312,7 +319,7 @@ namespace lws
             {"method","get_blocks_fast"},
             {"params",{{"start_height",std::to_string(start_height)}}}
           };
-           auto response = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+           auto response = cpr::Post(cpr::Url{daemon_rpc},
                                     cpr::Body{block_fast.dump()},
                                     cpr::Header{ { "Content-Type", "application/json" }});
 
@@ -582,7 +589,7 @@ namespace lws
       Launches `thread_count` threads to run `scan_loop`, and then polls for
       active account changes in background
     */
-    void check_loop(db::storage disk, std::size_t thread_count, std::vector<lws::account> users, std::vector<db::account_id> active)
+    void check_loop(db::storage disk, std::size_t thread_count, std::string daemon_rpc,std::vector<lws::account> users, std::vector<db::account_id> active)
     {
       assert(0 < thread_count);
       assert(0 < users.size());
@@ -645,7 +652,7 @@ namespace lws
       //   client.watch_scan_signals();
         //  std::cout << "entered in to the users thereads\n";
         auto data = std::make_shared<thread_data>(disk.clone(), std::move(thread_users));
-        threads.emplace_back(attrs, std::bind(&scan_loop, std::ref(self), std::move(data)));
+        threads.emplace_back(attrs, std::bind(&scan_loop, std::ref(self),daemon_rpc,std::move(data)));
       }
 
       if (!users.empty())
@@ -654,7 +661,7 @@ namespace lws
         // client.watch_scan_signals();
         // std::cout << "entered in to the users users\n";
         auto data = std::make_shared<thread_data>(disk.clone(), std::move(users));
-        threads.emplace_back(attrs, std::bind(&scan_loop, std::ref(self), std::move(data)));
+        threads.emplace_back(attrs, std::bind(&scan_loop, std::ref(self), daemon_rpc,std::move(data)));
       }
 
       auto last_check = std::chrono::steady_clock::now();
@@ -718,7 +725,7 @@ namespace lws
     }
 
    }//anonymous
-    void scanner::sync(db::storage disk)
+    void scanner::sync(db::storage disk,std::string daemon_rpc)
     {
       MINFO("Starting blockchain sync with daemon");
       try
@@ -751,7 +758,7 @@ namespace lws
               {"method","get_hashes"},
               {"params",{{"start_height",std::to_string(a)}}}
             };
-            auto response = cpr::Post(cpr::Url{"http://127.0.0.1:19091/json_rpc"},
+            auto response = cpr::Post(cpr::Url{daemon_rpc},
                                       cpr::Body{block_hashes.dump()},
                                       cpr::Header{ { "Content-Type", "application/json" }});
 
@@ -801,7 +808,7 @@ namespace lws
       }
     }
 
-   void scanner::run(db::storage disk, std::size_t thread_count)
+   void scanner::run(db::storage disk, std::string daemon_rpc,std::size_t thread_count)
    {
     thread_count = std::max(std::size_t(1), thread_count);
 
@@ -853,7 +860,7 @@ namespace lws
         checked_wait(account_poll_interval - (std::chrono::steady_clock::now() - last));
       }
       else
-        check_loop(disk.clone(),thread_count, std::move(users), std::move(active));
+        check_loop(disk.clone(),thread_count, daemon_rpc,std::move(users), std::move(active));
 
       if (!scanner::is_running())
         return;
@@ -862,7 +869,7 @@ namespace lws
       //   client = MONERO_UNWRAP(ctx.connect());
 
       // expect<rpc::client> synced = sync(disk.clone(), std::move(client));
-      sync(disk.clone());
+      sync(disk.clone(),daemon_rpc);
       // if (!synced)
       // {
       //   if (!synced.matches(std::errc::timed_out))

@@ -35,11 +35,9 @@
 #include "serialization/container.h"
 #include "cryptonote_format_utils.h"
 #include "cryptonote_config.h"
-#include "epee/misc_language.h"
 #include "common/base58.h"
 #include "crypto/hash.h"
 #include "epee/int-util.h"
-#include "common/dns_utils.h"
 #include "common/beldex.h"
 #include <cfenv>
 
@@ -121,8 +119,8 @@ namespace cryptonote {
     return result;
   }
 
-  bool get_base_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint64_t &reward_unpenalized, uint8_t version, uint64_t height) {
-
+  bool get_base_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint64_t &reward_unpenalized, uint8_t version, uint64_t height) 
+  {
     //premine reward
     if (height == 1)
     {
@@ -130,17 +128,17 @@ namespace cryptonote {
       return true;
     }
 
-	if((height>=56500) && (version<network_version_17_POS))
-	{
-		reward = COIN * 2;
-		return true;
-	}
-	static_assert(TARGET_BLOCK_TIME % 1 == 0s, "difficulty targets must be a multiple of 60");
-    static_assert(TARGET_BLOCK_TIME_V17 % 1 == 0s, "difficulty targets must be a multiple of 60");
+    if((height>=56500) && (version<network_version_17_POS))
+    {
+      reward = COIN * 2;
+      return true;
+    }
+	  static_assert(TARGET_BLOCK_TIME_OLD % 1 == 0s, "difficulty targets must be a multiple of 60");
+    static_assert(TARGET_BLOCK_TIME % 1 == 0s, "difficulty targets must be a multiple of 60");
 
     uint64_t base_reward =
       version >= network_version_17_POS ? BLOCK_REWARD_HF17_POS :
-      version >= network_version_16_bns ? BLOCK_REWARD_HF16 :
+      version >= network_version_16 ? BLOCK_REWARD_HF16 :
         block_reward_unpenalized_formula_v7(version, already_generated_coins, height);
 
     uint64_t full_reward_zone = get_min_block_weight(version);
@@ -296,21 +294,6 @@ namespace cryptonote {
     }
 
     return true;
-  }
-  //--------------------------------------------------------------------------------
-  bool get_account_address_from_str_or_url(
-      address_parse_info& info
-    , network_type nettype
-    , const std::string_view str_or_url
-    , std::function<std::string(const std::string_view, const std::vector<std::string>&, bool)> dns_confirm
-    )
-  {
-    if (get_account_address_from_str(info, nettype, str_or_url))
-      return true;
-    bool dnssec_valid;
-    std::string address_str = tools::dns_utils::get_account_address_as_str_from_url(str_or_url, dnssec_valid, dns_confirm);
-    return !address_str.empty() &&
-      get_account_address_from_str(info, nettype, address_str);
   }
   //--------------------------------------------------------------------------------
   bool operator ==(const cryptonote::transaction& a, const cryptonote::transaction& b) {

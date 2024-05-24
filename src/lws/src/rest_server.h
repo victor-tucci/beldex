@@ -16,6 +16,7 @@
 
 namespace lws
 {
+    inline std::string daemon_add;
     class rest_server
     {
         struct internal;

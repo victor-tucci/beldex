@@ -9,6 +9,7 @@ add_subdirectory(wire)
 
 find_package(nlohmann_json 3.7.0 REQUIRED)
 find_package(Boost 1.45.0 COMPONENTS filesystem regex)
+find_package(OpenSSL REQUIRED)
 
 set(beldex-lws-common_sources config.cpp error.cpp)
 set(beldex-lws-common_headers config.h error.h fwd.h)
@@ -28,6 +29,8 @@ target_link_libraries(beldex-lws-daemon PUBLIC
     filesystem
     Boost::thread
     Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
     Threads::Threads
     Boost::regex
 )

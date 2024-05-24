@@ -30,6 +30,7 @@
 #include <vector>
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "common/median.h"
 #include "blockchain.h"
 #include "tx_sanity_check.h"
 
@@ -90,7 +91,7 @@ bool tx_sanity_check(const std::set<uint64_t> &rct_indices, size_t n_indices, ui
   }
 
   std::vector<uint64_t> offsets(rct_indices.begin(), rct_indices.end());
-  uint64_t median = epee::misc_utils::median(offsets);
+  uint64_t median = tools::median(std::move(offsets));
   if (median < rct_outs_available * 6 / 10)
   {
     MERROR("median offset index is too low (median is " << median << " out of total " << rct_outs_available << "offsets). Transactions should contain a higher fraction of recent outputs.");

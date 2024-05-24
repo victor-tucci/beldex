@@ -57,7 +57,6 @@ target_link_libraries(core_tests
     device
     wallet
     Boost::program_options
-    miniupnpc
     extra)
 set_property(TARGET core_tests
   PROPERTY
