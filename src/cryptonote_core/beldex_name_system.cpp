@@ -80,12 +80,12 @@ enum struct mapping_record_column
   encrypted_bchat_value,
   encrypted_wallet_value,
   encrypted_belnet_value,
+  encrypted_eth_addr_value,
   txid,
   owner_id,
   backup_owner_id,
   update_height,
   expiration_height,
-  encrypted_eth_addr_value,
   _count,
 };
 
@@ -1616,12 +1616,12 @@ bool build_default_tables(name_system_db& bns_db)
     encrypted_bchat_value BLOB,
     encrypted_wallet_value BLOB,
     encrypted_belnet_value BLOB,
+    encrypted_eth_addr_value,
     txid BLOB NOT NULL,
     owner_id INTEGER NOT NULL REFERENCES owner(id),
     backup_owner_id INTEGER REFERENCES owner(id),
     update_height INTEGER NOT NULL,
-    expiration_height INTEGER NOT NULL,
-    encrypted_eth_addr_value BLOB
+    expiration_height INTEGER NOT NULL
 )";
 
   const std::string BUILD_TABLE_SQL = R"(
@@ -1665,7 +1665,7 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
     while (step(mappings_info) == SQLITE_ROW)
     {
       auto name = get<std::string_view>(mappings_info, 1);
-      if (name == "encrypted_eth_addr_value" )
+      if (name == "encrypted_eth_addr_value") 
       {
         need_mappings_migration = false;
         break;
@@ -1678,7 +1678,24 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
     LOG_PRINT_L1("Migrating BNS mappings database to new format");
     const std::string migrate = R"(
 BEGIN TRANSACTION;
-ALTER TABLE mappings ADD COLUMN encrypted_eth_addr_value BLOB;
+CREATE TABLE mappings_new (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name_hash VARCHAR NOT NULL,
+    encrypted_bchat_value BLOB,
+    encrypted_wallet_value BLOB,
+    encrypted_belnet_value BLOB,
+    encrypted_eth_addr_value BLOB, 
+    txid BLOB NOT NULL,
+    owner_id INTEGER NOT NULL REFERENCES owner(id),
+    backup_owner_id INTEGER REFERENCES owner(id),
+    update_height INTEGER NOT NULL,
+    expiration_height INTEGER NOT NULL
+);
+INSERT INTO mappings_new (id, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value,txid, owner_id, backup_owner_id, update_height, expiration_height)    
+SELECT id, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, NULL AS encrypted_eth_addr_value, txid, owner_id, backup_owner_id, update_height, expiration_height
+FROM mappings;
+DROP TABLE mappings;
+ALTER TABLE mappings_new RENAME TO mappings;
 COMMIT TRANSACTION;
 )";
 
@@ -1812,7 +1829,7 @@ DELETE FROM owner
 WHERE NOT EXISTS (SELECT * FROM mappings WHERE owner.id = mappings.owner_id)
 AND NOT EXISTS   (SELECT * FROM mappings WHERE owner.id = mappings.backup_owner_id))"sv;
 
-  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, expiration_height, encrypted_eth_addr_value) VALUES (?,?,?,?,?,?,?,?,?,?)"sv;
+  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value, txid, owner_id, backup_owner_id, update_height, expiration_height) VALUES (?,?,?,?,?,?,?,?,?,?)"sv;
   constexpr auto SAVE_OWNER_STR    = "INSERT INTO owner (address) VALUES (?)"sv;
   constexpr auto SAVE_SETTINGS_STR = "INSERT OR REPLACE INTO settings (id, top_height, top_hash, version) VALUES (1,?,?,?)"sv;
 
