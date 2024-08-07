@@ -336,11 +336,12 @@ beldex_chain_generator::create_and_add_beldex_name_system_tx(cryptonote::account
                                                          bns::mapping_value const &value_bchat,
                                                          bns::mapping_value const &value_wallet,
                                                          bns::mapping_value const &value_belnet,
+                                                         bns::mapping_value const &value_eth_addr,
                                                          bns::generic_owner const *owner,
                                                          bns::generic_owner const *backup_owner,
                                                          bool kept_by_block)
 {
-  cryptonote::transaction t = create_beldex_name_system_tx(src, hf_version, mapping_years, name, value_bchat, value_wallet, value_belnet, owner, backup_owner);
+  cryptonote::transaction t = create_beldex_name_system_tx(src, hf_version, mapping_years, name, value_bchat, value_wallet, value_belnet, value_eth_addr, owner, backup_owner);
   add_tx(t, true /*can_be_added_to_blockchain*/, ""/*fail_msg*/, kept_by_block);
   return t;
 }
@@ -353,12 +354,13 @@ beldex_chain_generator::create_and_add_beldex_name_system_tx_update(cryptonote::
                                                                 bns::mapping_value const *value_bchat,
                                                                 bns::mapping_value const *value_wallet,
                                                                 bns::mapping_value const *value_belnet,
+                                                                bns::mapping_value const *value_eth_addr,
                                                                 bns::generic_owner const *owner,
                                                                 bns::generic_owner const *backup_owner,
                                                                 bns::generic_signature *signature,
                                                                 bool kept_by_block)
 {
-  cryptonote::transaction t = create_beldex_name_system_tx_update(src, hf_version, type, name, value_bchat, value_wallet, value_belnet, owner, backup_owner, signature);
+  cryptonote::transaction t = create_beldex_name_system_tx_update(src, hf_version, type, name, value_bchat, value_wallet, value_belnet, value_eth_addr, owner, backup_owner, signature);
   add_tx(t, true /*can_be_added_to_blockchain*/, ""/*fail_msg*/, kept_by_block);
   return t;
 }
@@ -613,6 +615,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
                                                                          bns::mapping_value const &value_bchat,
                                                                          bns::mapping_value const &value_wallet,
                                                                          bns::mapping_value const &value_belnet,
+                                                                         bns::mapping_value const &value_eth_addr,
                                                                          bns::generic_owner const *owner,
                                                                          bns::generic_owner const *backup_owner,
                                                                          std::optional<uint64_t> burn_override) const
@@ -651,8 +654,12 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
   bool encrypted_belnet = encrypted_belnet_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
   assert(encrypted_belnet);
 
+  bns::mapping_value encrypted_eth_addr_value = value_eth_addr;
+  bool encrypted_eth_addr = encrypted_eth_addr_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
+  assert(encrypted_eth_addr);
+
   std::vector<uint8_t> extra;
-  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_buy(generic_owner, backup_owner, mapping_years, name_hash, encrypted_bchat_value.to_string(), encrypted_wallet_value.to_string(), encrypted_belnet_value.to_string(), prev_txid);
+  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_buy(generic_owner, backup_owner, mapping_years, name_hash, encrypted_bchat_value.to_string(), encrypted_wallet_value.to_string(), encrypted_belnet_value.to_string(), encrypted_eth_addr_value.to_string(), prev_txid);
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
   cryptonote::add_burned_amount_to_tx_extra(extra, burn);
   cryptonote::transaction result = {};
@@ -672,6 +679,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
                                                                                 bns::mapping_value const *value_bchat,
                                                                                 bns::mapping_value const *value_wallet,
                                                                                 bns::mapping_value const *value_belnet,
+                                                                                bns::mapping_value const *value_eth_addr,
                                                                                 bns::generic_owner const *owner,
                                                                                 bns::generic_owner const *backup_owner,
                                                                                 bns::generic_signature *signature,
@@ -723,11 +731,23 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
     }
   }
 
+  bns::mapping_value encrypted_eth_addr_value = {};
+  if (value_eth_addr)
+  {
+    encrypted_eth_addr_value = *value_eth_addr;
+    if (!encrypted_eth_addr_value.encrypted)
+    {
+      assert(!signature); // Can't specify a signature with an unencrypted value because encrypting generates a new nonce and would invalidate it
+      bool encrypted_eth_addr = encrypted_eth_addr_value.encrypt(lcname, &name_hash, hf_version <= cryptonote::network_version_16);
+      if (use_asserts) assert(encrypted_eth_addr);
+    }
+  }
+
   bns::generic_signature signature_ = {};
   if (!signature)
   {
     signature = &signature_;
-    auto data = bns::tx_extra_signature(encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), owner, backup_owner, prev_txid);
+    auto data = bns::tx_extra_signature(encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), encrypted_eth_addr_value.to_view(), owner, backup_owner, prev_txid);
     crypto::hash hash{};
     if (!data.empty())
         crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
@@ -736,7 +756,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
   }
 
   std::vector<uint8_t> extra;
-  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_update(*signature, name_hash, encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), owner, backup_owner, prev_txid);
+  cryptonote::tx_extra_beldex_name_system data = cryptonote::tx_extra_beldex_name_system::make_update(*signature, name_hash, encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), encrypted_eth_addr_value.to_view(), owner, backup_owner, prev_txid);
   cryptonote::add_beldex_name_system_to_tx_extra(extra, data);
 
   cryptonote::block const &head = top().block;
@@ -795,7 +815,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_ren
   if (!signature)
   {
     signature = &signature_;
-    auto data = bns::tx_extra_signature(nullptr, nullptr, nullptr, nullptr, nullptr, prev_txid);
+    auto data = bns::tx_extra_signature(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,prev_txid);
     crypto::hash hash{};
     if (!data.empty())
         crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);

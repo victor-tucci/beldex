@@ -810,6 +810,7 @@ namespace cryptonote { namespace rpc {
 
             case bns::mapping_type::bchat: bns.type = "bchat"; break;
             case bns::mapping_type::wallet:  bns.type = "wallet"; break;
+            case bns::mapping_type::eth_addr:  bns.type = "eth_addr"; break;
 
             case bns::mapping_type::update_record_internal: [[fallthrough]];
             case bns::mapping_type::_count:
@@ -828,6 +829,8 @@ namespace cryptonote { namespace rpc {
           bns.value_wallet = oxenc::to_hex(x.encrypted_wallet_value);
         if (!x.encrypted_belnet_value.empty())
           bns.value_belnet = oxenc::to_hex(x.encrypted_belnet_value);
+        if (!x.encrypted_eth_addr_value.empty())
+          bns.value_eth_addr = oxenc::to_hex(x.encrypted_eth_addr_value);
         _load_owner(bns.owner, x.owner);
         _load_owner(bns.backup_owner, x.backup_owner);
       }
@@ -3537,6 +3540,7 @@ namespace cryptonote { namespace rpc {
         entry.encrypted_bchat_value                            = oxenc::to_hex(record.encrypted_bchat_value.to_view());
         entry.encrypted_wallet_value                           = oxenc::to_hex(record.encrypted_wallet_value.to_view());
         entry.encrypted_belnet_value                           = oxenc::to_hex(record.encrypted_belnet_value.to_view());
+        entry.encrypted_eth_addr_value                         = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);
@@ -3585,6 +3589,11 @@ namespace cryptonote { namespace rpc {
         BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries.encrypted_wallet_value};
         auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
         res.wallet_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_eth_addr_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "eth_addr", entries.encrypted_eth_addr_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.eth_addr_value = bns_value_decrypt_res.value;
       }
     }
 
@@ -3649,6 +3658,7 @@ namespace cryptonote { namespace rpc {
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);
+      entry.encrypted_eth_addr_value = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
     }
 
     res.status = STATUS_OK;

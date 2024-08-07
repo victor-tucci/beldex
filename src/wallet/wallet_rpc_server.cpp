@@ -3117,10 +3117,8 @@ namespace {
     BNS_BUY_MAPPING::response res{};
 
     std::string reason;
-
-    if(req.value_bchat.empty() && req.value_wallet.empty() && req.value_belnet.empty())
-      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid Values : required atleast one of the {value_bchat, value_wallet, value_belnet}"};
-
+    if(req.value_bchat.empty() && req.value_wallet.empty() && req.value_belnet.empty() && req.value_eth_addr.empty())
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid Values : required atleast one of the {value_bchat, value_wallet, value_belnet, value_eth_addr}"};
     auto map_years = m_wallet->bns_validate_years(req.years, &reason);
     if (!map_years)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Invalid BNS buy years: " + reason};    
@@ -3132,6 +3130,7 @@ namespace {
                                                                                       req.value_bchat.size() ? &req.value_bchat : nullptr,
                                                                                       req.value_wallet.size() ? &req.value_wallet : nullptr,
                                                                                       req.value_belnet.size() ? &req.value_belnet : nullptr,
+                                                                                      req.value_eth_addr.size() ? &req.value_eth_addr : nullptr,
                                                                                       &reason,
                                                                                       req.priority,
                                                                                       req.account_index,
@@ -3209,6 +3208,7 @@ namespace {
                                                req.value_bchat.empty()  ? nullptr : &req.value_bchat,
                                                req.value_wallet.empty() ? nullptr : &req.value_wallet,
                                                req.value_belnet.empty() ? nullptr : &req.value_belnet,
+                                               req.value_eth_addr.empty() ? nullptr : &req.value_eth_addr,
                                                req.owner.empty()        ? nullptr : &req.owner,
                                                req.backup_owner.empty() ? nullptr : &req.backup_owner,
                                                req.signature.empty()    ? nullptr : &req.signature,
@@ -3335,6 +3335,7 @@ namespace {
           res_e.encrypted_bchat_value = std::move(rec.encrypted_bchat_value);
           res_e.encrypted_wallet_value = std::move(rec.encrypted_wallet_value);
           res_e.encrypted_belnet_value = std::move(rec.encrypted_belnet_value);
+          res_e.encrypted_eth_addr_value = std::move(rec.encrypted_eth_addr_value);
           res_e.update_height = rec.update_height;
           res_e.expiration_height = rec.expiration_height;
           if (req.include_expired && res_e.expiration_height)
@@ -3350,6 +3351,19 @@ namespace {
             if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_bchat_value), &value, &errmsg)
                 && value.decrypt(res_e.name, type))
               res_e.value_bchat = value.to_readable_value(nettype, type);
+            else
+              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
+          }
+
+          //ETH_ADDR
+          if (req.decrypt && !res_e.encrypted_eth_addr_value.empty() && oxenc::is_hex(res_e.encrypted_eth_addr_value))
+          {
+            bns::mapping_value value;
+            const auto type = bns::mapping_type::eth_addr;
+            std::string errmsg;
+            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_eth_addr_value), &value, &errmsg)
+                && value.decrypt(res_e.name, type))
+              res_e.value_eth_addr = value.to_readable_value(nettype, type);
             else
               MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
           }
