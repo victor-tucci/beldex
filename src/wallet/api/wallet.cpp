@@ -1899,7 +1899,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 
     do {
         auto w = wallet();
-        if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty()){
+        if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty() && value_eth_addr.empty()){
             setStatusError(tr("Value must be atleast one"));
             break;
         }
@@ -2315,7 +2315,7 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
         for (auto const &entry : rpc)
         {
             std::string_view name;
-            std::string value_bchat, value_wallet, value_belnet;
+            std::string value_bchat, value_wallet, value_belnet, value_eth_addr;
             if (auto got = cache.find(entry.name_hash); got != cache.end())
             {
                 name = got->second.name;
@@ -2326,6 +2326,14 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
                   if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_bchat_value), &mv)
                       && mv.decrypt(name, type))
                     value_bchat = mv.to_readable_value(nettype, type);
+                }
+                //ETH_ADDRESS
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::eth_addr;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_eth_addr_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_eth_addr = mv.to_readable_value(nettype, type);
                 }
                 //WALLET
                 {
@@ -2350,6 +2358,7 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
             info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
             info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
             info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
+            info.value_eth_addr = value_eth_addr.empty() ? "(none)" : value_eth_addr;
             info.owner = entry.owner;
             info.backup_owner = entry.backup_owner? *entry.backup_owner : "(none)";
             info.update_height = entry.update_height;
@@ -2357,6 +2366,7 @@ std::vector<bnsInfo>* WalletImpl::MyBns() const
             info.encrypted_bchat_value = entry.encrypted_bchat_value.empty() ? "(none)" : entry.encrypted_bchat_value;
             info.encrypted_wallet_value = entry.encrypted_wallet_value.empty() ? "(none)" : entry.encrypted_wallet_value;
             info.encrypted_belnet_value = entry.encrypted_belnet_value.empty() ? "(none)" : entry.encrypted_belnet_value;
+            info.encrypted_eth_addr_value = entry.encrypted_eth_addr_value.empty() ? "(none)" : entry.encrypted_eth_addr_value;
         }
     }
     return my_bns;

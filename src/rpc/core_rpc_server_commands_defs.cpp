@@ -1339,10 +1339,10 @@ KV_SERIALIZE_MAP_CODE_BEGIN(BNS_NAMES_TO_OWNERS::response_entry)
   KV_SERIALIZE(encrypted_bchat_value)
   KV_SERIALIZE(encrypted_wallet_value)
   KV_SERIALIZE(encrypted_belnet_value)
+  KV_SERIALIZE(encrypted_eth_addr_value)
   KV_SERIALIZE(update_height)
   KV_SERIALIZE(expiration_height)
   KV_SERIALIZE(txid)
-  KV_SERIALIZE(encrypted_eth_addr_value)
 KV_SERIALIZE_MAP_CODE_END()
 
 

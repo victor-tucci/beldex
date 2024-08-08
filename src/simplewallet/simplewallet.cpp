@@ -7032,6 +7032,7 @@ bool simple_wallet::bns_make_update_mapping_signature(std::vector<std::string> a
                                                   nullptr,
                                                   nullptr,
                                                   nullptr,
+                                                  nullptr,
                                                   owner.size() ? &owner : nullptr,
                                                   backup_owner.size() ? &backup_owner : nullptr,
                                                   signature_binary,

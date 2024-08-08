@@ -427,7 +427,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads)
 
 if (APPLE AND NOT IOS)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=default")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR -D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION -fvisibility=default")
 endif()
 
 add_definition_if_library_exists(c memset_s "string.h" HAVE_MEMSET_S)

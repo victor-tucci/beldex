@@ -1616,7 +1616,7 @@ bool build_default_tables(name_system_db& bns_db)
     encrypted_bchat_value BLOB,
     encrypted_wallet_value BLOB,
     encrypted_belnet_value BLOB,
-    encrypted_eth_addr_value,
+    encrypted_eth_addr_value BLOB,
     txid BLOB NOT NULL,
     owner_id INTEGER NOT NULL REFERENCES owner(id),
     backup_owner_id INTEGER REFERENCES owner(id),

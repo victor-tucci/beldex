@@ -3655,10 +3655,10 @@ namespace cryptonote { namespace rpc {
       entry.encrypted_bchat_value = oxenc::to_hex(record.encrypted_bchat_value.to_view());
       entry.encrypted_wallet_value = oxenc::to_hex(record.encrypted_wallet_value.to_view());
       entry.encrypted_belnet_value = oxenc::to_hex(record.encrypted_belnet_value.to_view());
+      entry.encrypted_eth_addr_value = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);
-      entry.encrypted_eth_addr_value = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
     }
 
     res.status = STATUS_OK;
