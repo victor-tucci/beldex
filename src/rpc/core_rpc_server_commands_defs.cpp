@@ -257,7 +257,6 @@ KV_SERIALIZE_MAP_CODE_END()
 KV_SERIALIZE_MAP_CODE_BEGIN(SEND_RAW_TX::request)
   KV_SERIALIZE(tx_as_hex)
   KV_SERIALIZE_OPT(do_not_relay, false)
-  KV_SERIALIZE_OPT(do_sanity_checks, true)
   KV_SERIALIZE_OPT(flash, false)
 KV_SERIALIZE_MAP_CODE_END()
 

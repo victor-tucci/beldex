@@ -6930,7 +6930,6 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
     rpc::SEND_RAW_TX::request req{};
     req.tx_as_hex = oxenc::to_hex(tx_to_blob(ptx.tx));
     req.do_not_relay = false;
-    req.do_sanity_checks = true;
     req.flash = flash;
     rpc::SEND_RAW_TX::response daemon_send_resp{};
     bool r = invoke_http<rpc::SEND_RAW_TX>(req, daemon_send_resp);

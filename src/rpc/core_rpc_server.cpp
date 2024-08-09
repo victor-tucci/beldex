@@ -56,7 +56,6 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
-#include "cryptonote_core/tx_sanity_check.h"
 #include "cryptonote_core/uptime_proof.h"
 #include "net/parse.h"
 #include "crypto/hash.h"
@@ -1153,15 +1152,6 @@ namespace cryptonote { namespace rpc {
       return res;
     }
     auto tx_blob = oxenc::from_hex(req.tx_as_hex);
-
-    if (req.do_sanity_checks && !cryptonote::tx_sanity_check(tx_blob, m_core.get_blockchain_storage().get_num_mature_outputs(0)))
-    {
-      res.status = "Failed";
-      res.reason = "Sanity check failed";
-      res.sanity_check_failed = true;
-      return res;
-    }
-    res.sanity_check_failed = false;
 
     if (req.flash)
     {
