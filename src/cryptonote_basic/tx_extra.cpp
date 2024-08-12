@@ -10,6 +10,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     const std::string& encrypted_bchat_value,
     const std::string& encrypted_wallet_value,
     const std::string& encrypted_belnet_value,
+    const std::string& encrypted_eth_addr_value,
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
@@ -43,6 +44,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     result.encrypted_belnet_value = encrypted_belnet_value;
   }
 
+  if (encrypted_eth_addr_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_eth_addr_value;
+    result.encrypted_eth_addr_value = encrypted_eth_addr_value;
+  }
+
   result.prev_txid = prev_txid;
   return result;
 }
@@ -71,6 +78,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     std::string_view encrypted_bchat_value,
     std::string_view encrypted_wallet_value,
     std::string_view encrypted_belnet_value,
+    std::string_view encrypted_eth_addr_value,
     const bns::generic_owner* owner,
     const bns::generic_owner* backup_owner,
     const crypto::hash& prev_txid)
@@ -97,6 +105,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
   {
     result.fields |= bns::extra_field::encrypted_belnet_value;
     result.encrypted_belnet_value = std::string{encrypted_belnet_value};
+  }
+  
+  if (encrypted_eth_addr_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_eth_addr_value;
+    result.encrypted_eth_addr_value = std::string{encrypted_eth_addr_value};
   }
 
   if (owner)

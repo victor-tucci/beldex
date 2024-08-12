@@ -122,12 +122,13 @@ namespace master_nodes
         return pair.first == pubkey;
       });
 
-      // Check if "pubkey" is found
+      // Check if "pubkey" is found in the multi_mns list
       if (position != multi_mns.end()) {
-        int my_position = position - multi_mns.begin();
-        if (my_position >= 3)
-        {
-          LOG_PRINT_L1("This Master Node reached maximum multinode: " << pubkey);
+        auto index_in_multi_mns = std::distance(multi_mns.begin(), position);
+
+        // Ensure the index is within allowed limits
+        if (index_in_multi_mns >= MAX_ALLOWED_MASTERNODES_PER_IP) {
+          LOG_PRINT_L1("This Master Node reached the maximum multinode: " << pubkey);
           result.multi_mn_accept_range = false;
         }
       }
