@@ -53,7 +53,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "macOS deployment target (App
 project(beldex
     VERSION 5.0.2
     LANGUAGES CXX C)
-set(BELDEX_RELEASE_CODENAME "Bern")
+set(BELDEX_RELEASE_CODENAME "Sunfyre")
 
 # String value to append to the full version string; this is intended to easily identify whether a
 # binary was build from the release or development branches.  This should be permanently set to an
