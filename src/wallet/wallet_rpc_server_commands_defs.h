@@ -2237,7 +2237,8 @@ For more information on updating and signing see the BNS_UPDATE_MAPPING document
       std::string        name;            // The name to purchase via Beldex Name Service
       std::string        value_bchat;     // The value of bchat that the name maps to via Beldex Name Service, (i.e. For Bchat: [display name->bchat public key]).
       std::string        value_wallet;    // The value of wallet that the name maps to via Beldex Name Service, (i.e, For wallets: [name->wallet address]).
-      std::string        value_belnet;    // The value of wallet that the name maps to via Beldex Name Service, (i.e, For Belnet: [name->domain name]).
+      std::string        value_belnet;    // The value of belnet that the name maps to via Beldex Name Service, (i.e, For Belnet: [name->domain name]).
+      std::string        value_eth_addr;  // The value of Ethereum Address that the name maps to via Beldex Name Service, (i.e, For etha_address: [name->eth_address]).
 
       uint32_t           account_index;   // (Optional) Transfer from this account index. (Defaults to 0)
       std::set<uint32_t> subaddr_indices; // (Optional) Transfer from this set of subaddresses. (Defaults to 0)
@@ -2316,6 +2317,7 @@ If signing is performed externally then you must first encrypt the `value` (if b
       std::string        value_bchat;   // (Optional): The new value of bchat that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value bchat (if non-empty) must be already encrypted.
       std::string        value_wallet;  // (Optional): The new value of wallet that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value wallet(if non-empty) must be already encrypted.
       std::string        value_belnet;  // (Optional): The new value of belnet that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged. If using a `signature` then this value belnet (if non-empty) must be already encrypted.
+      std::string        value_eth_addr;// (Optional): The new value of Ethereum Address that the name maps to via Beldex Name Service. If not specified or given the empty string "", then the mapping's value remains unchanged.If using a `signature` then this value belnet (if non-empty) must be already encrypted.
       std::string        owner;         // (Optional): The new owner of the mapping. If not specified or given the empty string "", then the mapping's owner remains unchanged.
       std::string        backup_owner;  // (Optional): The new backup owner of the mapping. If not specified or given the empty string "", then the mapping's backup owner remains unchanged.
       std::string        signature;     // (Optional): Signature derived using libsodium generichash on {current txid blob, new value blob} of the mapping to update. By default the hash is signed using the wallet's spend key as an ed25519 keypair, if signature is specified.
@@ -2414,9 +2416,11 @@ This command is only required if the open wallet is one of the owners of a BNS r
       std::string encrypted_bchat_value;         // The encrypted value of bchat that the name maps to, in hex.
       std::string encrypted_wallet_value;        // The encrypted value of wallet that the name maps to, in hex.
       std::string encrypted_belnet_value;        // The encrypted value of belnet that the name maps to, in hex.
+      std::string encrypted_eth_addr_value;
       std::optional<std::string> value_bchat;    // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_wallet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
       std::optional<std::string> value_belnet;   // Decrypted value that that name maps to.  Only provided if `decrypt: true` was specified in the request.
+      std::optional<std::string> value_eth_addr;
       uint64_t update_height;                    // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height; // For records that expire, this will be set to the expiration block height.
       std::optional<bool> expired;               // Indicates whether the record has expired. Only included in the response if "include_expired" is specified in the request.

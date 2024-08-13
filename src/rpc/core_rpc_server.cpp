@@ -56,7 +56,6 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
-#include "cryptonote_core/tx_sanity_check.h"
 #include "cryptonote_core/uptime_proof.h"
 #include "net/parse.h"
 #include "crypto/hash.h"
@@ -986,6 +985,7 @@ namespace cryptonote { namespace rpc {
 
             case bns::mapping_type::bchat: bns.type = "bchat"; break;
             case bns::mapping_type::wallet:  bns.type = "wallet"; break;
+            case bns::mapping_type::eth_addr:  bns.type = "eth_addr"; break;
 
             case bns::mapping_type::update_record_internal: [[fallthrough]];
             case bns::mapping_type::_count:
@@ -1004,6 +1004,8 @@ namespace cryptonote { namespace rpc {
           bns.value_wallet = oxenc::to_hex(x.encrypted_wallet_value);
         if (!x.encrypted_belnet_value.empty())
           bns.value_belnet = oxenc::to_hex(x.encrypted_belnet_value);
+        if (!x.encrypted_eth_addr_value.empty())
+          bns.value_eth_addr = oxenc::to_hex(x.encrypted_eth_addr_value);
         _load_owner(bns.owner, x.owner);
         _load_owner(bns.backup_owner, x.backup_owner);
       }
@@ -1326,15 +1328,6 @@ namespace cryptonote { namespace rpc {
       return res;
     }
     auto tx_blob = oxenc::from_hex(req.tx_as_hex);
-
-    if (req.do_sanity_checks && !cryptonote::tx_sanity_check(tx_blob, m_core.get_blockchain_storage().get_num_mature_outputs(0)))
-    {
-      res.status = "Failed";
-      res.reason = "Sanity check failed";
-      res.sanity_check_failed = true;
-      return res;
-    }
-    res.sanity_check_failed = false;
 
     if (req.flash)
     {
@@ -3713,6 +3706,7 @@ namespace cryptonote { namespace rpc {
         entry.encrypted_bchat_value                            = oxenc::to_hex(record.encrypted_bchat_value.to_view());
         entry.encrypted_wallet_value                           = oxenc::to_hex(record.encrypted_wallet_value.to_view());
         entry.encrypted_belnet_value                           = oxenc::to_hex(record.encrypted_belnet_value.to_view());
+        entry.encrypted_eth_addr_value                         = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
         entry.expiration_height                                = record.expiration_height;
         entry.update_height                                    = record.update_height;
         entry.txid                                             = tools::type_to_hex(record.txid);
@@ -3722,6 +3716,57 @@ namespace cryptonote { namespace rpc {
     res.status = STATUS_OK;
     return res;
   }
+
+  //------------------------------------------------------------------------------------------------------------------------------
+  BNS_LOOKUP::response core_rpc_server::invoke(BNS_LOOKUP::request&& req, rpc_context context)
+  {
+    BNS_LOOKUP::response res{};
+
+    std::string name = tools::lowercase_ascii_string(std::move(req.name));
+    
+    BNS_NAMES_TO_OWNERS::request name_to_owner_req{};
+    name_to_owner_req.entries.push_back(bns::name_to_base64_hash(name));   
+    auto name_to_owner_res = invoke(std::move(name_to_owner_req), context);
+
+    if(name_to_owner_res.entries.size() != 1){
+        throw rpc_error{ERROR_INVALID_RESULT, "Invalid data returned from BNS_NAMES_TO_OWNERS"};
+    }
+
+    auto entries = name_to_owner_res.entries.back();
+    {
+      res.name_hash                                         = entries.name_hash;
+      res.owner                                             = entries.owner;
+      if (entries.backup_owner) res.backup_owner            = entries.backup_owner;
+      res.expiration_height                                 = entries.expiration_height;
+      res.update_height                                     = entries.update_height;
+      res.txid                                              = entries.txid;
+
+      if(!entries.encrypted_bchat_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "bchat", entries.encrypted_bchat_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.bchat_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_belnet_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "belnet", entries.encrypted_belnet_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.belnet_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_wallet_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "wallet", entries.encrypted_wallet_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.wallet_value = bns_value_decrypt_res.value;
+      }
+      if(!entries.encrypted_eth_addr_value.empty()){
+        BNS_VALUE_DECRYPT::request bns_value_decrypt_req{name, "eth_addr", entries.encrypted_eth_addr_value};
+        auto bns_value_decrypt_res = invoke(std::move(bns_value_decrypt_req), context);
+        res.eth_addr_value = bns_value_decrypt_res.value;
+      }
+    }
+
+    res.status = STATUS_OK;
+    return res;
+  }
+
   //------------------------------------------------------------------------------------------------------------------------------
   BNS_OWNERS_TO_NAMES::response core_rpc_server::invoke(BNS_OWNERS_TO_NAMES::request&& req, rpc_context context)
   {
@@ -3776,6 +3821,7 @@ namespace cryptonote { namespace rpc {
       entry.encrypted_bchat_value = oxenc::to_hex(record.encrypted_bchat_value.to_view());
       entry.encrypted_wallet_value = oxenc::to_hex(record.encrypted_wallet_value.to_view());
       entry.encrypted_belnet_value = oxenc::to_hex(record.encrypted_belnet_value.to_view());
+      entry.encrypted_eth_addr_value = oxenc::to_hex(record.encrypted_eth_addr_value.to_view());
       entry.update_height   = record.update_height;
       entry.expiration_height = record.expiration_height;
       entry.txid            = tools::type_to_hex(record.txid);

@@ -4,7 +4,7 @@
 #include <exception>
 #include <oxenc/base64.h>
 #include <boost/endian/conversion.hpp>
-#include <oxenmq/variant.h>
+#include <oxenc/variant.h>
 #include "common/command_line.h"
 #include "common/string_util.h"
 #include "cryptonote_config.h"

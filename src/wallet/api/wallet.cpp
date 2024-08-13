@@ -1605,7 +1605,8 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
         bool error = false;
         auto w = wallet();
         for (size_t i = 0; i < dst_addr.size() && !error; i++) {
-            if(!cryptonote::get_account_address_from_str(info, m_wallet_ptr->nettype(), dst_addr[i])) {
+            std::optional<std::string> address = w->resolve_address(dst_addr[i]);
+		    if(!cryptonote::get_account_address_from_str(info, m_wallet_ptr->nettype(), *address)) {
                 // TODO: copy-paste 'if treating as an address fails, try as url' from simplewallet.cpp:1982
                 setStatusError(tr("Invalid destination address"));
                 error = true;
@@ -1745,6 +1746,116 @@ PendingTransaction *WalletImpl::createTransaction(const std::string &dst_addr, s
 }
 
 EXPORT
+PendingTransaction *WalletImpl::createSweepAllTransaction(uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+{
+    clearStatus();
+    // Pause refresh thread while creating transaction
+    pauseRefresh();
+
+    cryptonote::address_parse_info info;
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do{
+        auto w = wallet();
+        std::vector<uint8_t> extra;
+        std::string extra_nonce;
+
+        std::string addr = w->get_subaddress_as_str({0, 0});
+        if (!cryptonote::get_account_address_from_str(info, w->nettype(), addr)){
+            setStatusError(tr("failed to parse address"));
+            break;
+        }
+
+        if (info.has_payment_id) {
+            if (!extra_nonce.empty()) {
+                setStatusError(tr("a single transaction cannot use more than one payment id"));
+                break;
+            }
+            set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, info.payment_id);
+        }
+        if (!extra_nonce.empty() && !add_extra_nonce_to_tx_extra(extra, extra_nonce)) {
+            setStatusError(tr("failed to set up payment id, though it was decoded correctly"));
+            break;
+        }
+        try {
+            transaction->m_pending_tx = w->create_transactions_all(0, info.address, info.is_subaddress, 1, CRYPTONOTE_DEFAULT_TX_MIXIN, 0 /* unlock_time */,
+                                                                            priority,
+                                                                            extra, subaddr_account, subaddr_indices);
+            pendingTxPostProcess(transaction);
+
+        } catch (const tools::error::daemon_busy&) {
+            // TODO: make it translatable with "tr"?
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") +  e.to_string());
+        } catch (const tools::error::get_outs_error&) {
+            setStatusError(tr("failed to get outputs to mix"));
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            setStatusError("");
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            setStatusError("");
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            setStatusError("");
+            std::ostringstream writer;
+
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee())  %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) <<  e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big& e) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+    }while(false);
+
+    transaction->m_status = status();
+    // Resume refresh thread
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
 bool WalletImpl::bns_validate_years(std::string_view map_years, bns::mapping_years *mapping_years)
 {
     LOG_PRINT_L1(__FUNCTION__ << "Check bns year");
@@ -1776,7 +1887,7 @@ bool WalletImpl::bns_validate_years(std::string_view map_years, bns::mapping_yea
 }
 
 EXPORT
-PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string& mapping_years,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet,std::string &name,
+PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::string& backup_owner,std::string& mapping_years,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet, std::string &value_eth_addr, std::string &name,
                                                   uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {  
@@ -1788,7 +1899,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 
     do {
         auto w = wallet();
-        if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty()){
+        if(value_bchat.empty() && value_wallet.empty() && value_belnet.empty() && value_eth_addr.empty()){
             setStatusError(tr("Value must be atleast one"));
             break;
         }
@@ -1812,6 +1923,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
                                                      value_bchat.size() ? &value_bchat : nullptr,
                                                      value_wallet.size() ? &value_wallet : nullptr,
                                                      value_belnet.size() ? &value_belnet : nullptr,
+                                                     value_eth_addr.size() ? &value_eth_addr : nullptr,
                                                      &reason,
                                                      priority,
                                                      subaddr_account,
@@ -1824,6 +1936,11 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
                 break;
             }
             pendingTxPostProcess(transaction);
+
+            if (good() && !setBnsRecord(name)) {
+                LOG_PRINT_L1(__FUNCTION__ << "BNS records are not being cached properly");
+                break;
+            }
 
         }catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?
@@ -1897,7 +2014,7 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 }
 
 EXPORT
-PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet,std::string &name,
+PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::string& backup_owner,std::string &value_bchat,std::string &value_wallet,std::string &value_belnet, std::string &value_eth_addr, std::string &name,
                                                   uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {  
@@ -1923,6 +2040,7 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
                                                         value_bchat.size() ? &value_bchat : nullptr,
                                                         value_wallet.size() ? &value_wallet : nullptr,
                                                         value_belnet.size() ? &value_belnet : nullptr,
+                                                        value_eth_addr.size() ? &value_eth_addr : nullptr,
                                                         owner.size() ? &owner : nullptr,
                                                         backup_owner.size() ? &backup_owner : nullptr,
                                                         nullptr,
@@ -1938,6 +2056,11 @@ PendingTransaction *WalletImpl::bnsUpdateTransaction(std::string& owner, std::st
                 break;
             }
             pendingTxPostProcess(transaction);
+
+            if (good() && !setBnsRecord(name)) {
+                LOG_PRINT_L1(__FUNCTION__ << "BNS records are not being cached properly");
+                break;
+            }
 
         }catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?
@@ -2121,6 +2244,132 @@ PendingTransaction *WalletImpl::bnsRenewTransaction(std::string &name,std::strin
     // Resume refresh thread
     startRefresh();
     return transaction;
+}
+
+EXPORT
+bool WalletImpl::setBnsRecord(const std::string &name)
+{
+    std::string reason;
+    auto name_str = tools::lowercase_ascii_string(name);
+    if (bns::validate_bns_name(name_str, &reason))
+    {
+        std::string name_hash_str = bns::name_to_base64_hash(name);
+        tools::wallet2::bns_detail detail = {
+                name_str,
+                name_hash_str};
+        wallet()->set_bns_cache_record(detail);
+        return true;
+    }
+    setStatusError(tr("Invalid BNS name '" + name_str + "': " + reason));
+    return false;
+}
+
+EXPORT
+std::string WalletImpl::nameToNamehash(const std::string &name)
+{
+    std::string reason;
+    auto name_str = tools::lowercase_ascii_string(name);
+    if (bns::validate_bns_name(name_str, &reason))
+    {
+        std::string name_hash_str = bns::name_to_base64_hash(name);
+        return name_hash_str;
+    }
+    setStatusError(tr("Invalid BNS name '" + name_str + "': " + reason));
+    return "";
+}
+
+EXPORT
+std::vector<bnsInfo>* WalletImpl::MyBns() const
+{
+    std::vector<bnsInfo>* my_bns = new std::vector<bnsInfo>;
+
+    auto w = wallet();
+
+    std::vector<std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::response_entry>> rpc_results;
+    std::vector<cryptonote::rpc::BNS_OWNERS_TO_NAMES::request> requests(1);
+
+    std::unordered_map<std::string, tools::wallet2::bns_detail> cache = w->get_bns_cache();
+
+    for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+    {
+        if (requests.back().entries.size() >= cryptonote::rpc::BNS_OWNERS_TO_NAMES::MAX_REQUEST_ENTRIES)
+            requests.emplace_back();
+        requests.back().entries.push_back(w->get_subaddress_as_str({0, index}));
+    }
+
+    rpc_results.reserve(requests.size());
+    for (auto const &request : requests)
+    {
+        auto [success, result] = w->bns_owners_to_names(request);
+        if (!success)
+        {
+            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+        }
+        rpc_results.emplace_back(std::move(result));
+    }
+
+    auto nettype = w->nettype();
+    for (size_t i = 0; i < rpc_results.size(); i++)
+    {
+        auto const &rpc = rpc_results[i];
+        for (auto const &entry : rpc)
+        {
+            std::string_view name;
+            std::string value_bchat, value_wallet, value_belnet, value_eth_addr;
+            if (auto got = cache.find(entry.name_hash); got != cache.end())
+            {
+                name = got->second.name;
+                //BCHAT
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::bchat;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_bchat_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_bchat = mv.to_readable_value(nettype, type);
+                }
+                //ETH_ADDRESS
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::eth_addr;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_eth_addr_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_eth_addr = mv.to_readable_value(nettype, type);
+                }
+                //WALLET
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::wallet;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_wallet_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_wallet = mv.to_readable_value(nettype,type);
+                }
+                //BELNET
+                {
+                  bns::mapping_value mv;
+                  const auto type = bns::mapping_type::belnet;
+                  if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(entry.encrypted_belnet_value), &mv)
+                      && mv.decrypt(name, type))
+                    value_belnet = mv.to_readable_value(nettype, type);
+                }
+            }
+            auto &info = my_bns->emplace_back();
+            info.name_hash = entry.name_hash;
+            info.name = name.empty() ? "(none)" : std::string(name);
+            info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
+            info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
+            info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
+            info.value_eth_addr = value_eth_addr.empty() ? "(none)" : value_eth_addr;
+            info.owner = entry.owner;
+            info.backup_owner = entry.backup_owner? *entry.backup_owner : "(none)";
+            info.update_height = entry.update_height;
+            info.expiration_height = entry.expiration_height ? *entry.expiration_height : 0;
+            info.encrypted_bchat_value = entry.encrypted_bchat_value.empty() ? "(none)" : entry.encrypted_bchat_value;
+            info.encrypted_wallet_value = entry.encrypted_wallet_value.empty() ? "(none)" : entry.encrypted_wallet_value;
+            info.encrypted_belnet_value = entry.encrypted_belnet_value.empty() ? "(none)" : entry.encrypted_belnet_value;
+            info.encrypted_eth_addr_value = entry.encrypted_eth_addr_value.empty() ? "(none)" : entry.encrypted_eth_addr_value;
+        }
+    }
+    return my_bns;
 }
 
 EXPORT

@@ -181,12 +181,16 @@ public:
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
+    PendingTransaction* createSweepAllTransaction(uint32_t priority = 0,
+                                        uint32_t subaddr_account = 0,
+                                        std::set<uint32_t> subaddr_indices = {}) override;
     PendingTransaction* createBnsTransaction(std::string& owner,
                                         std::string& backup_owner,
                                         std::string& mapping_years,
                                         std::string &value_bchat,
                                         std::string &value_wallet,
                                         std::string &value_belnet,
+                                        std::string &value_eth_addr,
                                         std::string &name,
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
@@ -196,6 +200,7 @@ public:
                                         std::string &value_bchat,
                                         std::string &value_wallet,
                                         std::string &value_belnet,
+                                        std::string &value_eth_addr,
                                         std::string &name,
                                         uint32_t priority = 0,
                                         uint32_t subaddr_account = 0,
@@ -205,6 +210,9 @@ public:
                                         uint32_t priority=0,
                                         uint32_t m_current_subaddress_account = 0,
                                         std::set<uint32_t> subaddr_indices = {}) override;
+    bool setBnsRecord(const std::string &name) override;
+    std::string nameToNamehash(const std::string &name) override;
+    std::vector<bnsInfo>* MyBns() const override;
     PendingTransaction* createSweepUnmixableTransaction() override;
     bool submitTransaction(std::string_view filename) override;
     UnsignedTransaction* loadUnsignedTx(std::string_view unsigned_filename) override;

@@ -344,6 +344,10 @@ namespace master_nodes
 
       if (!crypto::check_signature(hash, key, quorum_signature.signature))
       {
+        if (height == 3126052){
+          return true;
+        }
+
         MGINFO("Incorrect signature for vote, failed verification at height: " << height << " for voter: " << key << "\n" << quorum);
         return false;
       }
@@ -368,7 +372,7 @@ namespace master_nodes
         return false;
       }
 
-      if (!verify_quorum_signatures(quorum, quorum_type::checkpointing, hf_version, checkpoint.height, checkpoint.block_hash, checkpoint.signatures))
+      if ((checkpoint.height != 3126052) && !verify_quorum_signatures(quorum, quorum_type::checkpointing, hf_version, checkpoint.height, checkpoint.block_hash, checkpoint.signatures))
       {
         LOG_PRINT_L1("Checkpoint failed signature validation at block " << checkpoint.height << " " << checkpoint.block_hash);
         return false;
