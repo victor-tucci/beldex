@@ -313,6 +313,7 @@ namespace rpc {
         std::optional<std::string> value_bchat;  // The encrypted value of the record, in hex for the bchat.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> value_wallet; // The encrypted value of the record, in hex for the wallet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> value_belnet; // The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
+        std::optional<std::string> value_eth_addr;// The encrypted value of the record, in hex for the belnet.  Note that this is encrypted using the actual name itself (*not* the hashed name).
         std::optional<std::string> owner;        // The owner of this record; this can be a main wallet, wallet subaddress, or a plain public key.
         std::optional<std::string> backup_owner; // Backup owner wallet/pubkey of the record, if provided.
         KV_MAP_SERIALIZABLE
@@ -535,7 +536,6 @@ namespace rpc {
     {
       std::string tx_as_hex; // Full transaction information as hexidecimal string.
       bool do_not_relay;     // (Optional: Default false) Stop relaying transaction to other nodes.  Ignored if `flash` is true.
-      bool do_sanity_checks; // (Optional: Default true) Verify TX params have sane values.
       bool flash;            // (Optional: Default false) Submit this as a flash tx rather than into the mempool.
 
       KV_MAP_SERIALIZABLE
@@ -2457,10 +2457,10 @@ namespace rpc {
       std::string encrypted_bchat_value;        // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::string encrypted_wallet_value;       // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::string encrypted_belnet_value;       // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::string encrypted_eth_addr_value;     // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
-
       KV_MAP_SERIALIZABLE
     };
 
@@ -2495,6 +2495,7 @@ namespace rpc {
       std::optional<std::string> bchat_value;   // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::optional<std::string> wallet_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       std::optional<std::string> belnet_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
+      std::optional<std::string> eth_addr_value;  // The encrypted value that the name maps to. See the `BNS_RESOLVE` description for information on how this value can be decrypted.
       uint64_t update_height;                   // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
@@ -2530,10 +2531,10 @@ namespace rpc {
       std::string encrypted_bchat_value;        // The bchat encrypted value that the name maps to, in hex. This value of bchat is encrypted using the name (not the hash) as the secret.
       std::string encrypted_wallet_value;       // The wallet encrypted value that the name maps to, in hex. This value of wallet is encrypted using the name (not the hash) as the secret.
       std::string encrypted_belnet_value;       // The belnet encrypted value that the name maps to, in hex. This value of belnet is encrypted using the name (not the hash) as the secret.
+      std::string encrypted_eth_addr_value;     // The eth_address encrypted value that the name maps to, in hex. This value of eth_address is encrypted using the name (not the hash) as the secret.
       uint64_t    update_height;                // The last height that this Beldex Name Service entry was updated on the Blockchain.
       std::optional<uint64_t> expiration_height;// For records that expire, this will be set to the expiration block height.
       std::string txid;                         // The txid of the mapping's most recent update or purchase.
-
       KV_MAP_SERIALIZABLE
     };
 
@@ -2571,7 +2572,7 @@ namespace rpc {
 
     struct request
     {
-      uint16_t type;         // The BNS type (mandatory); currently supported values are: 0 = bchat, 1 = wallet, 2 = belnet.
+      uint16_t type;         // The BNS type (mandatory); currently supported values are: 0 = bchat, 1 = wallet, 2 = belnet. 6=eth_addr
       std::string name_hash; // The 32-byte BLAKE2b hash of the name to look up, encoded as 64 hex digits or 44/43 base64 characters (with/without padding).
 
       KV_MAP_SERIALIZABLE

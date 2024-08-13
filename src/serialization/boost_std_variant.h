@@ -5,7 +5,7 @@
 // interchangeable).
 //
 
-#include <oxenmq/variant.h>
+#include <oxenc/variant.h>
 
 #include <boost/archive/archive_exception.hpp>
 

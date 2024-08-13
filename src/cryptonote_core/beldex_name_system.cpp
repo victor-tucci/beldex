@@ -80,6 +80,7 @@ enum struct mapping_record_column
   encrypted_bchat_value,
   encrypted_wallet_value,
   encrypted_belnet_value,
+  encrypted_eth_addr_value,
   txid,
   owner_id,
   backup_owner_id,
@@ -119,7 +120,12 @@ std::string bns::mapping_value::to_readable_value(cryptonote::network_type netty
     } else {
       result = oxenc::to_hex(to_view());
     }
-  } else {
+  }
+  else if (type == bns::mapping_type::eth_addr)
+  {
+    result = "0x" + oxenc::to_hex(to_view());
+  }
+   else {
     result = oxenc::to_hex(to_view());
   }
 
@@ -378,7 +384,21 @@ mapping_record sql_get_mapping_from_statement(sql_compiled_statement& statement)
   get(statement, mapping_record_column::owner_id, result.owner_id);
   get(statement, mapping_record_column::backup_owner_id, result.backup_owner_id);
 
-  // Copy encrypted_bchat_value
+  // Copy encrypted_eth_addr_value
+  {
+    auto value = get<std::string_view>(statement, mapping_record_column::encrypted_eth_addr_value);
+    if(!value.empty()){
+      if (value.size() > result.encrypted_eth_addr_value.buffer.size())
+      {
+        MERROR("Unexpected encrypted Ethereum address value with size=" << value.size() << ", in BNS db larger than the available size=" << result.encrypted_eth_addr_value.buffer.size());
+        return result;
+      }
+      result.encrypted_eth_addr_value.len = value.size();
+      result.encrypted_eth_addr_value.encrypted = true;
+      std::memcpy(&result.encrypted_eth_addr_value.buffer[0], value.data(), value.size());
+    }
+  }
+    // Copy encrypted_bchat_value
   {
     auto value = get<std::string_view>(statement, mapping_record_column::encrypted_bchat_value);
     if(!value.empty()){
@@ -675,7 +695,7 @@ static void append_owner(std::string& buffer, const bns::generic_owner* owner)
   }
 }
 
-std::string tx_extra_signature(std::string_view value_bchat,std::string_view value_wallet,std::string_view value_belnet, bns::generic_owner const *owner, bns::generic_owner const *backup_owner, crypto::hash const &prev_txid)
+std::string tx_extra_signature(std::string_view value_bchat,std::string_view value_wallet,std::string_view value_belnet, std::string_view value_eth_addr, bns::generic_owner const *owner, bns::generic_owner const *backup_owner, crypto::hash const &prev_txid)
 {
   static_assert(sizeof(crypto::hash) == crypto_generichash_BYTES, "Using libsodium generichash for signature hash, require we fit into crypto::hash");
   if (value_bchat.size() > mapping_value::BUFFER_SIZE)
@@ -693,12 +713,18 @@ std::string tx_extra_signature(std::string_view value_bchat,std::string_view val
     MERROR("Unexpected value len=" << value_belnet.size() << " greater than the expected capacity=" << mapping_value::BUFFER_SIZE);
     return ""s;
   }
+  else if (value_eth_addr.size() > mapping_value::BUFFER_SIZE)
+  {
+    MERROR("Unexpected value len=" << value_eth_addr.size() << " greater than the expected capacity=" << mapping_value::BUFFER_SIZE);
+    return ""s;
+  }
 
   std::string result;
-  result.reserve(3 * mapping_value::BUFFER_SIZE + sizeof(*owner) + sizeof(*backup_owner) + sizeof(prev_txid));
+  result.reserve(4 * mapping_value::BUFFER_SIZE + sizeof(*owner) + sizeof(*backup_owner) + sizeof(prev_txid));
   result += value_bchat;
   result += value_wallet;
   result += value_belnet;
+  result += value_eth_addr;
 
   append_owner(result, owner);
   append_owner(result, backup_owner);
@@ -945,6 +971,25 @@ bool mapping_value::validate(cryptonote::network_type nettype, mapping_type type
       oxenc::from_base32z(value.begin(), value.begin() + 52, blob->buffer.begin());
     }
   }
+  else if(type == mapping_type::eth_addr)
+  {
+    std::string_view value_eth = value.substr(2);
+    if(check_condition(value_eth.size() != 2*ETH_ADDR_BINARY_LENGTH, reason, "The value=", value, " is not the required ", 2*ETH_ADDR_BINARY_LENGTH, "-character hex string eth address, length=", value.size()))
+      return false;
+    
+    if (check_condition(!oxenc::is_hex(value_eth), reason, ", specifies name -> value mapping where the value is not a hex string given value="))
+      return false;
+
+    if (check_condition(!tools::starts_with(value, "0x"), reason, "BNS type=eth_addr, specifies mapping from name -> ed25519 key where the key is not prefixed with 0x, given ed25519=", value))
+      return false;
+
+    if (blob) // NOTE: Given blob, write the binary output
+    {
+      blob->len = value_eth.size() / 2;
+      assert(blob->len <= blob->buffer.size());
+      oxenc::from_hex(value_eth.begin(), value_eth.end(), blob->buffer.begin());
+    }
+  }
   else
   {
     assert(type == mapping_type::bchat);
@@ -994,6 +1039,10 @@ bool mapping_value::validate_encrypted(mapping_type type, std::string_view value
     // Allow an HF15 argon2 encrypted value which doesn't contain a nonce:
     if (value.size() == value_len - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES)
       value_len -= crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
+  }
+  else if (type == mapping_type::eth_addr)
+  {
+    value_len += ETH_ADDR_BINARY_LENGTH;
   }
   else
   {
@@ -1099,6 +1148,9 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
     if (check_condition(bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value) && bns_extra.encrypted_belnet_value == mapping.encrypted_belnet_value.to_view(), reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), SPECIFYING_SAME_VALUE_ERR, "value"))
       return false;
 
+    if (check_condition(bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value) && bns_extra.encrypted_eth_addr_value == mapping.encrypted_eth_addr_value.to_view(), reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), SPECIFYING_SAME_VALUE_ERR, "value"))
+      return false;
+
     if (check_condition(bns_extra.field_is_set(bns::extra_field::owner) && bns_extra.owner == mapping.owner, reason, tx, ", ", bns_extra_string(bns_db.network_type(), bns_extra), SPECIFYING_SAME_VALUE_ERR, "owner"))
       return false;
 
@@ -1110,6 +1162,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
         bns_extra.encrypted_bchat_value,
         bns_extra.encrypted_wallet_value,
         bns_extra.encrypted_belnet_value,
+        bns_extra.encrypted_eth_addr_value,
         bns_extra.field_is_set(bns::extra_field::owner) ? &bns_extra.owner : nullptr,
         bns_extra.field_is_set(bns::extra_field::backup_owner) ? &bns_extra.backup_owner : nullptr,
         expected_prev_txid);
@@ -1146,6 +1199,7 @@ static bool validate_against_previous_mapping(bns::name_system_db &bns_db, uint6
         bns_extra.encrypted_bchat_value,
         bns_extra.encrypted_wallet_value,
         bns_extra.encrypted_belnet_value,
+        bns_extra.encrypted_eth_addr_value,
         bns_extra.field_is_set(bns::extra_field::owner) ? &bns_extra.owner : nullptr,
         bns_extra.field_is_set(bns::extra_field::backup_owner) ? &bns_extra.backup_owner : nullptr,
         expected_prev_txid);
@@ -1201,6 +1255,9 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
       return false;
 
     if (check_condition(!bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value) && bns_extra.encrypted_belnet_value.size(), reason, tx, ", ", bns_extra_string(nettype, bns_extra), VALUE_SPECIFIED_BUT_NOT_REQUESTED, "encrypted_belnet_value"))
+      return false;
+
+    if (check_condition(!bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value) && bns_extra.encrypted_eth_addr_value.size(), reason, tx, ", ", bns_extra_string(nettype, bns_extra), VALUE_SPECIFIED_BUT_NOT_REQUESTED, "encrypted_eth_addr_value"))
       return false;
 
     if (check_condition(!bns_extra.field_is_set(bns::extra_field::owner) && bns_extra.owner, reason, tx, ", ", bns_extra_string(nettype, bns_extra), VALUE_SPECIFIED_BUT_NOT_REQUESTED, "owner"))
@@ -1260,6 +1317,16 @@ bool name_system_db::validate_bns_tx(uint8_t hf_version, uint64_t blockchain_hei
         return false;
     }
 
+    if (bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value))
+    {
+      // BNS Allowed type Validation
+      if (check_condition(hf_version < cryptonote::network_version_19, reason, tx, ", ", bns_extra_string(nettype, bns_extra)," specifying eth_addr is disallowed in HF", +static_cast<uint8_t>(hf_version)))
+        return false;
+
+      if (!mapping_value::validate_encrypted(mapping_type::eth_addr, bns_extra.encrypted_eth_addr_value, nullptr, reason))
+        return false;
+    }
+
     if (!validate_against_previous_mapping(*this, blockchain_height, tx, bns_extra, reason))
       return false;
 
@@ -1299,9 +1366,11 @@ bool validate_mapping_type(std::string_view mapping_type_str, uint8_t hf_version
       mapping_type_ = bns::mapping_type::belnet;
   else if (tools::string_iequal(mapping, "wallet"))
       mapping_type_ = bns::mapping_type::wallet;
+  else if (tools::string_iequal(mapping, "eth_addr"))
+      mapping_type_ = bns::mapping_type::eth_addr;
   else
   {
-    if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported types are: bchat, belnet, wallet";
+    if (reason) *reason = "Unsupported BNS type \"" + std::string{mapping_type_str} + "\"; supported types are: bchat, belnet, wallet and eth_addr";
     return false;
   }
 
@@ -1457,6 +1526,7 @@ bool mapping_value::decrypt(std::string_view name, mapping_type type, const cryp
   {
     switch(type) {
       case mapping_type::bchat: dec_length = BCHAT_PUBLIC_KEY_BINARY_LENGTH; break;
+      case mapping_type::eth_addr: dec_length = ETH_ADDR_BINARY_LENGTH; break;
       case mapping_type::belnet: dec_length = BELNET_ADDRESS_BINARY_LENGTH; break;
       case mapping_type::wallet: //Wallet type has variable type, check performed in check_length
         if (auto plain_len = len - crypto_aead_xchacha20poly1305_ietf_ABYTES - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
@@ -1546,6 +1616,7 @@ bool build_default_tables(name_system_db& bns_db)
     encrypted_bchat_value BLOB,
     encrypted_wallet_value BLOB,
     encrypted_belnet_value BLOB,
+    encrypted_eth_addr_value BLOB,
     txid BLOB NOT NULL,
     owner_id INTEGER NOT NULL REFERENCES owner(id),
     backup_owner_id INTEGER REFERENCES owner(id),
@@ -1587,16 +1658,16 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
   // In Beldex v5.0.0 we dropped some columns that are no longer needed, but SQLite can't do this easily:
   // instead we have to manually recreate the table, so check it and see if the type or
   // encrypted_value columns still exist: if so, we need to recreate.
-  bool need_mappings_migration = false;
+  bool need_mappings_migration = true;
   {
     sql_compiled_statement mappings_info{bns_db};
     mappings_info.compile("PRAGMA table_info(mappings)", false);
     while (step(mappings_info) == SQLITE_ROW)
     {
       auto name = get<std::string_view>(mappings_info, 1);
-      if (name == "type" || name == "encrypted_value")
+      if (name == "encrypted_eth_addr_value") 
       {
-        need_mappings_migration = true;
+        need_mappings_migration = false;
         break;
       }
     }
@@ -1607,14 +1678,24 @@ CREATE INDEX IF NOT EXISTS mapping_type_name_exp ON mappings (name_hash, expirat
     LOG_PRINT_L1("Migrating BNS mappings database to new format");
     const std::string migrate = R"(
 BEGIN TRANSACTION;
-ALTER TABLE mappings RENAME TO mappings_old;
-CREATE TABLE mappings ()" + mappings_columns + R"();
-DROP TABLE mappings_old;
-DELETE FROM owner;
-CREATE UNIQUE INDEX name_type_update ON mappings(name_hash, update_height DESC);
-CREATE INDEX owner_id_index ON mappings(owner_id);
-CREATE INDEX backup_owner_index ON mappings(backup_owner_id);
-CREATE INDEX mapping_type_name_exp ON mappings(name_hash, expiration_height DESC);
+CREATE TABLE mappings_new (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name_hash VARCHAR NOT NULL,
+    encrypted_bchat_value BLOB,
+    encrypted_wallet_value BLOB,
+    encrypted_belnet_value BLOB,
+    encrypted_eth_addr_value BLOB, 
+    txid BLOB NOT NULL,
+    owner_id INTEGER NOT NULL REFERENCES owner(id),
+    backup_owner_id INTEGER REFERENCES owner(id),
+    update_height INTEGER NOT NULL,
+    expiration_height INTEGER NOT NULL
+);
+INSERT INTO mappings_new (id, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value,txid, owner_id, backup_owner_id, update_height, expiration_height)    
+SELECT id, name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, NULL AS encrypted_eth_addr_value, txid, owner_id, backup_owner_id, update_height, expiration_height
+FROM mappings;
+DROP TABLE mappings;
+ALTER TABLE mappings_new RENAME TO mappings;
 COMMIT TRANSACTION;
 )";
 
@@ -1748,7 +1829,7 @@ DELETE FROM owner
 WHERE NOT EXISTS (SELECT * FROM mappings WHERE owner.id = mappings.owner_id)
 AND NOT EXISTS   (SELECT * FROM mappings WHERE owner.id = mappings.backup_owner_id))"sv;
 
-  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, txid, owner_id, backup_owner_id, update_height, expiration_height) VALUES (?,?,?,?,?,?,?,?,?)"sv;
+  constexpr auto SAVE_MAPPING_STR  = "INSERT INTO mappings (name_hash, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value, txid, owner_id, backup_owner_id, update_height, expiration_height) VALUES (?,?,?,?,?,?,?,?,?,?)"sv;
   constexpr auto SAVE_OWNER_STR    = "INSERT INTO owner (address) VALUES (?)"sv;
   constexpr auto SAVE_SETTINGS_STR = "INSERT OR REPLACE INTO settings (id, top_height, top_hash, version) VALUES (1,?,?,?)"sv;
 
@@ -1951,7 +2032,7 @@ std::pair<std::string, std::vector<update_variant>> update_record_query(name_sys
 
   sql.reserve(500);
   sql += R"(
-INSERT INTO mappings (name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_bchat_value,encrypted_wallet_value,encrypted_belnet_value)
+INSERT INTO mappings (name_hash, txid, update_height, expiration_height, owner_id, backup_owner_id, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value)
 SELECT                name_hash, ?,    ?)";
 
   bind.emplace_back(blob_view{tx_hash.data, sizeof(tx_hash)});
@@ -1961,7 +2042,7 @@ SELECT                name_hash, ?,    ?)";
 
   if (entry.is_renewing())
   {
-    sql += ", expiration_height + ?, owner_id, backup_owner_id, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value";
+    sql += ", expiration_height + ?, owner_id, backup_owner_id, encrypted_bchat_value, encrypted_wallet_value, encrypted_belnet_value, encrypted_eth_addr_value";
     bind.emplace_back(expiry_blocks(bns_db.network_type(), entry.mapping_years).value_or(0));
   }
   else
@@ -2023,6 +2104,14 @@ SELECT                name_hash, ?,    ?)";
     }
     else
       sql += ", encrypted_belnet_value";  
+    
+    if (entry.field_is_set(bns::extra_field::encrypted_eth_addr_value))
+    {
+      sql += ", ?";
+      bind.emplace_back(blob_view{entry.encrypted_eth_addr_value});
+    }
+    else
+      sql += ", encrypted_eth_addr_value";  
   }
 
   sql += suffix;
@@ -2152,7 +2241,7 @@ struct bns_update_history
 
 void bns_update_history::update(uint64_t height, cryptonote::tx_extra_beldex_name_system const &bns_extra)
 {
-  if (bns_extra.field_is_set(bns::extra_field::encrypted_bchat_value) || bns_extra.field_is_set(bns::extra_field::encrypted_wallet_value) || bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value))
+  if (bns_extra.field_is_set(bns::extra_field::encrypted_bchat_value) || bns_extra.field_is_set(bns::extra_field::encrypted_wallet_value) || bns_extra.field_is_set(bns::extra_field::encrypted_belnet_value) || bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value))
     value_last_update_height = height;
 
   if (bns_extra.field_is_set(bns::extra_field::owner))
@@ -2213,7 +2302,12 @@ bool name_system_db::save_mapping(crypto::hash const &tx_hash, cryptonote::tx_ex
     bind(statement, mapping_record_column::encrypted_belnet_value,blob_view{});
   else
     bind(statement, mapping_record_column::encrypted_belnet_value, blob_view{src.encrypted_belnet_value});
-
+  
+  if(src.encrypted_eth_addr_value.empty())
+    bind(statement, mapping_record_column::encrypted_eth_addr_value,blob_view{});
+  else
+    bind(statement, mapping_record_column::encrypted_eth_addr_value, blob_view{src.encrypted_eth_addr_value});
+  
   bind(statement, mapping_record_column::txid, blob_view{tx_hash.data, sizeof(tx_hash)});
   bind(statement, mapping_record_column::update_height, height);
   bind(statement, mapping_record_column::expiration_height, expiration);

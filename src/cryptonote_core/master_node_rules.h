@@ -191,6 +191,8 @@ namespace master_nodes {
   constexpr uint64_t  REORG_SAFETY_BUFFER_BLOCKS_POST_HF12 = (CHECKPOINT_INTERVAL * CHECKPOINT_NUM_CHECKPOINTS_FOR_CHAIN_FINALITY) + (CHECKPOINT_INTERVAL - 1);
   constexpr uint64_t  REORG_SAFETY_BUFFER_BLOCKS_PRE_HF12  = 20;
 
+  // A single public IP address is restricted from hosting more than 3 masternodes.
+  constexpr int16_t MAX_ALLOWED_MASTERNODES_PER_IP       = 3;
 
   constexpr auto IP_CHANGE_WINDOW = 24h; // How far back an obligations quorum looks for multiple IPs (unless the following buffer is more recent)
   constexpr auto IP_CHANGE_BUFFER = 2h; // After we bump a MN for an IP change we don't bump again for changes within this time period

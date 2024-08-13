@@ -35,6 +35,7 @@ constexpr size_t DOMAIN_NAME_MAX_NOHYPHEN = 32 + 4; // If the name does not cont
 constexpr size_t BELNET_ADDRESS_BINARY_LENGTH    = sizeof(crypto::ed25519_public_key);
 constexpr size_t BCHAT_DISPLAY_NAME_MAX         = 64;
 constexpr size_t BCHAT_PUBLIC_KEY_BINARY_LENGTH = 1 + sizeof(crypto::ed25519_public_key); // Bchat keys at prefixed with 0xbd + ed25519 key
+constexpr size_t ETH_ADDR_BINARY_LENGTH = 20; // Ethereum address bytes
 
 constexpr size_t NAME_HASH_SIZE = sizeof(crypto::hash);
 constexpr size_t NAME_HASH_SIZE_B64_MIN = (4*NAME_HASH_SIZE + 2) / 3; // No padding
@@ -48,8 +49,7 @@ constexpr char BNS_WALLET_TYPE_INTEGRATED = 0x02;
 
 struct mapping_value
 {
-  static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
-  // static size_t constexpr BUFFER_SIZE_TOTAL = (WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID + BELNET_ADDRESS_BINARY_LENGTH + BCHAT_PUBLIC_KEY_BINARY_LENGTH) + 3*SODIUM_ENCRYPTION_EXTRA_BYTES;
+  static size_t constexpr BUFFER_SIZE = std::max({WALLET_ACCOUNT_BINARY_LENGTH_INC_PAYMENT_ID, BELNET_ADDRESS_BINARY_LENGTH, BCHAT_PUBLIC_KEY_BINARY_LENGTH, ETH_ADDR_BINARY_LENGTH}) + SODIUM_ENCRYPTION_EXTRA_BYTES;
 
   std::array<uint8_t, BUFFER_SIZE> buffer;
   bool encrypted;
@@ -123,10 +123,11 @@ inline std::string_view mapping_type_str(mapping_type type)
 {
   switch(type)
   {
-    case mapping_type::belnet:         return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
+    case mapping_type::belnet:        return "belnet"sv; // general type stored in the database; 1 year when in a purchase tx
     case mapping_type::bchat:         return "bchat"sv;
-    case mapping_type::wallet:          return "wallet"sv;
-    default: assert(false);             return "xx_unhandled_type"sv;
+    case mapping_type::wallet:        return "wallet"sv;
+    case mapping_type::eth_addr:      return "eth_addr"sv;
+    default: assert(false);           return "xx_unhandled_type"sv;
   }
 }
 inline std::ostream &operator<<(std::ostream &os, mapping_type type) { return os << mapping_type_str(type); }
@@ -153,6 +154,7 @@ constexpr std::string_view db_mapping_value(bns::mapping_type type) {
     case mapping_type::bchat: return "encrypted_bchat_value"sv;
     case mapping_type::wallet: return "encrypted_wallet_value"sv;
     case mapping_type::belnet: return "encrypted_belnet_value"sv;
+    case mapping_type::eth_addr: return "encrypted_eth_addr_value"sv;
     default: assert(false);             return "xx_unhandled_type"sv;
   }
 }
@@ -182,7 +184,7 @@ generic_signature  make_ed25519_signature(crypto::hash const &hash, crypto::ed25
 generic_owner      make_monero_owner(cryptonote::account_public_address const &owner, bool is_subaddress);
 generic_owner      make_ed25519_owner(crypto::ed25519_public_key const &pkey);
 bool               parse_owner_to_generic_owner(cryptonote::network_type nettype, std::string_view owner, generic_owner &key, std::string *reason);
-std::string        tx_extra_signature(std::string_view value_bchat, std::string_view value_wallet, std::string_view value_belnet, generic_owner const *owner, generic_owner const *backup_owner, crypto::hash const &prev_txid);
+std::string        tx_extra_signature(std::string_view value_bchat, std::string_view value_wallet, std::string_view value_belnet, std::string_view value_eth_addr, generic_owner const *owner, generic_owner const *backup_owner, crypto::hash const &prev_txid);
 
 enum struct bns_tx_type { lookup, buy, update, renew };
 // Converts a human readable case-insensitive string denoting the mapping type into a value suitable for storing into the BNS DB.
@@ -230,6 +232,7 @@ struct mapping_record
   mapping_value encrypted_bchat_value;
   mapping_value encrypted_wallet_value;
   mapping_value encrypted_belnet_value;
+  mapping_value encrypted_eth_addr_value;
   uint64_t      register_height;
   std::optional<uint64_t> expiration_height;
   uint64_t      update_height;
