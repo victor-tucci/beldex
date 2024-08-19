@@ -83,11 +83,12 @@ enum struct extra_field : uint8_t
   encrypted_bchat_value = 1 << 3,
   encrypted_wallet_value = 1 << 4,
   encrypted_belnet_value = 1 << 5,
+  encrypted_eth_addr_value = 1 << 6,
 
   // Bit Masks
-  updatable_fields = (extra_field::owner | extra_field::backup_owner | extra_field::encrypted_bchat_value | extra_field::encrypted_wallet_value | extra_field::encrypted_belnet_value),
+  updatable_fields = (extra_field::owner | extra_field::backup_owner | extra_field::encrypted_bchat_value | extra_field::encrypted_wallet_value | extra_field::encrypted_belnet_value | extra_field::encrypted_eth_addr_value),
   buy_no_backup    = (extra_field::owner),
-  buy_any_value    = (extra_field::encrypted_bchat_value | extra_field::encrypted_wallet_value | extra_field::encrypted_belnet_value),
+  buy_any_value    = (extra_field::encrypted_bchat_value | extra_field::encrypted_wallet_value | extra_field::encrypted_belnet_value | extra_field::encrypted_eth_addr_value),
   buy              = (extra_field::buy_no_backup | extra_field::backup_owner),
   all              = (extra_field::updatable_fields | extra_field::signature),
 };
@@ -435,6 +436,7 @@ namespace cryptonote
     timestamp_response_unreachable = 1 << 4,
     timesync_status_out_of_sync = 1 << 5,
     belnet_unreachable = 1 << 6,
+    multi_mn_accept_range_not_met = 1 << 7,
   };
 
   // Returns human-readable reason strings (e.g. "Missed Uptime Proofs") for the given reason bits
@@ -557,6 +559,7 @@ namespace cryptonote
     std::string             encrypted_bchat_value; // binary format of the name->bchat_value mapping
     std::string             encrypted_wallet_value; // binary format of the name->wallet_value mapping
     std::string             encrypted_belnet_value; // binary format of the name->belnet_value mapping
+    std::string             encrypted_eth_addr_value; // binary format of the name->eth_addr_value mapping
 
     bool field_is_set (bns::extra_field bit) const { return (fields & bit) == bit; }
     bool field_any_set(bns::extra_field bit) const { return (fields & bit) != bns::extra_field::none; }
@@ -577,6 +580,7 @@ namespace cryptonote
         const std::string& encrypted_bchat_value,
         const std::string& encrypted_wallet_value,
         const std::string& encrypted_belnet_value,
+        const std::string& encrypted_eth_addr_value,
         const crypto::hash& prev_txid);
 
     static tx_extra_beldex_name_system make_renew(
@@ -591,6 +595,7 @@ namespace cryptonote
         std::string_view encrypted_bchat_value,
         std::string_view encrypted_wallet_value,
         std::string_view encrypted_belnet_value,
+        std::string_view encrypted_eth_addr_value,
         const bns::generic_owner* owner,
         const bns::generic_owner* backup_owner,
         const crypto::hash& prev_txid);
@@ -610,6 +615,7 @@ namespace cryptonote
       if (field_is_set(bns::extra_field::encrypted_bchat_value)) FIELD(encrypted_bchat_value);
       if (field_is_set(bns::extra_field::encrypted_wallet_value)) FIELD(encrypted_wallet_value);
       if (field_is_set(bns::extra_field::encrypted_belnet_value)) FIELD(encrypted_belnet_value);
+      if (field_is_set(bns::extra_field::encrypted_eth_addr_value)) FIELD(encrypted_eth_addr_value);
     END_SERIALIZE()
   };
 
