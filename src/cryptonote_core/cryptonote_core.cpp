@@ -1767,7 +1767,7 @@ namespace cryptonote
           emission_amount = m_coinbase_cache.emissions;
           total_fee_amount = m_coinbase_cache.fees;
           burnt_beldex = m_coinbase_cache.burnt;
-          start_offset = m_coinbase_cache.height;
+          start_offset = m_coinbase_cache.height + 1;
           count -= m_coinbase_cache.height;
         }
         // else don't change anything; we need a subset of blocks that ends before the cache.
@@ -1798,7 +1798,7 @@ namespace cryptonote
             total_fee_amount = m_coinbase_cache.fees;
             burnt_beldex = m_coinbase_cache.burnt;
             count -= m_coinbase_cache.height - start_offset;
-            start_offset = m_coinbase_cache.height;
+            start_offset = m_coinbase_cache.height + 1;
           }
         }
         if (cache_to > 0 && count > CACHE_EXCLUSIVE) {
@@ -1809,7 +1809,7 @@ namespace cryptonote
       }
     }
 
-    const uint64_t end = start_offset + count - 1;
+    const uint64_t end = start_offset + count - 2;
     m_blockchain_storage.for_blocks_range(start_offset, end,
       [this, &cache_to, &result, &cache_build_started](uint64_t height, const crypto::hash& hash, const block& b){
       auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;

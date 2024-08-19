@@ -10,6 +10,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     const std::string& encrypted_bchat_value,
     const std::string& encrypted_wallet_value,
     const std::string& encrypted_belnet_value,
+    const std::string& encrypted_eth_addr_value,
     const crypto::hash& prev_txid)
 {
   tx_extra_beldex_name_system result{};
@@ -43,6 +44,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_buy(
     result.encrypted_belnet_value = encrypted_belnet_value;
   }
 
+  if (encrypted_eth_addr_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_eth_addr_value;
+    result.encrypted_eth_addr_value = encrypted_eth_addr_value;
+  }
+
   result.prev_txid = prev_txid;
   return result;
 }
@@ -71,6 +78,7 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     std::string_view encrypted_bchat_value,
     std::string_view encrypted_wallet_value,
     std::string_view encrypted_belnet_value,
+    std::string_view encrypted_eth_addr_value,
     const bns::generic_owner* owner,
     const bns::generic_owner* backup_owner,
     const crypto::hash& prev_txid)
@@ -98,6 +106,12 @@ tx_extra_beldex_name_system tx_extra_beldex_name_system::make_update(
     result.fields |= bns::extra_field::encrypted_belnet_value;
     result.encrypted_belnet_value = std::string{encrypted_belnet_value};
   }
+  
+  if (encrypted_eth_addr_value.size())
+  {
+    result.fields |= bns::extra_field::encrypted_eth_addr_value;
+    result.encrypted_eth_addr_value = std::string{encrypted_eth_addr_value};
+  }
 
   if (owner)
   {
@@ -124,6 +138,7 @@ std::vector<std::string> readable_reasons(uint16_t decomm_reason) {
   if (decomm_reason & timestamp_response_unreachable) results.push_back("Unreachable for Timestamp Check");
   if (decomm_reason & timesync_status_out_of_sync) results.push_back("Time out of sync");
   if (decomm_reason & belnet_unreachable) results.push_back("Belnet Unreachable");
+  if (decomm_reason & multi_mn_accept_range_not_met) results.push_back("Multi MN accept Range Not Met");
   return results;
 }
 
@@ -136,6 +151,7 @@ std::vector<std::string> coded_reasons(uint16_t decomm_reason) {
   if (decomm_reason & timestamp_response_unreachable) results.push_back("timecheck");
   if (decomm_reason & timesync_status_out_of_sync) results.push_back("timesync");
   if (decomm_reason & belnet_unreachable) results.push_back("belnet");
+  if (decomm_reason & multi_mn_accept_range_not_met) results.push_back("multi_mn_range");
   return results;
 }
 

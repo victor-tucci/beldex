@@ -62,6 +62,7 @@ enum struct mapping_type : uint16_t
   belnet_2years,
   belnet_5years,
   belnet_10years,
+  eth_addr,
   _count,
   update_record_internal,
 };
