@@ -295,6 +295,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool generate_key_image_helper_precomp(const account_keys& ack, const crypto::public_key& out_key, const crypto::key_derivation& recv_derivation, size_t real_output_index, const subaddress_index& received_index, keypair& in_ephemeral, crypto::key_image& ki, hw::device &hwdev)
   {
+    // This tries to compute the key image using a hardware device, if this succeeds return immediately, otherwise continue
     if (hwdev.compute_key_image(ack, out_key, recv_derivation, real_output_index, received_index, in_ephemeral, ki))
     {
       return true;
@@ -1100,37 +1101,28 @@ namespace cryptonote
     cn_fast_hash(blob.data(), blob.size(), res);
   }
   //---------------------------------------------------------------
-  std::string get_unit(unsigned int decimal_point)
-  {
-    if (decimal_point == (unsigned int)-1)
-      decimal_point = beldex::DISPLAY_DECIMAL_POINT;
-    switch (decimal_point)
-    {
-      case 9:
-        return "beldex";
-      case 6:
-        return "megarok";
-      case 3:
-        return "kilorok";
-      case 0:
-        return "rok";
-      default:
-        ASSERT_MES_AND_THROW("Invalid decimal point specification: " << decimal_point);
+  std::string print_money(uint64_t amount, bool strip_zeros) {
+    constexpr unsigned int decimal_point = beldex::DISPLAY_DECIMAL_POINT;
+    std::string s = std::to_string(amount);
+    if (s.size() < decimal_point + 1) {
+        s.insert(0, decimal_point + 1 - s.size(), '0');
     }
+    s.insert(s.size() - decimal_point, ".");
+    if (strip_zeros) {
+        while (s.back() == '0')
+            s.pop_back();
+        if (s.back() == '.')
+            s.pop_back();
+    }
+    return s;
   }
   //---------------------------------------------------------------
-  std::string print_money(uint64_t amount, unsigned int decimal_point)
+  std::string format_money(uint64_t amount, bool strip_zeros)
   {
-    if (decimal_point == (unsigned int)-1)
-      decimal_point = beldex::DISPLAY_DECIMAL_POINT;
-    std::string s = std::to_string(amount);
-    if(s.size() < decimal_point+1)
-    {
-      s.insert(0, decimal_point+1 - s.size(), '0');
-    }
-    if (decimal_point > 0)
-      s.insert(s.size() - decimal_point, ".");
-    return s;
+    auto value = print_money(amount, strip_zeros);
+    value += ' ';
+    value += get_unit();
+    return value;
   }
   //---------------------------------------------------------------
   std::string print_tx_verification_context(tx_verification_context const &tvc, transaction const *tx)
@@ -1142,7 +1134,7 @@ namespace cryptonote
 
     if (tvc.m_verifivation_failed)       os << "Verification failed, connection should be dropped, "; //bad tx, should drop connection
     if (tvc.m_verifivation_impossible)   os << "Verification impossible, related to alt chain, "; //the transaction is related with an alternative blockchain
-    if (tvc.m_should_be_relayed)         os << "TX should be relayed, ";
+    if (!tvc.m_should_be_relayed)        os << "TX should NOT be relayed, ";
     if (tvc.m_added_to_pool)             os << "TX added to pool, ";
     if (tvc.m_low_mixin)                 os << "Insufficient mixin, ";
     if (tvc.m_double_spend)              os << "Double spend TX, ";
@@ -1165,6 +1157,28 @@ namespace cryptonote
       buf.resize(buf.size() - 2);
 
     return buf;
+  }
+  //---------------------------------------------------------------
+  std::unordered_set<std::string> tx_verification_failure_codes(const tx_verification_context& tvc) {
+    std::unordered_set<std::string> reasons;
+
+    if (tvc.m_verifivation_failed) reasons.insert("failed");
+    if (tvc.m_verifivation_impossible) reasons.insert("altchain");
+    if (tvc.m_low_mixin) reasons.insert("mixin");
+    if (tvc.m_double_spend) reasons.insert("double_spend");
+    if (tvc.m_invalid_input) reasons.insert("invalid_input");
+    if (tvc.m_invalid_output) reasons.insert("invalid_output");
+    if (tvc.m_too_few_outputs) reasons.insert("too_few_outputs");
+    if (tvc.m_too_big) reasons.insert("too_big");
+    if (tvc.m_overspend) reasons.insert("overspend");
+    if (tvc.m_fee_too_low) reasons.insert("fee_too_low");
+    if (tvc.m_invalid_version) reasons.insert("invalid_version");
+    if (tvc.m_invalid_type) reasons.insert("invalid_type");
+    if (tvc.m_key_image_locked_by_mnode) reasons.insert("mnode_locked");
+    if (tvc.m_key_image_blacklisted) reasons.insert("blacklisted");
+    if (!tvc.m_should_be_relayed) reasons.insert("not_relayed");
+
+    return reasons;
   }
   //---------------------------------------------------------------
   std::string print_vote_verification_context(vote_verification_context const &vvc, master_nodes::quorum_vote_t const *vote)
@@ -1493,9 +1507,11 @@ namespace cryptonote
   std::vector<uint64_t> absolute_output_offsets_to_relative(const std::vector<uint64_t>& off)
   {
     std::vector<uint64_t> res = off;
-    if(!off.size())
-      return res;
-    std::sort(res.begin(), res.end());//just to be sure, actually it is already should be sorted
+    CHECK_AND_ASSERT_THROW_MES(not off.empty(), "absolute index to relative offset, no indices provided");
+
+    // vector must be sorted before calling this, else an index' offset would be negative
+    CHECK_AND_ASSERT_THROW_MES(std::is_sorted(res.begin(), res.end()), "absolute index to relative offset, indices not sorted");
+
     for(size_t i = res.size()-1; i != 0; i--)
       res[i] -= res[i-1];
 

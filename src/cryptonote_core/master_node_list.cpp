@@ -34,6 +34,7 @@
 #include <chrono>
 #include <fmt/core.h>
 #include <oxenc/endian.h>
+#include <date/date.h>
 
 extern "C" {
 #include <sodium.h>
@@ -52,7 +53,6 @@ extern "C" {
 #include "common/random.h"
 #include "common/lock.h"
 #include "common/hex.h"
-#include "epee/misc_os_dependent.h"
 #include "blockchain.h"
 #include "master_node_quorum_cop.h"
 
@@ -713,7 +713,7 @@ namespace master_nodes
         info.last_decommission_reason_consensus_any = state_change.reason_consensus_any;
         info.decommission_count++;
 
-        if (hf_version >= hf::hf14_enforce_checkpoints) {
+        if (hf_version >= hf::hf15_flash) {
           // Assigning invalid swarm id effectively kicks the node off
           // its current swarm; it will be assigned a new swarm id when it
           // gets recommissioned. Prior to HF13 this step was incorrectly
@@ -1487,7 +1487,7 @@ namespace master_nodes
     //
     // NOTE: Verify the checkpoint given on this height that locks in a block in the past.
     //
-    if (block.major_version >= hf::hf14_enforce_checkpoints && checkpoint)
+    if (block.major_version >= hf::hf15_flash && checkpoint)
     {
       std::vector<std::shared_ptr<const master_nodes::quorum>> alt_quorums;
       std::shared_ptr<const quorum> quorum = get_quorum(quorum_type::checkpointing, checkpoint->height, false, alt_block ? &alt_quorums : nullptr);
@@ -1550,7 +1550,7 @@ namespace master_nodes
     std::shared_ptr<const quorum>              POS_quorum;
     std::vector<std::shared_ptr<const quorum>> alt_POS_quorums;
     bool POS_hf = block.major_version >= hf::hf17_POS;
-
+    
     if (POS_hf)
     {
       POS_quorum = get_quorum(quorum_type::POS,
@@ -1588,6 +1588,7 @@ namespace master_nodes
       // NOTE: No POS quorums are generated when the network has insufficient nodes to generate quorums
       //       Or, block specifies time after all the rounds have timed out
       bool miner_block = !POS_hf || !POS_quorum;
+      // std::cout << "miner_block : " << miner_block << std::endl;
 
       result = verify_block_components(m_blockchain.nettype(),
                                        block,
@@ -2906,7 +2907,7 @@ namespace master_nodes
   bool master_node_list::handle_uptime_proof(cryptonote::NOTIFY_UPTIME_PROOF::request const &proof, bool &my_uptime_proof_confirmation, crypto::x25519_public_key &x25519_pkey)
   {
     auto vers = get_network_version_revision(m_blockchain.nettype(), m_blockchain.get_current_blockchain_height());
-    if (vers >= std::make_pair(hf::hf17_POS, 1))
+    if (vers >= std::make_pair(hf::hf17_POS, uint8_t{1}))
       REJECT_PROOF("Old format (non-bt) proofs are not acceptable from v17+1 onwards");
 
     auto& netconf = get_config(m_blockchain.nettype());
@@ -3188,57 +3189,29 @@ namespace master_nodes
   void master_node_list::record_checkpoint_participation(crypto::public_key const &pubkey, uint64_t height, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    participation_entry entry  = {};
-    entry.height               = height;
-    entry.voted                = participated;
-
-    auto &info = proofs[pubkey];
-    info.checkpoint_participation.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].checkpoint_participation.add({height, participated});
   }
 
   void master_node_list::record_POS_participation(crypto::public_key const &pubkey, uint64_t height, uint8_t round, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    participation_entry entry  = {};
-    entry.is_POS             = true;
-    entry.height               = height;
-    entry.voted                = participated;
-    entry.POS.round          = round;
-
-    auto &info = proofs[pubkey];
-    info.POS_participation.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].POS_participation.add({height, round, participated});
   }
 
   void master_node_list::record_timestamp_participation(crypto::public_key const &pubkey, bool participated)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    timestamp_participation_entry entry  = {};
-    entry.participated                = participated;
-
-    auto &info = proofs[pubkey];
-    info.timestamp_participation.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].timestamp_participation.add({participated});
   }
 
   void master_node_list::record_timesync_status(crypto::public_key const &pubkey, bool synced)
   {
     std::lock_guard lock(m_mn_mutex);
-    if (!m_state.master_nodes_infos.count(pubkey))
-      return;
-
-    timesync_entry entry  = {};
-    entry.in_sync                = synced;
-
-    auto &info = proofs[pubkey];
-    info.timesync_status.add(entry);
+    if (m_state.master_nodes_infos.count(pubkey))
+      proofs[pubkey].timesync_status.add({synced});
   }
 
   std::optional<bool> proof_info::reachable_stats::reachable(const std::chrono::steady_clock::time_point& now) const {
@@ -3769,7 +3742,7 @@ namespace master_nodes
     crypto::generate_signature(hash, keys.pub, keys.key, signature);
 
     std::stringstream stream;
-    if (make_friendly)
+    if (make_friendly)  //TODO have to fix
     {
       stream << tr("Run this command in the operator wallet") << " (" <<
       cryptonote::get_account_address_as_str(nettype, false, contributor_args.addresses[0])
@@ -3787,14 +3760,8 @@ namespace master_nodes
     if (make_friendly)
     {
       stream << "\n\n";
-      time_t tt = exp_timestamp;
-
-      struct tm tm;
-      epee::misc_utils::get_gmt_time(tt, tm);
-
-      char buffer[128];
-      strftime(buffer, sizeof(buffer), "%Y-%m-%d %I:%M:%S %p UTC", &tm);
-      stream << tr("This registration expires at ") << buffer << tr(".\n");
+      auto exp = std::chrono::system_clock::from_time_t(exp_timestamp);
+      stream << tr("This registration expires at ") << date::format("%Y-%m-%d %I:%M:%S %p UTC", exp) << tr(".\n");
       stream << tr("This should be in about 2 weeks, if it isn't, check this computer's clock.\n");
       stream << tr("Please submit your registration into the blockchain before this time or it will be invalid.");
     }
@@ -3829,7 +3796,7 @@ namespace master_nodes
 
   bool master_node_info::can_transition_to_state(hf hf_version, uint64_t height, new_state proposed_state) const
   {
-    if (hf_version >= hf::hf14_enforce_checkpoints) {
+    if (hf_version >= hf::hf15_flash) {
       if (!can_be_voted_on(height)) {
         MDEBUG("MN state transition invalid: " << height << " is not a valid vote height");
         return false;

@@ -389,7 +389,7 @@ namespace cryptonote
 
       bool args_okay = true;
       if (m_quorumnet_port == 0) {
-        MERROR("Quorumnet port cannot be 0; please specify a valid port to listen on with: '--" << arg_quorumnet_port.name << " <port>'");
+        MFATAL("Quorumnet port cannot be 0; please specify a valid port to listen on with: '--" << arg_quorumnet_port.name << " <port>'");
         args_okay = false;
       }
 
@@ -397,7 +397,7 @@ namespace cryptonote
       if (pub_ip.size())
       {
         if (!epee::string_tools::get_ip_int32_from_string(m_mn_public_ip, pub_ip)) {
-          MERROR("Unable to parse IPv4 public address from: " << pub_ip);
+          MFATAL("Unable to parse IPv4 public address from: " << pub_ip);
           args_okay = false;
         }
 
@@ -405,19 +405,19 @@ namespace cryptonote
           if (m_master_node_list.debug_allow_local_ips) {
             MWARNING("Address given for public-ip is not public; allowing it because dev-allow-local-ips was specified. This master node WILL NOT WORK ON THE PUBLIC BELDEX NETWORK!");
           } else {
-            MERROR("Address given for public-ip is not public: " << epee::string_tools::get_ip_string_from_int32(m_mn_public_ip));
+            MFATAL("Address given for public-ip is not public: " << epee::string_tools::get_ip_string_from_int32(m_mn_public_ip));
             args_okay = false;
           }
         }
       }
       else
       {
-        MERROR("Please specify an IPv4 public address which the master node & storage server is accessible from with: '--" << arg_public_ip.name << " <ip address>'");
+        MFATAL("Please specify an IPv4 public address which the master node & storage server is accessible from with: '--" << arg_public_ip.name << " <ip address>'");
         args_okay = false;
       }
 
       if (!args_okay) {
-        MERROR("IMPORTANT: One or more required master node-related configuration settings/options were omitted or invalid; "
+        MFATAL("IMPORTANT: One or more required master node-related configuration settings/options were omitted or invalid; "
                 << "please fix them and restart beldexd.");
         return false;
       }
@@ -431,9 +431,11 @@ namespace cryptonote
     return m_blockchain_storage.get_current_blockchain_height();
   }
   //-----------------------------------------------------------------------------------------------
-  void core::get_blockchain_top(uint64_t& height, crypto::hash& top_id) const
+  std::pair<uint64_t, crypto::hash> core::get_blockchain_top() const
   {
-    top_id = m_blockchain_storage.get_tail_id(height);
+    std::pair<uint64_t, crypto::hash> result;
+    result.second = m_blockchain_storage.get_tail_id(result.first);
+    return result;
   }
   //-----------------------------------------------------------------------------------------------
   bool core::get_blocks(uint64_t start_offset, size_t count, std::vector<std::pair<cryptonote::blobdata,block>>& blocks, std::vector<cryptonote::blobdata>& txs) const
@@ -451,17 +453,22 @@ namespace cryptonote
     return m_blockchain_storage.get_blocks_only(start_offset, count, blocks);
   }
   //-----------------------------------------------------------------------------------------------
-  bool core::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<cryptonote::blobdata>& txs, std::vector<crypto::hash>& missed_txs) const
+  bool core::get_blocks(const std::vector<crypto::hash>& block_ids, std::vector<std::pair<cryptonote::blobdata, block>> blocks, std::unordered_set<crypto::hash>* missed_bs) const
+  {
+    return m_blockchain_storage.get_blocks(block_ids, blocks, missed_bs);
+  }
+  //-----------------------------------------------------------------------------------------------
+  bool core::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<cryptonote::blobdata>& txs, std::unordered_set<crypto::hash>* missed_txs) const
   {
     return m_blockchain_storage.get_transactions_blobs(txs_ids, txs, missed_txs);
   }
   //-----------------------------------------------------------------------------------------------
-  bool core::get_split_transactions_blobs(const std::vector<crypto::hash>& txs_ids, std::vector<std::tuple<crypto::hash, cryptonote::blobdata, crypto::hash, cryptonote::blobdata>>& txs, std::vector<crypto::hash>& missed_txs) const
+  bool core::get_split_transactions_blobs(const std::vector<crypto::hash>& txs_ids, std::vector<std::tuple<crypto::hash, cryptonote::blobdata, crypto::hash, cryptonote::blobdata>>& txs, std::unordered_set<crypto::hash>* missed_txs) const
   {
     return m_blockchain_storage.get_split_transactions_blobs(txs_ids, txs, missed_txs);
   }
   //-----------------------------------------------------------------------------------------------
-  bool core::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<transaction>& txs, std::vector<crypto::hash>& missed_txs) const
+  bool core::get_transactions(const std::vector<crypto::hash>& txs_ids, std::vector<transaction>& txs, std::unordered_set<crypto::hash>* missed_txs) const
   {
     return m_blockchain_storage.get_transactions(txs_ids, txs, missed_txs);
   }
@@ -625,7 +632,7 @@ namespace cryptonote
     // make sure the data directory exists, and try to lock it
     if (std::error_code ec; !fs::is_directory(folder, ec) && !fs::create_directories(folder, ec) && ec)
     {
-      MERROR("Failed to create directory " + folder.u8string() + (ec ? ": " + ec.message() : ""s));
+      MFATAL("Failed to create directory " + folder.u8string() + (ec ? ": " + ec.message() : ""s));
       return false;
     }
 
@@ -652,7 +659,7 @@ namespace cryptonote
       // reset the db by removing the database file before opening it
       if (!db->remove_data_file(folder))
       {
-        MERROR("Failed to remove data file in " << folder);
+        MFATAL("Failed to remove data file in " << folder);
         return false;
       }
       fs::remove(bns_db_file_path);
@@ -887,7 +894,7 @@ namespace cryptonote
       try {
         generate_pair(privkey, pubkey);
       } catch (const std::exception& e) {
-        MERROR("failed to generate keypair " << e.what());
+        MFATAL("failed to generate keypair " << e.what());
         return false;
       }
 
@@ -974,7 +981,7 @@ namespace cryptonote
       MGINFO_YELLOW("-  x25519: " << tools::type_to_hex(keys.pub_x25519));
     } else {
       // Only print the x25519 version because it's the only thing useful for a non-MN (for
-      // encrypted LMQ RPC connections).
+      // encrypted OMQ RPC connections).
       MGINFO_YELLOW("x25519 public key: " << tools::type_to_hex(keys.pub_x25519));
     }
 
@@ -1686,9 +1693,7 @@ namespace cryptonote
               m_mn_times.add(entry);
 
               // Counts the number of times we have been out of sync
-              uint8_t num_mn_out_of_sync = std::count_if(m_mn_times.begin(), m_mn_times.end(),
-                [](const master_nodes::timesync_entry entry) { return !entry.in_sync; });
-              if (num_mn_out_of_sync > (m_mn_times.array.size() * master_nodes::MAXIMUM_EXTERNAL_OUT_OF_SYNC/100)) {
+              if (m_mn_times.failures() > (m_mn_times.size() * master_nodes::MAXIMUM_EXTERNAL_OUT_OF_SYNC/100)) {
                 MWARNING("master node time might be out of sync");
                 // If we are out of sync record the other master node as in sync
                 m_master_node_list.record_timesync_status(pubkey, true);
@@ -1811,9 +1816,8 @@ namespace cryptonote
       [this, &cache_to, &result, &cache_build_started](uint64_t height, const crypto::hash& hash, const block& b){
       auto& [emission_amount, total_fee_amount, burnt_beldex] = *result;
       std::vector<transaction> txs;
-      std::vector<crypto::hash> missed_txs;
       auto coinbase_amount = static_cast<int64_t>(get_outs_money_amount(b.miner_tx));
-      get_transactions(b.tx_hashes, txs, missed_txs);
+      get_transactions(b.tx_hashes, txs);
       int64_t tx_fee_amount = 0;
       for(const auto& tx: txs)
       {
@@ -2115,9 +2119,9 @@ namespace cryptonote
     }
     else if(bvc.m_added_to_main_chain)
     {
-      std::vector<crypto::hash> missed_txs;
+      std::unordered_set<crypto::hash> missed_txs;
       std::vector<cryptonote::blobdata> txs;
-      m_blockchain_storage.get_transactions_blobs(b.tx_hashes, txs, missed_txs);
+      m_blockchain_storage.get_transactions_blobs(b.tx_hashes, txs, &missed_txs);
       if(missed_txs.size() &&  m_blockchain_storage.get_block_id_by_height(get_block_height(b)) != get_block_hash(b))
       {
         LOG_PRINT_L1("Block found but, seems that reorganize just happened after that, do not relay this block");
@@ -2290,8 +2294,10 @@ namespace cryptonote
   {
     std::vector<master_nodes::master_node_pubkey_info> const states = get_master_node_list_state({ m_master_keys.pub });
 
-    // wait one block before starting uptime proofs.
-    if (!states.empty() && (states[0].info->registration_height + 1) < get_current_blockchain_height())
+    // wait one block before starting uptime proofs (but not on testnet/devnet, where we sometimes
+    // have mass registrations/deregistrations where the waiting causes problems).
+    uint64_t delay_blocks = m_nettype == network_type::MAINNET ? 1 : 0;
+    if (!states.empty() && (states[0].info->registration_height + delay_blocks) < get_current_blockchain_height())
     {
       m_check_uptime_proof_interval.do_call([this]() {
         // This timer is not perfectly precise and can leak seconds slightly, so send the uptime
@@ -2328,7 +2334,7 @@ namespace cryptonote
             MGINFO_RED(
                 "Another master node (" << pk << ") is broadcasting the same public IP and ports as this master node (" <<
                 epee::string_tools::get_ip_string_from_int32(m_mn_public_ip) << ":" << proof.proof->qnet_port << "[qnet], :" <<
-                proof.proof->storage_https_port << "[SS-HTTP], :" << proof.proof->storage_omq_port << "[SS-LMQ]). "
+                proof.proof->storage_https_port << "[SS-HTTP], :" << proof.proof->storage_omq_port << "[SS-OMQ]). "
                 "This will lead to deregistration of one or both master nodes if not corrected. "
                 "(Do both master nodes have the correct IP for the master-node-public-ip setting?)");
           });

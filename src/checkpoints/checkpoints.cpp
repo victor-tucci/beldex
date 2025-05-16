@@ -55,7 +55,7 @@ namespace cryptonote
     if (result) MINFO   ("CHECKPOINT PASSED FOR HEIGHT " << height << " " << block_hash);
     else        MWARNING("CHECKPOINT FAILED FOR HEIGHT " << height << ". EXPECTED HASH " << block_hash << "GIVEN HASH: " << hash);
     return result;
-  }
+  };
 
   height_to_hash const HARDCODED_MAINNET_CHECKPOINTS[] =
   {
@@ -322,7 +322,8 @@ namespace cryptonote
       for (size_t i = 0; i < beldex::array_count(HARDCODED_MAINNET_CHECKPOINTS); ++i)
       {
         height_to_hash const &checkpoint = HARDCODED_MAINNET_CHECKPOINTS[i];
-        ADD_CHECKPOINT(checkpoint.height, checkpoint.hash);
+        bool added = add_checkpoint(checkpoint.height, checkpoint.hash);
+        CHECK_AND_ASSERT(added, false);
       }
     }
 #endif

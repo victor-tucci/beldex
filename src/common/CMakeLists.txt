@@ -36,6 +36,7 @@ add_library(common
   expect.cpp
   file.cpp
   i18n.cpp
+  json_binary_proxy.cpp
   beldex.cpp
   notify.cpp
   password.cpp
@@ -66,6 +67,8 @@ target_link_libraries(common
     oxenmq::oxenmq
     filesystem
     fmt::fmt
+    nlohmann_json::nlohmann_json
+    date::date
   PRIVATE
     sodium
     extra)

@@ -51,7 +51,7 @@
 #include "epee/wipeable_string.h"
 #include "crypto/hash.h"
 #include "mnemonics/electrum-words.h"
-#include "rpc/rpc_args.h"
+#include "rpc/common/rpc_args.h"
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "daemonizer/daemonizer.h"
 #include "cryptonote_core/beldex_name_system.h"
@@ -221,10 +221,12 @@ namespace tools
 
       epee::serialization::portable_storage ps;
       if(!ps.load_from_json(body))
-        return jsonrpc_error_response(res, -32700, "Parse error");
+        return jsonrpc_error_response(res, -32700, "Parse error", {});
 
-      epee::serialization::storage_entry id{std::string{}};
-      ps.get_value("id", id, nullptr);
+      epee::serialization::storage_entry epee_id{std::string{}};
+      ps.get_value("id", epee_id, nullptr);
+
+      nlohmann::json id = var::get<std::string>(epee_id);
 
       std::string method;
       if(!ps.get_value("method", method, nullptr))
@@ -246,7 +248,7 @@ namespace tools
       // If it's a restricted command and we're in restricted mode then deny it
       if (restricted && m_restricted) {
         MWARNING("JSON RPC request for restricted command " << method << " in restricted mode from " << get_remote_address(res));
-        return jsonrpc_error_response(res, error_code::DENIED, method + " is not available in restricted mode.");
+        return jsonrpc_error_response(res, error_code::DENIED, method + " is not available in restricted mode.", {});
       }
 
       // Try to load "params" into a generic epee value; if it fails (because there is no "params")
@@ -259,7 +261,7 @@ namespace tools
       wallet_rpc_error json_error{-32603, "Internal error"};
 
       try {
-        result = invoke_ptr(ps, std::move(id), std::move(params), *this);
+        result = invoke_ptr(ps, std::move(epee_id), std::move(params), *this);
         json_error.code = 0;
       } catch (const parse_error& e) {
         json_error = {-32602, "Invalid params"}; // Reserved json code/message value for specifically this failure
@@ -302,7 +304,7 @@ namespace tools
       }
 
       if (json_error.code != 0)
-        return jsonrpc_error_response(res, json_error.code, std::move(json_error.message));
+        return jsonrpc_error_response(res, json_error.code, std::move(json_error.message), {});
 
       res.writeHeader("Server", server_header());
       res.writeHeader("Content-Type", "application/json");
@@ -2397,24 +2399,35 @@ namespace tools
     if (req.threads_count < 1 || max_mining_threads_count < req.threads_count)
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "The specified number of threads is inappropriate."};
 
-    rpc::START_MINING::request daemon_req{};
-    daemon_req.miner_address = m_wallet->get_account().get_public_address_str(m_wallet->nettype());
-    daemon_req.threads_count = req.threads_count;
-
-    rpc::START_MINING::response daemon_res{};
-    bool r = m_wallet->invoke_http<rpc::START_MINING>(daemon_req, daemon_res);
-    if (!r || daemon_res.status != rpc::STATUS_OK)
+    nlohmann::json req_params{
+      {"miner_address", m_wallet->get_account().get_public_address_str(m_wallet->nettype())},
+      {"threads_count", req.threads_count}
+    };
+    try
+    {
+      nlohmann::json res = m_wallet->json_rpc("start_mining", req_params);
+      if (res["status"] != rpc::STATUS_OK)
+        throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Couldn't start mining due to unknown error."};
+    }
+    catch (...) {
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Couldn't start mining due to unknown error."};
+    }
+
     return {};
   }
   //------------------------------------------------------------------------------------------------------------------------------
   STOP_MINING::response wallet_rpc_server::invoke(STOP_MINING::request&& req)
   {
     require_open();
-    rpc::STOP_MINING::response daemon_res{};
-    bool r = m_wallet->invoke_http<rpc::STOP_MINING>({}, daemon_res);
-    if (!r || daemon_res.status != rpc::STATUS_OK)
+    try
+    {
+      nlohmann::json res = m_wallet->json_rpc("stop_mining", {});
+      if (res["status"] != rpc::STATUS_OK)
+        throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Couldn't stop mining due to unknown error."};
+    }
+    catch (...) {
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Couldn't stop mining due to unknown error."};
+    }
     return {};
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2484,12 +2497,15 @@ namespace {
     if (!req.hardware_wallet)
       wal->set_seed_language(req.language);
 
-    rpc::GET_HEIGHT::request hreq{};
-    rpc::GET_HEIGHT::response hres{};
-    hres.height = 0;
-    bool r = wal->invoke_http<rpc::GET_HEIGHT>(hreq, hres);
-    if (r)
-      wal->set_refresh_from_block_height(hres.height);
+    nlohmann::json req_params{
+      {"height", 0}
+    };
+    try
+    {
+      nlohmann::json res = wal->json_rpc("get_height", req_params);
+      wal->set_refresh_from_block_height(res["height"].get<uint64_t>());
+    }
+    catch (...) {}
 
     if (req.hardware_wallet)
       wal->restore_from_device(wallet_file, req.password, req.device_name.empty() ? "Ledger" : req.device_name);
@@ -3286,6 +3302,7 @@ namespace {
 
   BNS_KNOWN_NAMES::response wallet_rpc_server::invoke(BNS_KNOWN_NAMES::request&& req)
   {
+    //TODO sean this needs to fit the new request format
     require_open();
     BNS_KNOWN_NAMES::response res{};
 
@@ -3299,105 +3316,80 @@ namespace {
     }
 
     auto nettype = m_wallet->nettype();
-    rpc::BNS_NAMES_TO_OWNERS::request lookup_req{};
-    lookup_req.include_expired = req.include_expired;
+    nlohmann::json req_params{{"include_expired", req.include_expired}};
+    auto& name_hash = (req_params["name_hash"] = nlohmann::json::array());
+    name_hash.get_ref<nlohmann::json::array_t&>().reserve(
+            std::min(rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES, res.known_names.size()));
 
     uint64_t curr_height = req.include_expired ? m_wallet->get_blockchain_current_height() : 0;
 
     // Query beldexd for the full record info
     for (auto it = res.known_names.begin(); it != res.known_names.end(); )
     {
-      const size_t num_entries = std::distance(it, res.known_names.end());
-      const auto end = num_entries < rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES
+      const size_t remaining = std::distance(it, res.known_names.end());
+      const auto batch_end = remaining < rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES
           ? res.known_names.end()
           : it + rpc::BNS_NAMES_TO_OWNERS::MAX_REQUEST_ENTRIES;
-      lookup_req.entries.clear();
-      lookup_req.entries.reserve(std::distance(it, end));
-      for (auto it2 = it; it2 != end; it2++)
-      {
-        auto& name_hash = lookup_req.entries.emplace_back();
-        name_hash = it2->hashed;
-      }
 
-      if (auto [success, records] = m_wallet->bns_names_to_owners(lookup_req); success)
+      // Build name_hash list for the batch
+      name_hash.clear();
+      for (auto it2 = it; it2 != batch_end; ++it2)
+        name_hash.push_back(it2->hashed);
+
+      if (auto [success, records] = m_wallet->bns_names_to_owners(req_params); success)
       {
-        size_t type_offset = std::distance(res.known_names.begin(), it);
-        for (auto& rec : records)
+        size_t base_index = std::distance(res.known_names.begin(), it);
+
+        auto decrypt_and_store = [&](const std::optional<std::string>& encrypted, bns::mapping_type type, std::optional<std::string>& out_value, const std::string& name)
         {
-          if (rec.entry_index >= num_entries)
+          if (!req.decrypt || !encrypted || encrypted->empty() || !oxenc::is_hex(*encrypted))
+          return;
+
+          bns::mapping_value value;
+          std::string errmsg;
+          if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(*encrypted), &value, &errmsg) &&
+          value.decrypt(name, type))
+          out_value = value.to_readable_value(nettype, type);
+          else
+          MWARNING("Failed to decrypt BNS value for " << name << (errmsg.empty() ? ""s : ": " + errmsg));
+        };
+
+        for (const auto& rec : records)
+        {
+          size_t index = rec["entry_index"].get<size_t>();
+          if (index >= remaining)
           {
-            MWARNING("Got back invalid entry_index " << rec.entry_index << " for a request for " << num_entries << " entries");
+            MWARNING("Invalid entry_index " << index << " for batch size " << remaining);
             continue;
           }
 
-          auto& res_e = *(it + rec.entry_index);
-          res_e.owner = std::move(rec.owner);
-          res_e.backup_owner = std::move(rec.backup_owner);
-          res_e.encrypted_bchat_value = std::move(rec.encrypted_bchat_value);
-          res_e.encrypted_wallet_value = std::move(rec.encrypted_wallet_value);
-          res_e.encrypted_belnet_value = std::move(rec.encrypted_belnet_value);
-          res_e.encrypted_eth_addr_value = std::move(rec.encrypted_eth_addr_value);
-          res_e.update_height = rec.update_height;
-          res_e.expiration_height = rec.expiration_height;
+          auto& res_e = *(it + index);
+          res_e.owner = rec["owner"];
+          if (rec.contains("backup_owner") && !rec["backup_owner"].is_null())
+            res_e.backup_owner = rec["backup_owner"].get<std::string>();
+          if (rec.contains("encrypted_bchat_value") && !rec["encrypted_bchat_value"].empty())
+            res_e.encrypted_bchat_value = rec["encrypted_bchat_value"];
+          if (rec.contains("encrypted_wallet_value") && !rec["encrypted_wallet_value"].empty())
+            res_e.encrypted_wallet_value = rec["encrypted_wallet_value"];
+          if (rec.contains("encrypted_belnet_value") && !rec["encrypted_belnet_value"].empty())
+            res_e.encrypted_belnet_value = rec["encrypted_belnet_value"];
+          if (rec.contains("encrypted_eth_addr_value") && !rec["encrypted_eth_addr_value"].empty())
+            res_e.encrypted_eth_addr_value = rec["encrypted_eth_addr_value"];
+          res_e.update_height = rec["update_height"].get<uint64_t>();
+          res_e.expiration_height = rec["expiration_height"].get<uint64_t>();
+          res_e.txid = rec["txid"];
+
           if (req.include_expired && res_e.expiration_height)
-            res_e.expired = *res_e.expiration_height < curr_height;
-          res_e.txid = std::move(rec.txid);
+            res_e.expired = res_e.expiration_height < curr_height;
 
-          //BCHAT
-          if (req.decrypt && !res_e.encrypted_bchat_value.empty() && oxenc::is_hex(res_e.encrypted_bchat_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::bchat;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_bchat_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_bchat = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
-
-          //ETH_ADDR
-          if (req.decrypt && !res_e.encrypted_eth_addr_value.empty() && oxenc::is_hex(res_e.encrypted_eth_addr_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::eth_addr;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_eth_addr_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_eth_addr = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
-
-          //WALLET
-          if (req.decrypt && !res_e.encrypted_wallet_value.empty() && oxenc::is_hex(res_e.encrypted_wallet_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::wallet;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_wallet_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_wallet = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
-
-          //BELNET
-          if (req.decrypt && !res_e.encrypted_belnet_value.empty() && oxenc::is_hex(res_e.encrypted_belnet_value))
-          {
-            bns::mapping_value value;
-            const auto type = bns::mapping_type::belnet;
-            std::string errmsg;
-            if (bns::mapping_value::validate_encrypted(type, oxenc::from_hex(res_e.encrypted_belnet_value), &value, &errmsg)
-                && value.decrypt(res_e.name, type))
-              res_e.value_belnet = value.to_readable_value(nettype, type);
-            else
-              MWARNING("Failed to decrypt BNS value for " << res_e.name << (errmsg.empty() ? ""s : ": " + errmsg));
-          }
+          decrypt_and_store(res_e.encrypted_bchat_value, bns::mapping_type::bchat, res_e.value_bchat, res_e.name);
+          decrypt_and_store(res_e.encrypted_eth_addr_value, bns::mapping_type::eth_addr, res_e.value_eth_addr, res_e.name);
+          decrypt_and_store(res_e.encrypted_wallet_value, bns::mapping_type::wallet, res_e.value_wallet, res_e.name);
+          decrypt_and_store(res_e.encrypted_belnet_value, bns::mapping_type::belnet, res_e.value_belnet, res_e.name);
         }
       }
 
-      it = end;
+      it = batch_end;
     }
 
     // Erase anything we didn't get a response for (it will have update_height of 0)

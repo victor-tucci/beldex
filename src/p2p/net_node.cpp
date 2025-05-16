@@ -73,7 +73,7 @@ namespace
         if (!address)
         {
             MERROR(
-                "Failed to parse " << epee::net_utils::zone_to_string(T::get_zone()) << " address \"" << value << "\": " << address.error().message()
+                "Failed to parse " << T::get_zone() << " address \"" << value << "\": " << address.error().message()
             );
             return {};
         }
@@ -294,8 +294,8 @@ namespace nodetool
     {
         switch (command)
         {
-        case nodetool::COMMAND_HANDSHAKE_T<cryptonote::CORE_SYNC_DATA>::ID:
-        case nodetool::COMMAND_TIMED_SYNC_T<cryptonote::CORE_SYNC_DATA>::ID:
+        case nodetool::COMMAND_HANDSHAKE::ID:
+        case nodetool::COMMAND_TIMED_SYNC::ID:
         case cryptonote::NOTIFY_NEW_TRANSACTIONS::ID:
             return false;
         default:
