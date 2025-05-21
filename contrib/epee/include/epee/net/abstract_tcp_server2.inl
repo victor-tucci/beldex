@@ -143,6 +143,11 @@ PRAGMA_WARNING_DISABLE_VS(4355)
     CHECK_AND_NO_ASSERT_MES(!ec, false, "Failed to get remote endpoint: " << ec.message() << ':' << ec.value());
     CHECK_AND_NO_ASSERT_MES(remote_ep.address().is_v4() || remote_ep.address().is_v6(), false, "only IPv4 and IPv6 supported here");
 
+    if (ec)
+        throw std::runtime_error(std::string("Failed to get remote endpoint: ") + ec.message() + ":" + std::to_string(ec.value()));
+    if (!remote_ep.address().is_v4() && !remote_ep.address().is_v6())
+        throw std::runtime_error("Only IPv4 and IPv6 are supported here");
+        
     if (remote_ep.address().is_v4())
     {
       const unsigned long ip_ = boost::asio::detail::socket_ops::host_to_network_long(remote_ep.address().to_v4().to_uint());

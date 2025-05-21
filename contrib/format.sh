@@ -2,7 +2,7 @@
 
 CLANG_FORMAT_DESIRED_VERSION=11
 
-TARGET_DIRS=(src/wallet3 src/sqlitedb)
+TARGET_DIRS=(src/wallet3 src/sqlitedb src/logging)
 
 binary=$(which clang-format-$CLANG_FORMAT_DESIRED_VERSION 2>/dev/null)
 if [ $? -ne 0 ]; then

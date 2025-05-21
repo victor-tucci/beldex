@@ -39,6 +39,7 @@ target_link_libraries(blockchain_db
     lmdb
     filesystem
     Boost::thread
+    logging
     extra)
 
 target_compile_definitions(blockchain_db PRIVATE

@@ -35,6 +35,7 @@
 #include <array>
 
 #include <optional>
+#include <cstring>
 #include "../span.h"
 #include "../storages/portable_storage_base.h"
 

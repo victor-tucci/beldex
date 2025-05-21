@@ -34,6 +34,9 @@
 
 #include "easylogging++.h"
 
+#include <sstream>
+#include <iostream>
+
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "default"
 
@@ -163,6 +166,7 @@ namespace debug
 
 
 #define ASSERT_MES_AND_THROW(message) {LOG_ERROR(message); std::stringstream ss; ss << message; throw std::runtime_error(ss.str());}
+#define ASSERT_MES_AND_THROW_new(message) {std::stringstream ss; ss << message; throw std::runtime_error(ss.str());}
 #define CHECK_AND_ASSERT_THROW_MES(expr, message) do {if(!(expr)) ASSERT_MES_AND_THROW(message);} while(0)
 
 
@@ -194,6 +198,7 @@ namespace debug
 
 #ifndef CHECK_AND_ASSERT_MES2
 #define CHECK_AND_ASSERT_MES2(expr, message)   do{if(!(expr)) {LOG_ERROR(message); };}while(0)
+#define CHECK_AND_ASSERT_MES_new(expr, fail_ret_val, message)   do{if(!(expr)) {return fail_ret_val;};}while(0)
 #endif
 
 enum console_colors

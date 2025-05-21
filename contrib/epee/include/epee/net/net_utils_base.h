@@ -455,7 +455,7 @@ namespace net_utils
   std::string print_connection_context(const connection_context_base& ctx);
   std::string print_connection_context_short(const connection_context_base& ctx);
 
-inline MAKE_LOGGABLE(connection_context_base, ct, os)
+inline std::ostream& operator<<(std::ostream& os, const connection_context_base& ct)
   {
     os << "[" << epee::net_utils::print_connection_context_short(ct) << "] ";
     return os;

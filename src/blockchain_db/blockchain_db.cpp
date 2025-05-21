@@ -39,12 +39,15 @@
 
 #include "lmdb/db_lmdb.h"
 #include <chrono>
+#include <logging/oxen_logger.h>
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "blockchain.db"
 
 namespace cryptonote
 {
+
+  static auto logcat = log::Cat("blockchain.db");
 
 const command_line::arg_descriptor<std::string> arg_db_sync_mode = {
   "db-sync-mode"
@@ -86,6 +89,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
     // should only need to compute hash for miner transactions
     tx_hash = get_transaction_hash(tx);
     LOG_PRINT_L3("null tx_hash_ptr - needed to compute: " << tx_hash);
+    log::trace(logcat, "null tx_hash_ptr - needed to compute: {}", tx_hash);
   }
   else
   {
