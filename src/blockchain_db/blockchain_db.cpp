@@ -39,7 +39,7 @@
 
 #include "lmdb/db_lmdb.h"
 #include <chrono>
-#include <logging/oxen_logger.h>
+#include "logging/beldex_logger.h"
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "blockchain.db"

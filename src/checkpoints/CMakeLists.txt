@@ -38,4 +38,5 @@ target_link_libraries(checkpoints
     Boost::program_options
     Boost::serialization
     filesystem
+    logging
     extra)

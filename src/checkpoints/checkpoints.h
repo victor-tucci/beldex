@@ -31,7 +31,7 @@
 #pragma once
 #include <vector>
 
-#include "epee/misc_log_ex.h"
+// #include "epee/misc_log_ex.h"
 #include "crypto/hash.h"
 #include "cryptonote_config.h"
 #include "cryptonote_core/master_node_voting.h"

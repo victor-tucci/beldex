@@ -1,12 +1,13 @@
 
-#include "oxen_logger.h"
+#include "beldex_logger.h"
 #include <oxen/log.hpp>
 
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <filesystem>
 
-namespace oxen::logging
+namespace beldex::logging
 {
+  using namespace oxen;
   static auto logcat = log::Cat("logging");
 
   void
@@ -38,7 +39,7 @@ namespace oxen::logging
         log::set_level("serialization", log::Level::err);
         log::set_level("blockchain", log::Level::warn);
         log::set_level("blockchain.db.lmdb", log::Level::warn);
-        log::set_level("service_nodes", log::Level::warn);
+        log::set_level("master_nodes", log::Level::warn);
         log::set_level("txpool", log::Level::warn);
         log::set_level("construct_tx", log::Level::warn);
         break;
@@ -170,4 +171,4 @@ namespace oxen::logging
     return std::nullopt;
   }
 
-}  // namespace oxen::logging
+}  // namespace beldex::logging
