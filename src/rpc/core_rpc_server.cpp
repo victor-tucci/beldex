@@ -1883,6 +1883,7 @@ namespace cryptonote::rpc {
   void core_rpc_server::invoke(GET_BANS& get_bans, rpc_context context)
   {
     PERF_TIMER(on_get_bans);
+    get_bans.response["bans"] = nlohmann::json::array();
 
     auto now = time(nullptr);
     std::map<std::string, time_t> blocked_hosts = m_p2p.get_blocked_hosts();
@@ -2188,6 +2189,7 @@ namespace cryptonote::rpc {
     PERF_TIMER(on_out_peers);
     if (out_peers.request.set)
       m_p2p.change_max_out_public_peers(out_peers.request.out_peers);
+    out_peers.response["out_peers"] = m_p2p.get_max_out_public_peers();
     out_peers.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2196,6 +2198,7 @@ namespace cryptonote::rpc {
     PERF_TIMER(on_in_peers);
     if (in_peers.request.set)
       m_p2p.change_max_in_public_peers(in_peers.request.in_peers);
+    in_peers.response["in_peers"] = m_p2p.get_max_in_public_peers();
     in_peers.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2393,12 +2396,11 @@ namespace cryptonote::rpc {
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
-  void core_rpc_server::invoke(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_context context, bool binary)
+  void core_rpc_server::invoke(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_context context)
   {
     PERF_TIMER(on_get_output_distribution);
     // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
     //   return res;
-    std::vector<GET_OUTPUT_DISTRIBUTION::distribution> response_distributions;
     try
     {
       // 0 is placeholder for the whole chain
@@ -2419,14 +2421,14 @@ namespace cryptonote::rpc {
         // Force binary & compression off if this is a JSON request because trying to pass binary
         // data through JSON explodes it in terms of size (most values under 0x20 have to be encoded
         // using 6 chars such as "\u0002").
-        response_distributions.push_back({std::move(*data), amount, "", binary && get_output_distribution.request.binary, binary && get_output_distribution.request.compress});
+        GET_OUTPUT_DISTRIBUTION::distribution distributions = {std::move(*data), amount};
+        get_output_distribution.response["distributions"].push_back(distributions);
       }
     }
     catch (const std::exception &e)
     {
       throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
     }
-    get_output_distribution.response["distributions"] = response_distributions;
     get_output_distribution.response["status"] = STATUS_OK;
     return;
   }
@@ -2442,33 +2444,38 @@ namespace cryptonote::rpc {
       res.status = "Binary only call";
       return res;
     }
-    GET_OUTPUT_DISTRIBUTION req_param{};
-    req_param.request.amounts = req.amounts;
-    req_param.request.from_height = req.from_height;
-    req_param.request.to_height = req.to_height;
-    req_param.request.compress = req.compress;
-    req_param.request.cumulative = req.cumulative;
-    invoke(req_param, context, true);
-    res.status = req_param.response["status"].get<std::string>();
-    // Manually convert the distributions
-    const auto source_distributions = req_param.response["distributions"].get<std::vector<GET_OUTPUT_DISTRIBUTION::distribution>>();
+    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION>(req, res))
+    //   return res;
 
-    res.distributions.clear();
-    res.distributions.reserve(source_distributions.size());
-    for (const auto& dist : source_distributions)
+    try
     {
-      GET_OUTPUT_DISTRIBUTION_BIN::distribution bin_dist;
-      bin_dist.data = dist.data;
-      bin_dist.amount = dist.amount;
-      bin_dist.compressed_data = dist.compressed_data;
-      bin_dist.binary = dist.binary;
-      bin_dist.compress = dist.compress;
-  
-      res.distributions.push_back(std::move(bin_dist));
+      // 0 is placeholder for the whole chain
+      const uint64_t req_to_height = req.to_height ? req.to_height : (m_core.get_current_blockchain_height() - 1);
+      for (uint64_t amount: req.amounts)
+      {
+        auto data = detail::get_output_distribution(
+            [this](auto&&... args) { return m_core.get_output_distribution(std::forward<decltype(args)>(args)...); },
+            amount,
+            req.from_height,
+            req_to_height,
+            [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
+            req.cumulative,
+            m_core.get_current_blockchain_height());
+        if (!data)
+          throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
+
+        // Force binary & compression off if this is a JSON request because trying to pass binary
+        // data through JSON explodes it in terms of size (most values under 0x20 have to be encoded
+        // using 6 chars such as "\u0002").
+        res.distributions.push_back({std::move(*data), amount, "", req.binary, req.compress});
+      }
+    }
+    catch (const std::exception &e)
+    {
+      throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
     }
 
-    // if (use_bootstrap_daemon_if_necessary<GET_OUTPUT_DISTRIBUTION_BIN>(req, res))
-    //   return res;
+    res.status = STATUS_OK;
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2489,8 +2496,7 @@ namespace cryptonote::rpc {
 
     prune_blockchain.response["status"] = STATUS_OK;
   }
-
-
+  //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(GET_QUORUM_STATE& get_quorum_state, rpc_context context)
   {
     PERF_TIMER(on_get_quorum_state);
