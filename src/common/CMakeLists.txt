@@ -66,6 +66,7 @@ target_link_libraries(common
     oxenc::oxenc
     oxenmq::oxenmq
     filesystem
+    oxen::logging
     fmt::fmt
     nlohmann_json::nlohmann_json
     date::date
