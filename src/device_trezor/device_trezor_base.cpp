@@ -37,8 +37,7 @@ namespace trezor {
 
 #ifdef WITH_DEVICE_TREZOR
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "device.trezor"
+static auto logcat = log::Cat("device.trezor");
 #define TREZOR_BIP44_HARDENED_ZERO 0x80000000
 
     const uint32_t device_trezor_base::DEFAULT_BIP44_PATH[] = {0x8000002c, 0x80000080};
@@ -54,7 +53,7 @@ namespace trezor {
         disconnect();
         release();
       } catch(std::exception const& e){
-        MERROR("Could not disconnect and release: " << e.what());
+        log::error(logcat, "Could not disconnect and release:{}", e.what());
       }
     }
 
@@ -85,7 +84,7 @@ namespace trezor {
 
     bool device_trezor_base::init() {
       if (!release()){
-        MERROR("Release failed");
+        log::error(logcat, "Release failed");
         return false;
       }
 
@@ -98,7 +97,7 @@ namespace trezor {
         return true;
 
       } catch(std::exception const& e){
-        MERROR("Release exception: " << e.what());
+        log::error(logcat, "Release exception:{}", e.what());
         return false;
       }
     }
@@ -111,26 +110,26 @@ namespace trezor {
       try {
         hw::trezor::t_transport_vect trans;
 
-        MDEBUG("Enumerating Trezor devices...");
+        log::debug(logcat, "Enumerating Trezor devices...");
         enumerate(trans);
         sort_transports_by_env(trans);
 
-        MDEBUG("Enumeration yielded " << trans.size() << " Trezor devices");
+        log::debug(logcat, "Enumeration yielded {} Trezor devices", trans.size());
         for (auto &cur : trans) {
-          MDEBUG("  device: " << *(cur.get()));
+          log::debug(logcat, "  device:{}", *(cur.get()));
         }
 
         for (auto &cur : trans) {
           std::string cur_path = cur->get_path();
           if (tools::starts_with(cur_path, name)) {
-            MDEBUG("Device Match: " << cur_path);
+            log::debug(logcat, "Device Match:{}", cur_path);
             m_transport = cur;
             break;
           }
         }
 
         if (!m_transport) {
-          MERROR("No matching Trezor device found. Device specifier: \"" << name << "\"");
+          log::error(logcat, "No matching Trezor device found. Device specifier: \"{}\"", name);
           return false;
         }
 
@@ -142,7 +141,7 @@ namespace trezor {
         return true;
 
       } catch(std::exception const& e){
-        MERROR("Open exception: " << e.what());
+        log::error(logcat, "Open exception:{}", e.what());
         return false;
       }
     }
@@ -158,7 +157,7 @@ namespace trezor {
           m_transport = nullptr;
 
         } catch(std::exception const& e){
-          MERROR("Disconnect exception: " << e.what());
+          log::error(logcat, "Disconnect exception:{}" e.what());
           m_transport = nullptr;
           return false;
         }
@@ -179,28 +178,28 @@ namespace trezor {
 
     //lock the device for a long sequence
     void device_trezor_base::lock() {
-      MTRACE("Ask for LOCKING for device " << name << " in thread ");
+      log::trace(logcat, "Ask for LOCKING for device {} in thread ", name);
       device_locker.lock();
-      MTRACE("Device " << name << " LOCKed");
+      log::trace(logcat, "Device {} LOCKed", name);
     }
 
     //lock the device for a long sequence
     bool device_trezor_base::try_lock() {
-      MTRACE("Ask for LOCKING(try) for device " << name << " in thread ");
+      log::trace(logcat, "Ask for LOCKING(try) for device {} in thread ", name);
       bool r = device_locker.try_lock();
       if (r) {
-        MTRACE("Device " << name << " LOCKed(try)");
+        log::trace(logcat, "Device {} LOCKed(try)", name);
       } else {
-        MDEBUG("Device " << name << " not LOCKed(try)");
+        log::debug(logcat, "Device {} not LOCKed(try)", name);
       }
       return r;
     }
 
     //unlock the device
     void device_trezor_base::unlock() {
-      MTRACE("Ask for UNLOCKING for device " << name << " in thread ");
+      log::trace(logcat, "Ask for UNLOCKING for device {} in thread ", name);
       device_locker.unlock();
-      MTRACE("Device " << name << " UNLOCKed");
+      log::trace(logcat, "Device {} UNLOCKed", name);
     }
 
     /* ======================================================================= */
@@ -237,7 +236,7 @@ namespace trezor {
       pingMsg->set_message("PING");
 
       auto success = client_exchange<messages::common::Success>(pingMsg);  // messages::MessageType_Success
-      MDEBUG("Ping response " << success->message());
+      log::debug(logcat, "Ping response {}", success->message());
       (void)success;
     }
 
@@ -248,7 +247,7 @@ namespace trezor {
         call_ping_unsafe();
 
       } catch(exc::TrezorException const& e){
-        MINFO("Trezor does not respond: " << e.what());
+        log::info(logcat, "Trezor does not respond:{}", e.what());
         throw exc::DeviceNotResponsiveException(std::string("Trezor not responding: ") + e.what());
       }
     }
@@ -341,7 +340,7 @@ namespace trezor {
     bool device_trezor_base::ping() {
       auto locks = tools::unique_locks(device_locker, command_locker);
       if (!m_transport){
-        MINFO("Ping failed, device not connected");
+        log::info(logcat, "Ping failed, device not connected");
         return false;
       }
 
@@ -350,9 +349,9 @@ namespace trezor {
         return true;
 
       } catch(std::exception const& e) {
-        MERROR("Ping failed, exception thrown " << e.what());
+        log::error(logcat, "Ping failed, exception thrown {}", e.what());
       } catch(...){
-        MERROR("Ping failed, general exception thrown");
+        log::error(logcat, "Ping failed, general exception thrown");
       }
 
       return false;
@@ -409,7 +408,7 @@ namespace trezor {
         if (debug_transport) {
           m_debug_callback = std::make_shared<trezor_debug_callback>(debug_transport);
         } else {
-          MDEBUG("Transport does not have debug link option");
+          log::debug(logcat, "Transport does not have debug link option");
         }
       }
     }
@@ -422,7 +421,7 @@ namespace trezor {
     void device_trezor_base::on_button_request(GenericMessage & resp, const messages::common::ButtonRequest * msg)
     {
       CHECK_AND_ASSERT_THROW_MES(msg, "Empty message");
-      MDEBUG("on_button_request, code: " << msg->code());
+      log::debug(logcat, "on_button_request, code:{}", msg->code());
 
       TREZOR_CALLBACK(on_button_request, msg->code());
 
@@ -439,7 +438,7 @@ namespace trezor {
 
     void device_trezor_base::on_pin_request(GenericMessage & resp, const messages::common::PinMatrixRequest * msg)
     {
-      MDEBUG("on_pin_request");
+      log::debug(logcat, "on_pin_request");
       CHECK_AND_ASSERT_THROW_MES(msg, "Empty message");
 
       std::optional<epee::wipeable_string> pin;
@@ -469,7 +468,7 @@ namespace trezor {
     void device_trezor_base::on_passphrase_request(GenericMessage & resp, const messages::common::PassphraseRequest * msg)
     {
       CHECK_AND_ASSERT_THROW_MES(msg, "Empty message");
-      MDEBUG("on_passhprase_request");
+      log::debug(logcat, "on_passhprase_request");
 
       // Backward compatibility, migration clause.
       if (msg->has__on_device() && msg->_on_device()){
@@ -525,7 +524,7 @@ namespace trezor {
 
     void device_trezor_base::on_passphrase_state_request(GenericMessage & resp, const messages::common::Deprecated_PassphraseStateRequest * msg)
     {
-      MDEBUG("on_passhprase_state_request");
+      log::debug(logcat, "on_passhprase_state_request");
       CHECK_AND_ASSERT_THROW_MES(msg, "Empty message");
 
       if (msg->has_state()) {

@@ -35,8 +35,7 @@ namespace trezor {
 
 #ifdef WITH_DEVICE_TREZOR
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "device.trezor"
+static auto logcat = log::Cat("device.trezor");
 
 #define HW_TREZOR_NAME "Trezor"
 
@@ -68,7 +67,7 @@ namespace trezor {
         disconnect();
         release();
       } catch(std::exception const& e){
-        MWARNING("Could not disconnect and release: " << e.what());
+        log::warning(logcat,"Could not disconnect and release:{}", e.what());
       }
     }
 
@@ -113,7 +112,7 @@ namespace trezor {
         }
         catch(const std::exception & e)
         {
-          MERROR("Live refresh could not be terminated: " << e.what());
+          log::error(logcat, "Live refresh could not be terminated:{}", e.what());
         }
       }
 
@@ -143,14 +142,14 @@ namespace trezor {
           continue;
         }
 
-        MTRACE("Closing live refresh process due to inactivity");
+        log::trace(logcat, "Closing live refresh process due to inactivity");
         try
         {
           live_refresh_finish();
         }
         catch(const std::exception &e)
         {
-          MWARNING("Live refresh auto-finish failed: " << e.what());
+          log::warning(logcat, "Live refresh auto-finish failed:{}", e.what());
         }
       }
     }
@@ -172,14 +171,14 @@ namespace trezor {
         return true;
 
       } catch(std::exception const& e){
-        MERROR("Get public address exception: " << e.what());
+        log::error(logcat, "Get public address exception:{}", e.what());
         return false;
       }
     }
 
     bool device_trezor::get_secret_keys(crypto::secret_key &viewkey , crypto::secret_key &spendkey) {
       try {
-        MDEBUG("Loading view-only key from the Trezor. Please check the Trezor for a confirmation.");
+        log::debug(logcat, "Loading view-only key from the Trezor. Please check the Trezor for a confirmation.");
         auto res = get_view_key();
         CHECK_AND_ASSERT_MES(res->watch_key().size() == 32, false, "Trezor returned invalid view key");
 
@@ -196,7 +195,7 @@ namespace trezor {
         return true;
 
       } catch(std::exception const& e){
-        MERROR("Get secret keys exception: " << e.what());
+        log::error(logcat, "Get secret keys exception:{}", e.what());
         return false;
       }
     }
@@ -237,7 +236,7 @@ namespace trezor {
       }
 
       auto response = this->client_exchange<messages::monero::MoneroAddress>(req);
-      MTRACE("Get address response received");
+      log::trace(logcat, "Get address response received");
       return response;
     }
 
@@ -253,7 +252,7 @@ namespace trezor {
       this->set_msg_addr<messages::monero::MoneroGetWatchKey>(req.get(), path, network_type);
 
       auto response = this->client_exchange<messages::monero::MoneroWatchKey>(req);
-      MTRACE("Get watch key response received");
+      log::trace(logcat, "Get watch key response received");
       return response;
     }
 
@@ -282,7 +281,7 @@ namespace trezor {
       this->set_msg_addr<messages::monero::MoneroGetTxKeyRequest>(req.get());
 
       auto response = this->client_exchange<messages::monero::MoneroGetTxKeyAck>(req);
-      MTRACE("Get TX key response received");
+      log::trace(logcat, "Get TX key response received");
 
       protocol::tx::get_tx_key_ack(tx_keys, tx_aux_data.tx_prefix_hash, view_key_priv, response);
     }
@@ -328,7 +327,7 @@ namespace trezor {
           kis.push_back(ckis);
         }
 
-        MTRACE("Batch " << cur << " / " << num_batches << " batches processed");
+        log::trace(logcat, "Batch {} / {} batches processed", cur, num_batches);
         EVENT_PROGRESS((double)cur * batch_size / mtds.size());
       }
       EVENT_PROGRESS(1.);
@@ -373,7 +372,7 @@ namespace trezor {
       try{
         return is_live_refresh_enabled();
       } catch(const std::exception & e){
-        MERROR("Could not detect if live refresh is enabled: " << e.what());
+        log::error(logcat, "Could not detect if live refresh is enabled:{}", e.what());
       }
       return false;
     }
@@ -462,7 +461,7 @@ namespace trezor {
       }
       catch(const std::exception & e)
       {
-        MWARNING("KI computation state change failed, started: " << started << ", e: " << e.what());
+        log::warning(logcat, "KI computation state change failed, started:{}, e:{}", started, e.what());
       }
     }
 
@@ -525,7 +524,7 @@ namespace trezor {
 
         // Transaction check
         try {
-          MDEBUG("signed transaction: " << cryptonote::get_transaction_hash(cpend.tx) << "\n" << cryptonote::obj_to_json_str(cpend.tx) << "\n");
+          log::debug(logcat, "signed transaction:{}\n{}\n", cryptonote::get_transaction_hash(cpend.tx), cryptonote::obj_to_json_str(cpend.tx));
           transaction_check(cdata, aux_data);
         } catch(const std::exception &e){
           throw exc::ProtocolException(std::string("Transaction verification failed: ") + e.what());
@@ -688,7 +687,7 @@ namespace trezor {
       if ((env_trezor_client_version = getenv("TREZOR_CLIENT_VERSION")) != nullptr){
         auto succ = epee::string_tools::get_xtype_from_string(client_version, env_trezor_client_version);
         if (succ){
-          MINFO("Trezor client version overriden by TREZOR_CLIENT_VERSION to: " << client_version);
+          log::info(logcat, "Trezor client version overriden by TREZOR_CLIENT_VERSION to:{}", client_version);
         }
       }
 #endif
