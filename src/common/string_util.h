@@ -4,9 +4,9 @@
 #include <cstring>
 #include <iterator>
 #include <charconv>
-#include <sstream>
 #include <chrono>
 #include <cassert>
+#include <fmt/format.h>
 #include "epee/span.h" // epee
 
 namespace tools {
@@ -60,30 +60,28 @@ std::vector<std::string_view> split(std::string_view str, std::string_view delim
 std::vector<std::string_view> split_any(std::string_view str, std::string_view delims, bool trim = false);
 
 /// Joins [begin, end) with a delimiter and returns the resulting string.  Elements can be anything
-/// that can be sent to an ostream via `<<`.
+/// that can be formatted. Semi-deprecated: this just uses fmt to join.
 template <typename It>
 std::string join(std::string_view delimiter, It begin, It end) {
-    std::ostringstream o;
-    if (begin != end)
-        o << *begin++;
-    while (begin != end)
-        o << delimiter << *begin++;
-    return o.str();
+  return fmt::format("{}", fmt::join(begin, end, delimiter));
 }
 
-/// Wrapper around the above that takes a container and passes c.begin(), c.end() to the above.
+/// Same as the above, but works on a container. Just use fmt::join.
 template <typename Container>
-std::string join(std::string_view delimiter, const Container& c) { return join(delimiter, c.begin(), c.end()); }
+std::string join(std::string_view delimiter, const Container& c) {
+  return fmt::format("{}", fmt::join(c, delimiter));
+}
 
 /// Similar to join(), but first applies a transformation to each element.
 template <typename It, typename UnaryOperation>
 std::string join_transform(std::string_view delimiter, It begin, It end, UnaryOperation transform) {
-  std::ostringstream o;
+  std::string result;
+  auto append = std::back_inserter(result);
   if (begin != end)
-    o << transform(*begin++);
+    result = fmt::format("{}", transform(*begin++));
   while (begin != end)
-    o << delimiter << transform(*begin++);
-  return o.str();
+   fmt::format_to(append, "{}{}", delimiter, transform(*begin++));
+  return result;
 }
 
 /// Wrapper around the above that takes a container and passes c.begin(), c.end().
@@ -92,22 +90,23 @@ std::string join_transform(std::string_view delimiter, const Container& c, Unary
   return join_transform(delimiter, c.begin(), c.end(), std::forward<UnaryOperation>(transform));
 }
 
-/// Concatenates a bunch of random values together with delim as a separator via << operator.
+/// Concatenates a bunch of random values together with delim as a separator via fmt::format.
 /// Returns the result as a string.
 template <typename T, typename... Ts>
 std::string join_stuff(std::string_view delim, T&& first, Ts&&... stuff) {
-    std::ostringstream o;
-    o << std::forward<T>(first);
-    ((o << delim << std::forward<Ts>(stuff)), ...);
-    return o.str();
+  std::string result = fmt::format(std::forward<T>(first));
+  auto append = std::back_inserter(result);
+  (fmt::format_to(append, "{}{}", delim, std::forward<Ts>(stuff)), ...);
+  return result;
 }
 
-/// Concatenates arguments via << operator, returns as a string.
+/// Concatenates arguments via fmt::format operator, returns as a string.
 template <typename... T>
 std::string concat(T&&... stuff) {
-    std::ostringstream o;
-    (o << ... << std::forward<T>(stuff));
-    return o.str();
+  std::string result;
+  auto append = std::back_inserter(result);
+  (fmt::format_to(append, "{}", std::forward<T>(stuff)), ...);
+  return result;
 }
 
 /// Simple version of whitespace trimming: mutates the given string view to remove leading
@@ -126,15 +125,6 @@ bool parse_int(const std::string_view str, T& value, int base = 10) {
     return false;
   value = tmp;
   return true;
-}
-
-/// Converts an integer value into a string via std::to_chars (i.e. without locale).
-template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
-std::string int_to_string(const T& value, int base = 10) {
-    char buf[8*sizeof(T) + std::is_signed_v<T>]; // maximum possible size with smallest possible base (2)
-    auto [p, ec] = std::to_chars(std::begin(buf), std::end(buf), value, base);
-    assert(ec == std::errc{}); // Our buffer should be big enough for anything
-    return {buf, p};
 }
 
 /// Returns a string_view that views the data of the given object; this is not something you want to

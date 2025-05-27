@@ -408,14 +408,14 @@ void slow_hash_free_state(uint32_t page_size)
  * @param length the length in bytes of the data
  * @param hash a pointer to a buffer in which the final 256 bit hash will be stored
  */
-void cn_turtle_hash(const void *data, size_t length, char *hash, int light, int variant, int prehashed, uint32_t scratchpad, uint32_t iterations)
+void cn_turtle_hash(const void *data, size_t length, unsigned char *hash, int light, int variant, int prehashed, uint32_t scratchpad, uint32_t iterations)
 {
   uint32_t TOTALBLOCKS = (CN_TURTLE_PAGE_SIZE / AES_BLOCK_SIZE);
   uint32_t init_rounds = (scratchpad / INIT_SIZE_BYTE);
   uint32_t aes_rounds = (iterations / 2);
   size_t lightFlag = (light ? 2: 1);
 
-  RDATA_ALIGN16 uint8_t expandedKey[240];  /* These buffers are aligned to use later with SSE functions */
+  RDATA_ALIGN16 uint8_t expandedKey[AES_EXPANDED_KEY_SIZE];  /* These buffers are aligned to use later with SSE functions */
 
   uint8_t text[INIT_SIZE_BYTE];
   RDATA_ALIGN16 uint64_t a[2];
@@ -427,9 +427,8 @@ void cn_turtle_hash(const void *data, size_t length, char *hash, int light, int 
 
   size_t i, j;
   uint64_t *p = NULL;
-  oaes_ctx *aes_ctx = NULL;
 
-  static void (*const extra_hashes[4])(const void *, size_t, char *) =
+  static void (*const extra_hashes[4])(const void *, size_t, unsigned char *) =
   {
       hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein
   };
@@ -462,12 +461,11 @@ void cn_turtle_hash(const void *data, size_t length, char *hash, int light, int 
   }
   else
   {
-      aes_ctx = (oaes_ctx *) oaes_alloc();
-      oaes_key_import_data(aes_ctx, state.hs.b, AES_KEY_SIZE);
+      aes_expand_key(state.hs.b, expandedKey);
       for(i = 0; i < init_rounds; i++)
       {
           for(j = 0; j < INIT_SIZE_BLK; j++)
-              aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+              aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], expandedKey);
 
           memcpy(&hp_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
       }
@@ -522,16 +520,15 @@ void cn_turtle_hash(const void *data, size_t length, char *hash, int light, int 
   }
   else
   {
-      oaes_key_import_data(aes_ctx, &state.hs.b[32], AES_KEY_SIZE);
+      aes_expand_key(&state.hs.b[32], expandedKey);
       for(i = 0; i < init_rounds; i++)
       {
           for(j = 0; j < INIT_SIZE_BLK; j++)
           {
               xor_blocks(&text[j * AES_BLOCK_SIZE], &hp_state[i * INIT_SIZE_BYTE + j * AES_BLOCK_SIZE]);
-              aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+              aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], expandedKey);
           }
       }
-      oaes_free((OAES_CTX **) &aes_ctx);
   }
 
   /* CryptoNight Step 5:  Apply Keccak to the state again, and then

@@ -26,8 +26,8 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "expect.h"
+#include "common/fs.h"
 
-#include <easylogging++.h>
 #include <string>
 
 namespace detail
@@ -48,10 +48,7 @@ namespace detail
                 error_msg.append("thrown at ");
 
                 // remove path, get just filename + extension
-                char buff[256] = {0};
-                el::base::utils::File::buildBaseFilename(file, buff, sizeof(buff) - 1);
-                error_msg.append(buff);
-
+                error_msg.append(fs::path(file).filename().string());
                 error_msg.push_back(':');
                 error_msg.append(std::to_string(line));
             }

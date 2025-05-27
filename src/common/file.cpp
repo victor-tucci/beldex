@@ -30,9 +30,11 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 //
 #include "file.h"
-#include "epee/misc_log_ex.h"
+#include "fs-format.h"
+#include "logging/beldex_logger.h"
 #include <unistd.h>
 #include <cstdio>
+#include <fstream>
 
 #ifdef WIN32
 #include "epee/string_tools.h"
@@ -59,11 +61,8 @@
 
 #include "cryptonote_config.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "util"
-
 namespace tools {
-
+  static auto logcat = log::Cat("util");
 #ifndef _WIN32
   static int flock_exnb(int fd)
   {
@@ -77,7 +76,7 @@ namespace tools {
     fl.l_len = 0;
     ret = fcntl(fd, F_SETLK, &fl);
     if (ret < 0)
-      MERROR("Error locking fd " << fd << ": " << errno << " (" << strerror(errno) << ")");
+      log::error(logcat, "Error locking fd {}: {} ({})", fd, errno, strerror(errno));    
     return ret;
   }
 #endif
@@ -207,14 +206,13 @@ namespace tools {
       memset(&ov, 0, sizeof(ov));
       if (!LockFileEx(m_fd, LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &ov))
       {
-        MERROR("Failed to lock " << filename << ": " << std::error_code(GetLastError(), std::system_category()));
-        CloseHandle(m_fd);
+        log::error(logcat, "Failed to lock {}: {}", filename, std::error_code(GetLastError(), std::system_category()).message());        CloseHandle(m_fd);
         m_fd = INVALID_HANDLE_VALUE;
       }
     }
     else
     {
-      MERROR("Failed to open " << filename << ": " << std::error_code(GetLastError(), std::system_category()));
+      log::error(logcat, "Failed to open {}: {}", filename, std::error_code(GetLastError(), std::system_category()).message());    
     }
 #else
     m_fd = open(filename.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
@@ -222,14 +220,13 @@ namespace tools {
     {
       if (flock_exnb(m_fd) == -1)
       {
-        MERROR("Failed to lock " << filename << ": " << std::strerror(errno));
-        close(m_fd);
+        log::error(logcat, "Failed to lock {}: {}", filename, std::strerror(errno));        close(m_fd);
         m_fd = -1;
       }
     }
     else
     {
-      MERROR("Failed to open " << filename << ": " << std::strerror(errno));
+      log::error(logcat, "Failed to open {}: {}", filename, std::strerror(errno));
     }
 #endif
   }
@@ -264,8 +261,7 @@ namespace tools {
       return fs::path{psz_path};
     }
 
-    LOG_ERROR("SHGetSpecialFolderPathW() failed, could not obtain requested path.");
-    return "";
+    log::error(logcat, "SHGetSpecialFolderPathW() failed, could not obtain requested path.");    return "";
   }
 #endif
 
@@ -302,17 +298,10 @@ namespace tools {
 
   bool slurp_file(const fs::path& filename, std::string& contents)
   {
-    fs::ifstream in;
-    in.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     try {
-      in.open(filename, std::ios::binary | std::ios::in | std::ios::ate);
-      contents.clear();
-      contents.resize(in.tellg());
-      in.seekg(0);
-      in.read(contents.data(), contents.size());
-      auto bytes_read = in.gcount();
-      if (static_cast<size_t>(bytes_read) < contents.size())
-        contents.resize(bytes_read);
+      fs::ifstream in(filename, std::ios::binary);
+      std::string content((std::istreambuf_iterator<char>(in)), (std::istreambuf_iterator<char>()));
+      contents = std::move(content);
       return true;
     } catch (...) {
       return false;

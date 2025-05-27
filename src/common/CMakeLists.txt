@@ -40,7 +40,6 @@ add_library(common
   beldex.cpp
   notify.cpp
   password.cpp
-  perf_timer.cpp
   pruning.cpp
   random.cpp
   rules.cpp
@@ -72,4 +71,5 @@ target_link_libraries(common
     date::date
   PRIVATE
     sodium
+    logging
     extra)

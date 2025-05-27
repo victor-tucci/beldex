@@ -39,100 +39,75 @@
 
 #include "epee/memwipe.h"
 #include "epee/mlocker.h"
-#include "generic-ops.h"
-#include "common/hex.h"
 #include "hash.h"
+#include "base.h"
+
+extern "C" {
+#include "random.h"
+}
+
 
 namespace crypto {
 
-  extern "C" {
-#include "random.h"
-  }
-
-  struct alignas(size_t) ec_point {
-    char data[32];
-    // Returns true if non-null, i.e. not 0.
-    operator bool() const { static constexpr char null[32] = {0}; return memcmp(data, null, sizeof(data)); }
+  struct ec_point : bytes<32, true> {
+    // Returns true if non-null, i.e. not all 0.
+    explicit operator bool() const { return data_ != null<ec_point>.data_; }
   };
 
-  struct alignas(size_t) ec_scalar {
-    char data[32];
+  struct ec_scalar : bytes<32> {
+    // constant-time (via libsodium)
+    bool operator==(const ec_scalar& x) const;
+    bool operator!=(const ec_scalar& x) const { return !(*this == x); }
+    // constant-time returns true if not all 0.
+    explicit operator bool() const;
   };
 
   struct public_key : ec_point {};
 
-  using secret_key = epee::mlocked<tools::scrubbed<ec_scalar>>;
+  struct secret_key_ : ec_scalar {};
+  using secret_key = epee::mlocked<tools::scrubbed<secret_key_>>;
 
-  struct public_keyV {
-    std::vector<public_key> keys;
-    int rows;
-  };
-
-  struct secret_keyV {
-    std::vector<secret_key> keys;
-    int rows;
-  };
-
-  struct public_keyM {
-    int cols;
-    int rows;
-    std::vector<secret_keyV> column_vectors;
-  };
+  template <> inline const secret_key null<secret_key>{};
 
   struct key_derivation: ec_point {};
 
   struct key_image: ec_point {};
 
-  struct signature {
-    ec_scalar c, r;
+  struct signature : bytes<64, true> {
+    // Returns or sets the "c" part of the signature bytes
+    unsigned char* c() { return data(); }
+    const unsigned char* c() const { return data(); }
+    void c(const ec_scalar& c) { std::copy(c.data(), c.data() + c.size(), data()); }
+    // Returns or sets the "r" part of the signature bytes
+    unsigned char* r() { return data() + 32; }
+    const unsigned char* r() const { return data() + 32; }
+    void r(const ec_scalar& r) { std::copy(r.data(), r.data() + r.size(), data()); }
 
     // Returns true if non-null, i.e. not 0.
-    operator bool() const { static constexpr char null[64] = {0}; return memcmp(this, null, sizeof(null)); }
+    explicit operator bool() const { return data_ != null<signature>.data_; }
   };
 
-  // The sizes below are all provided by sodium.h, but we don't want to depend on it here; we check
-  // that they agree with the actual constants from sodium.h when compiling cryptonote_core.cpp.
-  struct alignas(size_t) ed25519_public_key {
-    unsigned char data[32]; // 32 = crypto_sign_ed25519_PUBLICKEYBYTES
-    static constexpr ed25519_public_key null() { return {0}; }
-    /// Returns true if non-null
-    operator bool() const { return memcmp(data, null().data, sizeof(data)); }
-  };
+  struct ed25519_public_key : ec_point {};
 
-  struct alignas(size_t) ed25519_secret_key_ {
-    // 64 = crypto_sign_ed25519_SECRETKEYBYTES (but we don't depend on libsodium header here)
-    unsigned char data[64];
-  };
+  // 64 = crypto_sign_ed25519_SECRETKEYBYTES (but we don't depend on libsodium header here)
+  struct ed25519_secret_key_ : bytes<64> {};
   using ed25519_secret_key = epee::mlocked<tools::scrubbed<ed25519_secret_key_>>;
 
-  struct alignas(size_t) ed25519_signature {
-    unsigned char data[64]; // 64 = crypto_sign_BYTES
-    static constexpr ed25519_signature null() { return {0}; }
+  struct ed25519_signature : bytes<64, true> {
     // Returns true if non-null, i.e. not 0.
-    operator bool() const { auto z = null(); return memcmp(this, &z, sizeof(z)); }
+    explicit operator bool() const { return data_ != null<ed25519_signature>.data_; }
   };
 
-  struct alignas(size_t) x25519_public_key {
-    unsigned char data[32]; // crypto_scalarmult_curve25519_BYTES
-    static constexpr x25519_public_key null() { return {0}; }
-    /// Returns true if non-null
-    operator bool() const { return memcmp(data, null().data, sizeof(data)); }
-  };
+  struct x25519_public_key : ec_point {};
 
-  struct alignas(size_t) x25519_secret_key_ {
-    unsigned char data[32]; // crypto_scalarmult_curve25519_BYTES
-  };
+  struct x25519_secret_key_ : bytes<32> {};
   using x25519_secret_key = epee::mlocked<tools::scrubbed<x25519_secret_key_>>;
 
   void hash_to_scalar(const void *data, size_t length, ec_scalar &res);
+  ec_scalar hash_to_scalar(const void* data, size_t length);
   void random_scalar(unsigned char* bytes);
   void random_scalar(ec_scalar& res);
   ec_scalar random_scalar();
-
-  static_assert(sizeof(ec_point) == 32 && sizeof(ec_scalar) == 32 &&
-    sizeof(public_key) == 32 && sizeof(secret_key) == 32 &&
-    sizeof(key_derivation) == 32 && sizeof(key_image) == 32 &&
-    sizeof(signature) == 64, "Invalid structure size");
 
   void generate_random_bytes_thread_safe(size_t N, uint8_t *bytes);
   void add_extra_entropy_thread_safe(const void *ptr, size_t bytes);
@@ -196,6 +171,7 @@ namespace crypto {
    * * The sender uses key derivation and the receivers' "spend" key to derive an ephemeral public key.
    * * The receiver can either derive the public key (to check that the transaction is addressed to him) or the private key (to spend the money).
    */
+  crypto::key_derivation generate_key_derivation(const public_key &key1, const secret_key &key2);
   bool generate_key_derivation(const public_key &key1, const secret_key &key2, key_derivation &derivation);
   bool derive_public_key(const key_derivation &derivation, std::size_t output_index, const public_key &base, public_key &derived_key);
   void derivation_to_scalar(const key_derivation &derivation, size_t output_index, ec_scalar &res);
@@ -237,6 +213,7 @@ namespace crypto {
    * Ed25519: given signature (R, s), (unhashed) message M, pubkey A:
    * Check: sB == R + H(R||A||M)A
    */
+  signature generate_signature(const hash &prefix_hash, const public_key &pub, const secret_key &sec);
   void generate_signature(const hash &prefix_hash, const public_key &pub, const secret_key &sec, signature &sig);
   // See above.
   bool check_signature(const hash &prefix_hash, const public_key &pub, const signature &sig);
@@ -282,34 +259,12 @@ namespace crypto {
       const public_key& pub,
       const signature& sig);
 
-  inline std::ostream &operator <<(std::ostream &o, const crypto::public_key &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  inline std::ostream &operator <<(std::ostream &o, const crypto::secret_key &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  inline std::ostream &operator <<(std::ostream &o, const crypto::key_derivation &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  inline std::ostream &operator <<(std::ostream &o, const crypto::key_image &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  inline std::ostream &operator <<(std::ostream &o, const crypto::signature &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  inline std::ostream &operator <<(std::ostream &o, const crypto::ed25519_public_key &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  inline std::ostream &operator <<(std::ostream &o, const crypto::x25519_public_key &v) {
-    return o << '<' << tools::type_to_hex(v) << '>';
-  }
-  constexpr inline crypto::public_key null_pkey{};
-  const inline crypto::secret_key null_skey{};
 }
 
-CRYPTO_MAKE_HASHABLE(public_key)
-CRYPTO_MAKE_HASHABLE_CONSTANT_TIME(secret_key)
-CRYPTO_MAKE_HASHABLE(key_image)
-CRYPTO_MAKE_HASHABLE(signature)
-CRYPTO_MAKE_HASHABLE(ed25519_public_key)
-CRYPTO_MAKE_HASHABLE(x25519_public_key)
+template <> struct std::hash<crypto::ec_point> : crypto::raw_hasher<crypto::ec_point> {};
+template <> struct std::hash<crypto::public_key> : crypto::raw_hasher<crypto::public_key> {};
+template <> struct std::hash<crypto::key_image> : crypto::raw_hasher<crypto::key_image> {};
+template <> struct std::hash<crypto::signature> : crypto::raw_hasher<crypto::signature> {};
+template <> struct std::hash<crypto::ed25519_public_key> : crypto::raw_hasher<crypto::ed25519_public_key> {};
+template <> struct std::hash<crypto::x25519_public_key> : crypto::raw_hasher<crypto::x25519_public_key> {};
+template <> struct std::hash<crypto::ed25519_signature> : crypto::raw_hasher<crypto::ed25519_signature> {};

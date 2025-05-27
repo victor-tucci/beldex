@@ -41,13 +41,13 @@
     } \
     else \
     { \
-      LOG_ERROR("Field " << #name << " found in JSON, but not " << #jtype); \
+      oxen::log::error(logcat, "Field {} found in JSON, but not {}", #name, #jtype); \
       return false; \
     } \
   } \
   else if (mandatory) \
   { \
-    LOG_ERROR("Field " << #name << " not found in JSON"); \
+    oxen::log::error(logcat, "Field {} not found in JSON", #name); \
     return false; \
   } while(0)
 

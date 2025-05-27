@@ -37,7 +37,6 @@
 #include "randomx.h"
 #include "c_threads.h"
 #include "hash-ops.h"
-#include "epee/misc_log_ex.h"
 
 #define RX_LOGCAT	"randomx"
 
@@ -189,8 +188,8 @@ static void rx_initdata(randomx_cache *rs_cache, const int miners, const uint64_
   rx_dataset_height = seedheight;
 }
 
-void rx_slow_hash(const uint64_t mainheight, const uint64_t seedheight, const char *seedhash, const void *data, size_t length,
-  char *hash, int miners, int is_alt) {
+void rx_slow_hash(const uint64_t mainheight, const uint64_t seedheight, const unsigned char *seedhash, const void *data, size_t length,
+  unsigned char *hash, int miners, int is_alt) {
   uint64_t s_height = rx_seedheight(mainheight);
   int toggle = (s_height & SEEDHASH_EPOCH_BLOCKS) != 0;
   randomx_flags flags = enabled_flags() & ~disabled_flags();
@@ -223,7 +222,6 @@ void rx_slow_hash(const uint64_t mainheight, const uint64_t seedheight, const ch
     if (cache == NULL) {
       cache = randomx_alloc_cache(flags | RANDOMX_FLAG_LARGE_PAGES);
       if (cache == NULL) {
-        mdebug(RX_LOGCAT, "Couldn't use largePages for RandomX cache");
         cache = randomx_alloc_cache(flags);
       }
       if (cache == NULL)
@@ -249,7 +247,6 @@ void rx_slow_hash(const uint64_t mainheight, const uint64_t seedheight, const ch
         if (rx_dataset == NULL) {
           rx_dataset = randomx_alloc_dataset(RANDOMX_FLAG_LARGE_PAGES);
           if (rx_dataset == NULL) {
-            mdebug(RX_LOGCAT, "Couldn't use largePages for RandomX dataset");
             rx_dataset = randomx_alloc_dataset(RANDOMX_FLAG_DEFAULT);
           }
           if (rx_dataset != NULL)
@@ -262,14 +259,12 @@ void rx_slow_hash(const uint64_t mainheight, const uint64_t seedheight, const ch
         miners = 0;
         if (!rx_dataset_nomem) {
           rx_dataset_nomem = 1;
-          mwarning(RX_LOGCAT, "Couldn't allocate RandomX dataset for miner");
         }
       }
       CTHR_MUTEX_UNLOCK(rx_dataset_mutex);
     }
     rx_vm = randomx_create_vm(flags | RANDOMX_FLAG_LARGE_PAGES, rx_sp->rs_cache, rx_dataset);
     if(rx_vm == NULL) { //large pages failed
-      mdebug(RX_LOGCAT, "Couldn't use largePages for RandomX VM");
       rx_vm = randomx_create_vm(flags, rx_sp->rs_cache, rx_dataset);
     }
     if(rx_vm == NULL) {//fallback if everything fails

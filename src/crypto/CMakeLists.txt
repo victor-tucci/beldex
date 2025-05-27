@@ -31,6 +31,7 @@ add_library(cncrypto
   aesb.c
   blake256.c
   chacha.c
+  chacha.cpp
   crypto-ops-data.c
   crypto-ops.c
   crypto.cpp
@@ -40,6 +41,7 @@ add_library(cncrypto
   hash-extra-jh.c
   hash-extra-skein.c
   hash.c
+  hash.cpp
   hmac-keccak.c
   jh.c
   keccak.c
@@ -66,6 +68,7 @@ target_link_libraries(cncrypto
     Boost::thread
     sodium
   PRIVATE
+    logging
     extra)
 
 if (CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL GNU)

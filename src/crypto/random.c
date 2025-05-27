@@ -84,7 +84,7 @@ static void generate_system_random_bytes(size_t n, void *result) {
     } else if (res == 0) {
       errx(EXIT_FAILURE, "read /dev/urandom: end of file");
     } else {
-      result = padd(result, (size_t) res);
+      result = (char *) result + res;
       n -= (size_t) res;
     }
   }
@@ -141,7 +141,7 @@ void generate_random_bytes_not_thread_safe(size_t n, void *result) {
       return;
     } else {
       memcpy(result, &state, HASH_DATA_AREA);
-      result = padd(result, HASH_DATA_AREA);
+      result = (char *) result + HASH_DATA_AREA;
       n -= HASH_DATA_AREA;
     }
   }

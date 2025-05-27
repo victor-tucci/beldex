@@ -32,6 +32,7 @@
 #include <string_view>
 #include <vector>
 #include <fmt/core.h>
+#include "common/format.h"
 #include "fs.h"
 
 namespace tools
@@ -56,7 +57,7 @@ private:
 
   template <typename T, typename... MoreTags>
   static void replace_tags(std::vector<std::string>& margs, std::string_view tag, const T& value, MoreTags&&... more) {
-    replace_tag(margs, tag, fmt::format("{}", value));
+    replace_tag(margs, tag, "{}"_format(value));
     if constexpr (sizeof...(MoreTags) > 0)
       replace_tags(margs, std::forward<MoreTags>(more)...);
   }

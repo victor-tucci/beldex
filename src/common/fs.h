@@ -20,6 +20,7 @@ namespace fs {
 #else
 
 #include <ghc/filesystem.hpp>
+
 namespace fs = ghc::filesystem;
 
 #endif
