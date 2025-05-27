@@ -154,7 +154,6 @@ namespace epee
         return true;
       } catch (const std::out_of_range&) { // ignore silently
       } catch (const std::exception& e) {
-        LOG_ERROR("Failed to deserialize stl container: " << e.what());
       }
       return false;
     }

@@ -51,13 +51,11 @@ namespace epee
       int res = transport.invoke(command, buff_to_send, buff_to_recv);
       if( res <=0 )
       {
-        MERROR("Failed to invoke command " << command << " return code " << res);
         return false;
       }
       serialization::portable_storage stg_ret;
       if(!stg_ret.load_from_binary(buff_to_recv))
       {
-        LOG_ERROR("Failed to load_from_binary on command " << command);
         return false;
       }
       return result_struct.load(stg_ret);
@@ -77,7 +75,6 @@ namespace epee
       int res = transport.notify(command, buff_to_send);
       if(res <=0 )
       {
-        LOG_ERROR("Failed to notify command " << command << " return code " << res);
         return false;
       }
       return true;
@@ -95,13 +92,11 @@ namespace epee
       int res = transport.invoke(command, buff_to_send, buff_to_recv, conn_id);
       if( res <=0 )
       {
-        LOG_PRINT_L1("Failed to invoke command " << command << " return code " << res);
         return false;
       }
       typename serialization::portable_storage stg_ret;
       if(!stg_ret.load_from_binary(buff_to_recv))
       {
-        LOG_ERROR("Failed to load_from_binary on command " << command);
         return false;
       }
       return result_struct.load(stg_ret);
@@ -119,20 +114,17 @@ namespace epee
         t_result result_struct{};
         if( code <=0 )
         {
-          LOG_PRINT_L1("Failed to invoke command " << command << " return code " << code);
           cb(code, std::move(result_struct), context);
           return false;
         }
         serialization::portable_storage stg_ret;
         if(!stg_ret.load_from_binary(buff))
         {
-          LOG_ERROR("Failed to load_from_binary on command " << command);
           cb(LEVIN_ERROR_FORMAT, std::move(result_struct), context);
           return false;
         }
         if (!result_struct.load(stg_ret))
         {
-          LOG_ERROR("Failed to load result struct on command " << command);
           cb(LEVIN_ERROR_FORMAT, std::move(result_struct), context);
           return false;
         }
@@ -141,7 +133,6 @@ namespace epee
       }, inv_timeout);
       if( res <=0 )
       {
-        LOG_PRINT_L1("Failed to invoke command " << command << " return code " << res);
         return false;
       }
       return true;
@@ -159,7 +150,6 @@ namespace epee
       int res = transport.notify(command, epee::strspan<uint8_t>(buff_to_send), conn_id);
       if(res <=0 )
       {
-        MERROR("Failed to notify command " << command << " return code " << res);
         return false;
       }
       return true;
@@ -172,7 +162,6 @@ namespace epee
       serialization::portable_storage strg;
       if(!strg.load_from_binary(in_buff))
       {
-        LOG_ERROR("Failed to load_from_binary in command " << command);
         return -1;
       }
       t_in_type in_struct{};
@@ -180,7 +169,6 @@ namespace epee
 
       if (!in_struct.load(strg))
       {
-        LOG_ERROR("Failed to load in_struct in command " << command);
         return -1;
       }
       int res = cb(command, in_struct, out_struct, context);
@@ -189,7 +177,6 @@ namespace epee
 
       if(!strg_out.store_to_binary(buff_out))
       {
-        LOG_ERROR("Failed to store_to_binary in command" << command);
         return -1;
       }
 
@@ -202,13 +189,11 @@ namespace epee
       serialization::portable_storage strg;
       if(!strg.load_from_binary(in_buff))
       {
-        LOG_ERROR("Failed to load_from_binary in notify " << command);
         return -1;
       }
       t_in_type in_struct{};
       if (!in_struct.load(strg))
       {
-        LOG_ERROR("Failed to load in_struct in notify " << command);
         return -1;
       }
       return cb(command, in_struct, context);
@@ -294,7 +279,6 @@ namespace epee
 
 
 #define END_INVOKE_MAP2() \
-  LOG_ERROR("Unknown command:" << command); \
   return LEVIN_ERROR_CONNECTION_HANDLER_NOT_DEFINED; \
   }
   }

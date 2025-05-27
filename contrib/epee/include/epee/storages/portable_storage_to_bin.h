@@ -32,6 +32,7 @@
 #include "portable_storage_base.h"
 #include <oxenc/endian.h>
 #include <oxenc/variant.h>
+#include <limits>
 
 namespace epee
 {

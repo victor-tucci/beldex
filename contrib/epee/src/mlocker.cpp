@@ -58,7 +58,6 @@ static size_t query_page_size()
   long ret = sysconf(_SC_PAGESIZE);
   if (ret <= 0)
   {
-    MERROR("Failed to determine page size");
     return 0;
   }
   return ret;
@@ -72,8 +71,6 @@ static void do_lock(void *ptr, size_t len)
 {
 #if defined HAVE_MLOCK
   int ret = mlock(ptr, len);
-  if (ret < 0 && !previously_failed.exchange(true))
-    MERROR("Error locking page at " << ptr << ": " << strerror(errno) << ", subsequent mlock errors will be silenced");
 #else
 #warning Missing do_lock implementation
 #endif
@@ -83,11 +80,6 @@ static void do_unlock(void *ptr, size_t len)
 {
 #if defined HAVE_MLOCK
   int ret = munlock(ptr, len);
-  // check whether we previously failed, but don't set it, this is just
-  // to pacify the errors of mlock()ing failed, in which case unlocking
-  // is also not going to work of course
-  if (ret < 0 && !previously_failed.load())
-    MERROR("Error unlocking page at " << ptr << ": " << strerror(errno));
 #else
 #warning Missing implementation of page size detection
 #endif
@@ -215,10 +207,6 @@ namespace epee
 #if defined(HAVE_MLOCK)
     std::map<size_t, unsigned int>::iterator i = map().find(page);
     if (i == map().end())
-    {
-      MERROR("Attempt to unlock unlocked page at " << (void*)(page * page_size));
-    }
-    else
     {
       if (!--i->second)
       {

@@ -5,6 +5,7 @@
 /.cache
 /tags
 log/
+.vscode/settings.json
 
 # vim swap files
 *.swp

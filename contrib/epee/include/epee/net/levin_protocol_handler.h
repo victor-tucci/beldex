@@ -90,7 +90,6 @@ namespace levin
 	{
 		if(!m_config.m_pcommands_handler)
 		{
-			LOG_ERROR_CC(m_conn_context, "Command handler not set!");
 			return false;
 		}
 		m_cach_in_buffer.append((const char*)ptr, cb);
@@ -105,7 +104,6 @@ namespace levin
 				{
 					if(m_cach_in_buffer.size() >= sizeof(uint64_t) && *((uint64_t*)m_cach_in_buffer.data()) != SWAP64LE(LEVIN_SIGNATURE))
 					{
-						LOG_ERROR_CC(m_conn_context, "Signature mismatch on accepted connection");
 						return false;
 					}
 					is_continue = false;
@@ -125,7 +123,6 @@ namespace levin
 #endif
 					if(LEVIN_SIGNATURE != phead.m_signature)
 					{
-						LOG_ERROR_CC(m_conn_context, "Signature mismatch on accepted connection");
 						return false;
 					}
 					m_current_head = phead;
@@ -168,7 +165,6 @@ namespace levin
 				m_state = conn_state_reading_head;
 				break;
 			default:
-				LOG_ERROR_CC(m_conn_context, "Undefined state in levin_server_impl::connection_handler, m_state=" << m_state);
 				return false;
 			}
 		}

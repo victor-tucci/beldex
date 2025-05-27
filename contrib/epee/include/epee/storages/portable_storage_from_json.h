@@ -398,14 +398,8 @@ namespace epee
           run_handler(nullptr, it, buff_json.end(), stg, 0);
           return true;
         }
-        catch(const std::exception& ex)
-        {
-          MERROR("Failed to parse json, what: " << ex.what());
-          return false;
-        }
         catch(...)
         {
-          MERROR("Failed to parse json");
           return false;
         }
       }

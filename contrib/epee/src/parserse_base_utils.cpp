@@ -98,7 +98,6 @@ void match_string2(const char*& star_end_string, const char* buf_end, std::strin
         break;
       default:
         val.push_back(*it);
-        LOG_PRINT_L0("Unknown escape sequence :\"\\" << *it << "\"");
       }
       escape_mode = false;
     }else if(*it == '"')

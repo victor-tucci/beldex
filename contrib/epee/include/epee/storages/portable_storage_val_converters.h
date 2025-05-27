@@ -92,7 +92,6 @@ POP_WARNINGS
 
       void operator()(const std::string& from, uint64_t& to)
       {
-        MTRACE("Converting std::string to uint64_t. Source: " << from);
         const auto* strend = from.data() + from.size();
         if (auto [p, ec] = std::from_chars(from.data(), strend, to); ec == std::errc{} && p == strend)
           return; // Good: successfully consumed the whole string.
