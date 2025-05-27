@@ -26,6 +26,7 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "epee/misc_log_ex.h"
+#include "logging/beldex_logger.h"
 #include "common/threadpool.h"
 
 #include "cryptonote_config.h"
@@ -36,6 +37,7 @@ static thread_local bool is_leaf = false;
 
 namespace tools
 {
+
 threadpool::threadpool(unsigned int max_threads) : running(true), active(0) {
   create(max_threads);
 }
@@ -112,7 +114,7 @@ threadpool::waiter::~waiter()
   {
     std::unique_lock lock{mt};
     if (num)
-      MERROR("wait should have been called before waiter dtor - waiting now");
+      log::error(globallogcat, "wait should have been called before waiter dtor - waiting now");
   }
   catch (...) { /* ignore */ }
   try

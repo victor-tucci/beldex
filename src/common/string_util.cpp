@@ -1,7 +1,6 @@
 #include "string_util.h"
+#include <fmt/core.h>
 #include <cassert>
-#include <iomanip>
-#include <sstream>
 
 namespace tools {
 
@@ -80,65 +79,39 @@ std::string lowercase_ascii_string(std::string_view src)
 }
 
 std::string friendly_duration(std::chrono::nanoseconds dur) {
-  std::ostringstream os;
+  std::string friendly;
+  auto append = std::back_inserter(friendly);
   bool some = false;
   if (dur >= 24h) {
-    os << dur / 24h << 'd';
+    fmt::format_to(append, "{}d", dur / 24h);
     dur %= 24h;
     some = true;
   }
   if (dur >= 1h || some) {
-    os << dur / 1h << 'h';
+    fmt::format_to(append, "{}h", dur / 1h);
     dur %= 1h;
     some = true;
   }
   if (dur >= 1min || some) {
-    os << dur / 1min << 'm';
+    fmt::format_to(append, "{}m", dur / 1min);
     dur %= 1min;
     some = true;
   }
   if (some || dur == 0s) {
     // If we have >= minutes or its exactly 0 seconds then don't bother with fractional seconds
-    os << dur / 1s << 's';
+    fmt::format_to(append, "{}s", dur / 1s);
   } else {
     double seconds = std::chrono::duration<double>(dur).count();
-    os.precision(3);
     if (dur >= 1s)
-      os << seconds << "s";
+      fmt::format_to(append, "{:.3f}s", seconds);
     else if (dur >= 1ms)
-      os << seconds * 1000 << "ms";
+      fmt::format_to(append, "{:.3f}ms", seconds * 1000);
     else if (dur >= 1us)
-      os << seconds * 1'000'000 << u8"µs";
+      fmt::format_to(append, "{:.3f}µs", seconds * 1'000'000);
     else
-      os << seconds * 1'000'000'000 << "ns";
+      fmt::format_to(append, "{:.0f}ns", seconds * 1'000'000'000);
   }
-  return os.str();
-}
-
-std::string short_duration(std::chrono::duration<double> dur) {
-    std::ostringstream os;
-    os << std::fixed << std::setprecision(1);
-    if (dur >= 36h)
-        os << dur / 24h;
-    else if (dur >= 90min)
-        os << dur / 1h;
-    else if (dur >= 90s)
-        os << dur / 1min;
-    else if (dur >= 1s)
-        os << dur / 1s;
-    else if (dur >= 100ms)
-        os << std::setprecision(0) << dur / 1ms;
-    else if (dur >= 1ms)
-        os << dur / 1ms;
-    else if (dur >= 100us)
-        os << std::setprecision(0) << dur / 1us;
-    else if (dur >= 1us)
-        os << dur / 1us;
-    else if (dur >= 1ns)
-        os << std::setprecision(0) << dur / 1ns;
-    else
-        os << "0s";
-    return os.str();
+  return friendly;
 }
 
 }

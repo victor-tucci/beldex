@@ -37,17 +37,15 @@
 #endif
 
 #include "epee/misc_log_ex.h"
+#include "logging/beldex_logger.h"
 #include "util.h"
 #include "spawn.h"
 #include "beldex.h"
 #include "string_util.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "spawn"
-
 namespace tools
 {
-
+  static auto logcat = log::Cat("spawn");
 #ifndef _WIN32
 static void closefrom(int fd)
 {
@@ -83,7 +81,7 @@ int spawn(const fs::path& filename, const std::vector<std::string>& args, bool w
   // wchar_t* but out input is utf-8).  Shame on you for this garbage API, Windows.
   if (!CreateProcessA(filename.string().c_str(), commandLine, nullptr, nullptr, false, 0, nullptr, nullptr, &si, &pi))
   {
-    MERROR("CreateProcess failed. Error code " << GetLastError());
+    log::error(logcat, "CreateProcess failed. Error code {}", GetLastError());
     return -1;
   }
 
@@ -100,18 +98,18 @@ int spawn(const fs::path& filename, const std::vector<std::string>& args, bool w
   DWORD result = WaitForSingleObject(pi.hProcess, INFINITE);
   if (result != WAIT_OBJECT_0)
   {
-    MERROR("WaitForSingleObject failed. Result " << result << ", error code " << GetLastError());
+    log::error(logcat, "WaitForSingleObject failed. Result {}, error code {}", result, GetLastError());
     return -1;
   }
 
   DWORD exitCode;
   if (!GetExitCodeProcess(pi.hProcess, &exitCode))
   {
-    MERROR("GetExitCodeProcess failed. Error code " << GetLastError());
+    log::error(logcat, "GetExitCodeProcess failed. Error code {}", GetLastError());
     return -1;
   }
 
-  MINFO("Child exited with " << exitCode);
+  log::info(logcat, "Child exited with {}", exitCode);
   return static_cast<int>(exitCode);
 #else
   std::vector<char*> argv(args.size() + 1);
@@ -122,7 +120,7 @@ int spawn(const fs::path& filename, const std::vector<std::string>& args, bool w
   pid_t pid = fork();
   if (pid < 0)
   {
-    MERROR("Error forking: " << strerror(errno));
+    log::error(logcat, "Error forking: {}", strerror(errno));
     return -1;
   }
 
@@ -133,7 +131,7 @@ int spawn(const fs::path& filename, const std::vector<std::string>& args, bool w
     close(0);
     char *envp[] = {NULL};
     execve(filename.c_str(), argv.data(), envp);
-    MERROR("Failed to execve: " << strerror(errno));
+    log::error(logcat, "Failed to execve: {}", strerror(errno));
     return -1;
   }
 
@@ -151,22 +149,22 @@ int spawn(const fs::path& filename, const std::vector<std::string>& args, bool w
       int wstatus = 0;
       pid_t w = waitpid(pid, &wstatus, WUNTRACED | WCONTINUED);
       if (w  < 0) {
-        MERROR("Error waiting for child: " << strerror(errno));
+        log::error(logcat, "Error waiting for child: {}", strerror(errno));
         return -1;
       }
       if (WIFEXITED(wstatus))
       {
-        MINFO("Child exited with " << WEXITSTATUS(wstatus));
+        log::info(logcat, "Child exited with {}", WEXITSTATUS(wstatus));
         return WEXITSTATUS(wstatus);
       }
       if (WIFSIGNALED(wstatus))
       {
-        MINFO("Child killed by " << WEXITSTATUS(wstatus));
+        log::info(logcat, "Child killed by {}", WEXITSTATUS(wstatus));
         return WEXITSTATUS(wstatus);
       }
     }
   }
-  MERROR("Secret passage found");
+  log::error(logcat, "Secret passage found");
   return -1;
 #endif
 }

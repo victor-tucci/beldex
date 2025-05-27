@@ -1,4 +1,5 @@
 #include "scoped_message_writer.h"
+#include "common/format.h"
 
 #define BELDEX_INTEGRATION_TEST_HOOKS_IMPLEMENTATION
 #include "common/beldex_integration_test_hooks.h"
@@ -10,29 +11,33 @@
 // just the header because of the One Definition Rule.
 //   - doyle 2018-11-08
 
-tools::scoped_message_writer::~scoped_message_writer()
+namespace tools {
+
+  static auto logcat = log::Cat("msgwriter");
+  
+  scoped_message_writer& scoped_message_writer::flush()
 {
-  if (m_flush)
+  if (!m_content.empty())
   {
-    m_flush = false;
+    logcat->log(m_log_level, "{}{}", m_prefix, m_content);
 
 #if defined(BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
     std::cout << m_oss.str() << "\n";
     return;
 #endif
 
-    MCLOG_FILE(m_log_level, "msgwriter", m_oss.str());
-    if (epee::console_color_default == m_color)
-    {
-      std::cout << m_oss.str();
+    if (m_color) {
+      rdln::suspend_readline pause_readline;
+      fmt::print(fg(*m_color), "{}{}\n", m_prefix, m_content);
     }
     else
-    {
-      rdln::suspend_readline pause_readline;
-      set_console_color(m_color, m_bright);
-      std::cout << m_oss.str();
-      epee::reset_console_color();
-    }
-    std::cout << std::endl;
+      fmt::print("{}{}\n", m_prefix, m_content);
+    m_content.clear();
   }
+  return *this;
+}
+scoped_message_writer::~scoped_message_writer()
+{
+  flush();
+}
 }

@@ -10,7 +10,7 @@ namespace tools {
   bool sha256sum_str(std::string_view data, crypto::hash &hash)
   { 
     crypto_hash_sha256(
-             reinterpret_cast<unsigned char*>(hash.data),
+             hash.data(),
              reinterpret_cast<const unsigned char*>(data.data()),
              data.size());
     return true;
@@ -41,7 +41,7 @@ namespace tools {
       size_left -= read_size;
     }
     f.close();
-    crypto_hash_sha256_final( &st,reinterpret_cast<unsigned char*>(hash.data));
+    crypto_hash_sha256_final(&st, hash.data());
     return true;
   }
 

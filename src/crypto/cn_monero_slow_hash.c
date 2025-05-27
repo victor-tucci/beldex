@@ -31,19 +31,21 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
 
 #include "epee/int-util.h"
 #include "hash-ops.h"
-#include "oaes_lib.h"
+#include "oaes_lib_expand.h"
 #include "variant2_int_sqrt.h"
 
 #define MEMORY         (1 << 21) // 2MB scratchpad
 #define ITER           (1 << 20)
 #define AES_BLOCK_SIZE  16
 #define AES_KEY_SIZE    32
+#define AES_EXPANDED_KEY_SIZE 240
 #define INIT_SIZE_BLK   8
 #define INIT_SIZE_BYTE (INIT_SIZE_BLK * AES_BLOCK_SIZE)
 
@@ -373,7 +375,7 @@ STATIC INLINE int force_software_aes(void)
   if (use != -1)
     return use;
 
-  const char *env = getenv("BELDEX_USE_SOFTWARE_AES");
+  const char *env = getenv("OXEN_USE_SOFTWARE_AES");
   if (!env) {
     use = 0;
   }
@@ -693,9 +695,9 @@ void monero_hash_free_state(void)
  * @param length the length in bytes of the data
  * @param hash a pointer to a buffer in which the final 256 bit hash will be stored
  */
-void cn_monero_hash(const void *data, size_t length, char *hash, int variant, int prehashed)
+void cn_monero_hash(const void *data, size_t length, unsigned char *hash, int variant, int prehashed)
 {
-    RDATA_ALIGN16 uint8_t expandedKey[240];  /* These buffers are aligned to use later with SSE functions */
+    RDATA_ALIGN16 uint8_t expandedKey[AES_EXPANDED_KEY_SIZE];  /* These buffers are aligned to use later with SSE functions */
 
     uint8_t text[INIT_SIZE_BYTE];
     RDATA_ALIGN16 uint64_t a[2];
@@ -707,7 +709,6 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
 
     size_t i, j;
     uint64_t *p = NULL;
-    oaes_ctx *aes_ctx = NULL;
     int useAes = !force_software_aes() && check_aes_hw();
 
     static void (*const extra_hashes[4])(const void *, size_t, char *) =
@@ -745,12 +746,11 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
     }
     else
     {
-        aes_ctx = (oaes_ctx *) oaes_alloc();
-        oaes_key_import_data(aes_ctx, state.hs.b, AES_KEY_SIZE);
+        oaes_expand_key_256(state.hs.b, expandedKey);
         for(i = 0; i < MEMORY / INIT_SIZE_BYTE; i++)
         {
             for(j = 0; j < INIT_SIZE_BLK; j++)
-                aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+                aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], expandedKey);
 
             memcpy(&hp_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
         }
@@ -805,16 +805,15 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
     }
     else
     {
-        oaes_key_import_data(aes_ctx, &state.hs.b[32], AES_KEY_SIZE);
+        oaes_expand_key_256(&state.hs.b[32], expandedKey);
         for(i = 0; i < MEMORY / INIT_SIZE_BYTE; i++)
         {
             for(j = 0; j < INIT_SIZE_BLK; j++)
             {
                 xor_blocks(&text[j * AES_BLOCK_SIZE], &hp_state[i * INIT_SIZE_BYTE + j * AES_BLOCK_SIZE]);
-                aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+                aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], expandedKey);
             }
         }
-        oaes_free((OAES_CTX **) &aes_ctx);
     }
 
     /* CryptoNight Step 5:  Apply Keccak to the state again, and then
@@ -1062,7 +1061,7 @@ STATIC INLINE void aligned_free(void *ptr)
 }
 #endif /* FORCE_USE_HEAP */
 
-void cn_monero_hash(const void *data, size_t length, char *hash, int variant, int prehashed)
+void cn_monero_hash(const void *data, size_t length, unsigned char *hash, int variant, int prehashed)
 {
     RDATA_ALIGN16 uint8_t expandedKey[240];
 
@@ -1277,7 +1276,7 @@ STATIC INLINE void xor_blocks(uint8_t* a, const uint8_t* b)
   U64(a)[1] ^= U64(b)[1];
 }
 
-void cn_monero_hash(const void *data, size_t length, char *hash, int variant, int prehashed)
+void cn_monero_hash(const void *data, size_t length, unsigned char *hash, int variant, int prehashed)
 {
     uint8_t text[INIT_SIZE_BYTE];
     uint8_t a[AES_BLOCK_SIZE];
@@ -1286,13 +1285,12 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
     uint8_t c1[AES_BLOCK_SIZE];
     uint8_t d[AES_BLOCK_SIZE];
     uint8_t aes_key[AES_KEY_SIZE];
-    RDATA_ALIGN16 uint8_t expandedKey[256];
+    RDATA_ALIGN16 uint8_t expandedKey[AES_EXPANDED_KEY_SIZE];
 
     union cn_monero_hash_state state;
 
     size_t i, j;
     uint8_t *p = NULL;
-    oaes_ctx *aes_ctx;
     static void (*const extra_hashes[4])(const void *, size_t, char *) =
     {
         hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein
@@ -1311,14 +1309,11 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
     }
     memcpy(text, state.init, INIT_SIZE_BYTE);
 
-    aes_ctx = (oaes_ctx *) oaes_alloc();
-    oaes_key_import_data(aes_ctx, state.hs.b, AES_KEY_SIZE);
-
     VARIANT1_INIT64();
     VARIANT2_INIT64();
 
     // use aligned data
-    memcpy(expandedKey, aes_ctx->key->exp_data, aes_ctx->key->exp_data_len);
+    oaes_expand_key_256(state.hs.b, expandedKey);
     for(i = 0; i < MEMORY / INIT_SIZE_BYTE; i++)
     {
         for(j = 0; j < INIT_SIZE_BLK; j++)
@@ -1368,8 +1363,7 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
     }
 
     memcpy(text, state.init, INIT_SIZE_BYTE);
-    oaes_key_import_data(aes_ctx, &state.hs.b[32], AES_KEY_SIZE);
-    memcpy(expandedKey, aes_ctx->key->exp_data, aes_ctx->key->exp_data_len);
+    oaes_expand_key_256(&state.hs.b[32], expandedKey);
     for(i = 0; i < MEMORY / INIT_SIZE_BYTE; i++)
     {
         for(j = 0; j < INIT_SIZE_BLK; j++)
@@ -1379,7 +1373,6 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
         }
     }
 
-    oaes_free((OAES_CTX **) &aes_ctx);
     memcpy(state.init, text, INIT_SIZE_BYTE);
     hash_permutation(&state.hs);
     extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
@@ -1475,7 +1468,7 @@ union cn_monero_hash_state {
 };
 #pragma pack(pop)
 
-void cn_monero_hash(const void *data, size_t length, char *hash, int variant, int prehashed) {
+void cn_monero_hash(const void *data, size_t length, unsigned char *hash, int variant, int prehashed) {
 #ifndef FORCE_USE_HEAP
   uint8_t long_state[MEMORY];
 #else
@@ -1491,7 +1484,7 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
   uint8_t d[AES_BLOCK_SIZE];
   size_t i, j;
   uint8_t aes_key[AES_KEY_SIZE];
-  oaes_ctx *aes_ctx;
+  uint8_t expandedKey[AES_EXPANDED_KEY_SIZE];
 
   if (prehashed) {
     memcpy(&state.hs, data, length);
@@ -1500,15 +1493,14 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
   }
   memcpy(text, state.init, INIT_SIZE_BYTE);
   memcpy(aes_key, state.hs.b, AES_KEY_SIZE);
-  aes_ctx = (oaes_ctx *) oaes_alloc();
 
   VARIANT1_PORTABLE_INIT();
   VARIANT2_PORTABLE_INIT();
 
-  oaes_key_import_data(aes_ctx, aes_key, AES_KEY_SIZE);
+  oaes_expand_key_256(aes_key, expandedKey);
   for (i = 0; i < MEMORY / INIT_SIZE_BYTE; i++) {
     for (j = 0; j < INIT_SIZE_BLK; j++) {
-      aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+      aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], expandedKey);
     }
     memcpy(&long_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
   }
@@ -1554,18 +1546,17 @@ void cn_monero_hash(const void *data, size_t length, char *hash, int variant, in
   }
 
   memcpy(text, state.init, INIT_SIZE_BYTE);
-  oaes_key_import_data(aes_ctx, &state.hs.b[32], AES_KEY_SIZE);
+  oaes_expand_key_256(&state.hs.b[32], expandedKey);
   for (i = 0; i < MEMORY / INIT_SIZE_BYTE; i++) {
     for (j = 0; j < INIT_SIZE_BLK; j++) {
       xor_blocks(&text[j * AES_BLOCK_SIZE], &long_state[i * INIT_SIZE_BYTE + j * AES_BLOCK_SIZE]);
-      aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+      aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], expandedKey);
     }
   }
   memcpy(state.init, text, INIT_SIZE_BYTE);
   hash_permutation(&state.hs);
   /*memcpy(hash, &state, 32);*/
   extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
-  oaes_free((OAES_CTX **) &aes_ctx);
 
 #ifdef FORCE_USE_HEAP
   free(long_state);

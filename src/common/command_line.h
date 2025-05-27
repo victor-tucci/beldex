@@ -31,19 +31,21 @@
 #pragma once
 
 #include <functional>
-#include <sstream>
 #include <array>
 #include <type_traits>
 
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
-#include "epee/misc_log_ex.h"
 #include "common/string_util.h"
 #include "common/i18n.h"
+#include "common/format.h"
+#include "logging/beldex_logger.h"
 
 namespace command_line
 {
+  namespace log = oxen::log;
+
   inline const char* tr(const char* str) { return i18n_translate(str, "command_line"); }
 
   /// @return True if `str` is (case-insensitively) y, yes, a potentially translated yes, or any of
@@ -137,24 +139,12 @@ namespace command_line
 
   namespace {
     template <typename T>
-    struct arg_stringify {
-      const T& v;
-      arg_stringify(const T& val) : v{val} {}
-    };
-    template <typename T>
-    std::ostream& operator<<(std::ostream& o, const arg_stringify<T>& a) {
-      return o << a.v;
+    std::string arg_stringify(const T& a) {
+      return "{}"_format(a);
     }
     template <typename T>
-    std::ostream& operator<<(std::ostream& o, const arg_stringify<std::vector<T>>& a) {
-      o << '{';
-      bool first = true;
-      for (auto& x : a.v) {
-        if (first) first = false;
-        else o << ",";
-        o << x;
-      }
-      return o << '}';
+    std::string arg_stringify(const std::vector<T>& v) {
+      return "{{{}}}"_format(fmt::join(v, ","));
     }
   }
 
@@ -163,11 +153,11 @@ namespace command_line
   {
     auto semantic = boost::program_options::value<T>();
     if (!arg.not_use_default) {
-      std::ostringstream format;
-      format << arg_stringify{arg.depf(false, true, arg.default_value)} << ", "
-             << arg_stringify{arg.depf(true, true, arg.default_value)} << " if '"
-             << arg.ref.name << "'";
-      semantic->default_value(arg.depf(arg.ref.default_value, true, arg.default_value), format.str());
+      auto default_display = "{}, {} if '{}'"_format(
+        arg_stringify(arg.depf(false, true, arg.default_value)),
+        arg_stringify(arg.depf(true, true, arg.default_value)),
+        arg.ref.name);
+      semantic->default_value(arg.depf(arg.ref.default_value, true, arg.default_value), default_display);   
     }
     return semantic;
   }
@@ -179,17 +169,19 @@ namespace command_line
     if (!arg.not_use_default) {
       std::array<bool, NUM_DEPS> depval;
       depval.fill(false);
-      std::ostringstream format;
-      format << arg_stringify{arg.depf(depval, true, arg.default_value)};
+      auto default_display = arg_stringify(arg.depf(depval, true, arg.default_value));
       for (size_t i = 0; i < depval.size(); ++i)
       {
         depval.fill(false);
         depval[i] = true;
-        format << ", " << arg_stringify{arg.depf(depval, true, arg.default_value)} << " if '" << arg.ref[i]->name << "'";
+        fmt::format_to(std::back_inserter(default_display),
+        ", {} if '{}'",
+        arg_stringify(arg.depf(depval, true, arg.default_value)),
+        arg.ref[i]->name);
       }
       for (size_t i = 0; i < depval.size(); ++i)
         depval[i] = arg.ref[i]->default_value;
-      semantic->default_value(arg.depf(depval, true, arg.default_value), format.str());
+      semantic->default_value(arg.depf(depval, true, arg.default_value), default_display);
     }
     return semantic;
   }
@@ -216,7 +208,8 @@ namespace command_line
   {
     if (0 != description.find_nothrow(arg.name, false))
     {
-      CHECK_AND_ASSERT_MES(!unique, void(), "Argument already exists: " << arg.name);
+      if (!unique)
+        log::error(globallogcat, "Argument already exists: {}", arg.name);      
       return;
     }
 
@@ -228,7 +221,8 @@ namespace command_line
   {
     if (0 != description.find_nothrow(arg.name, false))
     {
-      CHECK_AND_ASSERT_MES(!unique, void(), "Argument already exists: " << arg.name);
+      if (!unique)
+        log::error(globallogcat, "Argument already exists: {}", arg.name);      
       return;
     }
 
@@ -240,7 +234,8 @@ namespace command_line
   {
     if (0 != description.find_nothrow(arg.name, false))
     {
-      CHECK_AND_ASSERT_MES(!unique, void(), "Argument already exists: " << arg.name);
+      if (!unique)
+        log::error(globallogcat, "Argument already exists: {}", arg.name);      
       return;
     }
 
@@ -260,26 +255,7 @@ namespace command_line
     return parser.run();
   }
 
-  template<typename F>
-  bool handle_error_helper(const boost::program_options::options_description& desc, F parser)
-  {
-    try
-    {
-      return parser();
-    }
-    catch (const std::exception& e)
-    {
-      std::cerr << "Failed to parse arguments: " << e.what() << std::endl;
-      std::cerr << desc << std::endl;
-      return false;
-    }
-    catch (...)
-    {
-      std::cerr << "Failed to parse arguments: unknown exception" << std::endl;
-      std::cerr << desc << std::endl;
-      return false;
-    }
-  }
+  bool handle_error_helper(const boost::program_options::options_description& desc, std::function<bool()> parser);
 
   template<typename T, bool required, bool dependent, int NUM_DEPS>
   std::enable_if_t<!std::is_same_v<T, bool>, bool> has_arg(const boost::program_options::variables_map& vm, const arg_descriptor<T, required, dependent, NUM_DEPS>& arg)

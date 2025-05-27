@@ -37,9 +37,9 @@
 #include <utility>
 #include <algorithm>
 #include "file.h"
+#include <logging/beldex_logger.h>
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "i18n"
+static auto logcat = oxen::log::Cat("i18n");
 
 #define MAX_LANGUAGE_SIZE 16
 

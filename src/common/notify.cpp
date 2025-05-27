@@ -28,14 +28,14 @@
 
 #include "string_util.h"
 #include "epee/misc_log_ex.h"
+#include "logging/beldex_logger.h"
 #include "spawn.h"
 #include "notify.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "notify"
-
 namespace tools
 {
+
+  static auto logcat = log::Cat("notify");
 
 /*
   TODO: 

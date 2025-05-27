@@ -89,9 +89,23 @@ namespace tools
       std::memcpy(dest, &t, sizeof(T));
       dest += sizeof(T);
     }
+    struct crypto_bytes_base_helper {
+        template <size_t S>
+        static std::true_type check(crypto::bytes<S, true>*);
+        static std::false_type check(...);
+    };
+    template <typename T>
+    constexpr bool is_crypto_bytes_derived = decltype(crypto_bytes_base_helper::check((T*) nullptr))::value;
+
+    // Copy the data out of a crypto::bytes<N, true>-derived type.
+    template <typename T, std::enable_if_t<is_crypto_bytes_derived<T>, int> = 0>
+    void memcpy_one(char*& dest, const T& t) {
+      std::memcpy(dest, t.data(), t.size());
+      dest += t.size();
+    }
 
     // Copy a class byte-for-byte (but only if it is standard layout and has byte alignment)
-    template <typename T, std::enable_if_t<std::is_class<T>::value, int> = 0>
+    template <typename T, std::enable_if_t<std::is_class<T>::value && !is_crypto_bytes_derived<T>, int> = 0>
     void memcpy_one(char*& dest, const T& t) {
       // We don't *actually* require byte alignment here but it's quite possibly an error (i.e.
       // passing in a type containing integer members) so disallow it.
@@ -106,6 +120,12 @@ namespace tools
       for (const T &t : arr)
         memcpy_one(dest, t);
     }
+    template <typename T, typename = void>
+    constexpr size_t memcpy_size = sizeof(T);
+
+    template <typename T>
+    inline constexpr size_t memcpy_size<T, std::enable_if_t<is_crypto_bytes_derived<T>>>
+        = T::size();
   }
 
   // Does a memcpy of one or more values into a char array; for any given values that are basic
@@ -118,7 +138,7 @@ namespace tools
   // you have a contained type with a larger alignment, which is probably an integer.
   template <typename... T>
   auto memcpy_le(const T &...t) {
-    std::array<char, (0 + ... + sizeof(T))> r;
+    std::array<char, (0 + ... + detail::memcpy_size<T>)> r;
     char* dest = r.data();
     (..., detail::memcpy_one(dest, t));
     return r;
