@@ -1,4 +1,5 @@
 #include "epee/net/net_utils_base.h"
+#include "logging/beldex_logger.h"
 #include "epee/storages/portable_storage.h"
 #include "tor_address.h"
 #include "i2p_address.h"
@@ -11,6 +12,8 @@
 // TODO: epee needs to die.
 
 namespace epee { namespace net_utils {
+
+static auto logcat = oxen::log::Cat("global");
 
 KV_SERIALIZE_MAP_CODE_BEGIN(network_address)
   std::uint8_t type = static_cast<std::uint8_t>(is_store ? this_ref.get_type_id() : address_type::invalid);
@@ -28,7 +31,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(network_address)
     case address_type::i2p:
       return this_ref.template serialize_addr<net::i2p_address>(stg, parent_section);
     default:
-      MERROR("Unsupported network address type: " << (unsigned)type);
+      oxen::log::error(logcat, "Unsupported network address type: {}", (unsigned)type);
       return false;
   }
 KV_SERIALIZE_MAP_CODE_END()

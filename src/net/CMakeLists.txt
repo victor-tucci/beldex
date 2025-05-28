@@ -39,4 +39,5 @@ target_link_libraries(net PRIVATE
   common
   epee
   extra
+  logging
   )
