@@ -34,5 +34,5 @@ target_link_libraries(mnemonics
   PRIVATE
     cncrypto
     epee
-    easylogging
+    logging
     extra)

@@ -66,6 +66,7 @@ target_link_libraries(cncrypto
     epee
     randomx
     Boost::thread
+    oxen::logging
     sodium
   PRIVATE
     logging

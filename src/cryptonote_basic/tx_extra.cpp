@@ -1,4 +1,5 @@
 #include "tx_extra.h"
+#include "cryptonote_basic/cryptonote_basic_impl.h"
 
 namespace cryptonote {
 
@@ -155,4 +156,27 @@ std::vector<std::string> coded_reasons(uint16_t decomm_reason) {
   return results;
 }
 
+}
+
+namespace bns {
+
+  std::string generic_owner::to_string(cryptonote::network_type nettype) const
+  {
+    if (type == generic_owner_sig_type::monero)
+      return cryptonote::get_account_address_as_str(nettype, wallet.is_subaddress, wallet.address);
+    else
+      return tools::type_to_hex(ed25519);
+  }
+  
+  bool generic_owner::operator==(const generic_owner& other) const
+  {
+    if (type != other.type)
+      return false;
+  
+    if (type == generic_owner_sig_type::monero)
+      return wallet.is_subaddress == other.wallet.is_subaddress && wallet.address == other.wallet.address;
+    else
+      return ed25519 == other.ed25519;
+  }
+  
 }

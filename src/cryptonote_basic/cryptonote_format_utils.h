@@ -254,10 +254,9 @@ namespace cryptonote
 
   bool is_valid_address(const std::string address, cryptonote::network_type nettype, bool allow_subaddress = true, bool allow_integrated = true);
 
-  inline std::ostream &operator<<(std::ostream &stream, transaction const &tx)
+  inline std::string to_string(const transaction& tx)
   {
-    stream << "tx={version=" << tx.version << ", type=" << tx.type << ", hash=" << get_transaction_hash(tx) << "}";
-    return stream;
+    return "tx={{version={}, type={}, hash={}}}"_format(tx.version, tx.type, get_transaction_hash(tx));
   }
 
   //---------------------------------------------------------------
@@ -279,7 +278,7 @@ namespace cryptonote
       blob = serialization::dump_binary(const_cast<std::remove_const_t<T>&>(val));
       return true;
     } catch (const std::exception& e) {
-      LOG_ERROR("Serialization of " << tools::type_name(typeid(T)) << " failed: " << e.what());
+      log::error(globallogcat, "Serialization of {} failed: {}", tools::type_name(typeid(T)), e.what());
       // return false;
       throw;
     }
@@ -323,7 +322,7 @@ namespace cryptonote
     try {
       return serialization::dump_json(obj, indent ? 2 : -1);
     } catch (const std::exception& e) {
-      LOG_ERROR("obj_to_json_str failed: serialization failed: " << e.what());
+      log::error(globallogcat, "obj_to_json_str failed: serialization failed: {}", e.what());
     }
     return ""s;
   }

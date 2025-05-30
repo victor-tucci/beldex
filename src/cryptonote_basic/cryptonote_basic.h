@@ -44,6 +44,9 @@
 #include "ringct/rctTypes.h"
 #include "device/device.hpp"
 #include "txtypes.h"
+#include "logging/beldex_logger.h"
+#include "common/format.h"
+#include <fmt/format.h>
 
 namespace master_nodes
 {
@@ -172,9 +175,6 @@ namespace cryptonote
   {
 
   public:
-    static char const* version_to_string(txversion v);
-    static char const* type_to_string(txtype type);
-
     static constexpr txversion get_min_version_for_hf(hf hf_version);
     static           txversion get_max_version_for_hf(hf hf_version);
     static constexpr txtype    get_max_type_for_hf   (hf hf_version);
@@ -223,7 +223,7 @@ namespace cryptonote
       {
         if (out_index >= output_unlock_times.size())
         {
-          LOG_ERROR("Tried to get unlock time of a v3 transaction with missing output unlock time");
+          log::error(globallogcat, "Tried to get unlock time of a v3 transaction with missing output unlock time");
           return unlock_time;
         }
         return output_unlock_times[out_index];
@@ -542,38 +542,38 @@ namespace cryptonote
     return result;
   }
 
-  inline const char* transaction_prefix::version_to_string(txversion v)
-  {
-    switch(v)
-    {
-      case txversion::v1:                         return "1";
-      case txversion::v2_ringct:                  return "2_ringct";
-      case txversion::v3_per_output_unlock_times: return "3_per_output_unlock_times";
-      case txversion::v4_tx_types:                return "4_tx_types";
-      default: assert(false);                     return "xx_unhandled_version";
-    }
-  }
+  // inline const char* transaction_prefix::version_to_string(txversion v)
+  // {
+  //   switch(v)
+  //   {
+  //     case txversion::v1:                         return "1";
+  //     case txversion::v2_ringct:                  return "2_ringct";
+  //     case txversion::v3_per_output_unlock_times: return "3_per_output_unlock_times";
+  //     case txversion::v4_tx_types:                return "4_tx_types";
+  //     default: assert(false);                     return "xx_unhandled_version";
+  //   }
+  // }
 
-  inline const char* transaction_prefix::type_to_string(txtype type)
-  {
-    switch(type)
-    {
-      case txtype::standard:                return "standard";
-      case txtype::state_change:            return "state_change";
-      case txtype::key_image_unlock:        return "key_image_unlock";
-      case txtype::stake:                   return "stake";
-      case txtype::beldex_name_system:      return "beldex_name_system";
-      case txtype::coin_burn:               return "coin_burn";
-      default: assert(false);               return "xx_unhandled_type";
-    }
-  }
+  // inline const char* transaction_prefix::type_to_string(txtype type)
+  // {
+  //   switch(type)
+  //   {
+  //     case txtype::standard:                return "standard";
+  //     case txtype::state_change:            return "state_change";
+  //     case txtype::key_image_unlock:        return "key_image_unlock";
+  //     case txtype::stake:                   return "stake";
+  //     case txtype::beldex_name_system:      return "beldex_name_system";
+  //     case txtype::coin_burn:               return "coin_burn";
+  //     default: assert(false);               return "xx_unhandled_type";
+  //   }
+  // }
 
-  inline std::ostream& operator<<(std::ostream& os, txtype t) {
-    return os << transaction::type_to_string(t);
-  }
-  inline std::ostream& operator<<(std::ostream& os, txversion v) {
-    return os << transaction::version_to_string(v);
-  }
+  // inline std::ostream& operator<<(std::ostream& os, txtype t) {
+  //   return os << transaction::type_to_string(t);
+  // }
+  // inline std::ostream& operator<<(std::ostream& os, txversion v) {
+  //   return os << transaction::version_to_string(v);
+  // }
 
   inline std::ostream& operator<<(std::ostream& os, hf v)  = delete;/*{
     return os << "HF" << static_cast<int>(v);
@@ -616,3 +616,5 @@ VARIANT_TAG(cryptonote::txout_to_scripthash, "scripthash", 0x1);
 VARIANT_TAG(cryptonote::txout_to_key, "key", 0x2);
 VARIANT_TAG(cryptonote::transaction, "tx", 0xcc);
 VARIANT_TAG(cryptonote::block, "block", 0xbb);
+
+template <> inline constexpr bool formattable::via_to_string<cryptonote::transaction> = true;

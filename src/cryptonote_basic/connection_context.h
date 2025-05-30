@@ -35,6 +35,8 @@
 #include "epee/net/net_utils_base.h"
 #include "epee/copyable_atomic.h"
 #include "crypto/hash.h"
+#include "fmt/format.h"
+#include "common/format.h"
 
 using namespace std::literals;
 namespace cryptonote
@@ -60,7 +62,7 @@ namespace cryptonote
     uint64_t m_last_response_height{0};
     std::optional<std::chrono::steady_clock::time_point> m_last_request_time;
     epee::copyable_atomic m_callback_request_count{0}; //in debug purpose: problem with double callback rise
-    crypto::hash m_last_known_hash{crypto::null_hash};
+    crypto::hash m_last_known_hash{};
     uint32_t m_pruning_seed{0};
     bool m_anchor{false};
     //size_t m_score{0};  TODO: add score calculations
@@ -91,3 +93,11 @@ namespace cryptonote
   }
 
 }
+template <typename T, typename Char>
+struct fmt::formatter<T, Char, std::enable_if_t<std::is_base_of_v<epee::net_utils::connection_context_base, T>>>
+    : fmt::formatter<std::string> {
+  auto format(epee::net_utils::connection_context_base connection_context, format_context& ctx) {
+    return formatter<std::string>::format(
+      "[{}]"_format(epee::net_utils::print_connection_context_short(connection_context)), ctx);
+  }
+};

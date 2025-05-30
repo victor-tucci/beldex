@@ -43,8 +43,6 @@ extern "C"
 #include "cryptonote_config.h"
 #include "common/meta.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "account"
 
 using namespace std;
 
@@ -52,6 +50,7 @@ DISABLE_VS_WARNINGS(4244 4345)
 
   namespace cryptonote
 {
+  static auto logcat = log::Cat("account");
 
   //-----------------------------------------------------------------
   hw::device& account_keys::get_device() const  {
@@ -60,7 +59,7 @@ DISABLE_VS_WARNINGS(4244 4345)
   //-----------------------------------------------------------------
   void account_keys::set_device( hw::device &hwdev)  {
     m_device = &hwdev;
-    MCDEBUG("device", "account_keys::set_device device type: " << tools::type_name(typeid(hwdev)));
+    log::debug(log::Cat("device"), "account_keys::set_device device type: {}", tools::type_name(typeid(hwdev)));
   }
   //-----------------------------------------------------------------
   static void derive_key(const crypto::chacha_key &base_key, crypto::chacha_key &key)
@@ -91,13 +90,13 @@ DISABLE_VS_WARNINGS(4244 4345)
     epee::wipeable_string key_stream = get_key_stream(key, m_encryption_iv, sizeof(crypto::secret_key) * (2 + m_multisig_keys.size()));
     const char *ptr = key_stream.data();
     for (size_t i = 0; i < sizeof(crypto::secret_key); ++i)
-      m_spend_secret_key.data[i] ^= *ptr++;
+      m_spend_secret_key[i] ^= *ptr++;
     for (size_t i = 0; i < sizeof(crypto::secret_key); ++i)
-      m_view_secret_key.data[i] ^= *ptr++;
+      m_view_secret_key[i] ^= *ptr++;
     for (crypto::secret_key &k: m_multisig_keys)
     {
       for (size_t i = 0; i < sizeof(crypto::secret_key); ++i)
-        k.data[i] ^= *ptr++;
+        k[i] ^= *ptr++;
     }
   }
   //-----------------------------------------------------------------
@@ -119,7 +118,7 @@ DISABLE_VS_WARNINGS(4244 4345)
     const char *ptr = key_stream.data();
     ptr += sizeof(crypto::secret_key);
     for (size_t i = 0; i < sizeof(crypto::secret_key); ++i)
-      m_view_secret_key.data[i] ^= *ptr++;
+      m_view_secret_key[i] ^= *ptr++;
   }
   //-----------------------------------------------------------------
   void account_keys::decrypt_viewkey(const crypto::chacha_key &key)
@@ -143,7 +142,7 @@ DISABLE_VS_WARNINGS(4244 4345)
     try{
       m_keys.get_device().disconnect();
     } catch (const std::exception &e){
-      MERROR("Device disconnect exception: " << e.what());
+      log::error(logcat, "Device disconnect exception: {}", e.what());
     }
   }
   //-----------------------------------------------------------------
@@ -207,7 +206,7 @@ DISABLE_VS_WARNINGS(4244 4345)
   void account_base::create_from_device(hw::device &hwdev)
   {
     m_keys.set_device(hwdev);
-    MCDEBUG("device", "device type: " << tools::type_name(typeid(hwdev)));
+    log::debug(log::Cat("device"), "device type: {}", tools::type_name(typeid(hwdev)));
     CHECK_AND_ASSERT_THROW_MES(hwdev.init(), "Device init failed");
     CHECK_AND_ASSERT_THROW_MES(hwdev.connect(), "Device connect failed");
     try {

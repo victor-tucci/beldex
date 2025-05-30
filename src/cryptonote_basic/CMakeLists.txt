@@ -44,4 +44,5 @@ target_link_libraries(cryptonote_basic
     Boost::program_options
     Boost::serialization
     filesystem
+    logging
     extra)
