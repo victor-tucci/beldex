@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "logging/beldex_logger.h"
+
 namespace cryptonote
 {
     // This class is meant to create a batch when none currently exists.
@@ -46,8 +48,8 @@ namespace cryptonote
       LockedTXN(LockedTXN &&o) : m_db{o.m_db}, m_batch{o.m_batch} { o.m_batch = false; }
       LockedTXN &operator=(LockedTXN &&) = delete;
 
-      void commit() { try { if (m_batch) { m_db.batch_stop(); m_batch = false; } } catch (const std::exception &e) { MWARNING("LockedTXN::commit filtering exception: " << e.what()); } }
-      void abort() { try { if (m_batch) { m_db.batch_abort(); m_batch = false; } } catch (const std::exception &e) { MWARNING("LockedTXN::abort filtering exception: " << e.what()); } }
+      void commit() { try { if (m_batch) { m_db.batch_stop(); m_batch = false; } } catch (const std::exception &e) { oxen::log::warning(globallogcat, "LockedTXN::commit filtering exception: {}", e.what()); } }
+      void abort() { try { if (m_batch) { m_db.batch_abort(); m_batch = false; } } catch (const std::exception &e) { oxen::log::warning(globallogcat, "LockedTXN::abort filtering exception: {}", e.what()); } }
       ~LockedTXN() { this->abort(); }
     private:
       BlockchainDB &m_db;
