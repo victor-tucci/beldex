@@ -50,7 +50,7 @@ crypto::hash generate_request_stake_unlock_hash(uint32_t nonce)
   crypto::hash result;
   oxenc::host_to_little_inplace(nonce);
   for (size_t i = 0; i < 8; i++)
-    reinterpret_cast<uint32_t*>(result.data)[i] = nonce;
+    reinterpret_cast<uint32_t*>(result.data())[i] = nonce;
   return result;
 }
 

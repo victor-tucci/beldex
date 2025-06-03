@@ -2,17 +2,17 @@
 #include "common/string_util.h"
 #include "epee/string_tools.h"
 #include "version.h"
+#include "logging/beldex_logger.h"
 
 extern "C"
 {
 #include <sodium/crypto_sign.h>
 }
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "uptime_proof"
-
 namespace uptime_proof
 {
+
+static auto logcat = oxen::log::Cat("uptime_proof");
 
 //Constructor for the uptime proof, will take the master node keys as a param and sign 
 Proof::Proof(
@@ -37,7 +37,7 @@ Proof::Proof(
   crypto::hash hash = hash_uptime_proof();
 
   crypto::generate_signature(hash, keys.pub, keys.key, sig);
-  crypto_sign_detached(sig_ed25519.data, NULL, reinterpret_cast<unsigned char *>(hash.data), sizeof(hash.data), keys.key_ed25519.data);
+  crypto_sign_detached(sig_ed25519.data(), nullptr, hash.data(), hash.size(), keys.key_ed25519.data());
 }
 
 //Deserialize from a btencoded string into our Proof instance
@@ -65,7 +65,7 @@ Proof::Proof(const std::string& serialized_proof)
     if (auto it = bt_proof.find("pk"); it != bt_proof.end())
       pubkey = tools::make_from_guts<crypto::public_key>(var::get<std::string>(bt_proof.at("pk")));
     else
-      std::memcpy(pubkey.data, pubkey_ed25519.data, 32);
+      std::memcpy(pubkey.data(), pubkey_ed25519.data(), 32);
     //qnet_port
     qnet_port = get_int<unsigned>(bt_proof.at("q"));
     //storage_omq_port
@@ -83,7 +83,7 @@ Proof::Proof(const std::string& serialized_proof)
       belnet_version[k++] = static_cast<uint16_t>(get_int<unsigned>(i));
     }
   } catch (const std::exception& e) {
-    MWARNING("deserialization failed: " <<  e.what());
+    log::warning(logcat, "deserialization failed: {}", e.what());
     throw;
   }
 }

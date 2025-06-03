@@ -63,16 +63,16 @@ namespace master_nodes
     _count
   };
 
-  inline std::ostream &operator<<(std::ostream &os, quorum_type v) {
-    switch(v)
+  inline constexpr std::string_view to_string(const quorum_type& q) {
+    switch(q)
     {
-      case quorum_type::obligations:   return os << "obligation";
-      case quorum_type::checkpointing: return os << "checkpointing";
-      case quorum_type::flash:         return os << "flash";
-      case quorum_type::POS:           return os << "POS";
-      default: assert(false);          return os << "xx_unhandled_type";
+      case quorum_type::obligations:    return "obligation";
+      case quorum_type::checkpointing:  return "checkpointing";
+      case quorum_type::flash:          return "flash";
+      case quorum_type::POS:            return "POS";
+      default: assert(false);           return "xx_unhandled_type";
     }
-  }
+  };
 
   enum struct quorum_group : uint8_t { invalid, validator, worker, _count };
   struct quorum_vote_t
@@ -172,3 +172,4 @@ namespace master_nodes
   };
 }; // namespace master_nodes
 
+template <> inline constexpr bool formattable::via_to_string<master_nodes::quorum_type> = true;

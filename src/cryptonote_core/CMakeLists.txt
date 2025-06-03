@@ -56,6 +56,7 @@ target_link_libraries(cryptonote_core
   PRIVATE
     Boost::program_options
     systemd
+    logging
     extra)
 
 if(PER_BLOCK_CHECKPOINT)

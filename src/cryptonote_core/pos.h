@@ -7,6 +7,7 @@
 
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "crypto/crypto.h"
+#include "common/formattable.h"
 
 namespace cryptonote
 {
@@ -38,7 +39,7 @@ enum struct message_type : uint8_t
   signed_block,
 };
 
-constexpr std::string_view message_type_string(message_type type)
+constexpr std::string_view to_string(message_type type)
 {
   switch(type)
   {
@@ -107,3 +108,5 @@ bool convert_time_to_round(POS::time_point const &time, POS::time_point const &r
 bool get_round_timings(cryptonote::Blockchain const &blockchain, uint64_t height, uint64_t prev_timestamp, POS::timings &times);
 
 } // namespace POS
+
+template <> inline constexpr bool formattable::via_to_string<POS::message_type> = true;

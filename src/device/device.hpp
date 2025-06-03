@@ -35,6 +35,7 @@
 #include "cryptonote_config.h"
 #include "epee/wipeable_string.h"
 #include "cryptonote_basic/txtypes.h"
+#include "logging/beldex_logger.h"
 
 
 #ifndef USE_DEVICE_LEDGER
@@ -62,6 +63,8 @@ namespace cryptonote
 }
 
 namespace hw {
+    namespace log = oxen::log;
+
     class device_progress {
     public:
       virtual double progress() const { return 0; }

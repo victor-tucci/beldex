@@ -44,6 +44,8 @@
 
 namespace cryptonote {
 
+  static auto logcat = log::Cat("cn");
+
   struct integrated_address {
     account_public_address adr;
     crypto::hash8 payment_id;

@@ -163,7 +163,7 @@ namespace cryptonote
           const size_t max_outputs = 1 << (rv.p.bulletproofs[0].L.size() - 6);
           if (max_outputs < tx.vout.size())
           {
-            LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs max outputs in tx " << get_transaction_hash(tx));
+            log::info(logcat, "Failed to parse transaction from blob, bad bulletproofs max outputs in tx {}", get_transaction_hash(tx));
             return false;
           }
           const size_t n_amounts = tx.vout.size();
@@ -723,14 +723,14 @@ namespace cryptonote
         char txhashbuf[needed_size];
         char *txpointer=reinterpret_cast<char *>(&txhashbuf[0]);
         for(const crypto::hash &cur_hash: b.tx_hashes) {
-            //LOG_PRINT_L0("TX hash added for signature:" << cur_hash);
+            // log::warning(logcat, "TX hash added for signature:{}", cur_hash);
             memcpy(txpointer, reinterpret_cast<const void *>(&cur_hash), sizeof(cur_hash));
             txpointer+=sizeof(cur_hash);
         }
 
         const int buf_size = sizeof(block_height) + sizeof(b.prev_id) + sizeof(txhashbuf)+sizeof(b.timestamp) ;
         char buf[buf_size];
-        //LOG_PRINT_L0("hash buffer size:" << buf_size);
+        // log::warning(logcat, "hash buffer size:{}", buf_size);
 
         memcpy(buf, reinterpret_cast<void *>(&block_height), sizeof(block_height));
         memcpy(buf + sizeof(block_height), reinterpret_cast<const char *>(&b.prev_id), sizeof(b.prev_id));
@@ -787,7 +787,7 @@ namespace cryptonote
   {
     if (addresses.size() != portions.size())
     {
-      LOG_ERROR("Tried to serialize registration with more addresses than portions, this should never happen");
+      log::error(logcat, "Tried to serialize registration with more addresses than portions, this should never happen");
       return false;
     }
     std::vector<crypto::public_key> public_view_keys(addresses.size());
@@ -1417,7 +1417,7 @@ namespace cryptonote
   {
     if (addresses.size() != portions.size())
     {
-      LOG_ERROR("get_registration_hash addresses.size() != portions.size()");
+      log::error(logcat, "get_registration_hash addresses.size() != portions.size()");
       return false;
     }
     uint64_t portions_left = old::STAKING_PORTIONS;
@@ -1425,7 +1425,7 @@ namespace cryptonote
     {
       if (portion > portions_left)
       {
-        LOG_ERROR(tr("Your registration has more than ") << old::STAKING_PORTIONS << tr(" portions, this registration is invalid!"));
+        log::error(logcat, "Your registration has more than {} portions, this registration is invalid!", old::STAKING_PORTIONS);
         return false;
       }
       portions_left -= portion;

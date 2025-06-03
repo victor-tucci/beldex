@@ -42,19 +42,6 @@
 
 namespace hw::core {
 
-        /* ===================================================================== */
-        /* ===                        Misc                                ==== */
-        /* ===================================================================== */
-
-        // EW, this crap is NASTY.  See the comment/TODO in crypto/crypto.cpp (which is where this
-        // nasty crap was copied from).
-        static inline unsigned char *operator &(crypto::ec_scalar &scalar) {
-            return &reinterpret_cast<unsigned char &>(scalar);
-        }
-        static inline const unsigned char *operator &(const crypto::ec_scalar &scalar) {
-            return &reinterpret_cast<const unsigned char &>(scalar);
-        }
-
         /* ======================================================================= */
         /*                              SETUP/TEARDOWN                             */
         /* ======================================================================= */
@@ -144,7 +131,7 @@ namespace hw::core {
 
             ge_p3 p3;
             ge_cached cached;
-            CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&p3, (const unsigned char*)keys.m_account_address.m_spend_public_key.data) == 0,
+            CHECK_AND_ASSERT_THROW_MES(ge_frombytes_vartime(&p3, keys.m_account_address.m_spend_public_key.data()) == 0,
                 "ge_frombytes_vartime failed to convert spend public key");
             ge_p3_to_cached(&cached, &p3);
 
@@ -159,14 +146,14 @@ namespace hw::core {
                 crypto::secret_key m = get_subaddress_secret_key(keys.m_view_secret_key, index);
 
                 // M = m*G
-                ge_scalarmult_base(&p3, (const unsigned char*)m.data);
+                ge_scalarmult_base(&p3, m.data());
 
                 // D = B + M
                 crypto::public_key D;
                 ge_p1p1 p1p1;
                 ge_add(&p1p1, &p3, &cached);
                 ge_p1p1_to_p3(&p3, &p1p1);
-                ge_p3_tobytes((unsigned char*)D.data, &p3);
+                ge_p3_tobytes(D.data(), &p3);
 
                 pkeys.push_back(D);
             }
@@ -223,7 +210,7 @@ namespace hw::core {
         }
 
         bool device_default::sc_secret_add(crypto::secret_key &r, const crypto::secret_key &a, const crypto::secret_key &b) {
-            sc_add(&r, &a, &b);
+            sc_add(r.data(), a.data(), b.data());
             return true;
         }
 
@@ -270,7 +257,7 @@ namespace hw::core {
 
         bool device_default::generate_bns_signature(std::string_view sig_data, const cryptonote::account_keys& keys, const cryptonote::subaddress_index& index, crypto::signature& sig) {
             crypto::hash hash;
-            crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(sig_data.data()), sig_data.size(), nullptr, 0);
+            crypto_generichash(hash.data(), hash.size(), reinterpret_cast<const unsigned char*>(sig_data.data()), sig_data.size(), nullptr, 0);
 
             crypto::secret_key skey = keys.m_spend_secret_key;
             if (!index.is_zero())
@@ -379,7 +366,7 @@ namespace hw::core {
             cn_fast_hash(data, 33, hash);
 
             for (size_t b = 0; b < 8; ++b)
-                payment_id.data[b] ^= hash.data[b];
+                payment_id[b] ^= hash[b];
 
             return true;
         }

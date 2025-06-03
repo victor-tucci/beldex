@@ -34,8 +34,7 @@
 
 namespace hw::io {
 
-    #undef BELDEX_DEFAULT_LOG_CATEGORY
-    #define BELDEX_DEFAULT_LOG_CATEGORY "device.io"
+    static auto logcat = log::Cat("device.io");
  
     static constexpr size_t MAX_BLOCK = 64;
 
@@ -72,7 +71,7 @@ namespace hw::io {
 
     void hid::io_hid_log(int read, unsigned char* buffer, int block_len) {
       if (hid_verbose)
-        MDEBUG("HID " << (read ? '<' : '>') << " : " << oxenc::to_hex(buffer, buffer + block_len));
+        log::debug(logcat, "HID {} : {}", (read ? '<' : '>'), oxenc::to_hex(buffer, buffer + block_len));
     }
  
     void hid::init() {
@@ -91,10 +90,9 @@ namespace hw::io {
     hid_device_info *hid::find_device(hid_device_info *devices_list, std::optional<int> interface_number, std::optional<unsigned short> usage_page) {
       bool select_any = !interface_number && !usage_page;
 
-      MDEBUG( "Looking for " <<
-              (select_any ? "any HID Device" : "HID Device with") <<
-              (interface_number ? (" interface_number " + std::to_string(*interface_number)) : "") <<
-              ((interface_number && usage_page) ? " or" : "") <<
+      log::debug(logcat, "Looking for {}{}{}{}", (select_any ? "any HID Device" : "HID Device with"),
+              (interface_number ? (" interface_number " + std::to_string(*interface_number)) : ""),
+              ((interface_number && usage_page) ? " or" : ""),
               (usage_page ? (" usage_page " + std::to_string(*usage_page)) : ""));
 
       hid_device_info* result = nullptr;
@@ -104,11 +102,10 @@ namespace hw::io {
             || (usage_page && devices_list->usage_page == *usage_page))
           result = devices_list;
       }
-      MDEBUG( (result == devices_list ? "SELECTED" : "SKIPPED ") <<
-            " HID Device" <<
-            " path " << safe_hid_path(devices_list) <<
-            " interface_number " << devices_list->interface_number <<
-            " usage_page " << devices_list->usage_page);
+      log::debug(logcat, "{} HID Device path {} interface_number {} usage_page {}", (result == devices_list ? "SELECTED" : "SKIPPED ")
+            ,safe_hid_path(devices_list)
+            ,devices_list->interface_number
+            ,devices_list->usage_page);
       return result;
     }
 
@@ -118,7 +115,7 @@ namespace hw::io {
 
       hid_device_info* hwdev_info_list = hid_enumerate(vid, pid);
       if (!hwdev_info_list) {
-        MDEBUG("Unable to enumerate device " << vid << ":" << pid << ": " << safe_hid_error(usb_device));
+        log::debug(logcat, "Unable to enumerate device {}:{}: {}", vid, pid, safe_hid_error(usb_device));
         return false;
       }
       hid_device* hwdev = nullptr;

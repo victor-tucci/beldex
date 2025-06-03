@@ -43,12 +43,11 @@
 #include <string>
 #include <vector>
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "master_nodes"
-
 using cryptonote::hf;
 namespace master_nodes
 {
+  static auto logcat = log::Cat("master_nodes");
+
   static crypto::hash make_state_change_vote_hash(uint64_t block_height, uint32_t master_node_index, new_state state)
   {
     uint16_t state_int = static_cast<uint16_t>(state);
@@ -71,7 +70,7 @@ namespace master_nodes
     {
       default:
       {
-        LOG_PRINT_L1("Unhandled vote type with value: " << (int)vote.type);
+        log::info(logcat, "Unhandled vote type with value: {}", (int)vote.type);
         assert("Unhandled vote type" == 0);
         return result;
       };
@@ -107,7 +106,7 @@ namespace master_nodes
     if (worker_index >= quorum.workers.size())
     {
       if (vvc) vvc->m_worker_index_out_of_bounds = true;
-      LOG_PRINT_L1("Quorum worker index was out of bounds: " << worker_index << ", expected to be in range of: [0, " << quorum.workers.size() << ")");
+      log::info(logcat, "Quorum worker index was out of bounds: {}, expected to be in range of: [0, {})", worker_index, quorum.workers.size());
       return false;
     }
     return true;
@@ -118,7 +117,7 @@ namespace master_nodes
     if (validator_index >= quorum.validators.size())
     {
       if (vvc) vvc->m_validator_index_out_of_bounds = true;
-      LOG_PRINT_L1("Validator's index was out of bounds: " << validator_index << ", expected to be in range of: [0, " << quorum.validators.size() << ")");
+      log::info(logcat, "Validator's index was out of bounds: {}, expected to be in range of: [0, {})", validator_index, quorum.validators.size());
       return false;
     }
     return true;
@@ -138,32 +137,32 @@ namespace master_nodes
     auto &vvc = tvc.m_vote_ctx;
     if (state_change.state != new_state::deregister && hf_version < hf::hf13_checkpointing)
     {
-      LOG_PRINT_L1("Received state change TX with Non-deregister state changes are invalid before v12");
+      log::info(logcat, "Received state change TX with Non-deregister state changes are invalid before v12");
       return bad_tx(tvc);
     }
 
     if (state_change.state >= new_state::_count)
     {
-      LOG_PRINT_L1("Received state change TX with with unknown state change to new state: " << static_cast<uint16_t>(state_change.state));
+      log::info(logcat, "Received state change TX with with unknown state change to new state: ", static_cast<uint16_t>(state_change.state));
       return bad_tx(tvc);
     }
 
     if (state_change.votes.size() < master_nodes::STATE_CHANGE_MIN_VOTES_TO_CHANGE_STATE)
     {
-      LOG_PRINT_L1("Received state change TX with not enough votes");
+      log::info(logcat, "Received state change TX with not enough votes");
       vvc.m_not_enough_votes = true;
       return bad_tx(tvc);
     }
 
     if (state_change.votes.size() > master_nodes::STATE_CHANGE_QUORUM_SIZE)
     {
-      LOG_PRINT_L1("Received state change TX with too many votes");
+      log::info(logcat, "Received state change TX with too many votes");
       return bad_tx(tvc);
     }
 
     if (!bounds_check_worker_index(quorum, state_change.master_node_index, &vvc))
     {
-        LOG_PRINT_L1("Received state change tx with invalid bounds_check_worker_index");
+        log::info(logcat, "Received state change tx with invalid bounds_check_worker_index");
         return bad_tx(tvc);
     }
 
@@ -171,10 +170,7 @@ namespace master_nodes
     {
       if (state_change.block_height >= latest_height)
       {
-        LOG_PRINT_L1("Received state change tx for height: " << state_change.block_height
-                     << " and master node: "              << state_change.master_node_index
-                     << ", is newer than current height: " << latest_height
-                     << " blocks and has been rejected.");
+        log::info(logcat, "Received state change tx for height: {} and master node: {}, is newer than current height: {} blocks and has been rejected.", state_change.block_height, state_change.master_node_index, latest_height);
         vvc.m_invalid_block_height = true;
         if (state_change.block_height >= latest_height + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER)
           tvc.m_verifivation_failed = true;
@@ -182,11 +178,7 @@ namespace master_nodes
       }
       if (latest_height >= state_change.block_height + master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS)
       {
-        LOG_PRINT_L1("Received state change tx for height: "
-                     << state_change.block_height << " and master node: " << state_change.master_node_index
-                     << ", is older than: " << master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS
-                     << " (current height: " << latest_height << ") "
-                     << "blocks and has been rejected.");
+        log::info(logcat, "Received state change tx for height: {} and master node: {}, is older than: {} (current height: {}) blocks and has been rejected.", state_change.block_height, state_change.master_node_index, master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS, latest_height);
         vvc.m_invalid_block_height = true;
         if (latest_height >= state_change.block_height + (master_nodes::STATE_CHANGE_TX_LIFETIME_IN_BLOCKS+ VOTE_OR_TX_VERIFY_HEIGHT_BUFFER))
           tvc.m_verifivation_failed = true;
@@ -204,8 +196,7 @@ namespace master_nodes
         if (validator_index_tracker >= static_cast<int>(vote.validator_index))
         {
           vvc.m_votes_not_sorted = true;
-          LOG_PRINT_L1("Vote validator index is not stored in ascending order, prev validator index: "
-                       << validator_index_tracker << ", curr index: " << vote.validator_index);
+          log::info(logcat, "Vote validator index is not stored in ascending order, prev validator index: {}, curr index: {}", validator_index_tracker, vote.validator_index);
           return bad_tx(tvc);
         }
         validator_index_tracker = vote.validator_index;
@@ -216,21 +207,21 @@ namespace master_nodes
 
       if(vote.validator_index > STATE_CHANGE_QUORUM_SIZE)
       {
-        LOG_PRINT_L1("Vote validator index is out of scope");
+        log::info(logcat, "Vote validator index is out of scope");
         return bad_tx(tvc);
       }
 
       if (++validator_set[vote.validator_index] > 1)
       {
         vvc.m_duplicate_voters = true;
-        LOG_PRINT_L1("Voter quorum index is duplicated: " << vote.validator_index);
+        log::info(logcat, "Voter quorum index is duplicated: {}", vote.validator_index);
         return bad_tx(tvc);
       }
 
       crypto::public_key const &key = quorum.validators[vote.validator_index];
       if (!crypto::check_signature(hash, key, vote.signature))
       {
-        LOG_PRINT_L1("Invalid signature for voter " << vote.validator_index << "/" << key);
+        log::info(logcat, "Invalid signature for voter {}/{}", vote.validator_index, key);
         vvc.m_signature_not_valid = true;
         return bad_tx(tvc);
       }
@@ -257,13 +248,13 @@ namespace master_nodes
       {
         if (signatures.size() < master_nodes::CHECKPOINT_MIN_VOTES)
         {
-          MGINFO("Checkpoint has insufficient signatures to be considered at height: " << height);
+          log::info(logcat, "Checkpoint has insufficient signatures to be considered at height: {}", height);
           return false;
         }
 
         if (signatures.size() > master_nodes::CHECKPOINT_QUORUM_SIZE)
         {
-          MGINFO("Checkpoint has too many signatures to be considered at height: " << height);
+          log::info(logcat, "Checkpoint has too many signatures to be considered at height: {}", height);
           return false;
         }
 
@@ -275,13 +266,13 @@ namespace master_nodes
       {
         if (signatures.size() != POS_BLOCK_REQUIRED_SIGNATURES)
         {
-          MGINFO("POS block has " << signatures.size() << " signatures but requires " << POS_BLOCK_REQUIRED_SIGNATURES);
+          log::info(logcat, "POS block has {} signatures but requires {}", signatures.size(), POS_BLOCK_REQUIRED_SIGNATURES);
           return false;
         }
 
         if (!block)
         {
-          MGINFO("Internal Error: Wrong type passed in any object, expected block.");
+          log::info(logcat, "Internal Error: Wrong type passed in any object, expected block.");
           return false;
         }
 
@@ -289,7 +280,7 @@ namespace master_nodes
         {
           auto mask  = std::bitset<sizeof(POS_validator_bit_mask()) * 8>(POS_validator_bit_mask());
           auto other = std::bitset<sizeof(POS_validator_bit_mask()) * 8>(block->POS.validator_bitset);
-          MGINFO("POS block specifies validator participation bits out of bounds. Expected the bit mask: " << mask << ", block: " << other);
+          log::info(logcat, "POS block specifies validator participation bits out of bounds. Expected the bit mask: {}, block: {}", mask, other);
           return false;
         }
       }
@@ -306,7 +297,7 @@ namespace master_nodes
 
         if (curr >= next)
         {
-          MGINFO("Voters in signatures are not given in ascending order, failed verification at height: " << height);
+          log::info(logcat, "Voters in signatures are not given in ascending order, failed verification at height: {}", height);
           return false;
         }
       }
@@ -318,14 +309,14 @@ namespace master_nodes
       {
         if (!block)
         {
-          MGINFO("Internal Error: Wrong type passed in any object, expected block.");
+          log::info(logcat, "Internal Error: Wrong type passed in any object, expected block.");
           return false;
         }
 
         uint16_t bit = 1 << quorum_signature.voter_index;
         if ((block->POS.validator_bitset & bit) == 0)
         {
-          MGINFO("Received POS signature from validator " << static_cast<int>(quorum_signature.voter_index) << " that is not participating in round " << static_cast<int>(block->POS.round));
+          log::info(logcat, "Received POS signature from validator {} that is not participating in round {}", static_cast<int>(quorum_signature.voter_index), static_cast<int>(block->POS.round));
           return false;
         }
       }
@@ -333,13 +324,13 @@ namespace master_nodes
       crypto::public_key const &key = quorum.validators[quorum_signature.voter_index];
       if (quorum_signature.voter_index >= unique_vote_set.size())
       {
-        MGINFO("Internal Error: Voter Index indexes out of bounds of the vote set, index: " << quorum_signature.voter_index << "vote set size: " << unique_vote_set.size());
+        log::info(logcat, "Internal Error: Voter Index indexes out of bounds of the vote set, index: {}vote set size: {}", quorum_signature.voter_index, unique_vote_set.size());
         return false;
       }
 
       if (unique_vote_set[quorum_signature.voter_index]++)
       {
-        MGINFO("Voter: " << tools::type_to_hex(key) << ", quorum index is duplicated: " << quorum_signature.voter_index << ", failed verification at height: " << height);
+        log::info(logcat, "Voter: {}, quorum index is duplicated: {}, failed verification at height: {}", tools::type_to_hex(key), quorum_signature.voter_index, height);
         return false;
       }
 
@@ -349,7 +340,7 @@ namespace master_nodes
           return true;
         }
 
-        MGINFO("Incorrect signature for vote, failed verification at height: " << height << " for voter: " << key << "\n" << quorum);
+        log::info(logcat, "Incorrect signature for vote, failed verification at height: {} for voter: {}\n{}", height, key, quorum);
         return false;
       }
     }
@@ -369,13 +360,13 @@ namespace master_nodes
     {
       if ((checkpoint.height % master_nodes::CHECKPOINT_INTERVAL) != 0)
       {
-        LOG_PRINT_L1("Checkpoint given but not expecting a checkpoint at height: " << checkpoint.height);
+        log::info(logcat, "Checkpoint given but not expecting a checkpoint at height: {}", checkpoint.height);
         return false;
       }
 
       if ((checkpoint.height != 3126052) && !verify_quorum_signatures(quorum, quorum_type::checkpointing, hf_version, checkpoint.height, checkpoint.block_hash, checkpoint.signatures))
       {
-        LOG_PRINT_L1("Checkpoint failed signature validation at block " << checkpoint.height << " " << checkpoint.block_hash);
+        log::info(logcat, "Checkpoint failed signature validation at block {} {}", checkpoint.height, checkpoint.block_hash);
         return false;
       }
     }
@@ -383,7 +374,7 @@ namespace master_nodes
     {
       if (checkpoint.signatures.size() != 0)
       {
-        LOG_PRINT_L1("Non master-node checkpoints should have no signatures, checkpoint failed at height: " << checkpoint.height);
+        log::info(logcat, "Non master-node checkpoints should have no signatures, checkpoint failed at height: {}", checkpoint.height);
         return false;
       }
     }
@@ -433,15 +424,13 @@ namespace master_nodes
     if (latest_height > vote.block_height + VOTE_LIFETIME)
     {
       height_in_buffer = latest_height <= vote.block_height + (VOTE_LIFETIME + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER);
-      LOG_PRINT_L1("Received vote for height: " << vote.block_height << ", is older than: " << VOTE_LIFETIME
-                                                << " blocks and has been rejected.");
+      log::info(logcat, "Received vote for height: {}, is older than: {} blocks and has been rejected.", vote.block_height, VOTE_LIFETIME);
       vvc.m_invalid_block_height = true;
     }
     else if (vote.block_height > latest_height)
     {
       height_in_buffer = vote.block_height <= latest_height + VOTE_OR_TX_VERIFY_HEIGHT_BUFFER;
-      LOG_PRINT_L1("Received vote for height: " << vote.block_height << ", is newer than: " << latest_height
-                                                << " (latest block height) and has been rejected.");
+      log::info(logcat, "Received vote for height: {}, is newer than: {} (latest block height) and has been rejected.", vote.block_height, latest_height);
       vvc.m_invalid_block_height = true;
     }
 
@@ -449,7 +438,7 @@ namespace master_nodes
     {
       vvc.m_verification_failed = !height_in_buffer;
       result = false;
-      LOG_PRINT_L1("invalid block height");
+      log::info(logcat, "invalid block height");
     }
 
     return result;
@@ -478,19 +467,19 @@ namespace master_nodes
       if (!result)
           return result;
 
-      crypto::public_key key = crypto::null_pkey;
-      crypto::hash hash = crypto::null_hash;
+      crypto::public_key key{};
+      crypto::hash hash{};
 
       switch (vote.type) {
           default: {
-              LOG_PRINT_L1("Unhandled vote type with value: " << (int) vote.type);
+              log::info(logcat, "Unhandled vote type with value: {}", (int) vote.type);
               assert("Unhandled vote type" == 0);
               return false;
           };
 
           case quorum_type::obligations: {
               if (vote.group != quorum_group::validator) {
-                  LOG_PRINT_L1("Vote received specifies incorrect voting group, expected vote from validator");
+                  log::info(logcat, "Vote received specifies incorrect voting group, expected vote from validator");
                   vvc.m_incorrect_voting_group = true;
                   result = false;
               } else {
@@ -504,7 +493,7 @@ namespace master_nodes
 
           case quorum_type::checkpointing: {
               if (vote.group != quorum_group::validator) {
-                  LOG_PRINT_L1("Vote received specifies incorrect voting group");
+                  log::info(logcat, "Vote received specifies incorrect voting group");
                   vvc.m_incorrect_voting_group = true;
                   result = false;
               } else {
@@ -520,20 +509,14 @@ namespace master_nodes
 
       result = crypto::check_signature(hash, key, vote.signature);
       if (result){
-          /*MDEBUG("Signature accepted for " << vote.type << " voter " << vote.index_in_group << "/" << key
-                                           << (vote.type == quorum_type::obligations ? " voting for worker " +
-                                                                                       std::to_string(
-                                                                                               vote.state_change.worker_index)
-                                                                                     : "")
-                                 << " at height " << vote.block_height);
-          */
+          // log::debug(logcat, "Signature accepted for {} voter {}/{}{} at height {}", vote.type, vote.index_in_group, key, (vote.type == quorum_type::obligations ? " voting for worker " + std::to_string(vote.state_change.worker_index) : ""), vote.block_height);
           if(vote.type == quorum_type::obligations){
-              //MDEBUG("Signature accepted for " << quorum.workers[vote.state_change.worker_index]);
+              // log::debug(logcat, "Signature accepted for {}", quorum.workers[vote.state_change.worker_index]);
           }
     }
     else {
         vvc.m_signature_not_valid = true;
-        MDEBUG("Signature not accepted for MN " << quorum.workers[vote.state_change.worker_index]);
+        log::debug(logcat, "Signature not accepted for MN {}", quorum.workers[vote.state_change.worker_index]);
     }
 
     return result;
@@ -555,7 +538,7 @@ namespace master_nodes
     switch(find_vote.type)
     {
       default:
-        LOG_PRINT_L1("Unhandled find_vote type with value: " << (int)find_vote.type);
+        log::info(logcat, "Unhandled find_vote type with value: {}", (int)find_vote.type);
         assert("Unhandled find_vote type" == 0);
         return nullptr;
 
@@ -669,7 +652,7 @@ namespace master_nodes
       cryptonote::tx_extra_master_node_state_change state_change;
       if (!get_master_node_state_change_from_tx_extra(tx.extra, state_change, version))
       {
-        LOG_ERROR("Could not get state change from tx, possibly corrupt tx");
+        log::error(logcat, "Could not get state change from tx, possibly corrupt tx");
         continue;
       }
 

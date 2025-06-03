@@ -50,18 +50,18 @@ crypto::public_key flash_tx::get_mn_pubkey(subquorum q, int position, const mast
     if (!flash_quorum) {
         // TODO FIXME XXX - we don't want a failure here; if this happens we need to go back into state
         // history to retrieve the state info.  (Or maybe this can't happen?)
-        MERROR("FIXME: could not get flash quorum for flash_tx");
-        return crypto::null_pkey;
+        log::error(globallogcat, "FIXME: could not get flash quorum for flash_tx");
+        return crypto::null<crypto::public_key>;
     }
 
     if (position < (int) flash_quorum->validators.size())
         return flash_quorum->validators[position];
 
-    return crypto::null_pkey;
+    return crypto::null<crypto::public_key>;
 };
 
 crypto::hash flash_tx::hash(bool approved) const {
-    auto buf = tools::memcpy_le(height, get_txhash().data, uint8_t{approved});
+    auto buf = tools::memcpy_le(height, get_txhash(), uint8_t{approved});
     crypto::hash flash_hash;
     crypto::cn_fast_hash(buf.data(), buf.size(), flash_hash);
     return flash_hash;

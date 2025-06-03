@@ -34,23 +34,21 @@
 
 namespace hw {
 
-  #undef BELDEX_DEFAULT_LOG_CATEGORY
-  #define BELDEX_DEFAULT_LOG_CATEGORY "device"
+  static auto logcat = log::Cat("device");
 
   void log_hexbuffer(std::string_view msg, const void* buff, size_t len) {
-    MDEBUG(msg << ": " << oxenc::to_hex(std::string_view{reinterpret_cast<const char*>(buff), len}));
+    log::debug(logcat, "{}: {}", msg, oxenc::to_hex(std::string_view{reinterpret_cast<const char*>(buff), len}));
   }
 
   void log_message(std::string_view msg, std::string_view info) {
-    MDEBUG(msg << ": " << info);
+    log::debug(logcat, "{}: {}", msg, info);
   }
 
 
   #ifdef WITH_DEVICE_LEDGER    
     namespace ledger {
     
-    #undef BELDEX_DEFAULT_LOG_CATEGORY
-    #define BELDEX_DEFAULT_LOG_CATEGORY "device.ledger"
+    static auto logcat = log::Cat("device.ledger");
 
     
     #ifdef DEBUG_HWDEVICE

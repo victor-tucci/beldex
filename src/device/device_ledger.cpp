@@ -28,6 +28,7 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+#include "common/string_util.h"
 #include "io_ledger_tcp.hpp"
 #include "io_hid.hpp"
 #include "version.h"
@@ -39,6 +40,7 @@
 #include "common/lock.h"
 #include "common/varint.h"
 #include <chrono>
+#include "logging/beldex_logger.h"
 #include <oxenc/endian.h>
 
 #ifdef DEBUG_HWDEVICE
@@ -49,8 +51,7 @@
 
   #ifdef WITH_DEVICE_LEDGER
 
-    #undef BELDEX_DEFAULT_LOG_CATEGORY
-    #define BELDEX_DEFAULT_LOG_CATEGORY "device.ledger"
+    static auto logcat = log::Cat("device.ledger");
 
     /* ===================================================================== */
     /* ===                           Debug                              ==== */
@@ -225,7 +226,7 @@
     /* ===                       Internal Helpers                       ==== */
     /* ===================================================================== */
     static bool is_fake_view_key(const crypto::secret_key &sec) {
-      return sec == crypto::null_skey;
+      return !sec;
     }
 
     bool operator==(const crypto::key_derivation &d0, const crypto::key_derivation &d1) {
@@ -318,7 +319,7 @@
       reset_buffer();
       has_view_key = false;
       tx_in_progress = false;
-      MDEBUG("Device " << id << " Created");
+      log::debug(logcat, "Device {} Created", id);
     }
 
     device_ledger::device_ledger(io::ledger_tcp&& tcp) : hw_device{std::make_unique<io::ledger_tcp>(std::move(tcp))} {
@@ -326,12 +327,12 @@
       reset_buffer();
       has_view_key = false;
       tx_in_progress = false;
-      MDEBUG("Device " << id << " (tcp) created");
+      log::debug(logcat, "Device {} (tcp) created", id);
     }
 
     device_ledger::~device_ledger() {
       release();
-      MDEBUG("Device " << id << " Destroyed");
+      log::debug(logcat, "Device {} Destroyed", id);
     }
 
     /* ======================================================================= */
@@ -340,24 +341,24 @@
 
     //lock the device for a long sequence
     void device_ledger::lock() {
-      MDEBUG("Ask for LOCKING for device " << name << " in thread ");
+      log::debug(logcat, "Ask for LOCKING for device {} in thread ", name);
       device_locker.lock();
-      MDEBUG("Device " << name << " LOCKed");
+      log::debug(logcat, "Device {} LOCKed", name);
     }
 
     //lock the device for a long sequence
     bool device_ledger::try_lock() {
-      MDEBUG("Ask for LOCKING(try) for device " << name << " in thread ");
+      log::debug(logcat, "Ask for LOCKING(try) for device {} in thread ", name);
       bool r = device_locker.try_lock();
-      MDEBUG("Device " << name << (r ? "" : " not") << " LOCKed(try)");
+      log::debug(logcat, "Device {}{} LOCKed(try)", name, (r ? "" : " not"));
       return r;
     }
 
     //unlock the device after a long sequence
     void device_ledger::unlock() {
-      MDEBUG("Ask for UNLOCKING for device " << name << " in thread ");
+      log::debug(logcat, "Ask for UNLOCKING for device {} in thread ", name);
       device_locker.unlock();
-      MDEBUG("Device " << name << " UNLOCKed");
+      log::debug(logcat, "Device {} UNLOCKed", name);
     }
 
 
@@ -380,16 +381,14 @@
 #endif
         cmd << " p=(0x" << std::setw(2) << +buffer_send[2] << ",0x" << std::setw(2) << +buffer_send[3] << ')';
         cmd << " sz=0x" << std::setw(2) << +buffer_send[4] << '[' << std::to_string(buffer_send[4]) << "] ";
-        MDEBUG("CMD: " << cmd.str() << oxenc::to_hex(buffer_send + 5, buffer_send + length_send));
+        log::debug(logcat, "CMD: {}{}", cmd.str(), oxenc::to_hex(buffer_send + 5, buffer_send + length_send));
         last_cmd = std::chrono::steady_clock::now();
       }
     }
 
     void device_ledger::logRESP() {
       if (apdu_verbose)
-        MDEBUG("RESP (+" << tools::short_duration(std::chrono::steady_clock::now() - last_cmd) << "): "
-              << oxenc::to_hex(std::string_view{reinterpret_cast<const char*>(&sw), sizeof(sw)})
-              << ' ' << oxenc::to_hex(buffer_recv, buffer_recv + length_recv));
+        log::debug(logcat, "RESP (+{}): {} {}", tools::friendly_duration(std::chrono::steady_clock::now() - last_cmd), oxenc::to_hex(std::string_view{reinterpret_cast<const char*>(&sw), sizeof(sw)}), oxenc::to_hex(buffer_recv, buffer_recv + length_recv));
     }
 
     int device_ledger::set_command_header(unsigned char ins, unsigned char p1, unsigned char p2) {
@@ -454,7 +453,7 @@
     }
 
     void device_ledger::send_secret(const unsigned char sec[32], int &offset) {
-      MDEBUG("send_secret: " << tx_in_progress);
+      log::debug(logcat, "send_secret: {}", tx_in_progress);
       send_bytes(sec, 32, offset);
       if (tx_in_progress) {
         CHECK_AND_ASSERT_THROW_MES(offset + 32 <= BUFFER_SEND_SIZE, "send_secret: out of bounds write (mac)");
@@ -464,7 +463,7 @@
     }
 
     void device_ledger::receive_secret(unsigned char sec[32], int &offset) {
-      MDEBUG("receive_secret: " << tx_in_progress);
+      log::debug(logcat, "receive_secret: {}", tx_in_progress);
       receive_bytes(sec, 32, offset);
       if (tx_in_progress) {
         CHECK_AND_ASSERT_THROW_MES(offset + 32 <= BUFFER_RECV_SIZE, "receive_secret: out of bounds read (mac)");
@@ -583,7 +582,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 #endif
       release();
       hw_device->init();
-      MDEBUG("Device " << id <<" HIDUSB inited");
+      log::debug(logcat, "Device {} HIDUSB inited", id);
       return true;
     }
 
@@ -673,7 +672,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
         std::string coin{reinterpret_cast<const char*>(buffer_recv), 4};
         auto device_nettype = static_cast<cryptonote::network_type>(buffer_recv[4]);
-        MDEBUG("Ledger wallet is set to " << coin << " " << nettype_string(device_nettype));
+        log::debug(logcat, "Ledger wallet is set to {} {}", coin, nettype_string(device_nettype));
         if (coin != COIN_NETWORK)
             throw std::runtime_error{"Invalid wallet app: expected " + std::string{COIN_NETWORK} + ", got " + coin};
         if (device_nettype != nettype)
@@ -702,7 +701,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       case mode::NONE:
         break;
       }
-      MDEBUG("Switch to mode: " <<+static_cast<unsigned char>(m));
+      log::debug(logcat, "Switch to mode: {}", +static_cast<unsigned char>(m));
       return device::set_mode(m);
     }
 
@@ -717,8 +716,8 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         send_simple(INS_GET_KEY, 1);
 
         int offset = 0;
-        receive_bytes(pubkey.m_view_public_key.data, 32, offset);
-        receive_bytes(pubkey.m_spend_public_key.data, 32, offset);
+        receive_bytes(pubkey.m_view_public_key.data(), 32, offset);
+        receive_bytes(pubkey.m_spend_public_key.data(), 32, offset);
 
         return true;
     }
@@ -727,22 +726,22 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         auto locks = tools::unique_locks(device_locker, command_locker);
 
         //secret key are represented as fake key on the wallet side
-        memcpy(vkey.data, dummy_view_key, 32);
-        memcpy(skey.data, dummy_spend_key, 32);
+        memcpy(vkey.data(), dummy_view_key, 32);
+        memcpy(skey.data(), dummy_spend_key, 32);
 
         //spcialkey, normal conf handled in decrypt
         send_simple(INS_GET_KEY, 0x02);
 
         //View key is retrieved, if allowed, to speed up blockchain parsing
-        receive_bytes(viewkey.data, 32);
+        receive_bytes(viewkey.data(), 32);
         has_view_key = !is_fake_view_key(viewkey);
-        MDEBUG((has_view_key ? "Have view key" : "Have no view key"));
+        log::debug(logcat, "{}", (has_view_key ? "Have view key" : "Have no view key"));
 
 #ifdef DEBUG_HWDEVICE
         send_simple(INS_GET_KEY, 0x04);
         int offset = 0;
-        receive_bytes(dbg_viewkey.data, 32, offset);
-        receive_bytes(dbg_spendkey.data, 32, offset);
+        receive_bytes(dbg_viewkey.data(), 32, offset);
+        receive_bytes(dbg_spendkey.data(), 32, offset);
 #endif
 
         return true;
@@ -777,7 +776,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         send_bytes(&index, sizeof(index), offset);
 
         //payment ID
-        send_bytes(payment_id ? payment_id->data : crypto::null_hash8.data, 8, offset);
+        send_bytes(payment_id ? payment_id->data() : crypto::null<crypto::hash8>.data(), 8, offset);
 
         CHECK_AND_ASSERT_THROW_MES(finish_and_exchange(offset, true) == SW_OK, "Timeout/Error on display address.");
     }
@@ -792,36 +791,36 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 #ifdef DEBUG_HWDEVICE
       crypto::key_derivation derivation_x =
         (mode_ == mode::TRANSACTION_PARSE && has_view_key) ? derivation : decrypt(derivation);
-      log_hexbuffer("derive_subaddress_public_key: [[IN]]  pub       ", pub.data, 32);
-      log_hexbuffer("derive_subaddress_public_key: [[IN]]  derivation", derivation_x.data, 32);
+      log_hexbuffer("derive_subaddress_public_key: [[IN]]  pub       ", pub.data(), 32);
+      log_hexbuffer("derive_subaddress_public_key: [[IN]]  derivation", derivation_x.data(), 32);
       log_message(  "derive_subaddress_public_key: [[IN]]  index     ", std::to_string(output_index));
       crypto::public_key derived_pub_x;
       debug_device->derive_subaddress_public_key(pub, derivation_x, output_index, derived_pub_x);
-      log_hexbuffer("derive_subaddress_public_key: [[OUT]] derived_pub", derived_pub_x.data, 32);
+      log_hexbuffer("derive_subaddress_public_key: [[OUT]] derived_pub", derived_pub_x.data(), 32);
 #endif
 
       if (mode_ == mode::TRANSACTION_PARSE && has_view_key) {
         //If we are in TRANSACTION_PARSE, the given derivation has been retrieved uncrypted (wihtout the help
         //of the device), so continue that way.
-        MDEBUG("derive_subaddress_public_key  : PARSE mode with known viewkey");
+        log::debug(logcat, "derive_subaddress_public_key : PARSE mode with known viewkey");
         crypto::derive_subaddress_public_key(pub, derivation, output_index, derived_pub);
       } else {
 
         int offset = set_command_header_noopt(INS_DERIVE_SUBADDRESS_PUBLIC_KEY);
         //pub
-        send_bytes(pub.data, 32, offset);
+        send_bytes(pub.data(), 32, offset);
         //derivation
-        send_secret(derivation.data, offset);
+        send_secret(derivation.data(), offset);
         //index
         send_u32(output_index, offset);
 
         finish_and_exchange(offset);
 
         //pub key
-        receive_bytes(derived_pub.data, 32);
+        receive_bytes(derived_pub.data(), 32);
       }
 #ifdef DEBUG_HWDEVICE
-      check32("derive_subaddress_public_key", "derived_pub", derived_pub_x.data, derived_pub.data);
+      check32("derive_subaddress_public_key", "derived_pub", derived_pub_x.data(), derived_pub.data());
 #endif
 
       return true;
@@ -833,11 +832,11 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const cryptonote::account_keys keys_x = decrypt(keys);
-        log_hexbuffer("get_subaddress_spend_public_key: [[IN]]  keys.m_view_secret_key ", keys_x.m_view_secret_key.data, 32);
-        log_hexbuffer("get_subaddress_spend_public_key: [[IN]]  keys.m_spend_secret_key", keys_x.m_spend_secret_key.data, 32);
+        log_hexbuffer("get_subaddress_spend_public_key: [[IN]]  keys.m_view_secret_key ", keys_x.m_view_secret_key.data(), 32);
+        log_hexbuffer("get_subaddress_spend_public_key: [[IN]]  keys.m_spend_secret_key", keys_x.m_spend_secret_key.data(), 32);
         log_message  ("get_subaddress_spend_public_key: [[IN]]  index               ", std::to_string(index.major)+"."+std::to_string(index.minor));
         crypto::public_key D_x = debug_device->get_subaddress_spend_public_key(keys_x, index);
-        log_hexbuffer("get_subaddress_spend_public_key: [[OUT]] derivation          ", D_x.data, 32);
+        log_hexbuffer("get_subaddress_spend_public_key: [[OUT]] derivation          ", D_x.data(), 32);
 #endif
 
         if (index.is_zero()) {
@@ -851,11 +850,11 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
           finish_and_exchange(offset);
 
-          receive_bytes(D.data, 32);
+          receive_bytes(D.data(), 32);
         }
 
 #ifdef DEBUG_HWDEVICE
-        check32("get_subaddress_spend_public_key", "D", D_x.data, D.data);
+        check32("get_subaddress_spend_public_key", "D", D_x.data(), D.data());
 #endif
 
         return D;
@@ -877,14 +876,14 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const cryptonote::account_keys keys_x =  decrypt(keys);
-        log_hexbuffer("get_subaddress: [[IN]]  keys.m_view_secret_key ", keys_x.m_view_secret_key.data, 32);
-        log_hexbuffer("get_subaddress: [[IN]]  keys.m_view_public_key",  keys_x.m_account_address.m_view_public_key.data, 32);
-        log_hexbuffer("get_subaddress: [[IN]]  keys.m_spend_secret_key ", keys_x.m_spend_secret_key.data, 32);
-        log_hexbuffer("get_subaddress: [[IN]]  keys.m_spend_public_key", keys_x.m_account_address.m_spend_public_key.data, 32);
+        log_hexbuffer("get_subaddress: [[IN]]  keys.m_view_secret_key ", keys_x.m_view_secret_key.data(), 32);
+        log_hexbuffer("get_subaddress: [[IN]]  keys.m_view_public_key",  keys_x.m_account_address.m_view_public_key.data(), 32);
+        log_hexbuffer("get_subaddress: [[IN]]  keys.m_spend_secret_key ", keys_x.m_spend_secret_key.data(), 32);
+        log_hexbuffer("get_subaddress: [[IN]]  keys.m_spend_public_key", keys_x.m_account_address.m_spend_public_key.data(), 32);
         log_message(  "get_subaddress: [[IN]]  index                                ", std::to_string(index.major)+"."+std::to_string(index.minor));
         cryptonote::account_public_address address_x = debug_device->get_subaddress(keys_x, index);
-        log_hexbuffer("get_subaddress: [[OUT]]  keys.m_view_public_key ", address_x.m_view_public_key.data, 32);
-        log_hexbuffer("get_subaddress: [[OUT]]  keys.m_spend_public_key", address_x.m_spend_public_key.data, 32);
+        log_hexbuffer("get_subaddress: [[OUT]]  keys.m_view_public_key ", address_x.m_view_public_key.data(), 32);
+        log_hexbuffer("get_subaddress: [[OUT]]  keys.m_spend_public_key", address_x.m_spend_public_key.data(), 32);
 #endif
 
         if (index.is_zero()) {
@@ -898,13 +897,13 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
           finish_and_exchange(offset);
 
           offset = 0;
-          receive_bytes(address.m_view_public_key.data, 32, offset);
-          receive_bytes(address.m_spend_public_key.data, 32, offset);
+          receive_bytes(address.m_view_public_key.data(), 32, offset);
+          receive_bytes(address.m_spend_public_key.data(), 32, offset);
         }
 
 #ifdef DEBUG_HWDEVICE
-        check32("get_subaddress", "address.m_view_public_key.data", address_x.m_view_public_key.data, address.m_view_public_key.data);
-        check32("get_subaddress", "address.m_spend_public_key.data", address_x.m_spend_public_key.data, address.m_spend_public_key.data);
+        check32("get_subaddress", "address.m_view_public_key.data", address_x.m_view_public_key.data(), address.m_view_public_key.data());
+        check32("get_subaddress", "address.m_spend_public_key.data", address_x.m_spend_public_key.data(), address.m_spend_public_key.data());
 #endif
 
         return address;
@@ -917,14 +916,14 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 #ifdef DEBUG_HWDEVICE
         const crypto::secret_key sec_x = decrypt(sec);
         log_message  ("get_subaddress_secret_key: [[IN]]  index  ", std::to_string(index.major)+"."+std::to_string(index.minor));
-        log_hexbuffer("get_subaddress_secret_key: [[IN]]  sec    ", sec_x.data, 32);
+        log_hexbuffer("get_subaddress_secret_key: [[IN]]  sec    ", sec_x.data(), 32);
         crypto::secret_key sub_sec_x = debug_device->get_subaddress_secret_key(sec_x, index);
-        log_hexbuffer("get_subaddress_secret_key: [[OUT]] sub_sec", sub_sec_x.data, 32);
+        log_hexbuffer("get_subaddress_secret_key: [[OUT]] sub_sec", sub_sec_x.data(), 32);
 #endif
 
         int offset = set_command_header_noopt(INS_GET_SUBADDRESS_SECRET_KEY);
         //sec
-        send_secret(sec.data, offset);
+        send_secret(sec.data(), offset);
         //index
         static_assert(sizeof(cryptonote::subaddress_index) == 8);
         send_bytes(&index, sizeof(index), offset);
@@ -932,11 +931,11 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         finish_and_exchange(offset);
 
         offset = 0;
-        receive_secret(sub_sec.data,  offset);
+        receive_secret(sub_sec.data(),  offset);
 
 #ifdef DEBUG_HWDEVICE
         crypto::secret_key sub_sec_clear = decrypt(sub_sec);
-        check32("get_subaddress_secret_key", "sub_sec", sub_sec_x.data, sub_sec_clear.data);
+        check32("get_subaddress_secret_key", "sub_sec", sub_sec_x.data(), sub_sec_clear.data());
 #endif
 
         return sub_sec;
@@ -952,9 +951,9 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
         offset = set_command_header_noopt(INS_VERIFY_KEY);
         //sec
-        send_secret(secret_key.data, offset);
+        send_secret(secret_key.data(), offset);
         //pub
-        send_bytes(public_key.data, 32, offset);
+        send_bytes(public_key.data(), 32, offset);
 
         finish_and_exchange(offset);
 
@@ -1028,29 +1027,29 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 #ifdef DEBUG_HWDEVICE
         const crypto::secret_key a_x = decrypt(a);
         const crypto::secret_key b_x = decrypt(b);
-        log_hexbuffer("sc_secret_add: [[IN]]  a ", a_x.data, 32);
-        log_hexbuffer("sc_secret_add: [[IN]]  b ", b_x.data, 32);
+        log_hexbuffer("sc_secret_add: [[IN]]  a ", a_x.data(), 32);
+        log_hexbuffer("sc_secret_add: [[IN]]  b ", b_x.data(), 32);
         crypto::secret_key r_x;
         rct::key aG_x;
         debug_device->sc_secret_add(r_x, a_x, b_x);
-        log_hexbuffer("sc_secret_add: [[OUT]] aG", r_x.data, 32);
+        log_hexbuffer("sc_secret_add: [[OUT]] aG", r_x.data(), 32);
 #endif
 
         offset = set_command_header_noopt(INS_SECRET_KEY_ADD);
         //sec key
-        send_secret(a.data, offset);
+        send_secret(a.data(), offset);
         //sec key
-        send_secret(b.data, offset);
+        send_secret(b.data(), offset);
 
         finish_and_exchange(offset);
 
         //sec key
         offset = 0;
-        receive_secret(r.data, offset);
+        receive_secret(r.data(), offset);
 
 #ifdef DEBUG_HWDEVICE
         crypto::secret_key r_clear = decrypt(r);
-        check32("sc_secret_add", "r", r_x.data, r_clear.data);
+        check32("sc_secret_add", "r", r_x.data(), r_clear.data());
 #endif
 
         return true;
@@ -1069,7 +1068,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         crypto::secret_key recovery_key_x;
         if (recover) {
          recovery_key_x = decrypt(recovery_key);
-         log_hexbuffer("generate_keys: [[IN]] pub", recovery_key_x.data, 32);
+         log_hexbuffer("generate_keys: [[IN]] pub", recovery_key_x.data(), 32);
         }
 #endif
 
@@ -1077,17 +1076,17 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
         offset = 0;
         //pub key
-        receive_bytes(pub.data, 32, offset);
-        receive_secret(sec.data, offset);
+        receive_bytes(pub.data(), 32, offset);
+        receive_secret(sec.data(), offset);
 
 #ifdef DEBUG_HWDEVICE
         crypto::secret_key sec_clear = decrypt(sec);
         sec_x = sec_clear;
-        log_hexbuffer("generate_keys: [[OUT]] pub", pub.data, 32);
-        log_hexbuffer("generate_keys: [[OUT]] sec", sec_clear.data, 32);
+        log_hexbuffer("generate_keys: [[OUT]] pub", pub.data(), 32);
+        log_hexbuffer("generate_keys: [[OUT]] sec", sec_clear.data(), 32);
 
         crypto::secret_key_to_public_key(sec_x,pub_x);
-        check32("generate_keys", "pub", pub_x.data, pub.data);
+        check32("generate_keys", "pub", pub_x.data(), pub.data());
 #endif
 
         return sec;
@@ -1099,40 +1098,40 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         bool r = false;
 
 #ifdef DEBUG_HWDEVICE
-        log_hexbuffer("generate_key_derivation: [[IN]]  pub       ", pub.data, 32);
+        log_hexbuffer("generate_key_derivation: [[IN]]  pub       ", pub.data(), 32);
         const crypto::secret_key sec_x = (sec == rct::rct2sk(rct::I)) ? sec : decrypt(sec);
-        log_hexbuffer("generate_key_derivation: [[IN]]  sec       ", sec_x.data, 32);
+        log_hexbuffer("generate_key_derivation: [[IN]]  sec       ", sec_x.data(), 32);
         crypto::key_derivation derivation_x;
         debug_device->generate_key_derivation(pub, sec_x, derivation_x);
-        log_hexbuffer("generate_key_derivation: [[OUT]] derivation", derivation_x.data, 32);
+        log_hexbuffer("generate_key_derivation: [[OUT]] derivation", derivation_x.data(), 32);
 #endif
 
       if (mode_ == mode::TRANSACTION_PARSE && has_view_key) {
         //A derivation is requested in PARSE mode and we have the view key,
         //so do that without the device and return the derivation unencrypted.
-        MDEBUG( "generate_key_derivation  : PARSE mode with known viewkey");
+        log::debug(logcat, "generate_key_derivation : PARSE mode with known viewkey");
         //Note derivation in PARSE mode can only happen with viewkey, so assert it!
         assert(is_fake_view_key(sec));
         r = crypto::generate_key_derivation(pub, viewkey, derivation);
       } else {
         int offset = set_command_header_noopt(INS_GEN_KEY_DERIVATION);
         //pub
-        send_bytes(pub.data, 32, offset);
+        send_bytes(pub.data(), 32, offset);
          //sec
-        send_secret(sec.data, offset);
+        send_secret(sec.data(), offset);
 
         finish_and_exchange(offset);
 
         offset = 0;
         //derivation data
-        receive_secret(derivation.data, offset);
+        receive_secret(derivation.data(), offset);
 
         r = true;
       }
 #ifdef DEBUG_HWDEVICE
       crypto::key_derivation derivation_clear =
         (mode_ == mode::TRANSACTION_PARSE && has_view_key) ? derivation : decrypt(derivation);
-      check32("generate_key_derivation", "derivation", derivation_x.data, derivation_clear.data);
+      check32("generate_key_derivation", "derivation", derivation_x.data(), derivation_clear.data());
 #endif
 
       return r;
@@ -1142,18 +1141,18 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       const crypto::public_key *pkey = nullptr;
       if (derivation == main_derivation) {
         pkey = &tx_pub_key;
-        MDEBUG("conceal derivation with main tx pub key");
+        log::debug(logcat, "conceal derivation with main tx pub key");
       } else {
         for (size_t n = 0; n < additional_derivations.size(); ++n) {
           if (derivation == additional_derivations[n]) {
             pkey = &additional_tx_pub_keys[n];
-            MDEBUG("conceal derivation with additionnal tx pub key");
+            log::debug(logcat, "conceal derivation with additionnal tx pub key");
             break;
           }
         }
       }
       CHECK_AND_ASSERT_THROW_MES(pkey, "Mismatched derivation on scan info");
-      return generate_key_derivation(*pkey,  crypto::null_skey, derivation);
+      return generate_key_derivation(*pkey, crypto::null<crypto::secret_key>, derivation);
     }
 
     bool device_ledger::derivation_to_scalar(const crypto::key_derivation &derivation, const size_t output_index, crypto::ec_scalar &res) {
@@ -1161,16 +1160,16 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const crypto::key_derivation derivation_x = decrypt(derivation);
-        log_hexbuffer("derivation_to_scalar: [[IN]]  derivation    ", derivation_x.data, 32);
+        log_hexbuffer("derivation_to_scalar: [[IN]]  derivation    ", derivation_x.data(), 32);
         log_message  ("derivation_to_scalar: [[IN]]  output_index  ", std::to_string(output_index));
         crypto::ec_scalar res_x;
         debug_device->derivation_to_scalar(derivation_x, output_index, res_x);
-        log_hexbuffer("derivation_to_scalar: [[OUT]] res          ", res_x.data, 32);
+        log_hexbuffer("derivation_to_scalar: [[OUT]] res          ", res_x.data(), 32);
 #endif
 
         int offset = set_command_header_noopt(INS_DERIVATION_TO_SCALAR);
         //derivation
-        send_secret(derivation.data, offset);
+        send_secret(derivation.data(), offset);
 
         //index
         send_u32(output_index, offset);
@@ -1179,11 +1178,11 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
         //derivation data
         offset = 0;
-        receive_secret(res.data, offset);
+        receive_secret(res.data(), offset);
 
 #ifdef DEBUG_HWDEVICE
         crypto::ec_scalar res_clear  = decrypt(res);
-        check32("derivation_to_scalar", "res", res_x.data, res_clear.data);
+        check32("derivation_to_scalar", "res", res_x.data(), res_clear.data());
 #endif
 
         return true;
@@ -1195,31 +1194,31 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 #ifdef DEBUG_HWDEVICE
         const crypto::key_derivation derivation_x   = decrypt(derivation);
         const crypto::secret_key     sec_x          = decrypt(sec);
-        log_hexbuffer("derive_secret_key: [[IN]]  derivation ", derivation_x.data, 32);
+        log_hexbuffer("derive_secret_key: [[IN]]  derivation ", derivation_x.data(), 32);
         log_message  ("derive_secret_key: [[IN]]  index      ", std::to_string(output_index));
-        log_hexbuffer("derive_secret_key: [[IN]]  sec        ", sec_x.data, 32);
+        log_hexbuffer("derive_secret_key: [[IN]]  sec        ", sec_x.data(), 32);
         crypto::secret_key derived_sec_x;
         debug_device->derive_secret_key(derivation_x, output_index, sec_x, derived_sec_x);
-        log_hexbuffer("derive_secret_key: [[OUT]] derived_sec", derived_sec_x.data, 32);
+        log_hexbuffer("derive_secret_key: [[OUT]] derived_sec", derived_sec_x.data(), 32);
 #endif
 
         int offset = set_command_header_noopt(INS_DERIVE_SECRET_KEY);
         //derivation
-        send_secret(derivation.data, offset);
+        send_secret(derivation.data(), offset);
         //index
         send_u32(output_index, offset);
         //sec
-        send_secret(sec.data, offset);
+        send_secret(sec.data(), offset);
 
         finish_and_exchange(offset);
 
         offset = 0;
         //sec key
-        receive_secret(derived_sec.data, offset);
+        receive_secret(derived_sec.data(), offset);
 
 #ifdef DEBUG_HWDEVICE
         crypto::secret_key derived_sec_clear = decrypt(derived_sec);
-        check32("derive_secret_key", "derived_sec", derived_sec_x.data, derived_sec_clear.data);
+        check32("derive_secret_key", "derived_sec", derived_sec_x.data(), derived_sec_clear.data());
 #endif
 
         return true;
@@ -1230,29 +1229,29 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const crypto::key_derivation derivation_x = decrypt(derivation);
-        log_hexbuffer("derive_public_key: [[IN]]  derivation  ", derivation_x.data, 32);
+        log_hexbuffer("derive_public_key: [[IN]]  derivation  ", derivation_x.data(), 32);
         log_message  ("derive_public_key: [[IN]]  output_index", std::to_string(output_index));
-        log_hexbuffer("derive_public_key: [[IN]]  pub         ", pub.data, 32);
+        log_hexbuffer("derive_public_key: [[IN]]  pub         ", pub.data(), 32);
         crypto::public_key derived_pub_x;
         debug_device->derive_public_key(derivation_x, output_index, pub, derived_pub_x);
-        log_hexbuffer("derive_public_key: [[OUT]] derived_pub ", derived_pub_x.data, 32);
+        log_hexbuffer("derive_public_key: [[OUT]] derived_pub ", derived_pub_x.data(), 32);
 #endif
 
         int offset = set_command_header_noopt(INS_DERIVE_PUBLIC_KEY);
         //derivation
-        send_secret(derivation.data, offset);
+        send_secret(derivation.data(), offset);
         //index
         send_u32(output_index, offset);
         //pub
-        send_bytes(pub.data, 32, offset);
+        send_bytes(pub.data(), 32, offset);
 
         finish_and_exchange(offset);
 
         //pub key
-        receive_bytes(derived_pub.data, 32);
+        receive_bytes(derived_pub.data(), 32);
 
 #ifdef DEBUG_HWDEVICE
-        check32("derive_public_key", "derived_pub", derived_pub_x.data, derived_pub.data);
+        check32("derive_public_key", "derived_pub", derived_pub_x.data(), derived_pub.data());
 #endif
 
         return true;
@@ -1263,10 +1262,10 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const crypto::secret_key sec_x = decrypt(sec);
-        log_hexbuffer("secret_key_to_public_key: [[IN]] sec ", sec_x.data, 32);
+        log_hexbuffer("secret_key_to_public_key: [[IN]] sec ", sec_x.data(), 32);
         crypto::public_key pub_x;
         bool rc = debug_device->secret_key_to_public_key(sec_x, pub_x);
-        log_hexbuffer("secret_key_to_public_key: [[OUT]] pub", pub_x.data, 32);
+        log_hexbuffer("secret_key_to_public_key: [[OUT]] pub", pub_x.data(), 32);
         if (!rc){
           log_message("FAIL secret_key_to_public_key", "secret_key rejected");
         }
@@ -1274,15 +1273,15 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
         int offset = set_command_header_noopt(INS_SECRET_KEY_TO_PUBLIC_KEY);
         //sec key
-        send_secret(sec.data, offset);
+        send_secret(sec.data(), offset);
 
         finish_and_exchange(offset);
 
         //pub key
-        receive_bytes(pub.data, 32);
+        receive_bytes(pub.data(), 32);
 
 #ifdef DEBUG_HWDEVICE
-        check32("secret_key_to_public_key", "pub", pub_x.data, pub.data);
+        check32("secret_key_to_public_key", "pub", pub_x.data(), pub.data());
 #endif
 
         return true;
@@ -1293,26 +1292,26 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const crypto::secret_key sec_x = decrypt(sec);
-        log_hexbuffer("generate_key_image: [[IN]]  pub ", pub.data, 32);
-        log_hexbuffer("generate_key_image: [[IN]]  sec ", sec_x.data, 32);
+        log_hexbuffer("generate_key_image: [[IN]]  pub ", pub.data(), 32);
+        log_hexbuffer("generate_key_image: [[IN]]  sec ", sec_x.data(), 32);
         crypto::key_image image_x;
         debug_device->generate_key_image(pub, sec_x, image_x);
-        log_hexbuffer("generate_key_image: [[OUT]] image ", image_x.data, 32);
+        log_hexbuffer("generate_key_image: [[OUT]] image ", image_x.data(), 32);
 #endif
 
         int offset = set_command_header_noopt(INS_GEN_KEY_IMAGE);
         //pub
-        send_bytes(pub.data, 32, offset);
+        send_bytes(pub.data(), 32, offset);
         //sec
-        send_secret(sec.data, offset);
+        send_secret(sec.data(), offset);
 
         finish_and_exchange(offset);
 
         //key image
-        receive_bytes(image.data, 32);
+        receive_bytes(image.data(), 32);
 
 #ifdef DEBUG_HWDEVICE
-        check32("generate_key_image", "image", image_x.data, image.data);
+        check32("generate_key_image", "image", image_x.data(), image.data());
 #endif
 
         return true;
@@ -1322,9 +1321,9 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         auto locks = tools::unique_locks(device_locker, command_locker);
 
         int offset = set_command_header_noopt(INS_GEN_KEY_IMAGE_SIGNATURE);
-        send_bytes(image.data, 32, offset);
-        send_bytes(pub.data, 32, offset);
-        send_secret(sec.data, offset);
+        send_bytes(image.data(), 32, offset);
+        send_bytes(pub.data(), 32, offset);
+        send_secret(sec.data(), offset);
 
         finish_and_exchange(offset);
 
@@ -1334,10 +1333,10 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         // We can't check the actual returned signature byte values because a random component is
         // involved, but we *can* attempt to verify the signature
         bool good = crypto::check_key_image_signature(image, pub, sig);
-        log_hexbuffer("generate_key_image_signature: key image", image.data, 32);
-        log_hexbuffer("generate_key_image_signature: pubkey", pub.data, 32);
-        log_hexbuffer("generate_key_image_signature: signature.c", sig.c.data, 32);
-        log_hexbuffer("generate_key_image_signature: signature.r", sig.r.data, 32);
+        log_hexbuffer("generate_key_image_signature: key image", image.data(), 32);
+        log_hexbuffer("generate_key_image_signature: pubkey", pub.data(), 32);
+        log_hexbuffer("generate_key_image_signature: signature.c", sig.c.data(), 32);
+        log_hexbuffer("generate_key_image_signature: signature.r", sig.r.data(), 32);
         log_message("generate_key_image_signature: signature returned from device", good ? "passed" : "FAILED");
 #endif
 
@@ -1348,9 +1347,9 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         auto locks = tools::unique_locks(device_locker, command_locker);
 
 #ifdef DEBUG_HWDEVICE
-        log_hexbuffer("generate_unlock_signature: [[IN]]  pub ", pub.data, 32);
+        log_hexbuffer("generate_unlock_signature: [[IN]]  pub ", pub.data(), 32);
         const crypto::secret_key sec_x = decrypt(sec);
-        log_hexbuffer("generate_unlock_signature: [[IN]]  sec ", sec_x.data, 32);
+        log_hexbuffer("generate_unlock_signature: [[IN]]  sec ", sec_x.data(), 32);
 #endif
 
         // Ask for confirmation:
@@ -1359,8 +1358,8 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
         // If we got permission then we can ask for the actual signature:
         offset = set_command_header_noopt(INS_GEN_UNLOCK_SIGNATURE, 1);
-        send_bytes(pub.data, 32, offset);
-        send_secret(sec.data, offset);
+        send_bytes(pub.data(), 32, offset);
+        send_secret(sec.data(), offset);
         finish_and_exchange(offset);
 
         receive_bytes(reinterpret_cast<char*>(&sig), 64);
@@ -1369,8 +1368,8 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         // We can't check the actual returned signature byte values because a random component is
         // involved, but we *can* attempt to verify the signature
         bool good = crypto::check_signature(cryptonote::tx_extra_tx_key_image_unlock::HASH, pub, sig);
-        log_hexbuffer("generate_unlock_signature: signature.c", sig.c.data, 32);
-        log_hexbuffer("generate_unlock_signature: signature.r", sig.r.data, 32);
+        log_hexbuffer("generate_unlock_signature: signature.c", sig.c(), 32);
+        log_hexbuffer("generate_unlock_signature: signature.r", sig.r(), 32);
         log_message("generate_unlock_signature: signature returned from device", good ? "passed" : "FAILED");
 #endif
 
@@ -1413,39 +1412,39 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       const crypto::public_key D_x = D;
       const crypto::secret_key r_x = decrypt(r);
       crypto::signature sig_x;
-      log_hexbuffer("generate_tx_proof: [[IN]]  prefix_hash ", prefix_hash_x.data, 32);
-      log_hexbuffer("generate_tx_proof: [[IN]]  R ", R_x.data, 32);
-      log_hexbuffer("generate_tx_proof: [[IN]]  A ", A_x.data, 32);
+      log_hexbuffer("generate_tx_proof: [[IN]]  prefix_hash ", prefix_hash_x.data(), 32);
+      log_hexbuffer("generate_tx_proof: [[IN]]  R ", R_x.data(), 32);
+      log_hexbuffer("generate_tx_proof: [[IN]]  A ", A_x.data(), 32);
       if (B_x)
-        log_hexbuffer("generate_tx_proof: [[IN]]  B ", B_x->data, 32);
-      log_hexbuffer("generate_tx_proof: [[IN]]  D ", D_x.data, 32);
-      log_hexbuffer("generate_tx_proof: [[IN]]  r ", r_x.data, 32);
+        log_hexbuffer("generate_tx_proof: [[IN]]  B ", B_x->data(), 32);
+      log_hexbuffer("generate_tx_proof: [[IN]]  D ", D_x.data(), 32);
+      log_hexbuffer("generate_tx_proof: [[IN]]  r ", r_x.data(), 32);
 #endif
 
 
       int offset = set_command_header(INS_GET_TX_PROOF);
       //options
       buffer_send[offset++] = B ? 0x01 : 0x00;
-      send_bytes(prefix_hash.data, 32, offset);                     // prefix_hash
-      send_bytes(R.data, 32, offset);                               // R
-      send_bytes(A.data, 32, offset);                               // A
-      send_bytes(B ? B->data : crypto::null_pkey.data, 32, offset); // B
-      send_bytes(D.data, 32, offset);                               // D
-      send_secret(r.data, offset);                                  // r
+      send_bytes(prefix_hash.data(), 32, offset);                     // prefix_hash
+      send_bytes(R.data(), 32, offset);                               // R
+      send_bytes(A.data(), 32, offset);                               // A
+      send_bytes(B ? B->data : crypto::null_pkey.data(), 32, offset); // B
+      send_bytes(D.data(), 32, offset);                               // D
+      send_secret(r.data(), offset);                                  // r
 
       finish_and_exchange(offset);
 
       offset = 0;
-      receive_bytes(sig.c.data, 32, offset);
-      receive_bytes(sig.r.data, 32, offset);
+      receive_bytes(sig.c(), 32, offset);
+      receive_bytes(sig.r(), 32, offset);
 #ifdef DEBUG_HWDEVICE
-      log_hexbuffer("GENERATE_TX_PROOF: **c**   ", sig.c.data, sizeof(sig.c.data));
-      log_hexbuffer("GENERATE_TX_PROOF: **r**   ", sig.r.data, sizeof(sig.r.data));
+      log_hexbuffer("GENERATE_TX_PROOF: **c**   ", sig.c(), 32);
+      log_hexbuffer("GENERATE_TX_PROOF: **r**   ", sig.r(), 32);
 
       debug_device->generate_tx_proof(prefix_hash_x, R_x, A_x, B_x, D_x, r_x, sig_x);
-      MDEBUG("FAIL is normal if random is not fixed in proof");
-      check32("generate_tx_proof", "c", sig_x.c.data, sig.c.data);
-      check32("generate_tx_proof", "r", sig_x.r.data, sig.r.data);
+      log::debug(logcat, "FAIL is normal if random is not fixed in proof");
+      check32("generate_tx_proof", "c", sig_x.c(), sig.c());
+      check32("generate_tx_proof", "r", sig_x.r(), sig.r());
 
 #endif
     }
@@ -1466,14 +1465,14 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         //skip R, receive: r, r_hmac, fake_a, a_hmac, fake_b, hmac_b
         unsigned char tmp[32];
         offset = 32;
-        receive_secret(tx_key.data, offset);
+        receive_secret(tx_key.data(), offset);
         receive_secret(tmp, offset);
         receive_secret(tmp, offset);
 
 #ifdef DEBUG_HWDEVICE
         const crypto::secret_key r_x = decrypt(tx_key);
         log_hexbuffer("open_tx: [[OUT]] R ", buffer_recv, 32);
-        log_hexbuffer("open_tx: [[OUT]] r ", r_x.data, 32);
+        log_hexbuffer("open_tx: [[OUT]] r ", r_x.data(), 32);
 #endif
         return true;
     }
@@ -1505,7 +1504,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 #ifdef DEBUG_HWDEVICE
       crypto::hash h_x;
       debug_device->get_transaction_prefix_hash(tx, h_x);
-      MDEBUG("get_transaction_prefix_hash [[IN]] h_x/1 " << h_x);
+      log::debug(logcat, "get_transaction_prefix_hash [[IN]] h_x/1 {}", h_x);
 #endif
 
       // As of protocol version 4, we send:
@@ -1520,7 +1519,9 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       try {
         tx_prefix = serialization::dump_binary(const_cast<cryptonote::transaction_prefix&>(tx));
       } catch (const std::exception& e) {
-        ASSERT_MES_AND_THROW("unable to serialize transaction prefix: " << e.what());
+        auto err = "unable to serialize transaction prefix: "_format(e.what());
+        log::error(logcat, err);
+        throw std::runtime_error{err};
       }
 
       unsigned char* send = buffer_send + set_command_header_noopt(INS_PREFIX_HASH, 1);
@@ -1544,10 +1545,10 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       // hash the full prefix
       exchange_multipart_data(INS_PREFIX_HASH, 2, tx_prefix, KECCAK_HASH_CHUNK_SIZE);
 
-      receive_bytes(h.data, 32);
+      receive_bytes(h.data(), 32);
 
 #ifdef DEBUG_HWDEVICE
-      check8("prefix_hash", "h", h_x.data, h.data);
+      check8("prefix_hash", "h", h_x.data(), h.data());
 #endif
     }
 
@@ -1556,24 +1557,24 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
         const crypto::secret_key secret_key_x = decrypt(secret_key);
-        log_hexbuffer("encrypt_payment_id: [[IN]] payment_id ", payment_id.data, 32);
-        log_hexbuffer("encrypt_payment_id: [[IN]] public_key ", public_key.data, 32);
-        log_hexbuffer("encrypt_payment_id: [[IN]] secret_key ", secret_key_x.data, 32);
+        log_hexbuffer("encrypt_payment_id: [[IN]] payment_id ", payment_id.data(), 32);
+        log_hexbuffer("encrypt_payment_id: [[IN]] public_key ", public_key.data(), 32);
+        log_hexbuffer("encrypt_payment_id: [[IN]] secret_key ", secret_key_x.data(), 32);
         crypto::hash8 payment_id_x = payment_id;
         debug_device->encrypt_payment_id(payment_id_x, public_key, secret_key_x);
-        log_hexbuffer("encrypt_payment_id: [[OUT]] payment_id ", payment_id_x.data, 32);
+        log_hexbuffer("encrypt_payment_id: [[OUT]] payment_id ", payment_id_x.data(), 32);
 #endif
 
         int offset = set_command_header_noopt(INS_ENCRYPT_PAYMENT_ID);
-        send_bytes(public_key.data, 32, offset); // pub
-        send_secret(secret_key.data, offset); //sec
-        send_bytes(payment_id.data, 8, offset); //id
+        send_bytes(public_key.data(), 32, offset); // pub
+        send_secret(secret_key.data(), offset); //sec
+        send_bytes(payment_id.data(), 8, offset); //id
 
         finish_and_exchange(offset);
-        receive_bytes(payment_id.data, 8);
+        receive_bytes(payment_id.data(), 8);
 
 #ifdef DEBUG_HWDEVICE
-        check8("stealth", "payment_id", payment_id_x.data, payment_id.data);
+        check8("stealth", "payment_id", payment_id_x.data(), payment_id.data());
 #endif
 
         return true;
@@ -1599,7 +1600,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
 #ifdef DEBUG_HWDEVICE
       cryptonote::account_keys sender_account_keys_x = decrypt(sender_account_keys);
-      std::memmove(sender_account_keys_x.m_view_secret_key.data, dbg_viewkey.data, 32);
+      std::memmove(sender_account_keys_x.m_view_secret_key.data(), dbg_viewkey.data(), 32);
 
       const crypto::secret_key tx_key_x = decrypt(tx_key);
 
@@ -1609,20 +1610,20 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       }
 
       log_message("generate_output_ephemeral_keys: [[IN]] tx_version", std::to_string(tx_version));
-      //log_hexbuffer("generate_output_ephemeral_keys: [[IN]] sender_account_keys.view", sender_account_keys.m_sview_secret_key.data, 32);
-      //log_hexbuffer("generate_output_ephemeral_keys: [[IN]] sender_account_keys.spend", sender_account_keys.m_spend_secret_key.data, 32);
-      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] txkey_pub", txkey_pub.data, 32);
-      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] tx_key", tx_key_x.data, 32);
-      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] dst_entr.view", dst_entr.addr.m_view_public_key.data, 32);
-      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] dst_entr.spend", dst_entr.addr.m_spend_public_key.data, 32);
+      //log_hexbuffer("generate_output_ephemeral_keys: [[IN]] sender_account_keys.view", sender_account_keys.m_sview_secret_key.data(), 32);
+      //log_hexbuffer("generate_output_ephemeral_keys: [[IN]] sender_account_keys.spend", sender_account_keys.m_spend_secret_key.data(), 32);
+      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] txkey_pub", txkey_pub.data(), 32);
+      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] tx_key", tx_key_x.data(), 32);
+      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] dst_entr.view", dst_entr.addr.m_view_public_key.data(), 32);
+      log_hexbuffer("generate_output_ephemeral_keys: [[IN]] dst_entr.spend", dst_entr.addr.m_spend_public_key.data(), 32);
       if (change_addr) {
-        log_hexbuffer("generate_output_ephemeral_keys: [[IN]] change_addr.view", change_addr->addr.m_view_public_key.data, 32);
-        log_hexbuffer("generate_output_ephemeral_keys: [[IN]] change_addr.spend", change_addr->addr.m_spend_public_key.data, 32);
+        log_hexbuffer("generate_output_ephemeral_keys: [[IN]] change_addr.view", change_addr->addr.m_view_public_key.data(), 32);
+        log_hexbuffer("generate_output_ephemeral_keys: [[IN]] change_addr.spend", change_addr->addr.m_spend_public_key.data(), 32);
       }
       log_message("generate_output_ephemeral_keys: [[IN]] output_index",  std::to_string(output_index));
       log_message("generate_output_ephemeral_keys: [[IN]] need_additional_txkeys",  std::to_string(need_additional_txkeys));
       if (need_additional_txkeys) {
-        log_hexbuffer("generate_output_ephemeral_keys: [[IN]] additional_tx_keys[oi]", additional_tx_keys_x[output_index].data, 32);
+        log_hexbuffer("generate_output_ephemeral_keys: [[IN]] additional_tx_keys[oi]", additional_tx_keys_x[output_index].data(), 32);
       }
       std::vector<crypto::public_key> additional_tx_public_keys_x;
       std::vector<rct::key> amount_keys_x;
@@ -1630,10 +1631,10 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       debug_device->generate_output_ephemeral_keys(tx_version, found_change, sender_account_keys_x, txkey_pub, tx_key_x, dst_entr, change_addr, output_index, need_additional_txkeys,  additional_tx_keys_x,
           additional_tx_public_keys_x, amount_keys_x, out_eph_public_key_x);
       if(need_additional_txkeys) {
-        log_hexbuffer("additional_tx_public_keys_x: [[OUT]] additional_tx_public_keys_x", additional_tx_public_keys_x.back().data, 32);
+        log_hexbuffer("additional_tx_public_keys_x: [[OUT]] additional_tx_public_keys_x", additional_tx_public_keys_x.back().data(), 32);
       }
       log_hexbuffer("generate_output_ephemeral_keys: [[OUT]] amount_keys ", amount_keys_x.back().bytes, 32);
-      log_hexbuffer("generate_output_ephemeral_keys: [[OUT]] out_eph_public_key ", out_eph_public_key_x.data, 32);
+      log_hexbuffer("generate_output_ephemeral_keys: [[OUT]] out_eph_public_key ", out_eph_public_key_x.data(), 32);
 #endif
 
       CHECK_AND_ASSERT_THROW_MES(tx_version > 1, "TX version not supported"<<tx_version);
@@ -1651,17 +1652,17 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
 
       int offset = set_command_header_noopt(INS_GEN_TXOUT_KEYS);
       send_u32(tx_version, offset); //tx_version
-      send_secret(tx_key.data, offset); //tx_key
-      send_bytes(txkey_pub.data, 32, offset); //txkey_pub
-      send_bytes(dst_entr.addr.m_view_public_key.data, 32, offset); //Aout
-      send_bytes(dst_entr.addr.m_spend_public_key.data, 32, offset); //Bout
+      send_secret(tx_key.data(), offset); //tx_key
+      send_bytes(txkey_pub.data(), 32, offset); //txkey_pub
+      send_bytes(dst_entr.addr.m_view_public_key.data(), 32, offset); //Aout
+      send_bytes(dst_entr.addr.m_spend_public_key.data(), 32, offset); //Bout
       send_u32(output_index, offset); //output index
       buffer_send[offset++] = is_change; //is_change
       buffer_send[offset++] = dst_entr.is_subaddress; //is_subaddress
       buffer_send[offset++] = need_additional_txkeys; //need_additional_key
       //additional_tx_key
       if (need_additional_txkeys)
-        send_secret(additional_txkey.sec.data, offset);
+        send_secret(additional_txkey.sec.data(), offset);
 
       finish_and_exchange(offset);
 
@@ -1672,18 +1673,18 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       {
         CHECK_AND_ASSERT_THROW_MES(recv_len>=32, "Not enough data from device");
         crypto::secret_key scalar1;
-        receive_secret(scalar1.data, offset);
+        receive_secret(scalar1.data(), offset);
         amount_keys.push_back(rct::sk2rct(scalar1));
         recv_len -= 32;
       }
       CHECK_AND_ASSERT_THROW_MES(recv_len>=32, "Not enough data from device");
-      receive_bytes(out_eph_public_key.data, 32, offset);
+      receive_bytes(out_eph_public_key.data(), 32, offset);
       recv_len -= 32;
 
       if (need_additional_txkeys)
       {
         CHECK_AND_ASSERT_THROW_MES(recv_len>=32, "Not enough data from device");
-        receive_bytes(additional_txkey.pub.data, 32, offset);
+        receive_bytes(additional_txkey.pub.data(), 32, offset);
         additional_tx_public_keys.push_back(additional_txkey.pub);
         recv_len -= 32;
       }
@@ -1698,9 +1699,9 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       log_hexbuffer("generate_output_ephemeral_keys: clear amount_key", amount_back.bytes, 32);
       check32("generate_output_ephemeral_keys", "amount_key", amount_keys_x.back().bytes, amount_back.bytes);
       if (need_additional_txkeys) {
-        check32("generate_output_ephemeral_keys", "additional_tx_key", additional_tx_public_keys_x.back().data, additional_tx_public_keys.back().data);
+        check32("generate_output_ephemeral_keys", "additional_tx_key", additional_tx_public_keys_x.back().data(), additional_tx_public_keys.back().data());
       }
-      check32("generate_output_ephemeral_keys", "out_eph_public_key", out_eph_public_key_x.data, out_eph_public_key.data);
+      check32("generate_output_ephemeral_keys", "out_eph_public_key", out_eph_public_key_x.data(), out_eph_public_key.data());
 #endif
 
       return true;
@@ -1756,7 +1757,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         receive_bytes(unmasked.mask.bytes, 32, offset);
 
 #ifdef DEBUG_HWDEVICE
-        MDEBUG("ecdhEncode: Akout: "<<AKout_x);
+        log::debug(logcat, "ecdhEncode: Akout: {}", AKout_x);
         check32("ecdhEncode", "amount", unmasked_x.amount.bytes, unmasked.amount.bytes);
         check32("ecdhEncode", "mask", unmasked_x.mask.bytes, unmasked.mask.bytes);
 
@@ -1788,7 +1789,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         receive_bytes(masked.mask.bytes, 32, offset);
 
 #ifdef DEBUG_HWDEVICE
-        MDEBUG("ecdhEncode: Akout: "<<AKout_x);
+        log::debug(logcat, "ecdhEncode: Akout: {}", AKout_x);
         check32("ecdhDecode", "amount", masked_x.amount.bytes, masked.amount.bytes);
         check32("ecdhDecode", "mask", masked_x.mask.bytes, masked.mask.bytes);
 #endif
@@ -2186,10 +2187,10 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
           send_secret(outKeys.AKout.bytes, offset); //AKout
           send_bytes(&data[C_offset], 32, offset); //C
           C_offset += 32;
-          send_bytes(crypto::null_hash.data, 32, offset); // k
+          send_bytes(crypto::null<crypto::hash>.data(), 32, offset); // k
           send_bytes(&data[kv_offset], 8, offset); // v
           kv_offset += 8;
-          send_bytes(crypto::null_hash.data, 24, offset); // v padding
+          send_bytes(crypto::null<crypto::hash>.data(), 24, offset); // v padding
 
           // check transaction user input
           CHECK_AND_ASSERT_THROW_MES(finish_and_exchange(offset, true) == SW_OK, "Transaction denied on device.");
@@ -2328,7 +2329,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
         // This will fail if this isn't an open stake tx.
         send_simple(INS_GET_TX_SECRET_KEY);
         // The ledger provides us with the (unencrypted) tx secret key if we're allowed to have it
-        receive_bytes(key.data, 32);
+        receive_bytes(key.data(), 32);
 
         return true;
     }

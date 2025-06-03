@@ -1,9 +1,6 @@
 #include "master_node_swarm.h"
 #include "common/random.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "master_nodes"
-
 #ifdef UNIT_TEST
   #define prod_static
 #else
@@ -12,6 +9,8 @@
 
 namespace master_nodes
 {
+  static auto logcat = log::Cat("master_nodes");
+
   uint64_t get_new_swarm_id(const swarm_mnode_map_t &swarm_to_mnodes)
   {
     if (swarm_to_mnodes.empty()) return 0;
@@ -70,7 +69,7 @@ namespace master_nodes
                                             const ssize_t margin = pair.second.size() - MIN_SWARM_SIZE;
                                             return result + std::max(margin, ssize_t(0));
                                           });
-    LOG_PRINT_L2("Calculated excess: " << excess);
+    log::debug(logcat, "Calculated excess: {}", excess);
     return excess;
   };
 
@@ -81,7 +80,7 @@ namespace master_nodes
   prod_static size_t calc_threshold(const swarm_mnode_map_t &swarm_to_mnodes)
   {
     const size_t threshold = NEW_SWARM_SIZE + (swarm_to_mnodes.size() * IDEAL_SWARM_MARGIN);
-    LOG_PRINT_L2("Calculated threshold: " << threshold);
+    log::debug(logcat, "Calculated threshold: {}", threshold);
     return threshold;
   };
 
@@ -137,7 +136,7 @@ namespace master_nodes
 
     while (calc_excess(swarm_to_mnodes) >= calc_threshold(swarm_to_mnodes))
     {
-      LOG_PRINT_L2("New swarm creation");
+      log::debug(logcat, "New swarm creation");
       std::vector<crypto::public_key> new_swarm_mnodes;
       new_swarm_mnodes.reserve(NEW_SWARM_SIZE);
       while (new_swarm_mnodes.size() < NEW_SWARM_SIZE)
@@ -146,7 +145,7 @@ namespace master_nodes
         get_excess_pool(MIN_SWARM_SIZE, swarm_to_mnodes, pool_mnodes, excess);
         if (pool_mnodes.size() == 0)
         {
-          MERROR("Error while getting excess pool for new swarm creation");
+          log::error(logcat, "Error while getting excess pool for new swarm creation");
           return;
         }
         const auto& random_excess_mnode = pick_from_excess_pool(pool_mnodes, mt);
@@ -156,12 +155,12 @@ namespace master_nodes
       const auto new_swarm_id = get_new_swarm_id(swarm_to_mnodes);
       if (auto [it, ins] = swarm_to_mnodes.emplace(new_swarm_id, std::move(new_swarm_mnodes));
               !ins) {
-          MFATAL("New swarm ID gave a swarm id (" << new_swarm_id << ") that already exists -- this is a bug!");
+          log::error(logcat, "New swarm ID gave a swarm id ({}) that already exists -- this is a bug!", new_swarm_id);
           // If we actually abort() here then hitting this would potentially kill the whole network
           // if we hit this bug, so just warn very loudly and move on; if it happens we'll have to
           // track down the bug and fix it separately.
       } else {
-          LOG_PRINT_L2("Created new swarm from excess: " << new_swarm_id);
+          log::debug(logcat, "Created new swarm from excess: {}", new_swarm_id);
       }
     }
   }
@@ -228,22 +227,22 @@ namespace master_nodes
       swarm_to_mnodes.erase(it);
     }
 
-    LOG_PRINT_L3("calc_swarm_changes. swarms: " << swarm_to_mnodes.size() << ", regs: " << unassigned_mnodes.size());
+    log::trace(logcat, "calc_swarm_changes. swarms: {}, regs: {}", swarm_to_mnodes.size(), unassigned_mnodes.size());
 
     /// 0. Ensure there is always 1 swarm
     if (swarm_to_mnodes.size() == 0)
     {
       const auto new_swarm_id = get_new_swarm_id({});
       swarm_to_mnodes.insert({new_swarm_id, {}});
-      LOG_PRINT_L2("Created initial swarm " << new_swarm_id);
+      log::debug(logcat, "Created initial swarm {}", new_swarm_id);
     }
 
     /// 1. Assign new registered mnodes
     assign_mnodes(unassigned_mnodes, swarm_to_mnodes, mersenne_twister, FILL_SWARM_LOWER_PERCENTILE);
-    LOG_PRINT_L2("After assignment:");
+    log::debug(logcat, "After assignment:");
     for (const auto &entry : swarm_to_mnodes)
     {
-      LOG_PRINT_L2(entry.first << ": " << entry.second.size());
+      log::debug(logcat, "{}: {}", entry.first, entry.second.size());
     }
 
     /// 2. *Robin Hood Round* steal mnodes from wealthy swarms and give them to the poor
@@ -276,7 +275,7 @@ namespace master_nodes
           remove_excess_mnode_from_swarm(excess_mnode, swarm_to_mnodes);
           /// Add public key to poor swarm
           poor_swarm_mnodes.push_back(excess_mnode.public_key);
-          LOG_PRINT_L2("Stolen 1 mnode " << excess_mnode.public_key << " from " << excess_mnode.swarm_id << " and donated to " << swarm.swarm_id);
+          log::debug(logcat, "Stolen 1 mnode {} from {} and donated to {}", excess_mnode.public_key, excess_mnode.swarm_id, swarm.swarm_id);
         } while (poor_swarm_mnodes.size() < MIN_SWARM_SIZE);
 
         /// If there is not enough excess for the current swarm,
@@ -302,7 +301,7 @@ namespace master_nodes
         if (it == swarm_to_mnodes.end())
           break;
 
-        MWARNING("swarm " << it->first << " is DECOMMISSIONED");
+        log::warning(logcat, "swarm {} is DECOMMISSIONED", it->first);
         /// Good ol' switcheroo
         std::vector<crypto::public_key> decommissioned_mnodes;
         std::swap(decommissioned_mnodes, it->second);
@@ -313,10 +312,10 @@ namespace master_nodes
       }
 
     /// print
-    LOG_PRINT_L2("Swarm outputs:");
+    log::debug(logcat, "Swarm outputs:");
     for (const auto &entry : swarm_to_mnodes)
     {
-      LOG_PRINT_L2(entry.first << ": " << entry.second.size());
+      log::debug(logcat, "{}: {}", entry.first, entry.second.size());
     }
   }
 }
