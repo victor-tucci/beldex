@@ -30,15 +30,15 @@
 
 #include <boost/lexical_cast.hpp>
 #include "epee/misc_log_ex.h"
+#include "logging/beldex_logger.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "rctOps.h"
 using namespace crypto;
 using namespace std;
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "ringct"
+auto logcat = oxen::log::Cat("ringct");
 
-#define CHECK_AND_ASSERT_THROW_MES_L1(expr, message) {if(!(expr)) {MWARNING(message); throw std::runtime_error(message);}}
+#define CHECK_AND_ASSERT_THROW_MES_L1(expr, message) {if(!(expr)) {oxen::log::warning(logcat, message); throw std::runtime_error(message);}}
 
 struct zero_commitment { uint64_t amount; rct::key commitment; };
 static const zero_commitment zero_commitments[] = {

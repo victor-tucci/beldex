@@ -29,7 +29,6 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "epee/misc_log_ex.h"
-#include "common/perf_timer.h"
 #include "common/threadpool.h"
 #include "common/util.h"
 #include "rctSigs.h"
@@ -37,14 +36,13 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_config.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "ringct"
 
-#define CHECK_AND_ASSERT_MES_L1(expr, ret, message) {if(!(expr)) {MCERROR("verify", message); return ret;}}
 
-namespace
-{
-    rct::Bulletproof make_dummy_bulletproof(const std::vector<uint64_t> &outamounts, rct::keyV &C, rct::keyV &masks)
+namespace rct {
+    
+    static auto logcat = log::Cat("ringct");
+
+    static rct::Bulletproof make_dummy_bulletproof(const std::vector<uint64_t> &outamounts, rct::keyV &C, rct::keyV &masks)
     {
         const size_t n_outs = outamounts.size();
         const rct::key I = rct::identity();
@@ -74,9 +72,7 @@ namespace
 
         return rct::Bulletproof{rct::keyV(n_outs, I), I, I, I, I, I, I, rct::keyV(nrl, I), rct::keyV(nrl, I), I, I, I};
     }
-}
 
-namespace rct {
     Bulletproof proveRangeBulletproof(keyV &C, keyV &masks, const std::vector<uint64_t> &amounts, epee::span<const key> sk, hw::device &hwdev)
     {
         CHECK_AND_ASSERT_THROW_MES(amounts.size() == sk.size(), "Invalid amounts/sk sizes");
@@ -155,8 +151,11 @@ namespace rct {
     bool verifyBorromean(const boroSig &bb, const key64 P1, const key64 P2) {
       ge_p3 P1_p3[64], P2_p3[64];
       for (size_t i = 0 ; i < 64 ; ++i) {
-        CHECK_AND_ASSERT_MES_L1(ge_frombytes_vartime(&P1_p3[i], P1[i].bytes) == 0, false, "point conv failed");
-        CHECK_AND_ASSERT_MES_L1(ge_frombytes_vartime(&P2_p3[i], P2[i].bytes) == 0, false, "point conv failed");
+        if (ge_frombytes_vartime(&P1_p3[i], P1[i].bytes) != 0 || ge_frombytes_vartime(&P2_p3[i], P2[i].bytes) != 0)
+        {
+          log::info(log::Cat("verify"), "point conv failed");
+          return false;
+        }
       }
       return verifyBorromean(bb, P1_p3, P2_p3);
     }
@@ -532,7 +531,6 @@ namespace rct {
     bool verRange(const key & C, const rangeSig & as) {
       try
       {
-        PERF_TIMER(verRange);
         ge_p3 CiH[64], asCi[64];
         int i = 0;
         ge_p3 Ctmp_p3 = ge_p3_identity;
@@ -543,9 +541,17 @@ namespace rct {
             ge_cached cached;
             ge_p3 p3;
             ge_p1p1 p1;
-            CHECK_AND_ASSERT_MES_L1(ge_frombytes_vartime(&p3, H2[i].bytes) == 0, false, "point conv failed");
+            if (ge_frombytes_vartime(&p3, H2[i].bytes) != 0)
+            {
+              log::info(log::Cat("verify"), "point conv failed");
+              return false;
+            }
             ge_p3_to_cached(&cached, &p3);
-            CHECK_AND_ASSERT_MES_L1(ge_frombytes_vartime(&asCi[i], as.Ci[i].bytes) == 0, false, "point conv failed");
+            if (ge_frombytes_vartime(&asCi[i], as.Ci[i].bytes) != 0)
+            {
+              log::info(log::Cat("verify"), "point conv failed");
+              return false;
+            }
             ge_sub(&p1, &asCi[i], &cached);
             ge_p3_to_cached(&cached, &asCi[i]);
             ge_p1p1_to_p3(&CiH[i], &p1);
@@ -816,7 +822,6 @@ namespace rct {
     //Ver:    
     //   verifies the above sig is created corretly
     bool verRctMG(const mgSig &mg, const ctkeyM & pubs, const ctkeyV & outPk, const key &txnFeeKey, const key &message) {
-        PERF_TIMER(verRctMG);
         //setup vars
         size_t cols = pubs.size();
         CHECK_AND_ASSERT_MES(cols >= 1, false, "Empty pubs");
@@ -857,7 +862,7 @@ namespace rct {
     bool verRctMGSimple(const key &message, const mgSig &mg, const ctkeyV & pubs, const key & C) {
         try
         {
-            PERF_TIMER(verRctMGSimple);
+
             //setup vars
             size_t rows = 1;
             size_t cols = pubs.size();
@@ -866,7 +871,11 @@ namespace rct {
             size_t i;
             keyM M(cols, tmp);
             ge_p3 Cp3;
-            CHECK_AND_ASSERT_MES_L1(ge_frombytes_vartime(&Cp3, C.bytes) == 0, false, "point conv failed");
+            if (ge_frombytes_vartime(&Cp3, C.bytes) != 0)
+            {
+              log::info(log::Cat("verify"), "point conv failed");
+              return false;
+            }
             ge_cached Ccached;
             ge_p3_to_cached(&Ccached, &Cp3);
             ge_p1p1 p1;
@@ -874,7 +883,11 @@ namespace rct {
             for (i = 0; i < cols; i++) {
                     M[i][0] = pubs[i].dest;
                     ge_p3 p3;
-                    CHECK_AND_ASSERT_MES_L1(ge_frombytes_vartime(&p3, pubs[i].mask.bytes) == 0, false, "point conv failed");
+                    if (ge_frombytes_vartime(&p3, pubs[i].mask.bytes) != 0)
+                    {
+                      log::info(log::Cat("verify"), "point conv failed");
+                      return false;
+                    }
                     ge_sub(&p1, &p3, &Ccached);
                     ge_p1p1_to_p3(&p3, &p1);
                     ge_p3_tobytes(M[i][1].bytes, &p3);
@@ -888,7 +901,7 @@ namespace rct {
     bool verRctCLSAGSimple(const key &message, const clsag &sig, const ctkeyV & pubs, const key & C_offset) {
         try
         {
-            PERF_TIMER(verRctCLSAGSimple);
+            
             const size_t n = pubs.size();
 
             // Check data
@@ -1318,7 +1331,7 @@ namespace rct {
     //   uses the attached ecdh info to find the amounts represented by each output commitment 
     //   must know the destination private key to find the correct amount, else will return a random number    
     bool verRct(const rctSig & rv, bool semantics) {
-        PERF_TIMER(verRct);
+        
         CHECK_AND_ASSERT_MES(rv.type == RCTType::Full, false, "verRct called on non-full rctSig");
         if (semantics)
         {
@@ -1345,7 +1358,7 @@ namespace rct {
 
             for (size_t i = 0; i < results.size(); ++i) {
               if (!results[i]) {
-                LOG_PRINT_L1("Range proof verified failed for proof " << i);
+                log::info(logcat, "Range proof verified failed for proof {}", i);
                 return false;
               }
             }
@@ -1358,7 +1371,7 @@ namespace rct {
             DP("mg sig verified?");
             DP(mgVerd);
             if (!mgVerd) {
-              LOG_PRINT_L1("MG signature verification failed");
+              log::info(logcat, "MG signature verification failed");
               return false;
             }
           }
@@ -1367,12 +1380,12 @@ namespace rct {
         }
         catch (const std::exception &e)
         {
-          LOG_PRINT_L1("Error in verRct: " << e.what());
+          log::info(logcat, "Error in verRct: {}", e.what());
           return false;
         }
         catch (...)
         {
-          LOG_PRINT_L1("Error in verRct, but not an actual exception");
+          log::info(logcat, "Error in verRct, but not an actual exception");
           return false;
         }
     }
@@ -1382,7 +1395,7 @@ namespace rct {
     bool verRctSemanticsSimple(const std::vector<const rctSig*> & rvv) {
       try
       {
-        PERF_TIMER(verRctSemanticsSimple);
+        
 
         tools::threadpool& tpool = tools::threadpool::getInstance();
         tools::threadpool::waiter waiter;
@@ -1445,7 +1458,7 @@ namespace rct {
 
           //check pseudoOuts vs Outs..
           if (!equalKeys(sumPseudoOuts, sumOutpks)) {
-            LOG_PRINT_L1("Sum check failed");
+            log::info(logcat, "Sum check failed");
             return false;
           }
 
@@ -1463,14 +1476,14 @@ namespace rct {
         }
         if (!proofs.empty() && !verBulletproof(proofs))
         {
-          LOG_PRINT_L1("Aggregate range proof verified failed");
+          log::info(logcat, "Aggregate range proof verified failed");
           return false;
         }
 
         waiter.wait(&tpool);
         for (size_t i = 0; i < results.size(); ++i) {
           if (!results[i]) {
-            LOG_PRINT_L1("Range proof verified failed for proof " << i);
+            log::info(logcat, "Range proof verified failed for proof {}", i);
             return false;
           }
         }
@@ -1480,12 +1493,12 @@ namespace rct {
       // we can get deep throws from ge_frombytes_vartime if input isn't valid
       catch (const std::exception &e)
       {
-        LOG_PRINT_L1("Error in verRctSemanticsSimple: " << e.what());
+        log::info(logcat, "Error in verRctSemanticsSimple: {}", e.what());
         return false;
       }
       catch (...)
       {
-        LOG_PRINT_L1("Error in verRctSemanticsSimple, but not an actual exception");
+        log::info(logcat, "Error in verRctSemanticsSimple, but not an actual exception");
         return false;
       }
     }
@@ -1500,8 +1513,6 @@ namespace rct {
     bool verRctNonSemanticsSimple(const rctSig & rv) {
       try
       {
-        PERF_TIMER(verRctNonSemanticsSimple);
-
         CHECK_AND_ASSERT_MES(rct::is_rct_simple(rv.type), false, "verRctNonSemanticsSimple called on non simple rctSig");
         const bool bulletproof = is_rct_bulletproof(rv.type);
         // semantics check is early, and mixRing/MGs aren't resolved yet
@@ -1534,7 +1545,7 @@ namespace rct {
 
         for (size_t i = 0; i < results.size(); ++i) {
           if (!results[i]) {
-            LOG_PRINT_L1("verRctMGSimple/verRctCLSAGSimple failed for input " << i);
+            log::info(logcat, "verRctMGSimple/verRctCLSAGSimple failed for input {}", i);
             return false;
           }
         }
@@ -1544,12 +1555,12 @@ namespace rct {
       // we can get deep throws from ge_frombytes_vartime if input isn't valid
       catch (const std::exception &e)
       {
-        LOG_PRINT_L1("Error in verRctNonSemanticsSimple: " << e.what());
+        log::info(logcat, "Error in verRctNonSemanticsSimple: {}", e.what());
         return false;
       }
       catch (...)
       {
-        LOG_PRINT_L1("Error in verRctNonSemanticsSimple, but not an actual exception");
+        log::info(logcat, "Error in verRctNonSemanticsSimple, but not an actual exception");
         return false;
       }
     }

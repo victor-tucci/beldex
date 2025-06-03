@@ -36,16 +36,15 @@
 #include <sodium/crypto_verify_32.h>
 
 extern "C" {
-#include "crypto/crypto-ops.h"
 #include "crypto/random.h"
 #include "crypto/keccak.h"
+#include "rctCryptoOps.h"
 }
 #include "crypto/crypto.h"
 
 #include "common/hex.h"
 #include "serialization/variant.h"
 #include "common/util.h"
-
 
 //Define this flag when debugging to get additional info on the console
 #ifdef DBG
@@ -560,8 +559,13 @@ namespace rct {
     inline const crypto::hash &rct2hash(const rct::key &k) { return (const crypto::hash&)k; }
     inline bool operator==(const rct::key &k0, const crypto::public_key &k1) { return !crypto_verify_32(k0.bytes, (const unsigned char*)&k1); }
     inline bool operator!=(const rct::key &k0, const crypto::public_key &k1) { return crypto_verify_32(k0.bytes, (const unsigned char*)&k1); }
+    
+    inline std::string to_hex_string(const rct::key& v) {
+      return "<{}>"_format(tools::type_to_hex(v));
+    }
 }
 
+template <> inline constexpr bool formattable::via_to_hex_string<rct::key> = true;
 
 namespace cryptonote {
     inline bool operator==(const crypto::public_key &k0, const rct::key &k1) { return !crypto_verify_32((const unsigned char*)&k0, k1.bytes); }

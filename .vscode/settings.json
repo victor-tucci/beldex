@@ -87,6 +87,8 @@
         "print": "cpp",
         "queue": "cpp",
         "stack": "cpp",
-        "*.inc": "cpp"
+        "*.inc": "cpp",
+        "ranges": "cpp",
+        "span": "cpp"
     }
 }

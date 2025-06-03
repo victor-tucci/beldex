@@ -32,13 +32,13 @@
 #include "cryptonote_config.h"
 #include "rctTypes.h"
 #include "epee/int-util.h"
+#include "logging/beldex_logger.h"
 using namespace crypto;
 using namespace std;
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "ringct"
-
 namespace rct {
+
+    static auto logcat = log::Cat("ringct");
 
     //dp 
     //Debug printing for the above types
