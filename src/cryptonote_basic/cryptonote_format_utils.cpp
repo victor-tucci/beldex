@@ -157,7 +157,7 @@ namespace cryptonote
           }
           if (rv.p.bulletproofs[0].L.size() < 6)
           {
-            log::info(logcat, "Failed to parse transaction from blob, bad bulletproofs max outputs in tx {}", get_transaction_hash(tx));
+            log::info(logcat, "Failed to parse transaction from blob, bad bulletproofs L size in tx {}", get_transaction_hash(tx));
             return false;
           }
           const size_t max_outputs = 1 << (rv.p.bulletproofs[0].L.size() - 6);
@@ -541,7 +541,7 @@ namespace cryptonote
     try {
       serialization::deserialize_all(ar, tx_extra_fields);
     } catch (const std::exception& e) {
-      log::warning(logcat, "{}: failed to deserialize extra field: {}; extra = {}", __func__, e.what(),oxenc::to_hex(tx_extra.begin(), tx_extra.end()));
+      log::warning(logcat, "{}: failed to deserialize extra field: {}; extra = {}", __func__, e.what(), oxenc::to_hex(tx_extra.begin(), tx_extra.end()));
       return false;
     }
 
@@ -762,8 +762,11 @@ namespace cryptonote
                 tx_extra_security_signature{
                         security_signature
                 };
-        bool r = add_tx_extra_field_to_tx_extra(tx_extra, field);
-        CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra registration tx");
+      if (!add_tx_extra_field_to_tx_extra(tx_extra, field))
+      {
+        log::info(logcat, "failed to serialize tx extra registration tx");
+        return false;
+      }
         return true;
     }
   //---------------------------------------------------------------

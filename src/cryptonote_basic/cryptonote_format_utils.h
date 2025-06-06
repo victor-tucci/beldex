@@ -40,6 +40,7 @@
 #include "common/string_util.h"
 #include "serialization/binary_utils.h"
 #include "serialization/json_archive.h"
+#include "logging/beldex_logger.h"
 #include <unordered_map>
 
 namespace epee
@@ -279,7 +280,7 @@ namespace cryptonote
       return true;
     } catch (const std::exception& e) {
       log::error(globallogcat, "Serialization of {} failed: {}", tools::type_name(typeid(T)), e.what());
-      // return false;
+      return false;
       throw;
     }
   }

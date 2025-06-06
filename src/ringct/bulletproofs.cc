@@ -578,8 +578,7 @@ try_again:
   rct::key z = hash_cache = rct::hash_to_scalar(y);
   if (z == rct::zero())
   {
-    // PERF_TIMER_STOP_BP(PROVE_step1);
-    MINFO("z is 0, trying again");
+    // MINFO("z is 0, trying again");
     goto try_again;
   }
 
