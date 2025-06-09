@@ -120,7 +120,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
     }
     else
     {
-      oxen::log::info(logcat, "Unsupported input type, removing key images and aborting transaction addition");
+      log::info(logcat, "Unsupported input type, removing key images and aborting transaction addition");
       for (const txin_v& tx_input : tx.vin)
       {
         if (std::holds_alternative<txin_to_key>(tx_input))
@@ -329,7 +329,7 @@ void BlockchainDB::reset_stats()
 
 void BlockchainDB::show_stats()
 {
-  oxen::log::info(logcat, "\n*********************************\n \
+  log::info(logcat, "\n*********************************\n \
       num_calls: {}\n \
       time_blk_hash: {}\n \
       time_tx_exists: {}\n \
@@ -343,7 +343,7 @@ void BlockchainDB::show_stats()
 void BlockchainDB::fixup(cryptonote::network_type)
 {
   if (is_read_only()) {
-    oxen::log::info(logcat, "Database is opened read only - skipping fixup check");
+    log::info(logcat, "Database is opened read only - skipping fixup check");
     return;
   }
 
@@ -391,7 +391,7 @@ uint64_t BlockchainDB::get_tx_block_height(const crypto::hash &h) const
   if (result == std::numeric_limits<uint64_t>::max())
   {
     std::string err = "tx_data_t with hash " + tools::type_to_hex(h) + " not found in db";
-    oxen::log::info(logcat, "{}", err);
+    log::info(logcat, "{}", err);
     throw TX_DNE(std::move(err));
   }
   return result;

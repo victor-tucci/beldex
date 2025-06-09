@@ -30,8 +30,6 @@
 #include "../span.h"
 #include "../net/levin_base.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "net"
 
 namespace epee
 {

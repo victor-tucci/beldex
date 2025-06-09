@@ -1428,7 +1428,7 @@ unsigned int device_ledger::exchange_wait_on_input(unsigned int ok, unsigned int
       send_bytes(prefix_hash.data(), 32, offset);                     // prefix_hash
       send_bytes(R.data(), 32, offset);                               // R
       send_bytes(A.data(), 32, offset);                               // A
-      send_bytes(B ? B->data : crypto::null_pkey.data(), 32, offset); // B
+      send_bytes(B ? B->data() : crypto::null<crypto::public_key>.data(), 32, offset); // B
       send_bytes(D.data(), 32, offset);                               // D
       send_secret(r.data(), offset);                                  // r
 

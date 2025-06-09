@@ -45,8 +45,6 @@
 #include <mutex>
 #include <utility>
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "mlocker"
 
 // did an mlock operation previously fail? we only
 // want to log an error once and be done with it
@@ -206,7 +204,7 @@ namespace epee
   {
 #if defined(HAVE_MLOCK)
     std::map<size_t, unsigned int>::iterator i = map().find(page);
-    if (i == map().end())
+    if (i != map().end())
     {
       if (!--i->second)
       {

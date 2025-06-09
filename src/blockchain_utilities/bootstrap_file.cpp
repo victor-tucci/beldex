@@ -31,9 +31,7 @@
 #include "serialization/binary_utils.h" // dump_binary(), parse_binary()
 
 #include "bootstrap_file.h"
-
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "bcutil"
+#include "common/fs-format.h"
 
 namespace po = boost::program_options;
 
@@ -47,6 +45,7 @@ namespace
   const uint32_t header_size = 1024;
 
   std::string refresh_string = "\r                                    \r";
+  auto logcat = log::Cat("bcutil");
 }
 
 
@@ -60,7 +59,7 @@ bool BootstrapFile::open_writer(const fs::path& file_path)
     {
       if (!fs::is_directory(dir_path))
       {
-        MFATAL("export directory path is a file: " << dir_path);
+        log::error(logcat, "export directory path is a file: {}", dir_path);
         return false;
       }
     }
@@ -68,7 +67,7 @@ bool BootstrapFile::open_writer(const fs::path& file_path)
     {
       if (!fs::create_directory(dir_path))
       {
-        MFATAL("Failed to create directory " << dir_path);
+        log::error(logcat, "Failed to create directory {}", dir_path);
         return false;
       }
     }
@@ -81,14 +80,14 @@ bool BootstrapFile::open_writer(const fs::path& file_path)
 
   if (! fs::exists(file_path))
   {
-    MDEBUG("creating file");
+    log::debug(logcat, "creating file");
     do_initialize_file = true;
     num_blocks = 0;
   }
   else
   {
     num_blocks = count_blocks(file_path.string());
-    MDEBUG("appending to existing file with height: " << num_blocks-1 << "  total blocks: " << num_blocks);
+    log::debug(logcat, "appending to existing file with height: {}  total blocks: {}", num_blocks-1, num_blocks);
   }
   m_height = num_blocks;
 
@@ -139,7 +138,7 @@ bool BootstrapFile::initialize_file()
   uint32_t bd_size = 0;
 
   blobdata bd = t_serializable_object_to_blob(bfi);
-  MDEBUG("bootstrap::file_info size: " << bd.size());
+  log::debug(logcat, "bootstrap::file_info size: {}", bd.size());
   bd_size = bd.size();
 
   try {
@@ -151,7 +150,7 @@ bool BootstrapFile::initialize_file()
   output_stream_header << bd;
 
   bd = t_serializable_object_to_blob(bbi);
-  MDEBUG("bootstrap::blocks_info size: " << bd.size());
+  log::debug(logcat, "bootstrap::blocks_info size: {}", bd.size());
   bd_size = bd.size();
 
   try {
@@ -175,10 +174,10 @@ void BootstrapFile::flush_chunk()
   m_output_stream->flush();
 
   uint32_t chunk_size = m_buffer.size();
-  // MTRACE("chunk_size " << chunk_size);
+  // log::trace(logcat, "chunk_size {}", chunk_size);
   if (chunk_size > BUFFER_SIZE)
   {
-    MWARNING("WARNING: chunk_size " << chunk_size << " > BUFFER_SIZE " << BUFFER_SIZE);
+    log::warning(logcat, "WARNING: chunk_size {} > BUFFER_SIZE {}", chunk_size, BUFFER_SIZE);
   }
 
   std::string blob;
@@ -200,14 +199,14 @@ void BootstrapFile::flush_chunk()
   long num_chars_written = pos_after - pos_before;
   if (static_cast<unsigned long>(num_chars_written) != chunk_size)
   {
-    MFATAL("Error writing chunk:  height: " << m_cur_height << "  chunk_size: " << chunk_size << "  num chars written: " << num_chars_written);
+    log::error(logcat, "Error writing chunk:  height: {}  chunk_size: {}  num chars written: {}", m_cur_height, chunk_size, num_chars_written);
     throw std::runtime_error("Error writing chunk");
   }
 
   m_buffer.clear();
   delete m_output_stream;
   m_output_stream = new boost::iostreams::stream<boost::iostreams::back_insert_device<buffer_type>>(m_buffer);
-  MDEBUG("flushed chunk:  chunk_size: " << chunk_size);
+  log::debug(logcat, "flushed chunk:  chunk_size: {}", chunk_size);
 }
 
 void BootstrapFile::write_block(block& block)
@@ -271,10 +270,10 @@ bool BootstrapFile::store_blockchain_raw(Blockchain* _blockchain_storage, tx_mem
   m_blockchain_storage = _blockchain_storage;
   m_tx_pool = _tx_pool;
   uint64_t progress_interval = 100;
-  MINFO("Storing blocks raw data...");
+  log::info(logcat, "Storing blocks raw data...");
   if (!BootstrapFile::open_writer(output_file))
   {
-    MFATAL("failed to open raw file for write");
+    log::error(logcat, "failed to open raw file for write");
     return false;
   }
   block b;
@@ -284,16 +283,16 @@ bool BootstrapFile::store_blockchain_raw(Blockchain* _blockchain_storage, tx_mem
   // height.
   uint64_t block_start = m_height;
   uint64_t block_stop = 0;
-  MINFO("source blockchain height: " <<  m_blockchain_storage->get_current_blockchain_height()-1);
+  log::info(logcat, "source blockchain height: {}", m_blockchain_storage->get_current_blockchain_height()-1);
   if ((requested_block_stop > 0) && (requested_block_stop < m_blockchain_storage->get_current_blockchain_height()))
   {
-    MINFO("Using requested block height: " << requested_block_stop);
+    log::info(logcat, "Using requested block height: {}", requested_block_stop);
     block_stop = requested_block_stop;
   }
   else
   {
     block_stop = m_blockchain_storage->get_current_blockchain_height() - 1;
-    MINFO("Using block height of source blockchain: " << block_stop);
+    log::info(logcat, "Using block height of source blockchain: {}", block_stop);
   }
   for (m_cur_height = block_start; m_cur_height <= block_stop; ++m_cur_height)
   {
@@ -319,9 +318,9 @@ bool BootstrapFile::store_blockchain_raw(Blockchain* _blockchain_storage, tx_mem
   std::cout << refresh_string;
   std::cout << "block " << m_cur_height-1 << "/" << block_stop << "\n";
 
-  MINFO("Number of blocks exported: " << num_blocks_written);
+  log::info(logcat, "Number of blocks exported: {}", num_blocks_written);
   if (num_blocks_written > 0)
-    MINFO("Largest chunk: " << m_max_chunk << " bytes");
+    log::info(logcat, "Largest chunk: {} bytes", m_max_chunk);
 
   return BootstrapFile::close();
 }
@@ -345,11 +344,11 @@ uint64_t BootstrapFile::seek_to_first_chunk(fs::ifstream& import_file)
 
   if (file_magic != blockchain_raw_magic)
   {
-    MFATAL("bootstrap file not recognized");
+    log::error(logcat, "bootstrap file not recognized");
     throw std::runtime_error("Aborting");
   }
   else
-    MINFO("bootstrap file recognized");
+    log::info(logcat, "bootstrap file recognized");
 
   uint32_t buflen_file_info;
 
@@ -362,7 +361,7 @@ uint64_t BootstrapFile::seek_to_first_chunk(fs::ifstream& import_file)
   } catch (const std::exception& e) {
     throw std::runtime_error("Error in deserialization of buflen_file_info: "s + e.what());
   }
-  MINFO("bootstrap::file_info size: " << buflen_file_info);
+  log::info(logcat, "bootstrap::file_info size: {}", buflen_file_info);
 
   if (buflen_file_info > sizeof(buf1))
     throw std::runtime_error("Error: bootstrap::file_info size exceeds buffer size");
@@ -376,9 +375,9 @@ uint64_t BootstrapFile::seek_to_first_chunk(fs::ifstream& import_file)
   } catch (const std::exception& e) {
     throw std::runtime_error("Error in deserialization of bootstrap::file_info: "s + e.what());
   }
-  MINFO("bootstrap file v" << unsigned(bfi.major_version) << "." << unsigned(bfi.minor_version));
-  MINFO("bootstrap magic size: " << sizeof(file_magic));
-  MINFO("bootstrap header size: " << bfi.header_size);
+  log::info(logcat, "bootstrap file v{}.{}", unsigned(bfi.major_version), unsigned(bfi.minor_version));
+  log::info(logcat, "bootstrap magic size: {}", sizeof(file_magic));
+  log::info(logcat, "bootstrap header size: {}", bfi.header_size);
 
   uint64_t full_header_size = sizeof(file_magic) + bfi.header_size;
   import_file.seekg(full_header_size);
@@ -398,7 +397,7 @@ uint64_t BootstrapFile::count_bytes(fs::ifstream& import_file, uint64_t blocks, 
     import_file.read(buf1, sizeof(chunk_size));
     if (!import_file) {
       std::cout << refresh_string;
-      MDEBUG("End of file reached");
+      log::debug(logcat, "End of file reached");
       quit = true;
       break;
     }
@@ -409,32 +408,29 @@ uint64_t BootstrapFile::count_bytes(fs::ifstream& import_file, uint64_t blocks, 
     } catch (const std::exception& e) {
       throw std::runtime_error("Error in deserialization of chunk_size: "s + e.what());
     }
-    MDEBUG("chunk_size: " << chunk_size);
+    log::debug(logcat, "chunk_size: {}", chunk_size);
 
     if (chunk_size > BUFFER_SIZE)
     {
       std::cout << refresh_string;
-      MWARNING("WARNING: chunk_size " << chunk_size << " > BUFFER_SIZE " << BUFFER_SIZE
-          << "  height: " << h-1 << ", offset " << bytes_read);
+      log::warning(logcat, "WARNING: chunk_size {} > BUFFER_SIZE {} height: {}, offset {}", chunk_size, BUFFER_SIZE, h-1, bytes_read);
       throw std::runtime_error("Aborting: chunk size exceeds buffer size");
     }
     if (chunk_size > CHUNK_SIZE_WARNING_THRESHOLD)
     {
       std::cout << refresh_string;
-      MDEBUG("NOTE: chunk_size " << chunk_size << " > " << CHUNK_SIZE_WARNING_THRESHOLD << " << height: "
-          << h-1 << ", offset " << bytes_read);
+      log::debug(logcat, "NOTE: chunk_size {} > {} height: {}, offset {}", chunk_size, CHUNK_SIZE_WARNING_THRESHOLD, h-1, bytes_read);
     }
     else if (chunk_size <= 0) {
       std::cout << refresh_string;
-      MDEBUG("ERROR: chunk_size " << chunk_size << " <= 0" << "  height: " << h-1 << ", offset " << bytes_read);
+      log::debug(logcat, "ERROR: chunk_size {} <= 0  height: {}, offset {}", chunk_size, h-1, bytes_read);
       throw std::runtime_error("Aborting");
     }
     // skip to next expected block size value
     import_file.seekg(chunk_size, std::ios_base::cur);
     if (! import_file) {
       std::cout << refresh_string;
-      MFATAL("ERROR: unexpected end of file: bytes read before error: "
-          << import_file.gcount() << " of chunk_size " << chunk_size);
+      log::error(logcat, "ERROR: unexpected end of file: bytes read before error: {} of chunk_size {}", import_file.gcount(), chunk_size);
       throw std::runtime_error("Aborting");
     }
     bytes_read += chunk_size;
@@ -459,7 +455,7 @@ uint64_t BootstrapFile::count_blocks(const fs::path& import_file_path, std::stre
 {
   if (std::error_code ec; !fs::exists(import_file_path, ec))
   {
-    MFATAL("bootstrap file not found: " << import_file_path);
+    log::error(logcat, "bootstrap file not found: {}", import_file_path);
     throw std::runtime_error("Aborting");
   }
   fs::ifstream import_file{import_file_path, std::ios::binary};
@@ -468,14 +464,14 @@ uint64_t BootstrapFile::count_blocks(const fs::path& import_file_path, std::stre
   uint64_t h = 0;
   if (import_file.fail())
   {
-    MFATAL("import_file.open() fail");
+    log::error(logcat, "import_file.open() fail");
     throw std::runtime_error("Aborting");
   }
 
   uint64_t full_header_size; // 4 byte magic + length of header structures
   full_header_size = seek_to_first_chunk(import_file);
 
-  MINFO("Scanning blockchain from bootstrap file...");
+  log::info(logcat, "Scanning blockchain from bootstrap file...");
   bool quit = false;
   uint64_t bytes_read = 0, blocks;
   int progress_interval = 10;
@@ -495,7 +491,7 @@ uint64_t BootstrapFile::count_blocks(const fs::path& import_file_path, std::stre
       std::flush;
 
     // std::cout << refresh_string;
-    MDEBUG("Number bytes scanned: " << bytes_read);
+    log::debug(logcat, "Number bytes scanned: {}", bytes_read);
   }
 
   import_file.close();

@@ -1,6 +1,4 @@
 #include "epee/storages/parserse_base_utils.h"
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "serialization"
 
 
 #include <algorithm>

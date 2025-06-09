@@ -33,6 +33,7 @@
 #include "common/command_line.h"
 #include "common/varint.h"
 #include "common/signal_handler.h"
+#include "common/fs-format.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_core/cryptonote_core.h"
 #include "blockchain_objects.h"
@@ -40,11 +41,12 @@
 #include "version.h"
 #include "cryptonote_core/uptime_proof.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "bcutil"
+#include <fmt/std.h>
 
 namespace po = boost::program_options;
 using namespace cryptonote;
+
+static auto logcat = log::Cat("bcutil");
 
 static bool stop_requested = false;
 
@@ -54,10 +56,8 @@ int main(int argc, char* argv[])
 
   epee::string_tools::set_module_name_and_folder(argv[0]);
 
-  uint32_t log_level = 0;
   uint64_t block_start = 0;
   uint64_t block_stop = 0;
-
   tools::on_startup();
 
   auto opt_size = command_line::boost_option_sizes();
@@ -105,13 +105,17 @@ int main(int argc, char* argv[])
     return 1;
   }
 
-  mlog_configure(mlog_get_default_log_path("beldex-blockchain-stats.log"), true);
-  if (!command_line::is_arg_defaulted(vm, arg_log_level))
-    mlog_set_log(command_line::get_arg(vm, arg_log_level).c_str());
-  else
-    mlog_set_log(std::string(std::to_string(log_level) + ",bcutil:INFO").c_str());
-
-  LOG_PRINT_L0("Starting...");
+  auto m_config_folder = command_line::get_arg(vm, cryptonote::arg_data_dir);
+  auto log_file_path = m_config_folder + "beldex-blockchain-stats.log";
+  log::Level log_level;
+  if(auto level = beldex::logging::parse_level(command_line::get_arg(vm, arg_log_level).c_str())) {
+    log_level = *level;
+  } else {
+      std::cerr << "Incorrect log level: " << command_line::get_arg(vm, arg_log_level).c_str() << std::endl;
+      throw std::runtime_error{"Incorrect log level"};
+  }
+  beldex::logging::init(log_file_path, log_level);
+  log::warning(logcat, "Starting...");
 
   std::string opt_data_dir = command_line::get_arg(vm, cryptonote::arg_data_dir);
   bool opt_testnet = command_line::get_arg(vm, cryptonote::arg_testnet_on);
@@ -124,18 +128,18 @@ int main(int argc, char* argv[])
   bool do_ringsize = command_line::get_arg(vm, arg_ringsize);
   bool do_hours = command_line::get_arg(vm, arg_hours);
 
-  LOG_PRINT_L0("Initializing source blockchain (BlockchainDB)");
+  log::warning(logcat, "Initializing source blockchain (BlockchainDB)");
   blockchain_objects_t blockchain_objects = {};
   Blockchain *core_storage = &blockchain_objects.m_blockchain;
   BlockchainDB *db = new_db();
   if (db == NULL)
   {
-    LOG_ERROR("Failed to initialize a database");
+    log::error(logcat, "Failed to initialize a database");
     throw std::runtime_error("Failed to initialize a database");
   }
 
   const fs::path filename = fs::u8path(opt_data_dir) / db->get_db_name();
-  LOG_PRINT_L0("Loading blockchain from folder " << filename << " ...");
+  log::warning(logcat, "Loading blockchain from folder {} ...", filename);
 
   try
   {
@@ -143,13 +147,13 @@ int main(int argc, char* argv[])
   }
   catch (const std::exception& e)
   {
-    LOG_PRINT_L0("Error opening database: " << e.what());
+    log::warning(logcat, "Error opening database: {}", e.what());
     return 1;
   }
   r = core_storage->init(db, nullptr /*bns_db*/, net_type);
 
   CHECK_AND_ASSERT_MES(r, 1, "Failed to initialize source blockchain storage");
-  LOG_PRINT_L0("Source blockchain storage initialized OK");
+  log::warning(logcat, "Source blockchain storage initialized OK");
 
   tools::signal_handler::install([](int type) {
     stop_requested = true;
@@ -158,7 +162,7 @@ int main(int argc, char* argv[])
   const uint64_t db_height = db->height();
   if (!block_stop)
       block_stop = db_height;
-  MINFO("Starting from height " << block_start << ", stopping at height " << block_stop);
+  log::info(logcat, "Starting from height {}, stopping at height {}", block_start, block_stop);
 
 /*
  * The default output can be plotted with GnuPlot using these commands:
@@ -213,7 +217,7 @@ plot 'stats.csv' index "DATA" using (timecolumn(1,"%Y-%m-%d")):4 with lines, '' 
     cryptonote::block blk;
     if (!cryptonote::parse_and_validate_block_from_blob(bd, blk))
     {
-      LOG_PRINT_L0("Bad block from db");
+      log::warning(logcat, "Bad block from db");
       return 1;
     }
     auto ts = std::chrono::system_clock::from_time_t(blk.timestamp);
@@ -262,9 +266,9 @@ skip:
     currsz += bd.size();
     for (const auto& tx_id : blk.tx_hashes)
     {
-      if (tx_id == crypto::null_hash)
+      if (!tx_id)
       {
-        throw std::runtime_error("Aborting: tx == null_hash");
+        throw std::runtime_error("Aborting: null txid");
       }
       if (!db->get_pruned_tx_blob(tx_id, bd))
       {
@@ -273,7 +277,7 @@ skip:
       transaction tx;
       if (!parse_and_validate_tx_base_from_blob(bd, tx))
       {
-        LOG_PRINT_L0("Bad txn from db");
+        log::warning(logcat, "Bad txn from db");
         return 1;
       }
       currsz += bd.size();
