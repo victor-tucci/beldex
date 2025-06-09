@@ -12,7 +12,7 @@ namespace nodetool {
     time_t now = time(nullptr);
     std::string result;
     for (const auto& pe : pl) {
-      result += fmt::format("{:016x}\t{}\tpruning seed {}\tlast_seen {}",
+      result += "{:016x}\t{}\tpruning seed {}\tlast_seen {}"_format(
         pe.id, pe.adr.str(), pe.pruning_seed,
         (pe.last_seen == 0 ? std::string("never") : epee::misc_utils::get_time_interval_string(now - pe.last_seen)));
     }

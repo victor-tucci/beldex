@@ -39,9 +39,11 @@
 #include <utility>
 #include <vector>
 #include <shared_mutex>
+#include <fmt/format.h>
 
 #include "cryptonote_config.h"
-#include "cryptonote_protocol/levin_notify.h"
+#include "cryptonote_protocol/levin_notify.h" 
+#include "cryptonote_basic/connection_context.h"
 #include "epee/warnings.h"
 #include "epee/net/abstract_tcp_server2.h"
 #include "epee/net/levin_protocol_handler.h"
@@ -369,11 +371,11 @@ namespace nodetool
     bool check_incoming_connections();
 
     void kill() { ///< will be called e.g. from deinit()
-      MINFO("Killing the net_node");
+      log::info(globallogcat, "Killing the net_node");
       is_closing = true;
       if(mPeersLoggerThread)
         mPeersLoggerThread->join(); // make sure the thread finishes
-      MINFO("Joined extra background net_node threads");
+      log::info(globallogcat, "Joined extra background net_node threads");
     }
 
     //debug functions

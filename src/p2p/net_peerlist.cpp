@@ -41,6 +41,7 @@
 
 #include "net_peerlist_boost_serialization.h"
 #include "common/fs.h"
+#include "logging/beldex_logger.h"
 
 
 namespace nodetool
@@ -212,7 +213,7 @@ namespace nodetool
         // This is different from the `return std::nullopt` cases above. Those
         // cases could fail due to bad file permissions, so a shutdown is
         // likely more appropriate.
-        MWARNING("Failed to load p2p config file, falling back to default config");
+        log::warning(globallogcat, "Failed to load p2p config file, falling back to default config");
         out.emplace();
       }
     }

@@ -1307,7 +1307,7 @@ bool name_system_db::validate_bns_tx(hf hf_version, uint64_t blockchain_height, 
     if (bns_extra.field_is_set(bns::extra_field::encrypted_eth_addr_value))
     {
       // BNS Allowed type Validation
-      if (check_condition(hf_version < cryptonote::hf::hf19_enhance_bns, reason, "{}: {} specifying eth_addr is disallowed in HF {}", tx, bns_extra_string(nettype, bns_extra)))
+      if (check_condition(hf_version < cryptonote::hf::hf19_enhance_bns, reason, "{}: {} specifying eth_addr is disallowed in HF {}", tx, bns_extra_string(nettype, bns_extra),static_cast<uint8_t>(hf_version)))
         return false;
 
       if (!mapping_value::validate_encrypted(mapping_type::eth_addr, bns_extra.encrypted_eth_addr_value, nullptr, reason))
