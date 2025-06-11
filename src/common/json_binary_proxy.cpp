@@ -9,7 +9,7 @@ namespace tools {
       std::memcpy(val_data, bytes.data(), bytes.size());
       return;
     } else if (bytes.size() == raw_size * 2) {
-      if (oxenc::is_hex(bytes)){
+      if (oxenc::is_hex(bytes)) {
         oxenc::from_hex(bytes.begin(), bytes.end(), val_data);
         return;
       }
@@ -20,9 +20,9 @@ namespace tools {
       const std::string_view b64_padding_string = b64_padding == 2 ? "=="sv : b64_padding == 1 ? "="sv : ""sv;
       if (bytes.size() == b64_unpadded ||
         (b64_padding > 0 && bytes.size() == b64_padded && bytes.substr(b64_unpadded) == b64_padding_string)) {
-        if (oxenc::is_base64(bytes)){
-            oxenc::from_base64(bytes.begin(), bytes.end(), val_data);
-            return;
+        if (oxenc::is_base64(bytes)) {
+          oxenc::from_base64(bytes.begin(), bytes.end(), val_data);
+          return;
         }
       }
     }

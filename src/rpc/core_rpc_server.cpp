@@ -651,13 +651,13 @@ namespace cryptonote::rpc {
       // a single one we want just the value itself; this does that.  Returns a reference to the
       // assigned value (whether as a top-level value or array element).
       template <typename T>
-      json& set(const std::string& key, T&& value, [[maybe_unused]] bool binary = is_binary_parameter<T> || is_binary_container<T>) {
+      json& set(const std::string& key, T&& value, [[maybe_unused]] bool binary = tools::is_binary_parameter<T> || tools::is_binary_container<T>) {
         auto* x = &entry[key];
         if (!x->is_null() && !x->is_array())
           x = &(entry[key] = json::array({std::move(*x)}));
         if (x->is_array())
           x = &x->emplace_back();
-        if constexpr (tools::json_is_binary<T> || tools::json_is_binary_container<T> || std::is_convertible_v<T, std::string_view>) {
+        if constexpr (tools::is_binary_parameter<T> || tools::is_binary_container<T> || std::is_convertible_v<T, std::string_view>) {
           if (binary)
             return json_binary_proxy{*x, format} = std::forward<T>(value);
         }
@@ -1341,7 +1341,7 @@ namespace cryptonote::rpc {
       set_log_level.response["status"] = "Error: log level not valid";
       return;
     }
-    auto log_level = oxen::logging::parse_level(set_log_level.request.level);
+    auto log_level = beldex::logging::parse_level(set_log_level.request.level);
     if (log_level.has_value())
       log::reset_level(*log_level);
     set_log_level.response["status"] = STATUS_OK;
@@ -1349,7 +1349,7 @@ namespace cryptonote::rpc {
   //------------------------------------------------------------------------------------------------------------------------------
   void core_rpc_server::invoke(SET_LOG_CATEGORIES& set_log_categories, rpc_context context)
   {
-    oxen::logging::process_categories_string(set_log_categories.request.categories.c_str());
+    beldex::logging::process_categories_string(set_log_categories.request.categories.c_str());
     set_log_categories.response["status"] = STATUS_OK;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2943,10 +2943,11 @@ namespace cryptonote::rpc {
         auto now = std::time(nullptr);
         auto old = update.exchange(now);
         bool significant = std::chrono::seconds{now - old} > lifetime; // Print loudly for the first ping after startup/expiry
+        auto msg = "Received ping from {} {}"_format(name, fmt::join(cur_version, "."));
         if (significant)
-          log::info(logcat,fg(fmt::terminal_color::green),("Received ping from {} {}.{}.{}", name, cur_version[0], cur_version[1], cur_version[2]));
+          log::info(logcat, fg(fmt::terminal_color::green), "{}", msg);
         else
-          log::debug(logcat,"Accepted ping from {} {}.{}.{}", name, cur_version[0], cur_version[1], cur_version[2]);
+          log::debug(logcat, msg);
         success(significant);
         status = STATUS_OK;
       }

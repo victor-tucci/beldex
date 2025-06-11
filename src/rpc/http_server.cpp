@@ -192,7 +192,7 @@ namespace cryptonote::rpc {
     http.any("/*", [this](HttpResponse* res, HttpRequest* req) {
       if (m_login && !check_auth(*req, *res))
         return;
-        log::info(logcat, "Invalid HTTP request for {} {}", req->getMethod(), req->getUrl());
+      log::info(logcat, "Invalid HTTP request for {} {}", req->getMethod(), req->getUrl());
       error_response(*res, HTTP_NOT_FOUND);
     });
   }
@@ -334,7 +334,7 @@ namespace cryptonote::rpc {
     std::string call_duration;
     if (time_logging)
       call_duration = " in " + tools::friendly_duration(std::chrono::steady_clock::now() - start);
-      if (BELDEX_LOG_ENABLED(info))
+    if (BELDEX_LOG_ENABLED(info))
       log::info(logcat, "HTTP RPC {} [{}] OK ({} bytes){}", data.uri, data.request.context.remote, result.size(), call_duration);
 
     queue_response(std::move(dataptr), std::move(result));

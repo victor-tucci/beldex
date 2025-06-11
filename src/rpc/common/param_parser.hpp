@@ -125,7 +125,7 @@ namespace cryptonote::rpc {
       val = c.template consume_integer<T>();
     else if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>)
       val = c.consume_string_view();
-    else if constexpr (tools::json_is_binary<T>)
+    else if constexpr (tools::is_binary_parameter<T>)
       tools::load_binary_parameter(c.consume_string_view(), true /*allow raw*/, val);
     else if constexpr (is_expandable_list<T>) {
       auto lc = c.consume_list_consumer();
@@ -180,7 +180,7 @@ namespace cryptonote::rpc {
       val = i;
     } else if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
       val = e.get<std::string_view>();
-    } else if constexpr (tools::json_is_binary<T> || is_expandable_list<T> || is_tuple_like<T>) {
+    } else if constexpr (tools::is_binary_parameter<T> || is_expandable_list<T> || is_tuple_like<T>) {
       try { e.get_to(val); }
       catch (const std::exception& e) { throw std::domain_error{"Invalid values in '" + key + "'"}; }
     } else {
