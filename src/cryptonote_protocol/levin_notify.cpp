@@ -43,11 +43,9 @@
 #include "net/dandelionpp.h"
 #include "p2p/net_node.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "net.p2p.tx"
-
 namespace cryptonote::levin
 {
+  static auto logcat = log::Cat("net.p2p.tx");
   using epee::connection_id_t;
   namespace
   {
@@ -238,7 +236,7 @@ namespace cryptonote::levin
         if (!channel.connection.is_nil())
           channel.queue.push_back(std::move(message_));
         else if (destination_ == 0 && zone_->connection_count == 0)
-          MWARNING("Unable to send transaction(s) over anonymity network - no available outbound connections");
+          log::warning(logcat, "Unable to send transaction(s) over anonymity network - no available outbound connections");
       }
     };
 
@@ -441,7 +439,7 @@ namespace cryptonote::levin
 
             auto connections = get_out_connections(*zone_->p2p);
             if (connections.empty())
-              MWARNING("Lost all outbound connections to anonymity network - currently unable to send transaction(s)");
+              log::warning(logcat, "Lost all outbound connections to anonymity network - currently unable to send transaction(s)");
 
             zone_->strand.post(
                             update_channels{zone_, std::move(connections)}, std::allocator<void>{});
@@ -541,7 +539,7 @@ namespace cryptonote::levin
 
 
     if (!zone_) {
-        MINFO("send_txs no zone_");
+        log::info(logcat, "send_txs no zone_");
         return false;
     }
 
@@ -550,7 +548,7 @@ namespace cryptonote::levin
 
     if (!zone_->noise.view.empty() && !zone_->channels.empty())
     {
-        MINFO("send_txs covert send in \"noise\" channel");
+        log::info(logcat, "send_txs covert send in \"noise\" channel");
       // covert send in "noise" channel
       static_assert(
         MAX_FRAGMENTS * NOISE_BYTES <= LEVIN_DEFAULT_MAX_PACKET_SIZE, "most nodes will reject this fragment setting"
@@ -563,7 +561,7 @@ namespace cryptonote::levin
       )};
       if (MAX_FRAGMENTS * zone_->noise.size() < message.size())
       {
-        MERROR("notify::send_txs provided message exceeding covert fragment size");
+        log::error(logcat, "notify::send_txs provided message exceeding covert fragment size");
         return false;
       }
 
@@ -575,7 +573,7 @@ namespace cryptonote::levin
     }
     else
     {
-      MINFO("send_txs make_tx_payload ");
+      log::info(logcat, "send_txs make_tx_payload ");
       const std::string payload = make_tx_payload(std::move(txs), pad_txs);
       epee::shared_sv message{
         epee::levin::make_notify(NOTIFY_NEW_TRANSACTIONS::ID, epee::strspan<std::uint8_t>(payload))};

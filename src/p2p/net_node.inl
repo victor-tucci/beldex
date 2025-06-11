@@ -959,7 +959,7 @@ namespace nodetool
     using response_t = typename COMMAND_TIMED_SYNC::response;
     request_t arg{};
 
-    log::warning(logcat, "{}do_peer_timed_sync", context_)
+    log::warning(logcat, "{}do_peer_timed_sync", context_);
     m_payload_handler.get_payload_sync_data(arg.payload_data);
 
     network_zone& zone = m_network_zones.at(context_.m_remote_address.get_zone());
@@ -1704,7 +1704,7 @@ namespace nodetool
       }
       else
       {
-        log::warning(logcat, fg(fmt::terminal_color::red), "No incoming connections - check firewalls/routers allow port {}", get_this_peer_port())
+        log::warning(logcat, fg(fmt::terminal_color::red), "No incoming connections - check firewalls/routers allow port {}", get_this_peer_port());
       }
     }
     return true;
@@ -1814,7 +1814,7 @@ namespace nodetool
   template<class t_payload_net_handler>
   int node_server<t_payload_net_handler>::handle_get_support_flags(int command, COMMAND_REQUEST_SUPPORT_FLAGS::request& arg, COMMAND_REQUEST_SUPPORT_FLAGS::response& rsp, p2p_connection_context& context)
   {
-    log::warning(logcat, "{}handle_get_support_flags", context)
+    log::warning(logcat, "{}handle_get_support_flags", context);
     rsp.support_flags = 0;
     return 1;
   }

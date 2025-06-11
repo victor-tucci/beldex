@@ -45,7 +45,6 @@
 #include "cryptonote_protocol_defs.h"
 #include "cryptonote_protocol_handler_common.h"
 #include "block_queue.h"
-#include "common/perf_timer.h"
 #include "common/meta.h"
 #include "cryptonote_basic/connection_context.h"
 #include <boost/circular_buffer.hpp>
@@ -55,6 +54,14 @@ DISABLE_VS_WARNINGS(4355)
 
 #define CURRENCY_PROTOCOL_MAX_OBJECT_REQUEST_COUNT 500
 #define CURRENCY_PROTOCOL_MAX_TXS_REQUEST_COUNT 5000
+
+template <>
+struct fmt::formatter<cryptonote::cryptonote_connection_context> : fmt::formatter<std::string> {
+  auto format(cryptonote::cryptonote_connection_context connection_context, format_context& ctx) {
+    return formatter<std::string>::format(
+      "[{}]"_format(epee::net_utils::print_connection_context_short(connection_context)), ctx);
+  }
+};
 
 namespace cryptonote
 {
@@ -127,7 +134,7 @@ namespace cryptonote
     template<class T>
     bool relay_to_synchronized_peers(typename T::request& arg, cryptonote_connection_context& exclude_context)
     {
-      LOG_PRINT_L3("[" << epee::net_utils::print_connection_context_short(exclude_context) << "] post relay " << tools::type_name<T>() << " -->");
+      log::trace(globallogcat, "[{}] post relay {} -->", epee::net_utils::print_connection_context_short(exclude_context), tools::type_name<T>());
       std::vector<std::pair<epee::net_utils::zone, connection_id_t>> connections;
       m_p2p->for_each_connection([&exclude_context, &connections](connection_context& context, nodetool::peerid_type peer_id)
       {
@@ -184,8 +191,8 @@ namespace cryptonote
     tools::periodic_task m_standby_checker{100ms};
     tools::periodic_task m_sync_search_checker{101s};
     std::atomic<unsigned int> m_max_out_peers;
-    tools::PerformanceTimer m_sync_timer, m_add_timer;
-    std::optional<std::chrono::steady_clock::time_point> m_last_add_end_time;
+    std::chrono::steady_clock::time_point m_sync_timer;
+    std::chrono::steady_clock::time_point m_last_add_end_time;
     uint64_t m_sync_spans_downloaded, m_sync_old_spans_downloaded, m_sync_bad_spans_downloaded;
     uint64_t m_sync_download_chain_size, m_sync_download_objects_size;
     size_t m_block_download_max_size;
@@ -204,7 +211,7 @@ namespace cryptonote
     template<class t_parameter>
       bool post_notify(typename t_parameter::request& arg, cryptonote_connection_context& context)
       {
-        LOG_PRINT_L2("[" << epee::net_utils::print_connection_context_short(context) << "] post " << tools::type_name<t_parameter>() << " -->");
+        log::debug(globallogcat, "[{}] post {} -->", epee::net_utils::print_connection_context_short(context), tools::type_name<t_parameter>());
         std::string blob;
         epee::serialization::store_t_to_binary(arg, blob);
         return m_p2p->invoke_notify_to_peer(t_parameter::ID, epee::strspan<uint8_t>(blob), context);

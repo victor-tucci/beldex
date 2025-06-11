@@ -41,4 +41,5 @@ target_link_libraries(cryptonote_protocol
     p2p
   PRIVATE
     easylogging
+    logging
     extra)

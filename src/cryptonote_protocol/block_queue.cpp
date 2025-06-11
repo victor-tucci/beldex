@@ -37,11 +37,10 @@
 #include "common/pruning.h"
 #include "block_queue.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "cn.block_queue"
-
 namespace cryptonote
 {
+
+static auto logcat = log::Cat("cn.block_queue");
 
 void block_queue::add_blocks(uint64_t height, std::vector<cryptonote::block_complete_entry> bcel, const connection_id_t& connection_id, float rate, size_t size)
 {
@@ -170,9 +169,9 @@ uint64_t block_queue::get_next_needed_height(uint64_t blockchain_height) const
 void block_queue::print() const
 {
   std::unique_lock lock{mutex};
-  MDEBUG("Block queue has " << blocks.size() << " spans");
+  log::debug(logcat, "Block queue has {} spans", blocks.size());
   for (const auto &span: blocks)
-    MDEBUG("  " << span.start_block_height << " - " << (span.start_block_height+span.nblocks-1) << " (" << span.nblocks << ") - " << (span.blocks.empty() ? "scheduled" : "filled    ") << "  " << span.connection_id << " (" << ((unsigned)(span.rate*10/1024.f))/10.f << " kB/s)");
+    log::debug(logcat, " {} - {} ({}) - {} {} ({} kB/s)", span.start_block_height, (span.start_block_height+span.nblocks-1), span.nblocks, (span.blocks.empty() ? "scheduled" : "filled "), boost::lexical_cast<std::string>(span.connection_id), ((unsigned)(span.rate*10/1024.f))/10.f);
 }
 
 std::string block_queue::get_overview(uint64_t blockchain_height) const
@@ -230,17 +229,15 @@ std::pair<uint64_t, uint64_t> block_queue::reserve_span(
 {
   std::unique_lock lock{mutex};
 
-  MDEBUG("reserve_span: first_block_height " << first_block_height << ", last_block_height " << last_block_height
-      << ", max " << max_blocks << ", seed " << epee::string_tools::to_string_hex(pruning_seed) << ", blockchain_height " <<
-      blockchain_height << ", block hashes size " << block_hashes.size());
+  log::debug(logcat, "reserve_span: first_block_height {}, last_block_height {}, max {}, seed {}, blockchain_height {}, block hashes size {}", first_block_height, last_block_height, max_blocks, epee::string_tools::to_string_hex(pruning_seed), blockchain_height, block_hashes.size());
   if (last_block_height < first_block_height || max_blocks == 0)
   {
-    MDEBUG("reserve_span: early out: first_block_height " << first_block_height << ", last_block_height " << last_block_height << ", max_blocks " << max_blocks);
+    log::debug(logcat, "reserve_span: early out: first_block_height {}, last_block_height {}, max_blocks {}", first_block_height, last_block_height, max_blocks);
     return std::make_pair(0, 0);
   }
   if (block_hashes.size() > last_block_height)
   {
-    MDEBUG("reserve_span: more block hashes than fit within last_block_height: " << block_hashes.size() << " and " << last_block_height);
+    log::debug(logcat, "reserve_span: more block hashes than fit within last_block_height: {} and {}", block_hashes.size(), last_block_height);
     return std::make_pair(0, 0);
   }
 
@@ -255,19 +252,17 @@ std::pair<uint64_t, uint64_t> block_queue::reserve_span(
 
   // if the peer's pruned for the starting block and its unpruned stripe comes next, start downloading from there
   const uint32_t next_unpruned_height = tools::get_next_unpruned_block_height(span_start_height, blockchain_height, pruning_seed);
-  MDEBUG("reserve_span: next_unpruned_height " << next_unpruned_height << " from " << span_start_height << " and seed "
-      << epee::string_tools::to_string_hex(pruning_seed) << ", limit " << span_start_height + PRUNING_STRIPE_SIZE);
+  log::debug(logcat, "reserve_span: next_unpruned_height {} from {} and seed {}, limit {}", next_unpruned_height, span_start_height, epee::string_tools::to_string_hex(pruning_seed), span_start_height + PRUNING_STRIPE_SIZE);
   if (next_unpruned_height > span_start_height && next_unpruned_height < span_start_height + PRUNING_STRIPE_SIZE)
   {
-    MDEBUG("We can download from next span: ideal height " << span_start_height << ", next unpruned height " << next_unpruned_height <<
-        "(+" << next_unpruned_height - span_start_height << "), current seed " << pruning_seed);
+    log::debug(logcat, "We can download from next span: ideal height {}, next unpruned height {}(+{}), current seed {}", span_start_height, next_unpruned_height, next_unpruned_height - span_start_height, pruning_seed);
     span_start_height = next_unpruned_height;
   }
-  MDEBUG("span_start_height: " <<span_start_height);
+  log::debug(logcat, "span_start_height: {}", span_start_height);
   const uint64_t block_hashes_start_height = last_block_height - block_hashes.size() + 1;
   if (span_start_height >= block_hashes.size() + block_hashes_start_height)
   {
-    MDEBUG("Out of hashes, cannot reserve");
+    log::debug(logcat, "Out of hashes, cannot reserve");
     return std::make_pair(0, 0);
   }
 
@@ -288,10 +283,10 @@ std::pair<uint64_t, uint64_t> block_queue::reserve_span(
   }
   if (span_length == 0)
   {
-    MDEBUG("span_length 0, cannot reserve");
+    log::debug(logcat, "span_length 0, cannot reserve");
     return std::make_pair(0, 0);
   }
-  MDEBUG("Reserving span " << span_start_height << " - " << (span_start_height + span_length - 1) << " for " << connection_id);
+  log::debug(logcat, "Reserving span {} - {} for {}", span_start_height, (span_start_height + span_length - 1), boost::lexical_cast<std::string>(connection_id));
   add_blocks(span_start_height, span_length, connection_id, std::chrono::steady_clock::now());
   set_span_hashes(span_start_height, connection_id, hashes);
   return std::make_pair(span_start_height, span_length);
@@ -399,7 +394,7 @@ size_t block_queue::get_num_filled_spans() const
 crypto::hash block_queue::get_last_known_hash(const connection_id_t& connection_id) const
 {
   std::unique_lock lock{mutex};
-  crypto::hash hash = crypto::null_hash;
+  crypto::hash hash{};
   uint64_t highest_height = 0;
   for (const auto &span: blocks)
   {
@@ -457,7 +452,7 @@ float block_queue::get_speed(const connection_id_t& connection_id) const
     return 1.0f; // everything dead ? Can't happen, but let's trap anyway
 
   const float speed = conn_rate / best_rate;
-  MTRACE(" Relative speed for " << connection_id << ": " << speed << " (" << conn_rate << "/" << best_rate);
+  log::trace(logcat, " Relative speed for {}: {} ({}/{}", boost::lexical_cast<std::string>(connection_id), speed, conn_rate, best_rate);
   return speed;
 }
 
@@ -482,7 +477,7 @@ float block_queue::get_download_rate(const connection_id_t& connection_id) const
 
   if (conn_rate < 0)
     conn_rate = 0.0f;
-  MTRACE("Download rate for " << connection_id << ": " << conn_rate << " b/s");
+  log::trace(logcat, "Download rate for {}: {} b/s", boost::lexical_cast<std::string>(connection_id), conn_rate);
   return conn_rate;
 }
 
