@@ -35,11 +35,11 @@
  * \brief Generates a set of multisig wallets
  */
 #include <iostream>
-#include <sstream>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <fmt/core.h>
 #include "crypto/crypto.h"  // for crypto::secret_key definition
+#include "common/fs-format.h"
 #include "common/i18n.h"
 #include "common/command_line.h"
 #include "common/util.h"
@@ -48,11 +48,8 @@
 #include "wallet/wallet2.h"
 
 using namespace cryptonote;
-using boost::lexical_cast;
 namespace po = boost::program_options;
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.gen_multisig"
 
 namespace genms
 {
@@ -65,6 +62,7 @@ namespace genms
 
 namespace
 {
+  static auto logcat = log::Cat("wallet.gen_multisig");
   const command_line::arg_descriptor<std::string> arg_filename_base = {"filename-base", genms::tr("Base filename (-1, -2, etc suffixes will be appended as needed)"), ""};
   const command_line::arg_descriptor<std::string> arg_scheme = {"scheme", genms::tr("Give threshold and participants at once as M/N"), ""};
   const command_line::arg_descriptor<uint32_t> arg_participants = {"participants", genms::tr("How many participants will share parts of the multisig wallet"), 0};
@@ -78,7 +76,7 @@ namespace
 
 static bool generate_multisig(uint32_t threshold, uint32_t total, const fs::path& basename, network_type nettype, bool create_address_file)
 {
-  tools::msg_writer() << fmt::format(genms::tr("Generating {:d} {:d}/{:d} multisig wallets"), total, threshold, total);
+  tools::msg_writer(genms::tr("Generating {:d} {:d}/{:d} multisig wallets"), total, threshold, total);
 
   const auto pwd_container = tools::password_container::prompt(true, "Enter password for new multisig wallets");
 
@@ -103,7 +101,7 @@ static bool generate_multisig(uint32_t threshold, uint32_t total, const fs::path
       wallets[n]->decrypt_keys(pwd_container->password());
       if (!tools::wallet2::verify_multisig_info(wallets[n]->get_multisig_info(), sk[n], pk[n]))
       {
-        tools::fail_msg_writer() << genms::tr("Failed to verify multisig info");
+        tools::fail_msg_writer(genms::tr("Failed to verify multisig info"));
         return false;
       }
       wallets[n]->encrypt_keys(pwd_container->password());
@@ -111,10 +109,10 @@ static bool generate_multisig(uint32_t threshold, uint32_t total, const fs::path
 
     // make the wallets multisig
     std::vector<std::string> extra_info(total);
-    std::stringstream ss;
+    std::vector<fs::path> filenames;
     for (size_t n = 0; n < total; ++n)
     {
-      fs::path name = basename;
+      auto& name = filenames.emplace_back(basename);
       name += "-" + std::to_string(n + 1);
       std::vector<crypto::secret_key> skn;
       std::vector<crypto::public_key> pkn;
@@ -127,7 +125,6 @@ static bool generate_multisig(uint32_t threshold, uint32_t total, const fs::path
         }
       }
       extra_info[n] = wallets[n]->make_multisig(pwd_container->password(), skn, pkn, threshold);
-      ss << "  " << name << std::endl;
     }
 
     //exchange keys unless exchange_multisig_keys returns no extra info
@@ -139,7 +136,7 @@ static bool generate_multisig(uint32_t threshold, uint32_t total, const fs::path
       {
         if (!tools::wallet2::verify_extra_multisig_info(extra_info[n], pkeys, signers[n]))
         {
-          tools::fail_msg_writer() << genms::tr("Error verifying multisig extra info");
+          tools::fail_msg_writer(genms::tr("Error verifying multisig extra info"));
           return false;
         }
       }
@@ -149,12 +146,13 @@ static bool generate_multisig(uint32_t threshold, uint32_t total, const fs::path
       }
     }
 
-    std::string address = wallets[0]->get_account().get_public_address_str(wallets[0]->nettype());
-    tools::success_msg_writer() << genms::tr("Generated multisig wallets for address ") << address << std::endl << ss.str();
+    tools::success_msg_writer("{}{}\n{}", genms::tr("Generated multisig wallets for address "),
+        wallets[0]->get_account().get_public_address_str(wallets[0]->nettype()),
+        fmt::join(filenames, "  "));
   }
   catch (const std::exception &e)
   {
-    tools::fail_msg_writer() << genms::tr("Error creating multisig wallets: ") << e.what();
+    tools::fail_msg_writer("{}{}", genms::tr("Error creating multisig wallets: "), e.what());
     return false;
   }
 
@@ -181,7 +179,7 @@ int main(int argc, char* argv[])
     desc_params,
     po::options_description{},
     boost::program_options::positional_options_description(),
-    [](const std::string &s, bool emphasis){ tools::scoped_message_writer(emphasis ? epee::console_color_white : epee::console_color_default, true) << s; },
+    [](const std::string &s, bool){ tools::msg_writer(s); },
     "beldex-gen-multisig.log"
   );
   if (!vm)
@@ -196,14 +194,14 @@ int main(int argc, char* argv[])
   devnet = command_line::get_arg(*vm, arg_devnet);
   if (testnet && devnet)
   {
-    tools::fail_msg_writer() << genms::tr("Error: Can't specify more than one of --testnet and --devnet");
+    tools::fail_msg_writer(genms::tr("Error: Can't specify more than one of --testnet and --devnet"));
     return 1;
   }
   if (command_line::has_arg(*vm, arg_scheme))
   {
     if (sscanf(command_line::get_arg(*vm, arg_scheme).c_str(), "%u/%u", &threshold, &total) != 2)
     {
-      tools::fail_msg_writer() << genms::tr("Error: expected N/M, but got: ") << command_line::get_arg(*vm, arg_scheme);
+      tools::fail_msg_writer("{}{}", genms::tr("Error: expected N/M, but got: "), command_line::get_arg(*vm, arg_scheme));
       return 1;
     }
   }
@@ -211,7 +209,7 @@ int main(int argc, char* argv[])
   {
     if (threshold)
     {
-      tools::fail_msg_writer() << genms::tr("Error: either --scheme or both of --threshold and --participants may be given");
+      tools::fail_msg_writer(genms::tr("Error: either --scheme or both of --threshold and --participants may be given"));
       return 1;
     }
     threshold = command_line::get_arg(*vm, arg_threshold);
@@ -220,14 +218,14 @@ int main(int argc, char* argv[])
   {
     if (total)
     {
-      tools::fail_msg_writer() << genms::tr("Error: either --scheme or both of --threshold and --participants may be given");
+      tools::fail_msg_writer(genms::tr("Error: either --scheme or both of --threshold and --participants may be given"));
       return 1;
     }
     total = command_line::get_arg(*vm, arg_participants);
   }
   if (threshold <= 1 || threshold > total)
   {
-    tools::fail_msg_writer() << fmt::format(genms::tr("Error: expected N > 1 and N <= M, but got N=={:d} and M=={:d}"), threshold, total);
+    tools::fail_msg_writer(genms::tr("Error: expected N > 1 and N <= M, but got N=={:d} and M=={:d}"), threshold, total);
     return 1;
   }
   fs::path basename;
@@ -237,7 +235,7 @@ int main(int argc, char* argv[])
   }
   else
   {
-    tools::fail_msg_writer() << genms::tr("Error: --filename-base is required");
+    tools::fail_msg_writer(genms::tr("Error: --filename-base is required"));
     return 1;
   }
 
