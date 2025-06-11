@@ -44,6 +44,7 @@ target_link_libraries(daemon
     cryptonote_protocol
     daemonizer
     daemon_rpc_server
+    logging
     version
     filesystem
     Boost::program_options

@@ -40,10 +40,6 @@
 #include "rpc/core_rpc_server.h"
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_protocol/cryptonote_protocol_handler.h"
-#include "epee/misc_log_ex.h"
-
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "daemon"
 
 namespace daemonize
 {

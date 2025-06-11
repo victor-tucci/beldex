@@ -37,10 +37,10 @@
 #include "daemon/command_parser_executor.h"
 #include "rpc/core_rpc_server_commands_defs.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "daemon"
-
 namespace daemonize {
+
+namespace log = oxen::log;
+static auto logcat = log::Cat("daemon");
 
 template <typename T>
 constexpr bool is_std_optional = false;
@@ -368,7 +368,7 @@ bool command_parser_executor::print_block(const std::vector<std::string>& args)
     crypto::hash block_hash;
     if (tools::hex_to_type(arg, block_hash))
       return m_executor.print_block_by_hash(block_hash, include_hex);
-    MERROR("Invalid hash or height value: " << arg);
+    log::error(logcat, "Invalid hash or height value: {}", arg);
   }
 
   return false;
@@ -405,7 +405,7 @@ bool command_parser_executor::print_transaction(const std::vector<std::string>& 
   if (tools::hex_to_type(str_hash, tx_hash))
     m_executor.print_transaction(tx_hash, include_metadata, include_hex, include_json);
   else
-    MERROR("Invalid transaction hash: " << str_hash);
+    log::error(logcat, "Invalid transaction hash: {}", str_hash);
 
   return true;
 }
@@ -414,14 +414,14 @@ bool command_parser_executor::is_key_image_spent(const std::vector<std::string>&
 {
   if (args.empty())
   {
-    tools::fail_msg_writer() << "Invalid arguments. Expected: is_key_image_spent <key_image> [<key_image> ...]\n";
+    tools::fail_msg_writer("Invalid arguments. Expected: is_key_image_spent <key_image> [<key_image> ...]\n");
     return true;
   }
 
   std::vector<crypto::key_image> kis;
   for (const auto& hex : args) {
     if (!tools::hex_to_type(hex, kis.emplace_back())) {
-      tools::fail_msg_writer() << "Invalid key image: '" << hex << "'";
+      tools::fail_msg_writer("Invalid key image: '{}'", hex);
       return true;
     }
   }
@@ -474,7 +474,7 @@ bool command_parser_executor::start_mining(const std::vector<std::string>& args)
   }
   if (info.is_subaddress)
   {
-    tools::fail_msg_writer() << "subaddress for mining reward is not yet supported!";
+    tools::fail_msg_writer("subaddress for mining reward is not yet supported!");
     return true;
   }
 
@@ -484,7 +484,7 @@ bool command_parser_executor::start_mining(const std::vector<std::string>& args)
   unsigned int threads_count = 1, num_blocks = 0;
   if (threads_val.size() && !tools::parse_int(threads_val, threads_count))
   {
-    tools::fail_msg_writer() << "Failed to parse threads value" << threads_val;
+    tools::fail_msg_writer("Failed to parse threads value {}", threads_val);
     return false;
   }
 
@@ -518,14 +518,14 @@ bool command_parser_executor::set_limit(const std::vector<std::string>& args)
     return m_executor.get_limit();
 
   if (args.size() > 2) {
-    tools::fail_msg_writer() << "Too many arguments: expected 0-2 values";
+    tools::fail_msg_writer("Too many arguments ({}): expected 0-2 values", args.size());
     return false;
   }
   int64_t limit_down;
   if (args[0] == "default") // Accept "default" as a string because getting -1 through the cli arg parsing is a nuissance
     limit_down = -1;
   else if (!tools::parse_int(args[0], limit_down)) {
-    tools::fail_msg_writer() << "Failed to parse '" << args[0] << "' as a limit";
+    tools::fail_msg_writer("Failed to parse '{}' as a limit", args[0]);
     return false;
   }
 
@@ -535,7 +535,7 @@ bool command_parser_executor::set_limit(const std::vector<std::string>& args)
   else if (args[1] == "default")
     limit_up = -1;
   else if (!tools::parse_int(args[1], limit_up)) {
-    tools::fail_msg_writer() << "Failed to parse '" << args[1] << "' as a limit";
+    tools::fail_msg_writer("Failed to parse '{}' as a limit", args[1]);
     return false;
   }
 
@@ -555,7 +555,7 @@ bool command_parser_executor::out_peers(const std::vector<std::string>& args)
 	}
 	  
 	catch(const std::exception& ex) {
-		MERROR("stoi exception");
+    log::error(logcat, "stoi exception");
 		return false;
 	}
 	
@@ -575,7 +575,7 @@ bool command_parser_executor::in_peers(const std::vector<std::string>& args)
 	}
 
 	catch(const std::exception& ex) {
-		MERROR("stoi exception");
+    log::error(logcat, "stoi exception");
 		return false;
 	}
 

@@ -90,11 +90,11 @@ public:
         return true;
     } catch (const std::exception& e) {
       if (!error.empty())
-        tools::fail_msg_writer() << error << ": " << e.what();
+        tools::fail_msg_writer("{}: {}", error, e.what());
       return false;
     } catch (...) {}
     if (!error.empty())
-      tools::fail_msg_writer() << error;
+      tools::fail_msg_writer(error);
     return false;
   }
 
@@ -140,7 +140,7 @@ public:
     if (!try_running([this] { return invoke<RPC>(); }, error_prefix))
       return false;
 
-    tools::success_msg_writer() << success_msg;
+    tools::success_msg_writer(success_msg);
     return true;
   }
 
