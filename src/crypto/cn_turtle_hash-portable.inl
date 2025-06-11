@@ -175,3 +175,4 @@ void cn_turtle_hash(const void *data, size_t length, unsigned char *hash, int li
   free(long_state);
 #endif
 }
+

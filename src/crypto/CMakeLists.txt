@@ -1,5 +1,5 @@
-# Copyright (c) 2018, The Beldex Project
-# Copyright (c) 2014-2018, The Monero Project
+# Copyright (c) 2018, The Loki Project
+# Copyright (c) 2014-2019, The Monero Project
 #
 # All rights reserved.
 #
@@ -45,7 +45,7 @@ add_library(cncrypto
   hmac-keccak.c
   jh.c
   keccak.c
-  oaes_lib.c
+  oaes_lib_expand.c
   random.c
   skein.c
   cn_heavy_hash_hard_arm.cpp
@@ -66,7 +66,6 @@ target_link_libraries(cncrypto
     epee
     randomx
     Boost::thread
-    oxen::logging
     sodium
   PRIVATE
     logging
@@ -96,6 +95,7 @@ if(IPO_ENABLED AND (CMAKE_BUILD_TYPE STREQUAL Release OR CMAKE_BUILD_TYPE STREQU
   message(STATUS "GCC-11 detected; disabling LTO for cncrypto")
   set_target_properties(cncrypto PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
 endif()
+
 
 if (ARCH STREQUAL "armv8-a" AND (CMAKE_CXX_COMPILER_ID MATCHES Clang OR CMAKE_CXX_COMPILER_ID STREQUAL GNU))
   # Similarly use +crypto extensions for the arm hash code (it also has a run-time check before

@@ -28,23 +28,20 @@
  * ---------------------------------------------------------------------------
  */
 
-#ifndef _OAES_CONFIG_H
-#define _OAES_CONFIG_H
+#ifndef _OAES_LIB_H
+#define _OAES_LIB_H
 
 #ifdef __cplusplus 
 extern "C" {
 #endif
 
-//#ifndef OAES_HAVE_ISAAC
-//#define OAES_HAVE_ISAAC 1
-//#endif // OAES_HAVE_ISAAC
+#include <stdint.h>
 
-//#ifndef OAES_DEBUG
-//#define OAES_DEBUG 0
-//#endif // OAES_DEBUG
+// directly import data (32 bytes), writes expanded key data of 240 bytes into exp_data
+void oaes_expand_key_256(const uint8_t *data, uint8_t *exp_data);
 
 #ifdef __cplusplus 
 }
 #endif
 
-#endif // _OAES_CONFIG_H
+#endif // _OAES_LIB_H

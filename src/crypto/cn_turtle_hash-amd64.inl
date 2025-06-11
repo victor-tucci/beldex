@@ -461,7 +461,7 @@ void cn_turtle_hash(const void *data, size_t length, unsigned char *hash, int li
   }
   else
   {
-      aes_expand_key(state.hs.b, expandedKey);
+      oaes_expand_key_256(state.hs.b, expandedKey);
       for(i = 0; i < init_rounds; i++)
       {
           for(j = 0; j < INIT_SIZE_BLK; j++)
@@ -520,7 +520,7 @@ void cn_turtle_hash(const void *data, size_t length, unsigned char *hash, int li
   }
   else
   {
-      aes_expand_key(&state.hs.b[32], expandedKey);
+      oaes_expand_key_256(&state.hs.b[32], expandedKey);
       for(i = 0; i < init_rounds; i++)
       {
           for(j = 0; j < INIT_SIZE_BLK; j++)
@@ -543,3 +543,4 @@ void cn_turtle_hash(const void *data, size_t length, unsigned char *hash, int li
   extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
   slow_hash_free_state(CN_TURTLE_PAGE_SIZE);
 }
+

@@ -8,18 +8,19 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 #include "epee/int-util.h"
 #include "hash-ops.h"
-#include "oaes_lib.h"
+#include "oaes_lib_expand.h"
 #include "variant2_int_sqrt.h"
 
 // Standard Crypto Definitions
 #define AES_BLOCK_SIZE         16
 #define AES_KEY_SIZE           32
-#define AES_EXPANDED_KEY_SIZE 240
+#define AES_EXPANDED_KEY_SIZE  240
 #define INIT_SIZE_BLK          8
 #define INIT_SIZE_BYTE         (INIT_SIZE_BLK * AES_BLOCK_SIZE)
 
@@ -192,7 +193,7 @@ extern int aesb_pseudo_round(const uint8_t *in, uint8_t *out, const uint8_t *exp
   } while (0)
 
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if (defined(__x86_64__) || defined(_M_X64))
 
 #include "cn_turtle_hash-amd64.inl"
 
