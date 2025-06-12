@@ -89,6 +89,16 @@
         "stack": "cpp",
         "*.inc": "cpp",
         "ranges": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "format": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "coroutine": "cpp",
+        "expected": "cpp",
+        "source_location": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp",
+        "stdfloat": "cpp",
+        "stop_token": "cpp"
     }
 }
