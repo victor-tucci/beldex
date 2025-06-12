@@ -179,7 +179,7 @@ int main(int argc, char* argv[])
     desc_params,
     po::options_description{},
     boost::program_options::positional_options_description(),
-    [](const std::string &s, bool){ tools::msg_writer(s); },
+    [](const std::string &s){ tools::msg_writer(s); },
     "beldex-gen-multisig.log"
   );
   if (!vm)

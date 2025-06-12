@@ -373,7 +373,7 @@ private:
       std::vector<std::pair<crypto::key_image, std::vector<uint64_t>>> m_rings; // relative
       wallet::pay_type m_pay_type = wallet::pay_type::out;
 
-      confirmed_transfer_details(): m_amount_in(0), m_amount_out(0), m_change((uint64_t)-1), m_block_height(0), m_payment_id(crypto::null_hash), m_timestamp(0), m_unlock_time(0), m_subaddr_account((uint32_t)-1) {}
+      confirmed_transfer_details(): m_amount_in(0), m_amount_out(0), m_change((uint64_t)-1), m_block_height(0), m_timestamp(0), m_unlock_time(0), m_subaddr_account((uint32_t)-1) {}
       confirmed_transfer_details(const unconfirmed_transfer_details &utd, uint64_t height)
       : m_amount_in(utd.m_amount_in)
       , m_amount_out(utd.m_amount_out)
