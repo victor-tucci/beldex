@@ -44,9 +44,6 @@
 #include "wallet2.h"
 #include "rpc/common/http_server_base.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.rpc"
-
 namespace tools
 {
   using HttpRequest = uWS::HttpRequest;

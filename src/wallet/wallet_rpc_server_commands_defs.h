@@ -39,9 +39,6 @@
 #include "common/meta.h"
 #include "common/beldex.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.rpc"
-
 // When making *any* change here, bump minor
 // If the change is incompatible, then bump major and set minor to 0
 // This ensures WALLET_RPC_VERSION always increases, that every change

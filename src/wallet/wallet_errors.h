@@ -38,6 +38,7 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
+#include "logging/beldex_logger.h"
 
 
 namespace tools
@@ -875,7 +876,7 @@ namespace tools
     void throw_wallet_ex(std::string&& loc, TArgs&&... args)
     {
       TException e(std::move(loc), std::forward<TArgs>(args)...);
-      LOG_PRINT_L0(e.to_string());
+      oxen::log::warning(globallogcat, e.to_string());
       throw e;
     }
   }
@@ -886,13 +887,13 @@ namespace tools
 
 #define THROW_WALLET_EXCEPTION(err_type, ...)                                                               \
   do {                                                                                                      \
-    LOG_ERROR("THROW EXCEPTION: " << #err_type);                                                 \
+    oxen::log::error(logcat, "THROW EXCEPTION: {}", #err_type);                                             \
     tools::error::throw_wallet_ex<err_type>(std::string(__FILE__ ":" STRINGIZE(__LINE__)), ## __VA_ARGS__); \
   } while(0)
 
 #define THROW_WALLET_EXCEPTION_IF(cond, err_type, ...)                                                      \
   do { if (cond)                                                                                            \
   {                                                                                                         \
-    LOG_ERROR(#cond << ". THROW EXCEPTION: " << #err_type);                                                 \
+    oxen::log::error(logcat, "{}. THROW EXCEPTION: {}", #cond, #err_type);                                  \
     tools::error::throw_wallet_ex<err_type>(std::string(__FILE__ ":" STRINGIZE(__LINE__)), ## __VA_ARGS__); \
   } } while (0)

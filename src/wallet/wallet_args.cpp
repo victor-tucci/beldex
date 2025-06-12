@@ -32,18 +32,17 @@
 #include "common/i18n.h"
 #include "common/util.h"
 #include "common/file.h"
+#include "common/fs-format.h"
 #include "epee/misc_log_ex.h"
 #include "epee/string_tools.h"
 #include "version.h"
+#include "logging/beldex_logger.h"
 
 #include "common/beldex_integration_test_hooks.h"
 
 #if defined(WIN32)
 #include <crtdbg.h>
 #endif
-
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.wallet2"
 
 // workaround for a suspected bug in pthread/kernel on MacOS X
 #ifdef __APPLE__
@@ -52,23 +51,12 @@
 #define DEFAULT_MAX_CONCURRENCY 0
 #endif
 
-namespace
-{
-  class Print
-  {
-  public:
-    Print(const std::function<void(const std::string&, bool)> &p, bool em = false): print(p), emphasis(em) {}
-    ~Print() { print(ss.str(), emphasis); }
-    template<typename T> std::ostream &operator<<(const T &t) { ss << t; return ss; }
-  private:
-    const std::function<void(const std::string&, bool)> &print;
-    std::stringstream ss;
-    bool emphasis;
-  };
-}
-
 namespace wallet_args
 {
+  namespace log = oxen::log;
+
+  static auto logcat = log::Cat("wallet.wallet2");
+
   // Create on-demand to prevent static initialization order fiasco issues.
   command_line::arg_descriptor<std::string> arg_generate_from_json()
   {
@@ -91,7 +79,7 @@ namespace wallet_args
     boost::program_options::options_description desc_params,
     boost::program_options::options_description hidden_params,
     const boost::program_options::positional_options_description& positional_options,
-    const std::function<void(const std::string&, bool)> &print,
+    const std::function<void(const std::string&)> &print,
     const char *default_log_name,
     bool log_to_console)
   
@@ -101,9 +89,9 @@ namespace wallet_args
     _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
 #endif
 
-    const command_line::arg_descriptor<std::string> arg_log_level = {"log-level", "0-4 or categories", ""};
-    const command_line::arg_descriptor<std::size_t> arg_max_log_file_size = {"max-log-file-size", "Specify maximum log file size [B]", MAX_LOG_FILE_SIZE};
-    const command_line::arg_descriptor<std::size_t> arg_max_log_files = {"max-log-files", "Specify maximum number of rotated log files to be saved (no limit by setting to 0)", MAX_LOG_FILES};
+    const command_line::arg_descriptor<std::string> arg_log_level = {"log-level", "0-4 or categories", "warning"};
+    const command_line::arg_descriptor<std::size_t> arg_max_log_file_size = {"max-log-file-size", "Specify maximum log file size [B]", 50};
+    const command_line::arg_descriptor<std::size_t> arg_max_log_files = {"max-log-files", "Specify maximum number of rotated log files to be saved (no limit by setting to 0)", 50};
     const command_line::arg_descriptor<uint32_t> arg_max_concurrency = {"max-concurrency", wallet_args::tr("Max number of threads to use for a parallel job"), DEFAULT_MAX_CONCURRENCY};
     const command_line::arg_descriptor<std::string> arg_log_file = {"log-file", wallet_args::tr("Specify log file"), ""};
     const command_line::arg_descriptor<std::string> arg_config_file = {"config-file", wallet_args::tr("Config file"), "", true};
@@ -151,19 +139,23 @@ namespace wallet_args
       }
 #endif
 
-      if (command_line::get_arg(vm, command_line::arg_help))
+      bool help = command_line::get_arg(vm, command_line::arg_help);
+      bool version = command_line::get_arg(vm, command_line::arg_version);
+      if (help or version)
       {
-        Print(print) << "Beldex '" << BELDEX_RELEASE_NAME << "' (v" << BELDEX_VERSION_FULL << ")\n";
-        Print(print) << wallet_args::tr("This is the command line beldex wallet. It needs to connect to a beldex\n"
-												  "daemon to work correctly.") << "\n";
-        Print(print) << wallet_args::tr("Usage:") << "\n  " << usage;
-        Print(print) << desc_visible;
-        should_terminate = true;
-        return true;
-      }
-      else if (command_line::get_arg(vm, command_line::arg_version))
-      {
-        Print(print) << "Beldex '" << BELDEX_RELEASE_NAME << "' (v" << BELDEX_VERSION_FULL << ")";
+       print("Beldex '{}' (v{})\n"_format(BELDEX_RELEASE_NAME, BELDEX_VERSION_FULL));
+
+        if (help)
+        {
+          print("{}\n"_format(wallet_args::tr("This is the command line beldex wallet. It needs to connect to a beldex\n"
+                                              "daemon to work correctly.")));
+          print("{}\n  {}"_format(wallet_args::tr("Usage:"), usage));
+
+          // Yuck.  Need to replace boost::po.
+          std::ostringstream s;
+          s << desc_visible;
+          print(s.str());
+        }
         should_terminate = true;
         return true;
       }
@@ -180,7 +172,7 @@ namespace wallet_args
         }
         else
         {
-          MERROR(wallet_args::tr("Can't find config file ") << config);
+          log::error(logcat, "{}{}", wallet_args::tr("Can't find config file "), config);
           return false;
         }
       }
@@ -198,43 +190,41 @@ namespace wallet_args
     if (!command_line::is_arg_defaulted(vm, arg_log_file))
       log_path = command_line::get_arg(vm, arg_log_file);
     else
-      log_path = mlog_get_default_log_path(default_log_name);
-    mlog_configure(log_path, log_to_console, command_line::get_arg(vm, arg_max_log_file_size), command_line::get_arg(vm, arg_max_log_files));
-    if (!command_line::is_arg_defaulted(vm, arg_log_level))
-    {
-      mlog_set_log(command_line::get_arg(vm, arg_log_level).c_str());
-    }
-    else if (!log_to_console)
-    {
-      mlog_set_categories("");
+      log_path = epee::string_tools::get_current_module_name() + ".log";
+    log::Level log_level;
+    if (auto level = oxen::logging::parse_level(command_line::get_arg(vm, arg_log_level).c_str())) {
+        log_level = *level;
+    } else {
+        std::cerr << "Incorrect log level: " << command_line::get_arg(vm, arg_log_level).c_str() << std::endl;
+        throw std::runtime_error{"Incorrect log level"};
     }
 
+    oxen::logging::init(log_path, log_level);
+
     if (notice)
-      Print(print) << notice << "\n";
+      print("{}\n"_format(notice));
 
     if (!command_line::is_arg_defaulted(vm, arg_max_concurrency))
       tools::set_max_concurrency(command_line::get_arg(vm, arg_max_concurrency));
 
-    Print(print) << "Beldex '" << BELDEX_RELEASE_NAME << "' (v" << BELDEX_VERSION_FULL << ")";
+    print("Beldex '{}' (v{})\n"_format(BELDEX_RELEASE_NAME, BELDEX_VERSION_FULL));
 
     if (!command_line::is_arg_defaulted(vm, arg_log_level))
-      MINFO("Setting log level = " << command_line::get_arg(vm, arg_log_level));
+      log::info(logcat, "Setting log level = {}", command_line::get_arg(vm, arg_log_level));
     else
     {
       const char *logs = getenv("BELDEX_LOGS");
-      MINFO("Setting log levels = " << (logs ? logs : "<default>"));
+      log::info(logcat, "Setting log levels = {}", (logs ? logs : "<default>"));
     }
-    MINFO(wallet_args::tr("Logging to: ") << log_path);
-
-    Print(print) << fmt::format(wallet_args::tr("Logging to {}\n"), log_path);
+    print("{}{}"_format(tr("Logging to: "), log_path));
 
     const ssize_t lockable_memory = tools::get_lockable_memory();
     if (lockable_memory >= 0 && lockable_memory < 256 * 4096) // 256 pages -> at least 256 secret keys and other such small/medium objects
-      Print(print) << tr("WARNING: You may not have a high enough lockable memory limit")
+      print(tr("WARNING: You may not have a high enough lockable memory limit")
 #ifdef ELPP_OS_UNIX
-        << ", " << tr("see ulimit -l")
+        + ", "s + tr("see ulimit -l")
 #endif
-        ;
+       );
 
     return {std::move(vm), should_terminate};
   }
