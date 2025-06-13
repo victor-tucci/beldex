@@ -192,14 +192,14 @@ namespace wallet_args
     else
       log_path = epee::string_tools::get_current_module_name() + ".log";
     log::Level log_level;
-    if (auto level = oxen::logging::parse_level(command_line::get_arg(vm, arg_log_level).c_str())) {
+    if (auto level = beldex::logging::parse_level(command_line::get_arg(vm, arg_log_level).c_str())) {
         log_level = *level;
     } else {
         std::cerr << "Incorrect log level: " << command_line::get_arg(vm, arg_log_level).c_str() << std::endl;
         throw std::runtime_error{"Incorrect log level"};
     }
 
-    oxen::logging::init(log_path, log_level);
+    beldex::logging::init(log_path, log_level);
 
     if (notice)
       print("{}\n"_format(notice));
