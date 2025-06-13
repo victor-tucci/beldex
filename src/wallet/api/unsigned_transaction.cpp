@@ -37,7 +37,6 @@
 
 #include <memory>
 #include <vector>
-#include <sstream>
 #include <boost/format.hpp>
 
 namespace Wallet {
@@ -55,7 +54,7 @@ UnsignedTransactionImpl::UnsignedTransactionImpl(WalletImpl &wallet)
 EXPORT
 UnsignedTransactionImpl::~UnsignedTransactionImpl()
 {
-    LOG_PRINT_L3("Unsigned tx deleted");
+    log::trace(logcat, "Unsigned tx deleted");
 }
 
 EXPORT
@@ -102,7 +101,7 @@ bool UnsignedTransactionImpl::checkLoadedTx(const std::function<size_t()> get_nu
 
     std::vector<cryptonote::tx_extra_field> tx_extra_fields;
     bool has_encrypted_payment_id = false;
-    crypto::hash8 payment_id8 = crypto::null_hash8;
+    crypto::hash8 payment_id8{};
     if (cryptonote::parse_tx_extra(cd.extra, tx_extra_fields))
     {
       cryptonote::tx_extra_nonce extra_nonce;
@@ -256,24 +255,24 @@ std::vector<std::string> UnsignedTransactionImpl::paymentId() const
 {
     std::vector<std::string> result;
     for (const auto &utx: m_unsigned_tx_set.txes) {     
-        crypto::hash payment_id = crypto::null_hash;
+        crypto::hash payment_id{};
         cryptonote::tx_extra_nonce extra_nonce;
         std::vector<cryptonote::tx_extra_field> tx_extra_fields;
         cryptonote::parse_tx_extra(utx.extra, tx_extra_fields);
         if (cryptonote::find_tx_extra_field_by_type(tx_extra_fields, extra_nonce))
         {
-          crypto::hash8 payment_id8 = crypto::null_hash8;
+          crypto::hash8 payment_id8{};
           if(cryptonote::get_encrypted_payment_id_from_tx_extra_nonce(extra_nonce.nonce, payment_id8))
           {
               // We can't decrypt short pid without recipient key.
-              memcpy(payment_id.data, payment_id8.data, 8);
+              memcpy(payment_id.data(), payment_id8.data(), payment_id8.size());
           }
           else if (!cryptonote::get_payment_id_from_tx_extra_nonce(extra_nonce.nonce, payment_id))
           {
-            payment_id = crypto::null_hash;
+            payment_id.zero();
           }      
         }
-        if(payment_id != crypto::null_hash)
+        if(payment_id)
             result.push_back(tools::type_to_hex(payment_id));
         else
             result.push_back("");
@@ -288,7 +287,7 @@ std::vector<std::string> UnsignedTransactionImpl::recipientAddress() const
     std::vector<std::string> result;
     for (const auto &utx: m_unsigned_tx_set.txes) {
         if (utx.dests.empty()) {
-          MERROR("empty destinations, skipped");
+          log::error(logcat, "empty destinations, skipped");
           continue;
         }
         result.push_back(cryptonote::get_account_address_as_str(m_wallet.m_wallet_ptr->nettype(), utx.dests[0].is_subaddress, utx.dests[0].addr));

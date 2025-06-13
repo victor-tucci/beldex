@@ -29,20 +29,26 @@
 
 #include <lmdb.h>
 #include "common/file.h"
+#include "common/fs-format.h"
 #include "epee/misc_log_ex.h"
 #include "wallet_errors.h"
 #include "ringdb.h"
 #include "cryptonote_config.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.ringdb"
-
 #define V1TAG ((uint64_t)798237759845202)
 
-static const char zerokey[8] = {0};
-static const MDB_val zerokeyval = { sizeof(zerokey), (void *)zerokey };
+namespace tools
+{
 
-static int compare_hash32(const MDB_val *a, const MDB_val *b)
+namespace
+{
+
+auto logcat = log::Cat("wallet.ringdb");
+
+const char zerokey[8] = {0};
+const MDB_val zerokeyval = { sizeof(zerokey), (void *)zerokey };
+
+int compare_hash32(const MDB_val *a, const MDB_val *b)
 {
   uint32_t *va = (uint32_t*) a->mv_data;
   uint32_t *vb = (uint32_t*) b->mv_data;
@@ -56,14 +62,14 @@ static int compare_hash32(const MDB_val *a, const MDB_val *b)
   return 0;
 }
 
-static int compare_uint64(const MDB_val *a, const MDB_val *b)
+int compare_uint64(const MDB_val *a, const MDB_val *b)
 {
   const uint64_t va = *(const uint64_t*) a->mv_data;
   const uint64_t vb = *(const uint64_t*) b->mv_data;
   return va < vb ? -1 : va > vb;
 }
 
-static std::string compress_ring(const std::vector<uint64_t> &ring, uint64_t tag)
+std::string compress_ring(const std::vector<uint64_t> &ring, uint64_t tag)
 {
   std::string s;
   s += tools::get_varint_data(tag);
@@ -72,7 +78,7 @@ static std::string compress_ring(const std::vector<uint64_t> &ring, uint64_t tag
   return s;
 }
 
-static std::vector<uint64_t> decompress_ring(const std::string &s, uint64_t tag)
+std::vector<uint64_t> decompress_ring(const std::string &s, uint64_t tag)
 {
   std::vector<uint64_t> ring;
   int read = 0;
@@ -101,7 +107,7 @@ fs::path get_rings_filename(fs::path filename)
   return filename;
 }
 
-static crypto::chacha_iv make_iv(const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
+crypto::chacha_iv make_iv(const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
 {
   uint8_t buffer[sizeof(key_image) + sizeof(key) + cryptonote::hashkey::RINGDB.size() + sizeof(field)];
   memcpy(buffer, &key_image, sizeof(key_image));
@@ -110,14 +116,14 @@ static crypto::chacha_iv make_iv(const crypto::key_image &key_image, const crypt
   memcpy(buffer + sizeof(key_image) + sizeof(key) + cryptonote::hashkey::RINGDB.size(), &field, sizeof(field));
   crypto::hash hash;
   // if field is 0, backward compat mode: hash without the field
-  crypto::cn_fast_hash(buffer, sizeof(buffer) - !field, hash.data);
+  crypto::cn_fast_hash(buffer, sizeof(buffer) - !field, hash.data());
   static_assert(sizeof(hash) >= CHACHA_IV_SIZE, "Incompatible hash and chacha IV sizes");
   crypto::chacha_iv iv;
   memcpy(&iv, &hash, CHACHA_IV_SIZE);
   return iv;
 }
 
-static std::string encrypt(const std::string &plaintext, const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
+std::string encrypt(const std::string &plaintext, const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
 {
   const crypto::chacha_iv iv = make_iv(key_image, key, field);
   std::string ciphertext;
@@ -127,12 +133,12 @@ static std::string encrypt(const std::string &plaintext, const crypto::key_image
   return ciphertext;
 }
 
-static std::string encrypt(const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
+std::string encrypt(const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
 {
   return encrypt(std::string((const char*)&key_image, sizeof(key_image)), key_image, key, field);
 }
 
-static std::string decrypt(const std::string &ciphertext, const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
+std::string decrypt(const std::string &ciphertext, const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
 {
   const crypto::chacha_iv iv = make_iv(key_image, key, field);
   std::string plaintext;
@@ -142,7 +148,7 @@ static std::string decrypt(const std::string &ciphertext, const crypto::key_imag
   return plaintext;
 }
 
-static void store_relative_ring(MDB_txn *txn, MDB_dbi &dbi, const crypto::key_image &key_image, const std::vector<uint64_t> &relative_ring, const crypto::chacha_key &chacha_key)
+void store_relative_ring(MDB_txn *txn, MDB_dbi &dbi, const crypto::key_image &key_image, const std::vector<uint64_t> &relative_ring, const crypto::chacha_key &chacha_key)
 {
   MDB_val key, data;
   std::string key_ciphertext = encrypt(key_image, chacha_key, 0);
@@ -156,7 +162,7 @@ static void store_relative_ring(MDB_txn *txn, MDB_dbi &dbi, const crypto::key_im
   THROW_WALLET_EXCEPTION_IF(dbr, tools::error::wallet_internal_error, "Failed to set ring for key image in LMDB table: " + std::string(mdb_strerror(dbr)));
 }
 
-static int resize_env(MDB_env *env, const fs::path& db_path, size_t needed)
+int resize_env(MDB_env *env, const fs::path& db_path, size_t needed)
 {
   MDB_envinfo mei;
   MDB_stat mst;
@@ -179,14 +185,14 @@ static int resize_env(MDB_env *env, const fs::path& db_path, size_t needed)
       auto si = fs::space(db_path);
       if(si.available < needed)
       {
-        MERROR("!! WARNING: Insufficient free space to extend database !!: " << (si.available / 1000000) << " MB available");
+        log::error(logcat, "!! WARNING: Insufficient free space to extend database !!: {} MB available", (si.available / 1000000));
         return ENOSPC;
       }
     }
     catch(...)
     {
       // print something but proceed.
-      MWARNING("Unable to query free disk space.");
+      log::warning(logcat, "Unable to query free disk space.");
     }
 
     mapsize += needed;
@@ -194,15 +200,14 @@ static int resize_env(MDB_env *env, const fs::path& db_path, size_t needed)
   return mdb_env_set_mapsize(env, mapsize);
 }
 
-static size_t get_ring_data_size(size_t n_entries)
+size_t get_ring_data_size(size_t n_entries)
 {
   return n_entries * (32 + 1024); // highball 1kB for the ring data to make sure
 }
 
 enum { BLACKBALL_BLACKBALL, BLACKBALL_UNBLACKBALL, BLACKBALL_QUERY, BLACKBALL_CLEAR};
 
-namespace tools
-{
+} // anonymous namespace
 
 ringdb::ringdb(fs::path fn_, const std::string &genesis) : filename_{std::move(fn_)}
 {
@@ -212,7 +217,7 @@ ringdb::ringdb(fs::path fn_, const std::string &genesis) : filename_{std::move(f
 
   std::error_code ec;
   if (fs::create_directories(filename_, ec); ec)
-    MWARNING("Failed to create ringdb directory " << filename_ << ": " << ec.message());
+    log::warning(logcat, "Failed to create ringdb directory {}: {}", filename_, ec.message());
 
   dbr = mdb_env_create(&env);
   THROW_WALLET_EXCEPTION_IF(dbr, tools::error::wallet_internal_error, "Failed to create LDMB environment: " + std::string(mdb_strerror(dbr)));
@@ -314,7 +319,7 @@ bool ringdb::remove_rings(const crypto::chacha_key &chacha_key, const std::vecto
       continue;
     THROW_WALLET_EXCEPTION_IF(data.mv_size <= 0, tools::error::wallet_internal_error, "Invalid ring data size");
 
-    MDEBUG("Removing ring data for key image " << key_image);
+    log::debug(logcat, "Removing ring data for key image {}", key_image);
     dbr = mdb_del(txn, dbi_rings, &key, NULL);
     THROW_WALLET_EXCEPTION_IF(dbr, tools::error::wallet_internal_error, "Failed to remove ring to database: " + std::string(mdb_strerror(dbr)));
   }
@@ -374,10 +379,10 @@ bool ringdb::get_ring(const crypto::chacha_key &chacha_key, const crypto::key_im
     data_plaintext = decrypt(std::string((const char*)data.mv_data, data.mv_size), key_image, chacha_key, 0);
     outs = decompress_ring(data_plaintext, 0);
   }
-  MDEBUG("Found ring for key image " << key_image << ":");
-  MDEBUG("Relative: " << tools::join(" ", outs));
+  log::debug(logcat, "Found ring for key image {}:", key_image);
+  log::debug(logcat, "Relative: {}", tools::join(" ", outs));
   outs = cryptonote::relative_output_offsets_to_absolute(outs);
-  MDEBUG("Absolute: " << tools::join(" ", outs));
+  log::debug(logcat, "Absolute: {}", tools::join(" ", outs));
 
   dbr = mdb_txn_commit(txn);
   THROW_WALLET_EXCEPTION_IF(dbr, tools::error::wallet_internal_error, "Failed to commit txn getting ring from database: " + std::string(mdb_strerror(dbr)));
@@ -437,13 +442,13 @@ bool ringdb::blackball_worker(const std::vector<std::pair<uint64_t, uint64_t>> &
     switch (op)
     {
       case BLACKBALL_BLACKBALL:
-        MDEBUG("Marking output " << output.first << "/" << output.second << " as spent");
+        log::debug(logcat, "Marking output {}/{} as spent", output.first, output.second);
         dbr = mdb_cursor_put(cursor, &key, &data, MDB_NODUPDATA);
         if (dbr == MDB_KEYEXIST)
           dbr = 0;
         break;
       case BLACKBALL_UNBLACKBALL:
-        MDEBUG("Marking output " << output.first << "/" << output.second << " as unspent");
+        log::debug(logcat, "Marking output {}/{} as unspent", output.first, output.second);
         dbr = mdb_cursor_get(cursor, &key, &data, MDB_GET_BOTH);
         if (dbr == 0)
           dbr = mdb_cursor_del(cursor, 0);

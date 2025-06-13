@@ -13,7 +13,7 @@ StakeUnlockResultImpl::StakeUnlockResultImpl(WalletImpl& w, tools::wallet2::requ
 EXPORT
 StakeUnlockResultImpl::~StakeUnlockResultImpl()
 {
-    LOG_PRINT_L3("Stake Unlock Result Deleted");
+    log::trace(logcat, "Stake Unlock Result Deleted");
 }
 
 //----------------------------------------------------------------------------------------------------

@@ -40,6 +40,10 @@
 
 
 namespace Wallet {
+
+namespace log = oxen::log;
+inline auto logcat = log::Cat("wallet.api");
+
 class TransactionHistoryImpl;
 class PendingTransactionImpl;
 class UnsignedTransactionImpl;

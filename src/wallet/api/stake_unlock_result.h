@@ -1,8 +1,4 @@
-#include "wallet/api/wallet2_api.h"
-#include "wallet/wallet2.h"
-
-#include <string>
-
+#include "wallet/api/wallet.h"
 
 namespace Wallet {
 

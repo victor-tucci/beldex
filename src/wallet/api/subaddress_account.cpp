@@ -60,7 +60,7 @@ void SubaddressAccountImpl::setLabel(uint32_t accountIndex, const std::string &l
 EXPORT
 void SubaddressAccountImpl::refresh() 
 {
-  LOG_PRINT_L2("Refreshing subaddress account");
+  log::debug(logcat, "Refreshing subaddress account");
   auto w = m_wallet->wallet();
   clearRows();
   for (uint32_t i = 0; i < w->get_num_subaddress_accounts(); ++i)

@@ -39,7 +39,6 @@
 
 #include <memory>
 #include <vector>
-#include <sstream>
 #include <boost/format.hpp>
 
 namespace Wallet {
@@ -83,7 +82,7 @@ EXPORT
 bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, bool flash)
 {
 
-    LOG_PRINT_L3("m_pending_tx size: " << m_pending_tx.size());
+    log::trace(logcat, "m_pending_tx size: {}", m_pending_tx.size());
 
     auto filename = fs::u8path(filename_);
 
@@ -93,7 +92,7 @@ bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, 
       if (!filename.empty()) {
         if (std::error_code ec_ignore; fs::exists(filename, ec_ignore) && !overwrite){
           m_status = {Status_Error, tr("Attempting to save transaction to file, but specified file(s) exist. Exiting to not risk overwriting. File:") + filename.u8string()};
-          LOG_ERROR(m_status.second);
+          log::error(logcat, m_status.second);
           return false;
         }
         bool r = w->save_tx(m_pending_tx, filename);
@@ -139,7 +138,7 @@ bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, 
         m_status = {Status_Error, tr("no connection to daemon. Please make sure daemon is running.")};
     } catch (const tools::error::tx_rejected& e) {
         m_status.first = Status_Error;
-        m_status.second += (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())).str();
+        m_status.second += (boost::format(tr("transaction %s was rejected by daemon with status: ")) % "{}"_format(get_transaction_hash(e.tx()))).str();
         m_status.second += e.status();
         if (auto& reason = e.reason(); !reason.empty())
             m_status.second += tr(". Reason: ") + reason;
@@ -147,7 +146,7 @@ bool PendingTransactionImpl::commit(std::string_view filename_, bool overwrite, 
         m_status = {Status_Error, std::string(tr("Unknown exception: ")) + e.what()};
     } catch (...) {
         m_status = {Status_Error, tr("Unhandled exception")};
-        LOG_ERROR(m_status.second);
+        log::error(logcat, m_status.second);
     }
 
     return good();

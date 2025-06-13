@@ -266,7 +266,7 @@ void TransactionHistoryImpl::refresh()
         ti->m_reward_type = from_pay_type(pd.m_type);
         m_history.push_back(ti);
         
-        LOG_PRINT_L1(__FUNCTION__ << ": Unconfirmed payment found " << pd.m_amount);
+        log::info(logcat, "{}: Unconfirmed payment found {}", __FUNCTION__, pd.m_amount);
     }
      
 }

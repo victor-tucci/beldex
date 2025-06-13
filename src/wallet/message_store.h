@@ -45,8 +45,6 @@
 #include "common/fs.h"
 #include "message_transporter.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.mms"
 #define AUTO_CONFIG_TOKEN_BYTES 4
 #define AUTO_CONFIG_TOKEN_PREFIX "mms"
 
@@ -137,8 +135,8 @@ namespace mms
       memset(&monero_address, 0, sizeof(cryptonote::account_public_address));
       me = false;
       index = 0;
-      auto_config_public_key = crypto::null_pkey;
-      auto_config_secret_key = crypto::null_skey;
+      auto_config_public_key.zero();
+      auto_config_secret_key.zero();
       auto_config_running = false;
     };
   };

@@ -40,12 +40,10 @@
 #include "common/file.h"
 #include "epee/string_tools.h"
 
-
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.mms"
-
 namespace mms
 {
+namespace log = oxen::log;
+static auto logcat = log::Cat("wallet.mms");
 
 message_store::message_store()
 {
@@ -403,8 +401,8 @@ void message_store::stop_auto_config()
       m_transporter.delete_transport_address(m.auto_config_transport_address);
     }
     m.auto_config_token.clear();
-    m.auto_config_public_key = crypto::null_pkey;
-    m.auto_config_secret_key = crypto::null_skey;
+    m.auto_config_public_key.zero();
+    m.auto_config_secret_key.zero();
     m.auto_config_transport_address.clear();
     m.auto_config_running = false;
   }  
@@ -442,7 +440,7 @@ bool message_store::get_signer_index_by_monero_address(const cryptonote::account
       return true;
     }
   }
-  MWARNING("No authorized signer with Monero address " << account_address_to_string(monero_address));
+  log::warning(logcat, "No authorized signer with Monero address {}", account_address_to_string(monero_address));
   return false;
 }
 
@@ -457,7 +455,7 @@ bool message_store::get_signer_index_by_label(const std::string label, uint32_t 
       return true;
     }
   }
-  MWARNING("No authorized signer with label " << label);
+  log::warning(logcat, "No authorized signer with label {}", label);
   return false;
 }
 
@@ -534,13 +532,13 @@ size_t message_store::add_message(const multisig_wallet_state &state,
     m.round = 0;
   }
   m.signature_count = 0;  // Future expansion for signature counting when signing txs
-  m.hash = crypto::null_hash;
+  m.hash = crypto::null<crypto::hash>;
   m_messages.push_back(m);
 
   // Save for every new message right away (at least while in beta)
   save(state);
 
-  MINFO(boost::format("Added %s message %s for signer %s of type %s")
+  log::info(boost::format("Added %s message %s for signer %s of type %s")//TODO oxen
           % message_direction_to_string(direction) % m.id % signer_index % message_type_to_string(type));
   return m_messages.size() - 1;
 }
@@ -556,7 +554,7 @@ bool message_store::get_message_index_by_id(uint32_t id, size_t &index) const
       return true;
     }
   }
-  MWARNING("No message found with an id of " << id);
+  log::warning(logcat, "No message found with an id of {}", id);
   return false;
 }
 
@@ -722,7 +720,7 @@ void message_store::read_from_file(const multisig_wallet_state &state, const fs:
   {
     // Simply do nothing if the file is not there; allows e.g. easy recovery
     // from problems with the MMS by deleting the file
-    MINFO("No message store file found: " << filename);
+    log::info(logcat, "No message store file found: {}", filename);
     return;
   }
 
@@ -740,7 +738,7 @@ void message_store::read_from_file(const multisig_wallet_state &state, const fs:
   }
   catch (const std::exception &e)
   {
-    MERROR("MMS file " << filename << " has bad structure <iv,encrypted_data>: " << e.what());
+    log::error(logcat, "MMS file {} has bad structure <iv,encrypted_data>: {}", filename, e.what());
     THROW_WALLET_EXCEPTION_IF(true, tools::error::file_read_error, filename);
   }
 
@@ -759,7 +757,7 @@ void message_store::read_from_file(const multisig_wallet_state &state, const fs:
   }
   catch (const std::exception &e)
   {
-    MERROR("MMS file " << filename << " has bad structure: " << e.what());
+    log::error(logcat, "MMS file {} has bad structure: {}", filename, e.what());
     THROW_WALLET_EXCEPTION_IF(true, tools::error::file_read_error, filename);
   }
 

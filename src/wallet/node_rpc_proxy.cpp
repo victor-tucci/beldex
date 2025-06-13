@@ -38,6 +38,8 @@ using namespace std::literals;
 namespace tools
 {
 
+static auto logcat = log::Cat("node_rpc_proxy");
+
 static constexpr std::chrono::seconds rpc_timeout{30};
 
 NodeRPCProxy::NodeRPCProxy(rpc::http_client& http_client)
@@ -234,7 +236,7 @@ bool NodeRPCProxy::get_fee_quantization_mask(uint64_t &fee_quantization_mask) co
   fee_quantization_mask = m_fee_quantization_mask;
   if (fee_quantization_mask == 0)
   {
-    MERROR("Fee quantization mask is 0, forcing to 1");
+    log::error(logcat, "Fee quantization mask is 0, forcing to 1");
     fee_quantization_mask = 1;
   }
   return true;

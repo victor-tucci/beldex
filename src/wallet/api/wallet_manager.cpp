@@ -39,9 +39,6 @@
 #include "version.h"
 #include "common/fs.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "WalletAPI"
-
 namespace Wallet {
 
 EXPORT
@@ -191,13 +188,13 @@ std::vector<std::string> WalletManagerImpl::findWallets(std::string_view path_)
             continue;
         auto filename = p.path();
 
-        LOG_PRINT_L3("Checking filename: " << filename);
+        log::trace(logcat, "Checking filename: {}", filename.string());
 
         if (filename.extension() == ".keys") {
             // if keys file found, checking if there's wallet file itself
             filename.replace_extension();
             if (fs::exists(filename)) {
-                LOG_PRINT_L3("Found wallet: " << filename);
+                log::trace(logcat, "Found wallet: {}", filename.string());
                 result.push_back(filename.u8string());
             }
         }
@@ -278,13 +275,15 @@ WalletManagerBase *WalletManagerFactory::getWalletManager()
 EXPORT
 void WalletManagerFactory::setLogLevel(int level)
 {
-    mlog_set_log_level(level);
+    auto log_level = oxen::logging::parse_level(level);//TODO oxen
+    if (log_level.has_value())
+        log::reset_level(*log_level);
 }
 
 EXPORT
 void WalletManagerFactory::setLogCategories(const std::string &categories)
 {
-    mlog_set_log(categories.c_str());
+    oxen::logging::process_categories_string(categories);//TODO oxen
 }
 
 
