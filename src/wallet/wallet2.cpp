@@ -715,20 +715,6 @@ std::pair<std::unique_ptr<tools::wallet2>, tools::password_container> generate_f
   return {nullptr, tools::password_container{}};
 }
 
-std::string strjoin(const std::vector<size_t> &V, const char *sep)
-{
-  std::stringstream ss;
-  bool first = true;
-  for (const auto &v: V)
-  {
-    if (!first)
-      ss << sep;
-    ss << std::to_string(v);
-    first = false;
-  }
-  return ss.str();
-}
-
 bool emplace_or_replace(std::unordered_multimap<crypto::hash, tools::wallet2::pool_payment_details> &container,
   const crypto::hash &key, const tools::wallet2::pool_payment_details &pd)
 {
@@ -937,9 +923,6 @@ bool get_pruned_tx(const nlohmann::json& entry, cryptonote::transaction &tx, cry
 
   //-----------------------------------------------------------------
 } //namespace
-
-namespace tools
-{
 
 const char* wallet2::tr(const char* str) { return i18n_translate(str, "tools::wallet2"); }
 
@@ -1964,11 +1947,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
       hwdev.set_mode(hw::device::mode::TRANSACTION_PARSE);
       if (!hwdev.generate_key_derivation(tx_pub_key, keys.m_view_secret_key, derivation))
       {
-<<<<<<< Updated upstream
         log::warning(logcat, "Failed to generate key derivation from tx pubkey in {}, skipping", txid);
-=======
-        log::warning(logcat, "Failed to generate key derivation from tx pubkey in {}, skipping", cryptonote::get_transaction_hash(tx));
->>>>>>> Stashed changes
         static_assert(sizeof(derivation) == sizeof(rct::key), "Mismatched sizes of key_derivation and rct::key");
         memcpy(&derivation, rct::identity().bytes, sizeof(derivation));
       }
@@ -4274,7 +4253,7 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     {
       if (!json.HasMember("multisig_signers"))
       {
-        log::error(logcat, "Field multisig_signers not found in JSON")
+        log::error(logcat, "Field multisig_signers not found in JSON");
         return false;
       }
       if (!json["multisig_signers"].IsString())
@@ -4370,9 +4349,9 @@ bool wallet2::load_keys_buf(const std::string& keys_buf, const epee::wipeable_st
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, nettype, uint8_t, Uint, false, static_cast<uint8_t>(m_nettype));
     // The network type given in the program argument is inconsistent with the network type saved in the wallet
     THROW_WALLET_EXCEPTION_IF(static_cast<uint8_t>(m_nettype) != field_nettype, error::wallet_internal_error,
-    "{:s} wallet cannot be opened as {:s} wallet"_format(
-    % (field_nettype == 0 ? "Mainnet" : field_nettype == 1 ? "Testnet" : "Devnet")
-    % (m_nettype == network_type::MAINNET ? "mainnet" : m_nettype == network_type::TESTNET ? "testnet" : "devnet")).str());
+      "{:s} wallet cannot be opened as {:s} wallet"_format(
+        field_nettype == 0 ? "Mainnet" : field_nettype == 1 ? "Testnet" : "Devnet",
+        m_nettype == network_type::MAINNET ? "mainnet" : m_nettype == network_type::TESTNET ? "testnet" : "devnet"));
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, segregate_pre_fork_outputs, int, Int, false, true);
     m_segregate_pre_fork_outputs = field_segregate_pre_fork_outputs;
     GET_FIELD_FROM_JSON_RETURN_ON_ERROR(json, key_reuse_mitigation2, int, Int, false, true);
@@ -7215,7 +7194,7 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
     hwdev.set_mode(hw::device::mode::TRANSACTION_PARSE);
     if (!hwdev.generate_key_derivation(tx_pub_key, keys.m_view_secret_key, derivation))
     {
-      MWARNING("Failed to generate key derivation from tx pubkey in " << cryptonote::get_transaction_hash(tx) << ", skipping");
+      log::warning(logcat, "Failed to generate key derivation from tx pubkey in {}, skipping", cryptonote::get_transaction_hash(tx) );
       static_assert(sizeof(derivation) == sizeof(rct::key), "Mismatched sizes of key_derivation and rct::key");
       memcpy(&derivation, rct::identity().bytes, sizeof(derivation));
     }
@@ -7224,7 +7203,7 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
       additional_derivations.push_back({});
       if (!hwdev.generate_key_derivation(additional_tx_pub_keys[i], keys.m_view_secret_key, additional_derivations.back()))
       {
-        MWARNING("Failed to generate key derivation from additional tx pubkey in " << cryptonote::get_transaction_hash(tx) << ", skipping");
+        log::warning(logcat, "Failed to generate key derivation from additional tx pubkey in {}, skipping", cryptonote::get_transaction_hash(tx));
         memcpy(&additional_derivations.back(), rct::identity().bytes, sizeof(crypto::key_derivation));
       }
     }
@@ -9255,9 +9234,8 @@ void wallet2::light_wallet_get_outs(std::vector<std::vector<tools::wallet2::get_
     std::sort(outs.back().begin(), outs.back().end(), [](const get_outs_entry &a, const get_outs_entry &b) { return std::get<0>(a) < std::get<0>(b); });
 
     // Print output order
-    for(auto added_out: outs.back())
-      log::trace( std::get<0>(added_out));
-
+    for (auto added_out : outs.back())
+      log::trace(logcat,"{}",std::get<0>(added_out));
   }
 }
 
@@ -9747,7 +9725,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       std::map<uint64_t, std::set<uint64_t>> outs;
       for (const auto &i: get_outputs)
         outs[i.amount].insert(i.index);
-      if (BELDEX_LOG_ENABLED(Debug))
+      if (BELDEX_LOG_ENABLED(debug))
       {
         for (const auto &o: outs)
         {
@@ -10235,7 +10213,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     return true;
   });
   THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, error::unexpected_txin_type, tx);
-  log::debug(logcat, "gathered key images")
+  log::debug(logcat, "gathered key images");
 
   ptx = {};
   ptx.key_images = key_images.str();
@@ -10595,7 +10573,7 @@ log::debug(logcat, "Getting unspent outs");
 
 bool wallet2::light_wallet_get_address_info(light_rpc::GET_ADDRESS_INFO::response &response)
 {
-  log::trace( __FUNCTION__);
+  log::trace(logcat,"{}",__FUNCTION__);
 
   light_rpc::GET_ADDRESS_INFO::request request{};
 
@@ -10883,7 +10861,7 @@ bool wallet2::light_wallet_key_image_is_ours(const crypto::key_image& key_image,
 std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, beldex_construct_tx_params &tx_params)
 {
   //ensure device is let in NONE mode in any case
-    LOG_PRINT_L0("create_transactions_2 get_device prio:" << priority);
+  log::info(logcat,"create_transactions_2 get_device prio: {}",priority);
   hw::device &hwdev = m_account.get_device();
   std::unique_lock hwdev_lock{hwdev};
   hw::mode_resetter rst{hwdev};
@@ -10891,7 +10869,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
 
 
   bool const is_bns_tx = (tx_params.tx_type == txtype::beldex_name_system);
-    LOG_PRINT_L0("is_bns_tx:" << is_bns_tx);
+  log::info(logcat,"is_bns_tx: {}", is_bns_tx);
   auto original_dsts = dsts;
   if (is_bns_tx)
   {
@@ -10901,7 +10879,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
 
   // check the type is burn or not
   bool const is_burn_tx = (tx_params.tx_type == txtype::coin_burn);
-    LOG_PRINT_L0("is_burn_tx:" << is_burn_tx);  
+  log::info(logcat,"is_burn_tx: {}", is_burn_tx);
   if (is_burn_tx)
   {
     THROW_WALLET_EXCEPTION_IF(dsts.size() != 0, error::wallet_internal_error, "Burn txs must not have any destinations set, has: " + std::to_string(dsts.size()));
@@ -11133,8 +11111,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   {
     // this is used to build a tx that's 1 or 2 inputs, and 1 or 2 outputs, which will get us a known fee.
     uint64_t estimated_fee = estimate_fee(2, fake_outs_count, min_outputs, extra.size(), clsag, base_fee, fee_percent, fixed_fee, fee_quantization_mask);
-    LOG_PRINT_L1("Estimated_fee for rct tx: " << estimated_fee);
-    LOG_PRINT_L1("needed_money for rct tx: " << needed_money);
+    log::info(logcat,"Estimated_fee for rct tx:  {} needed_money for rct tx: {}",estimated_fee,needed_money);
     preferred_inputs = pick_preferred_rct_inputs(needed_money + estimated_fee, subaddr_account, subaddr_indices);
     if (!preferred_inputs.empty())
     {
@@ -11761,9 +11738,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
       }
     }
   }
-
-  LOG_PRINT_L1("Done creating " << txes.size() << " transactions, " << print_money(accumulated_fee) <<
-    " total fee, " << print_money(accumulated_change) << " total change");
+  log::info(logcat,"Done creating {} transactions {} total fee, {} total change",txes.size(),print_money(accumulated_fee),print_money(accumulated_change));
   hwdev.set_mode(hw::device::mode::TRANSACTION_CREATE_REAL);
   for (auto &tx : txes)
   {
@@ -11782,10 +11757,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
     uint64_t tx_money = 0;
     for (size_t idx: tx.selected_transfers)
       tx_money += m_transfers[idx].amount();
-    LOG_PRINT_L1("  Transaction " << (1+std::distance(txes.begin(), i)) << "/" << txes.size() <<
-      " " << get_transaction_hash(tx.ptx.tx) << ": " << get_weight_string(tx.weight) << ", sending " << print_money(tx_money) << " in " << tx.selected_transfers.size() <<
-      " outputs to " << tx.dsts.size() << " destination(s), including " <<
-      print_money(tx.ptx.fee) << " fee, " << print_money(tx.ptx.change_dts.amount) << " change");
+    log::info(logcat," Transaction {} / {} {} : {} , sending {} in {} outputs to {} destination(s), including {} fee, {} change",(1+std::distance(txes.begin(), i)), txes.size(), get_transaction_hash(tx.ptx.tx), get_weight_string(tx.weight), print_money(tx_money), tx.selected_transfers.size(), tx.dsts.size(), print_money(tx.ptx.fee),print_money(tx.ptx.change_dts.amount));
     ptx_vector.push_back(tx.ptx);
   }
   THROW_WALLET_EXCEPTION_IF(!sanity_check(ptx_vector, original_dsts), error::wallet_internal_error, "Created transaction(s) failed sanity check");
@@ -12302,7 +12274,7 @@ bool wallet2::get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key, s
   const auto tx_data_it = m_tx_device.find(txid);
   if (tx_data_it == m_tx_device.end())
   {
-    (logcat, "Aux data not found for txid: {}", txid);
+    log::debug(logcat, "Aux data not found for txid: {}", txid);
     return false;
   }
 
