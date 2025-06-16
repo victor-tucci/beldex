@@ -48,7 +48,7 @@
 #include "version.h"
 #include "cryptonote_core/uptime_proof.h"
 
-static auto logcat = log::Cat("bcutil");
+static auto logcat = oxen::log::Cat("bcutil");
 
 namespace po = boost::program_options;
 using namespace cryptonote;

@@ -3013,7 +3013,7 @@ namespace {
   {
     if (req.level < 0 || req.level > 4)
       throw wallet_rpc_error{error_code::INVALID_LOG_LEVEL, "Error: log level not valid"};
-    auto log_level = oxen::logging::parse_level(req.level);//TODO oxen
+    auto log_level = beldex::logging::parse_level(req.level);
     if (log_level.has_value())
       log::reset_level(*log_level);
     return {};
@@ -3022,7 +3022,7 @@ namespace {
   SET_LOG_CATEGORIES::response wallet_rpc_server::invoke(SET_LOG_CATEGORIES::request&& req)
   {
     SET_LOG_CATEGORIES::response res{};
-    oxen::logging::process_categories_string(req.categories.c_str());//TODO oxen
+    beldex::logging::process_categories_string(req.categories.c_str());
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------

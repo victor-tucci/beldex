@@ -275,7 +275,7 @@ WalletManagerBase *WalletManagerFactory::getWalletManager()
 EXPORT
 void WalletManagerFactory::setLogLevel(int level)
 {
-    auto log_level = oxen::logging::parse_level(level);//TODO oxen
+    auto log_level = beldex::logging::parse_level(level);
     if (log_level.has_value())
         log::reset_level(*log_level);
 }
@@ -283,7 +283,7 @@ void WalletManagerFactory::setLogLevel(int level)
 EXPORT
 void WalletManagerFactory::setLogCategories(const std::string &categories)
 {
-    oxen::logging::process_categories_string(categories);//TODO oxen
+    beldex::logging::process_categories_string(categories);
 }
 
 

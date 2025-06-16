@@ -314,7 +314,7 @@ bool message_store::check_auto_config_token(const std::string &raw_token,
   std::string token_bytes = oxenc::from_hex(hex_digits);
 
   auto hash = crypto::cn_fast_hash(token_bytes.data(), token_bytes.size() - 1);
-  if (token_bytes[AUTO_CONFIG_TOKEN_BYTES] != hash.data[0])
+  if (token_bytes[AUTO_CONFIG_TOKEN_BYTES] != hash.data()[0])
   {
     return false;
   }
@@ -333,7 +333,7 @@ std::string message_store::create_auto_config_token()
   // Add a checksum because technically ANY four bytes are a valid token, and without a checksum we would send
   // auto-config messages "to nowhere" after the slightest typo without knowing it
   const crypto::hash &hash = crypto::cn_fast_hash(token_bytes.data(), token_bytes.size());
-  token_bytes += hash.data[0];
+  token_bytes += hash.data()[0];
   std::string prefix(AUTO_CONFIG_TOKEN_PREFIX);
   return prefix + oxenc::to_hex(token_bytes);
 }
@@ -538,8 +538,7 @@ size_t message_store::add_message(const multisig_wallet_state &state,
   // Save for every new message right away (at least while in beta)
   save(state);
 
-  log::info(boost::format("Added %s message %s for signer %s of type %s")//TODO oxen
-          % message_direction_to_string(direction) % m.id % signer_index % message_type_to_string(type));
+  log::info(logcat, "Added {} message {} for signer {} of type {}", message_direction_to_string(direction), m.id, signer_index, message_type_to_string(type));
   return m_messages.size() - 1;
 }
 
@@ -720,7 +719,7 @@ void message_store::read_from_file(const multisig_wallet_state &state, const fs:
   {
     // Simply do nothing if the file is not there; allows e.g. easy recovery
     // from problems with the MMS by deleting the file
-    log::info(logcat, "No message store file found: {}", filename);
+    // log::info(logcat, "No message store file found: {}", filename);
     return;
   }
 
@@ -738,7 +737,7 @@ void message_store::read_from_file(const multisig_wallet_state &state, const fs:
   }
   catch (const std::exception &e)
   {
-    log::error(logcat, "MMS file {} has bad structure <iv,encrypted_data>: {}", filename, e.what());
+    // log::error(logcat, "MMS file {} has bad structure <iv,encrypted_data>: {}", filename, e.what());
     THROW_WALLET_EXCEPTION_IF(true, tools::error::file_read_error, filename);
   }
 
@@ -757,7 +756,7 @@ void message_store::read_from_file(const multisig_wallet_state &state, const fs:
   }
   catch (const std::exception &e)
   {
-    log::error(logcat, "MMS file {} has bad structure: {}", filename, e.what());
+    // log::error(logcat, "MMS file {} has bad structure: {}", filename, e.what());
     THROW_WALLET_EXCEPTION_IF(true, tools::error::file_read_error, filename);
   }
 
