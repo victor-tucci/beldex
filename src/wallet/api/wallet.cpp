@@ -402,7 +402,7 @@ uint64_t Wallet::maximumAllowedAmount()
 EXPORT
 void Wallet::init(const char *argv0, const char *default_log_base_name, const std::string& log_path, bool console) {
     epee::string_tools::set_module_name_and_folder(argv0);
-    oxen::logging::init(log_path.empty() ? default_log_base_name : log_path, log::Level::info);
+    beldex::logging::init(log_path.empty() ? default_log_base_name : log_path, log::Level::info);
 }
 
 EXPORT

@@ -38,6 +38,7 @@ if(MSVC OR MINGW)
       filesystem
       Boost::program_options
     PRIVATE
+      logging
       extra)
 else()
   # Do-nothing library target

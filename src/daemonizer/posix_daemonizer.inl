@@ -77,7 +77,7 @@ namespace daemonizer
     (void)name; (void)argc; (void)argv; // Only used for Windows
     if (command_line::has_arg(vm, arg_detach))
     {
-      MFATAL("--detach is no longer supported. Use systemd (or another process manager), tmux, screen, or nohup instead");
+      oxen::log::error(globallogcat, "--detach is no longer supported. Use systemd (or another process manager), tmux, screen, or nohup instead");
       return false;
     }
     bool interactive = !command_line::has_arg(vm, arg_non_interactive);

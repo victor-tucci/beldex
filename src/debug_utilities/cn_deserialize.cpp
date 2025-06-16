@@ -36,12 +36,12 @@
 #include "version.h"
 #include <oxenc/hex.h>
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "debugtools.deserialize"
 
 namespace po = boost::program_options;
 
 using namespace cryptonote;
+
+static auto logcat = log::Cat("debugtools.deserialize"); 
 
 static std::string extra_nonce_to_string(const cryptonote::tx_extra_nonce &extra_nonce)
 {
@@ -53,54 +53,47 @@ static std::string extra_nonce_to_string(const cryptonote::tx_extra_nonce &extra
 }
 
 struct extra_printer {
-  void operator()(const tx_extra_padding& x) { std::cout << "padding: " << x.size << " bytes"; }
-  void operator()(const tx_extra_pub_key& x) { std::cout << "pub key: " << x.pub_key; }
-  void operator()(const tx_extra_nonce& x) { std::cout << "nonce: " << extra_nonce_to_string(x); }
-  void operator()(const tx_extra_merge_mining_tag& x) { std::cout << "merge mining tag: depth " << x.depth << ", merkle root " << x.merkle_root; }
-  void operator()(const tx_extra_additional_pub_keys& x) {
-    std::cout << "additional tx pubkeys: ";
-    bool first = true;
-    for (auto& pk : x.data) {
-      if (first) first = false;
-      else std::cout << ", ";
-      std::cout << pk;
-    }
-  }
-  void operator()(const tx_extra_mysterious_minergate& x) { std::cout << "minergate custom: " << oxenc::to_hex(x.data); }
-  void operator()(const tx_extra_master_node_winner& x) { std::cout << "MN reward winner: " << x.m_master_node_key; }
-  void operator()(const tx_extra_master_node_register& x) { std::cout << "MN registration data"; } // TODO: could parse this further
-  void operator()(const tx_extra_master_node_pubkey& x) { std::cout << "MN pubkey: " << x.m_master_node_key; }
-  void operator()(const tx_extra_master_node_contributor& x) { std::cout << "MN contribution"; } // Can't actually print the address without knowing the network type
-  void operator()(const tx_extra_master_node_deregister_old& x) { std::cout << "MN deregistration (pre-HF12)"; }
-  void operator()(const tx_extra_tx_secret_key& x) { std::cout << "TX secret key: " << tools::type_to_hex(x.key); }
-  void operator()(const tx_extra_tx_key_image_proofs& x) { std::cout << "TX key image proofs (" << x.proofs.size() << ")"; }
-  void operator()(const tx_extra_tx_key_image_unlock& x) { std::cout << "TX key image unlock: " << x.key_image; }
-  void operator()(const tx_extra_burn& x) { std::cout << "Transaction burned fee/payment: " << print_money(x.amount); }
-  void operator()(const tx_extra_beldex_name_system& x) {
-    std::cout << "BNS " << (x.is_buying() ? "registration" : x.is_updating() ? "update" : "(unknown)");
+  std::string operator()(const tx_extra_padding& x) { return "padding: {} bytes"_format(x.size); }
+  std::string operator()(const tx_extra_pub_key& x) { return "pub key: {}"_format(x.pub_key); }
+  std::string operator()(const tx_extra_nonce& x) { return "nonce: {}"_format(extra_nonce_to_string(x)); }
+  std::string operator()(const tx_extra_merge_mining_tag& x) { return "merge mining tag: depth {}, markle root {}"_format(x.depth, x.merkle_root); }
+  std::string operator()(const tx_extra_additional_pub_keys& x) { return "additional tx pubkeys: {}"_format(fmt::join(x.data, ", ")); }
+  std::string operator()(const tx_extra_mysterious_minergate& x) { return "minergate custom: {}"_format(oxenc::to_hex(x.data)); }
+  std::string operator()(const tx_extra_master_node_winner& x) { return "MN reward winner: {}"_format(x.m_master_node_key); }
+  std::string operator()(const tx_extra_master_node_register& x) { return "MN registration data"; } // TODO: could parse this further
+  std::string operator()(const tx_extra_master_node_pubkey& x) { return "MN pubkey: {}"_format(x.m_master_node_key); }
+  std::string operator()(const tx_extra_master_node_contributor& x) { return "MN contribution"; } // Can't actually print the address without knowing the network type
+  std::string operator()(const tx_extra_master_node_deregister_old& x) { return "MN deregistration (pre-HF12)"; }
+  std::string operator()(const tx_extra_tx_secret_key& x) { return "TX secret key: {}" + tools::type_to_hex(x.key); }
+  std::string operator()(const tx_extra_tx_key_image_proofs& x) { return "TX key image proofs ({})"_format(x.proofs.size()); }
+  std::string operator()(const tx_extra_tx_key_image_unlock& x) { return "TX key image unlock: {}"_format(x.key_image); }
+  std::string operator()(const tx_extra_burn& x) { return "Transaction burned fee/payment: {}"_format(print_money(x.amount)); }
+  std::string operator()(const tx_extra_beldex_name_system& x) {
+    std::string val = "BNS {}"_format(x.is_buying() ? "registration" : x.is_updating() ? "update" : "(unknown)");
     switch (x.type)
     {
-      case bns::mapping_type::belnet: std::cout << " - belnet (1y)"; break;
-      case bns::mapping_type::bchat: std::cout << " - Bchat address"; break;
-      case bns::mapping_type::wallet: std::cout << " - Wallet address"; break;
+      case bns::mapping_type::belnet: val += " - belnet (1y)"; break;
+      case bns::mapping_type::bchat: val += " - Bchat address"; break;
+      case bns::mapping_type::wallet: val += " - Wallet address"; break;
       case bns::mapping_type::update_record_internal:
       case bns::mapping_type::_count:
           break;
     }
+    return val;
   }
-  void operator()(const tx_extra_master_node_state_change& x) {
-    std::cout << "MN state change: ";
+  std::string operator()(const tx_extra_master_node_state_change& x) {
+    std::string_view type;
     switch (x.state)
     {
-      case master_nodes::new_state::decommission: std::cout << "decommission"; break;
-      case master_nodes::new_state::recommission: std::cout << "recommission"; break;
-      case master_nodes::new_state::deregister: std::cout << "deregister"; break;
-      case master_nodes::new_state::ip_change_penalty: std::cout << "ip change penalty"; break;
-      case master_nodes::new_state::_count: std::cout << "(unknown)"; break;
+      case master_nodes::new_state::decommission: type = "decommission"; break;
+      case master_nodes::new_state::recommission: type = "recommission"; break;
+      case master_nodes::new_state::deregister: type = "deregister"; break;
+      case master_nodes::new_state::ip_change_penalty: type = "ip change penalty"; break;
+      case master_nodes::new_state::_count: type = "(unknown)"; break;
     }
-    std::cout << " for block height " << x.block_height << ", MN index " << x.master_node_index;
+    return "MN state change: {} for block height {}, MN index {}"_format(
+            type, x.block_height, x.master_node_index);
   }
-  template <typename T> void operator()(const T&) { std::cout << "unknown"; }
 };
 
 
@@ -110,7 +103,7 @@ static void print_extra_fields(const std::vector<cryptonote::tx_extra_field> &fi
   for (size_t n = 0; n < fields.size(); ++n)
   {
     std::cout << "- " << n << ": ";
-    var::visit(extra_printer{}, fields[n]);
+    std::cout << var::visit(extra_printer{}, fields[n]);
     std::cout << "\n";
   }
 }
@@ -130,14 +123,14 @@ constexpr static std::string_view network_type_str(network_type nettype)
 
 int main(int argc, char* argv[])
 {
-  uint32_t log_level = 0;
+  uint32_t default_log_level = 0;
   std::string input;
 
   tools::on_startup();
 
   po::options_description desc_cmd_only("Command line options");
   po::options_description desc_cmd_sett("Command line options and settings options");
-  const command_line::arg_descriptor<uint32_t> arg_log_level = {"log-level", "", log_level};
+  const command_line::arg_descriptor<uint32_t> arg_log_level = {"log-level", "", default_log_level};
   const command_line::arg_descriptor<std::string> arg_input  = {
       "input", "Specify a wallet address or hex string of a Cryptonote type for decoding, supporting\n"
                " - TX Extra\n"
@@ -170,7 +163,6 @@ int main(int argc, char* argv[])
     return 1;
   }
 
-  log_level    = command_line::get_arg(vm, arg_log_level);
   input        = command_line::get_arg(vm, arg_input);
   if (input.empty())
   {
@@ -178,7 +170,16 @@ int main(int argc, char* argv[])
     return 1;
   }
 
-  mlog_configure("", true);
+  auto log_file_path = "cn_deserialize.log";
+  log::Level log_level;
+  if(auto level = beldex::logging::parse_level(command_line::get_arg(vm, arg_log_level))) {
+    log_level = *level;
+  } else {
+      std::cerr << "Incorrect log level: " << command_line::get_arg(vm, arg_log_level) << std::endl;
+      throw std::runtime_error{"Incorrect log level"};
+  }
+  beldex::logging::init(log_file_path, log_level);
+  log::warning(logcat, "Starting...");
 
   if (oxenc::is_hex(input))
   {
@@ -234,12 +235,15 @@ int main(int argc, char* argv[])
       {
         addr_decoded = true;
         cryptonote::account_public_address const &address = addr_info.address;
-        std::cout << "Network Type: " << network_type_str(static_cast<cryptonote::network_type>(nettype)) << "\n";
-        std::cout << "Address: " << input << "\n";
-        std::cout << "Subaddress: " << (addr_info.is_subaddress ? "Yes" : "No") << "\n";
-        std::cout << "Payment ID: " << (addr_info.has_payment_id ? tools::type_to_hex(addr_info.payment_id) : "(none)") << "\n";
-        std::cout << "Spend Public Key: " << address.m_spend_public_key << "\n";
-        std::cout << "View Public Key: " << address.m_view_public_key << "\n";
+        fmt::print("Network Type: {}\n", network_type_str(nettype));
+        fmt::print("Address: {}\n", input);
+        fmt::print("Subaddress: {}\n", addr_info.is_subaddress ? "Yes" : "No");
+        if (addr_info.has_payment_id)
+          fmt::print("Payment ID: {}\n", addr_info.payment_id);
+        else
+          fmt::print("Payment ID: (none)\n");
+        fmt::print("Spend Public Key: {}\n", address.m_spend_public_key);
+        fmt::print("View Public Key: {}\n", address.m_view_public_key);
       }
     }
 

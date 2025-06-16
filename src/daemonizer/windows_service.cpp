@@ -89,7 +89,7 @@ namespace {
     info.nShow = SW_SHOWNORMAL;
     if (!ShellExecuteEx(&info))
     {
-      tools::fail_msg_writer() << "Admin relaunch failed: " << get_last_error();
+      tools::fail_msg_writer("Admin relaunch failed: {}", get_last_error());
       return false;
     }
     else
@@ -122,7 +122,7 @@ bool check_admin(bool & result)
       , &p_administrators_group
       ))
   {
-    tools::fail_msg_writer() << "Security Identifier creation failed: " << get_last_error();
+    tools::fail_msg_writer("Security Identifier creation failed: {}", get_last_error());
     return false;
   }
 
@@ -132,7 +132,7 @@ bool check_admin(bool & result)
       , &is_admin
       ))
   {
-    tools::fail_msg_writer() << "Permissions check failed: " << get_last_error();
+    tools::fail_msg_writer("Permissions check failed: {}", get_last_error());
     return false;
   }
 
@@ -179,7 +179,7 @@ bool install_service(char const *service_name, std::string const &arguments)
   };
   if (p_manager == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't connect to service manager: " << get_last_error();
+    tools::fail_msg_writer("Couldn't connect to service manager: {}", get_last_error());
     return false;
   }
 
@@ -205,11 +205,11 @@ bool install_service(char const *service_name, std::string const &arguments)
   };
   if (p_service == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't create service: " << get_last_error();
+    tools::fail_msg_writer("Couldn't create service: {}", get_last_error());
     return false;
   }
 
-  tools::success_msg_writer() << "Service installed";
+  tools::success_msg_writer("Service installed");
 
   pause_to_display_admin_window_messages();
 
@@ -218,7 +218,7 @@ bool install_service(char const *service_name, std::string const &arguments)
 
 bool start_service(char const *service_name)
 {
-  tools::msg_writer() << "Starting service";
+  tools::msg_writer("Starting service");
 
   SERVICE_STATUS_PROCESS service_status = {};
   DWORD unused = 0;
@@ -233,7 +233,7 @@ bool start_service(char const *service_name)
   };
   if (p_manager == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't connect to service manager: " << get_last_error();
+    tools::fail_msg_writer("Couldn't connect to service manager: {}", get_last_error());
     return false;
   }
 
@@ -248,7 +248,7 @@ bool start_service(char const *service_name)
   };
   if (p_service == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't find service: " << get_last_error();
+    tools::fail_msg_writer("Couldn't find service: {}", get_last_error());
     return false;
   }
 
@@ -258,11 +258,11 @@ bool start_service(char const *service_name)
     , nullptr
     ))
   {
-    tools::fail_msg_writer() << "Service start request failed: " << get_last_error();
+    tools::fail_msg_writer("Service start request failed: {}", get_last_error());
     return false;
   }
 
-  tools::success_msg_writer() << "Service started";
+  tools::success_msg_writer("Service started");
 
   pause_to_display_admin_window_messages();
 
@@ -271,7 +271,7 @@ bool start_service(char const *service_name)
 
 bool stop_service(char const *service_name)
 {
-  tools::msg_writer() << "Stopping service";
+  tools::msg_writer("Stopping service");
 
   service_handle p_manager{
     OpenSCManager(
@@ -283,7 +283,7 @@ bool stop_service(char const *service_name)
   };
   if (p_manager == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't connect to service manager: " << get_last_error();
+    tools::fail_msg_writer("Couldn't connect to service manager: {}", get_last_error());
     return false;
   }
 
@@ -297,18 +297,18 @@ bool stop_service(char const *service_name)
   };
   if (p_service == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't find service: " << get_last_error();
+    tools::fail_msg_writer("Couldn't find service: {}", get_last_error());
     return false;
   }
 
   SERVICE_STATUS status = {};
   if (!ControlService(p_service.get(), SERVICE_CONTROL_STOP, &status))
   {
-    tools::fail_msg_writer() << "Couldn't request service stop: " << get_last_error();
+    tools::fail_msg_writer("Couldn't request service stop: {}", get_last_error());
     return false;
   }
 
-  tools::success_msg_writer() << "Service stopped";
+  tools::success_msg_writer("Service stopped");
 
   pause_to_display_admin_window_messages();
 
@@ -327,7 +327,7 @@ bool uninstall_service(char const *service_name)
   };
   if (p_manager == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't connect to service manager: " << get_last_error();
+    tools::fail_msg_writer("Couldn't connect to service manager: {}", get_last_error());
     return false;
   }
 
@@ -341,18 +341,18 @@ bool uninstall_service(char const *service_name)
   };
   if (p_service == nullptr)
   {
-    tools::fail_msg_writer() << "Couldn't find service: " << get_last_error();
+    tools::fail_msg_writer("Couldn't find service: {}", get_last_error());
     return false;
   }
 
   SERVICE_STATUS status = {};
   if (!DeleteService(p_service.get()))
   {
-    tools::fail_msg_writer() << "Couldn't uninstall service: " << get_last_error();
+    tools::fail_msg_writer("Couldn't uninstall service: {}", get_last_error());
     return false;
   }
 
-  tools::success_msg_writer() << "Service uninstalled";
+  tools::success_msg_writer("Service uninstalled");
 
   pause_to_display_admin_window_messages();
 
