@@ -41,4 +41,5 @@ target_link_libraries(simplewallet
     filesystem
     icu
     Boost::thread
+    logging
     extra)

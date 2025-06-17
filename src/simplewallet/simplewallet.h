@@ -57,8 +57,7 @@
 #include "cryptonote_config.h"
 #include "cryptonote_basic/hardfork.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "wallet.simplewallet"
+
 
 /*!
  * \namespace cryptonote
@@ -403,7 +402,7 @@ namespace cryptonote
         }
         else
         {
-          LOG_ERROR("Failed to get current blockchain height: " << err);
+          log::error(log::Cat("wallet.simplewallet"), "Failed to get current blockchain height: {}", err);
         }
       }
 

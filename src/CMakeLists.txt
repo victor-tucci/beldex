@@ -70,7 +70,7 @@ add_subdirectory(serialization)
 add_subdirectory(p2p)
 add_subdirectory(daemonizer)
 add_subdirectory(daemon)
-# add_subdirectory(simplewallet)
+add_subdirectory(simplewallet)
 
 if (NOT BUILD_INTEGRATION)
   add_subdirectory(gen_multisig)
