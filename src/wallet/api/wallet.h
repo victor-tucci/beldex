@@ -115,7 +115,7 @@ public:
     bool store(std::string_view path) override;
     std::string filename() const override;
     std::string keysFilename() const override;
-    bool init(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, const std::string &daemon_username = "", const std::string &daemon_password = "", bool use_ssl = false, bool lightWallet = false) override;
+    bool init(const std::string &daemon_address, uint64_t upper_transaction_size_limit = 0, const std::string &daemon_username = "", const std::string &daemon_password = "", bool use_ssl = false ENABLE_IF_LIGHT_WALLET(, bool lightWallet = false)) override;
     bool connectToDaemon() override;
     ConnectionStatus connected() const override;
     void setTrustedDaemon(bool arg) override;
@@ -250,8 +250,10 @@ public:
     void pauseRefresh() override;
     bool parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error) override;
     std::string getDefaultDataDir() const override;
+#ifdef ENABLE_LIGHT_WALLET
     bool lightWalletLogin(bool &isNewWallet) const override;
     bool lightWalletImportWalletRequest(std::string &payment_id, uint64_t &fee, bool &new_request, bool &request_fulfilled, std::string &payment_address, std::string &status) override;
+#endif
     bool blackballOutputs(const std::vector<std::string> &outputs, bool add) override;
     bool blackballOutput(const std::string &amount, const std::string &offset) override;
     bool unblackballOutput(const std::string &amount, const std::string &offset) override;

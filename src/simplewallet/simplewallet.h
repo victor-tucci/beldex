@@ -170,8 +170,8 @@ namespace cryptonote
 
     // lock_time_in_blocks: Only required if making a locked transfer, only for displaying to the user, it should be the lock time specified by the sender
     // unlock_block:        Only required if lock_time_in_blocks is specified, only for displaying to the user, the height at which the transfer will unlock
-    bool confirm_and_send_tx(std::vector<cryptonote::address_parse_info> const &dests, std::vector<tools::wallet2::pending_tx> &ptx_vector, bool flash, uint64_t lock_time_in_blocks = 0, uint64_t unlock_block = 0, bool called_by_mms = false);
-    bool transfer_main(Transfer transfer_type, const std::vector<std::string> &args, bool called_by_mms);
+    bool confirm_and_send_tx(std::vector<cryptonote::address_parse_info> const &dests, std::vector<tools::wallet2::pending_tx> &ptx_vector, bool flash, uint64_t lock_time_in_blocks = 0, uint64_t unlock_block = 0 ENABLE_IF_MMS(, bool called_by_mms = false));
+    bool transfer_main(Transfer transfer_type, const std::vector<std::string> &args ENABLE_IF_MMS(, bool called_by_mms));
 
     bool transfer(const std::vector<std::string> &args);
     bool locked_transfer(const std::vector<std::string> &args);
@@ -254,23 +254,25 @@ namespace cryptonote
     bool payment_id(const std::vector<std::string> &args);
     bool print_fee_info(const std::vector<std::string> &args);
     bool prepare_multisig(const std::vector<std::string>& args);
-    bool prepare_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool prepare_multisig_main(const std::vector<std::string>& args ENABLE_IF_MMS(, bool called_by_mms));
     bool make_multisig(const std::vector<std::string>& args);
-    bool make_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool make_multisig_main(const std::vector<std::string>& args ENABLE_IF_MMS(, bool called_by_mms));
     bool finalize_multisig(const std::vector<std::string> &args);
     bool exchange_multisig_keys(const std::vector<std::string> &args);
-    bool exchange_multisig_keys_main(const std::vector<std::string> &args, bool called_by_mms);
+    bool exchange_multisig_keys_main(const std::vector<std::string> &args ENABLE_IF_MMS(, bool called_by_mms));
     bool export_multisig(const std::vector<std::string>& args);
-    bool export_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool export_multisig_main(const std::vector<std::string>& args ENABLE_IF_MMS(, bool called_by_mms));
     bool import_multisig(const std::vector<std::string>& args);
-    bool import_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool import_multisig_main(const std::vector<std::string>& args ENABLE_IF_MMS(, bool called_by_mms));
     bool accept_loaded_tx(const tools::wallet2::multisig_tx_set &txs);
     bool sign_multisig(const std::vector<std::string>& args);
-    bool sign_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool sign_multisig_main(const std::vector<std::string>& args ENABLE_IF_MMS(, bool called_by_mms));
     bool submit_multisig(const std::vector<std::string>& args);
-    bool submit_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool submit_multisig_main(const std::vector<std::string>& args ENABLE_IF_MMS(, bool called_by_mms));
     bool export_raw_multisig(const std::vector<std::string>& args);
+#ifdef WALLET_ENABLE_MMS
     bool mms(const std::vector<std::string>& args);
+#endif
     bool print_ring(const std::vector<std::string>& args);
     bool set_ring(const std::vector<std::string>& args);
     bool unset_ring(const std::vector<std::string>& args);
@@ -342,7 +344,9 @@ namespace cryptonote
     // idle thread workers
     bool check_inactivity();
     bool check_refresh(bool long_poll_trigger);
+#ifdef WALLET_ENABLE_MMS
     bool check_mms();
+#endif
 
     //----------------- i_wallet2_callback ---------------------
     virtual void on_new_block(uint64_t height, const cryptonote::block& block);
@@ -461,9 +465,10 @@ namespace cryptonote
 
     tools::periodic_task m_inactivity_checker{std::chrono::seconds(0), true /*start_immediately*/, {80 * 1000000, 100 * 1000000}};
     tools::periodic_task m_refresh_checker{std::chrono::seconds(0),    true /*start_immediately*/, {90 * 1000000, 110 * 1000000}};
-    tools::periodic_task m_mms_checker{std::chrono::seconds(0),        true /*start_immediately*/, {90 * 1000000, 115 * 1000000}};
 
+#ifdef WALLET_ENABLE_MMS
     // MMS
+    tools::periodic_task m_mms_checker{std::chrono::seconds(0),        true /*start_immediately*/, {90 * 1000000, 115 * 1000000}};
     mms::message_store& get_message_store() const { return m_wallet->get_message_store(); };
     mms::multisig_wallet_state get_multisig_wallet_state() const { return m_wallet->get_multisig_wallet_state(); };
     bool mms_active() const { return get_message_store().get_active(); };
@@ -497,5 +502,6 @@ namespace cryptonote
     void mms_start_auto_config(const std::vector<std::string> &args);
     void mms_stop_auto_config(const std::vector<std::string> &args);
     void mms_auto_config(const std::vector<std::string> &args);
+#endif
   };
 }

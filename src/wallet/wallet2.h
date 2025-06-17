@@ -62,8 +62,22 @@
 #include "wallet_errors.h"
 #include "common/password.h"
 #include "node_rpc_proxy.h"
+#ifdef WALLET_ENABLE_MMS
 #include "message_store.h"
+// Intended to make the ifdefs a bit less cumbersome where we need to pass an extra arg with MMS.
+// E.g. `foo(a, b IF_MMS(, c))`  becomes `foo(a, b, c)` undef MMS and `foo(a,b)` without MMS.
+#define ENABLE_IF_MMS(...) __VA_ARGS__
+#else
+#define ENABLE_IF_MMS(...)
+#endif
+
+#ifdef ENABLE_LIGHT_WALLET
 #include "wallet_light_rpc.h"
+// Same as above, but for light wallet args
+#define ENABLE_IF_LIGHT_WALLET(...) __VA_ARGS__
+#else
+#define ENABLE_IF_LIGHT_WALLET(...)
+#endif
 
 #include "tx_construction_data.h"
 #include "tx_sets.h"
@@ -88,13 +102,6 @@ class wallet_accessor_test;
 BELDEX_RPC_DOC_INTROSPECT
 namespace tools
 {
-  static const char *ERR_MSG_NETWORK_VERSION_QUERY_FAILED = tr("Could not query the current network version, try later");
-  static const char *ERR_MSG_NETWORK_HEIGHT_QUERY_FAILED = tr("Could not query the current network block height, try later: ");
-  static const char *ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED = tr("Failed to query daemon for master node list");
-  static const char *ERR_MSG_TOO_MANY_TXS_CONSTRUCTED = tr("Constructed too many transactions, please sweep_all first");
-  static const char *ERR_MSG_EXCEPTION_THROWN = tr("Exception thrown, staking process could not be completed: ");
-  static const char *ERR_MSG_BNS_HF_VERSION = tr("Bns buy option is not available in v17");
-
   class ringdb;
   class wallet2;
   class Notify;
@@ -254,6 +261,12 @@ private:
 
 
     static const char* tr(const char* str);
+    static const char *ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+    static const char *ERR_MSG_NETWORK_HEIGHT_QUERY_FAILED;
+    static const char *ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED;
+    static const char *ERR_MSG_TOO_MANY_TXS_CONSTRUCTED;
+    static const char *ERR_MSG_EXCEPTION_THROWN;
+    static const char *ERR_MSG_BNS_HF_VERSION;
 
     static bool has_testnet_option(const boost::program_options::variables_map& vm);
     static bool has_devnet_option(const boost::program_options::variables_map& vm);
@@ -646,7 +659,12 @@ private:
         std::string proxy = "",
         bool trusted_daemon = true);
 
-    void stop() { m_run.store(false, std::memory_order_relaxed); m_message_store.stop(); }
+    void stop() {
+      m_run.store(false, std::memory_order_relaxed);
+#ifdef WALLET_ENABLE_MMS
+      m_message_store.stop();
+#endif
+      }
 
     i_wallet2_callback* callback() const { return m_callback; }
     void callback(i_wallet2_callback* callback) { m_callback = callback; }
@@ -660,6 +678,7 @@ private:
     bool is_deterministic() const;
     bool get_seed(epee::wipeable_string& electrum_words, const epee::wipeable_string &passphrase = epee::wipeable_string()) const;
 
+#ifdef ENABLE_LIGHT_WALLET
     /*!
     * \brief Checks if light wallet. A light wallet sends view key to a server where the blockchain is scanned.
     */
@@ -667,6 +686,7 @@ private:
     void set_light_wallet(bool light_wallet) { m_light_wallet = light_wallet; }
     uint64_t get_light_wallet_scanned_block_height() const { return m_light_wallet_scanned_block_height; }
     uint64_t get_light_wallet_blockchain_height() const { return m_light_wallet_blockchain_height; }
+#endif
 
     /*!
      * \brief Gets the seed language
@@ -1231,6 +1251,7 @@ private:
 
     bool is_unattended() const { return m_unattended; }
 
+#ifdef ENABLE_LIGHT_WALLET
     // Light wallet specific functions
     // fetch unspent outs from lw node and store in m_transfers
     void light_wallet_get_unspent_outs();
@@ -1248,6 +1269,7 @@ private:
     bool light_wallet_parse_rct_str(const std::string& rct_string, const crypto::public_key& tx_pub_key, uint64_t internal_output_index, rct::key& decrypted_mask, rct::key& rct_commit, bool decrypt) const;
     // check if key image is ours
     bool light_wallet_key_image_is_ours(const crypto::key_image& key_image, const crypto::public_key& tx_public_key, uint64_t out_index);
+#endif
 
     /*
      * "attributes" are a mechanism to store an arbitrary number of string values
@@ -1277,7 +1299,11 @@ private:
     bool invoke_http(const typename RPC::request& req, typename RPC::response& res, bool throw_on_error = false)
     {
       using namespace cryptonote::rpc;
-      static_assert(std::is_base_of_v<RPC_COMMAND, RPC> || std::is_base_of_v<tools::light_rpc::LIGHT_RPC_COMMAND, RPC>);
+      static_assert(std::is_base_of_v<RPC_COMMAND, RPC>
+#ifdef ENABLE_LIGHT_WALLET
+        || std::is_base_of_v<tools::light_rpc::LIGHT_RPC_COMMAND, RPC>
+#endif
+        );
 
       if (m_offline) return false;
 
@@ -1425,10 +1451,12 @@ private:
     uint64_t get_bytes_sent() const;
     uint64_t get_bytes_received() const;
 
+#ifdef WALLET_ENABLE_MMS
     // MMS -------------------------------------------------------------------------------------------------
     mms::message_store& get_message_store() { return m_message_store; };
     const mms::message_store& get_message_store() const { return m_message_store; };
     mms::multisig_wallet_state get_multisig_wallet_state() const;
+#endif
 
     bool lock_keys_file();
     bool unlock_keys_file();
@@ -1563,7 +1591,9 @@ private:
     cryptonote::account_base m_account;
     fs::path m_wallet_file;
     fs::path m_keys_file;
+#ifdef WALLET_ENABLE_MMS
     fs::path m_mms_file;
+#endif
     hashchain m_blockchain;
     std::atomic<uint64_t> m_cached_height; // Tracks m_blockchain.size(), but thread-safe.
     std::unordered_map<crypto::hash, unconfirmed_transfer_details> m_unconfirmed_txs;
@@ -1650,6 +1680,7 @@ private:
     // Aux transaction data from device
     std::unordered_map<crypto::hash, std::string> m_tx_device;
 
+#ifdef ENABLE_LIGHT_WALLET
     // Light wallet
     bool m_light_wallet; /* sends view key to daemon for scanning */
     uint64_t m_light_wallet_scanned_block_height;
@@ -1661,6 +1692,9 @@ private:
     // Light wallet info needed to populate m_payment requires 2 separate api calls (get_address_txs and get_unspent_outs)
     // We save the info from the first call in m_light_wallet_address_txs for easier lookup.
     std::unordered_map<crypto::hash, address_tx> m_light_wallet_address_txs;
+#endif
+
+    // FIXME should this be with the light wallet stuff?
     // store calculated key image for faster lookup
     std::unordered_map<crypto::public_key, std::map<uint64_t, crypto::key_image> > m_key_image_cache;
 
@@ -1672,7 +1706,9 @@ private:
     uint64_t m_last_block_reward;
     std::unique_ptr<tools::file_locker> m_keys_file_locker;
 
+#ifdef WALLET_ENABLE_MMS
     mms::message_store m_message_store;
+#endif
     bool m_original_keys_available;
     cryptonote::account_public_address m_original_address;
     crypto::secret_key m_original_view_secret_key;

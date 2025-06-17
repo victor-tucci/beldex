@@ -27,6 +27,11 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+
+#ifndef ENABLE_WALLET_MMS
+#error message_storage.h requires -DENABLE_WALLET_MMS
+#endif
+
 #include "epee/serialization/keyvalue_serialization.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"

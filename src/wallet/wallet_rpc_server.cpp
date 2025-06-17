@@ -1055,7 +1055,7 @@ namespace
       uint32_t priority = convert_priority(req.priority);
       auto hf_version = m_wallet->get_hard_fork_version();
       if (!hf_version)
-        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
+        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::wallet2::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
       cryptonote::beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, cryptonote::txtype::standard, priority);
       std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_2(dsts, cryptonote::TX_OUTPUT_DECOYS, req.unlock_time, priority, extra, req.account_index, req.subaddr_indices, tx_params);
 
@@ -1091,7 +1091,7 @@ namespace
     {
       auto hf_version = m_wallet->get_hard_fork_version();
       if (!hf_version)
-        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
+        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::wallet2::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
       cryptonote::beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, cryptonote::txtype::coin_burn, req.priority, req.amount);
       ptx_vector = m_wallet->create_transactions_2({}, cryptonote::TX_OUTPUT_DECOYS, 0, req.priority, extra, req.account_index, req.subaddr_indices, tx_params);
     }
@@ -1162,7 +1162,7 @@ namespace
       uint32_t priority = convert_priority(req.priority);
       auto hf_version = m_wallet->get_hard_fork_version();
       if (!hf_version)
-        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
+        throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::wallet2::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
 
       cryptonote::beldex_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, cryptonote::txtype::standard, priority);
       log::debug(logcat, "on_transfer_split calling create_transactions_2");
@@ -3455,7 +3455,7 @@ namespace {
     bns::mapping_type type = {};
 
     auto hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
+    if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::wallet2::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
     {
       if (!bns::validate_mapping_type(req.type, *hf_version, &type, &reason))
         throw wallet_rpc_error{error_code::WRONG_BNS_TYPE, "Invalid BNS type: " + reason};
@@ -3489,7 +3489,7 @@ namespace {
 
     std::string reason;
     auto hf_version = m_wallet->get_hard_fork_version();
-    if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
+    if (!hf_version) throw wallet_rpc_error{error_code::HF_QUERY_FAILED, tools::wallet2::ERR_MSG_NETWORK_VERSION_QUERY_FAILED};
 
     bns::mapping_type type;
     if (!bns::validate_mapping_type(req.type, *hf_version, &type, &reason))

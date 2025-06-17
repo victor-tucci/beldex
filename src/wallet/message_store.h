@@ -28,6 +28,10 @@
 
 #pragma once
 
+#ifndef ENABLE_WALLET_MMS
+#error message_storage.h requires -DENABLE_WALLET_MMS
+#endif
+
 #include <cstdlib>
 #include <string>
 #include <vector>
