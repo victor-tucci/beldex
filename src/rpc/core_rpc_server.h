@@ -48,8 +48,6 @@
 #include "common/beldex_integration_test_hooks.h"
 #endif
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "daemon.rpc"
 
 namespace boost::program_options {
   class options_description;

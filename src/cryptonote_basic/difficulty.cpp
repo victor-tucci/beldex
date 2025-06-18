@@ -38,9 +38,6 @@
 #include "difficulty.h"
 #include "hardfork.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "difficulty"
-
 namespace cryptonote {
 
   using std::size_t;

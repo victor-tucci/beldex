@@ -39,9 +39,6 @@
 #include "crypto/hash.h"
 #include "epee/net/net_utils_base.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "cn.block_queue"
-
 namespace cryptonote
 {
   struct block_complete_entry;

@@ -39,9 +39,6 @@
 #include <thread>
 #endif
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "daemon"
-
 namespace daemonize {
 
 void command_server::init_commands(cryptonote::rpc::core_rpc_server* rpc_server)

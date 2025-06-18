@@ -49,9 +49,6 @@
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "rpc/core_rpc_server.h"
 
-#undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "daemon"
-
 namespace daemonize {
 
 class rpc_command_executor final {
