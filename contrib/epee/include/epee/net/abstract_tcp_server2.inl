@@ -138,9 +138,6 @@ PRAGMA_WARNING_DISABLE_VS(4355)
 
     boost::system::error_code ec;
     auto remote_ep = socket().remote_endpoint(ec);
-    CHECK_AND_NO_ASSERT_MES(!ec, false, "Failed to get remote endpoint: " << ec.message() << ':' << ec.value());
-    CHECK_AND_NO_ASSERT_MES(remote_ep.address().is_v4() || remote_ep.address().is_v6(), false, "only IPv4 and IPv6 supported here");
-
     if (ec)
         throw std::runtime_error(std::string("Failed to get remote endpoint: ") + ec.message() + ":" + std::to_string(ec.value()));
     if (!remote_ep.address().is_v4() && !remote_ep.address().is_v6())

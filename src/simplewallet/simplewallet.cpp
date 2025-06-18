@@ -5764,7 +5764,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
       if (dust_in_fee != 0) prompt << boost::format(tr(", of which %s is dust from change")) % print_money(dust_in_fee);
       if (dust_not_in_fee != 0)  prompt << tr(".") << "\n" << boost::format(tr("A total of %s from dust change will be sent to dust address"))
                                                  % print_money(dust_not_in_fee);
-      LOG_PRINT_L0("confirm_and_send_tx 3");
+      log::warning(logcat, "confirm_and_send_tx 3");
       if (lock_time_in_blocks > 0)
       {
         double days = lock_time_in_blocks / (double) BLOCKS_PER_DAY;
@@ -5850,7 +5850,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
     }
     catch (...)
     {
-      LOG_ERROR("Unknown error");
+      log::error(logcat, "unknown error");
       fail_msg_writer() << tr("unknown error");
       return false;
     }
@@ -5951,7 +5951,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     std::vector<std::string> unknown_parameters;
     uint64_t amount = 0;
     bool has_uri = m_wallet->parse_uri(local_args[i], addr, payment_id_uri, amount, tx_description, recipient_name, unknown_parameters, error);
-    LOG_PRINT_L0("has_uri" << has_uri);
+    log::warning(logcat, "has_uri{}", has_uri);
     if (i + 1 < local_args.size())
     {
       r = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), local_args[i]);
@@ -6313,7 +6313,7 @@ bool simple_wallet::request_stake_unlock(const std::vector<std::string> &args_)
   }
   catch (...)
   {
-    LOG_ERROR("unknown error");
+    log::error(logcat, "unknown error");
     fail_msg_writer() << tr("unknown error");
   }
 
@@ -7507,7 +7507,7 @@ bool simple_wallet::coin_burn(std::vector<std::string> args)
   }
   catch (...)
   {
-    LOG_ERROR("unknown error");
+    log::error(logcat, "unknown error");
     fail_msg_writer() << tr("unknown error");
     return true;
   }

@@ -32,7 +32,6 @@ add_library(epee
     levin_base.cpp
     memwipe.c
     mlocker.cpp
-    mlog.cpp
     net_utils_base.cpp
     network_throttle.cpp
     network_throttle-detail.cpp
@@ -63,7 +62,6 @@ endif()
 
 target_link_libraries(epee
   PUBLIC
-    easylogging
     oxenmq::oxenmq
     oxenc::oxenc
   PRIVATE

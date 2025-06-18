@@ -27,11 +27,11 @@ set(READLINE_SOURCE readline-${READLINE_VERSION}.tar.gz)
 set(READLINE_HASH SHA512=27790d0461da3093a7fee6e89a51dcab5dc61928ec42e9228ab36493b17220641d5e481ea3d8fee5ee0044c70bf960f55c7d3f1a704cf6b9c42e5c269b797e00
     CACHE STRING "readline source hash")
 
-set(SQLITE3_VERSION 3350500 CACHE STRING "sqlite3 version")
+set(SQLITE3_VERSION 3390300 CACHE STRING "sqlite3 version")
 set(SQLITE3_MIRROR ${LOCAL_MIRROR} https://www.sqlite.org/2021
     CACHE STRING "sqlite3 download mirror(s)")
 set(SQLITE3_SOURCE sqlite-autoconf-${SQLITE3_VERSION}.tar.gz)
-set(SQLITE3_HASH SHA512=039af796f79fc4517be0bd5ba37886264d49da309e234ae6fccdb488ef0109ed2b917fc3e6c1fc7224dff4f736824c653aaf8f0a37550c5ebc14d035cb8ac737
+set(SQLITE3_HASH SHA512=f5f1f275ca7def6e1971d0152852468b89f2759d6fc2dda42b6e47646d65c7d8c454a9accd4ac900e171908114a9164c722314b90fb2ca422b99603158f9ce3e
     CACHE STRING "sqlite3 source hash")
 
 set(EUDEV_VERSION 3.2.10 CACHE STRING "eudev version")
@@ -215,6 +215,14 @@ function(build_external target)
   endforeach()
   string(REPLACE ___TARGET___ ${target} arg_BUILD_BYPRODUCTS "${arg_BUILD_BYPRODUCTS}")
 
+  set(externalproject_extra)
+  if(NOT CMAKE_VERSION VERSION_LESS 3.24)
+    # Default in cmake 3.24+ is to not extract timestamps for ExternalProject, which breaks pretty
+    # much every autotools package (which thinks it must reconfigure) because timestamps got
+    # updated).
+    list(APPEND externalproject_extra DOWNLOAD_EXTRACT_TIMESTAMP ON)
+  endif()
+
   string(TOUPPER "${target}" prefix)
   expand_urls(urls ${${prefix}_SOURCE} ${${prefix}_MIRROR})
   message(STATUS "build_external_arg:${target} ${arg_CONFIGURE_COMMAND}")
@@ -230,6 +238,7 @@ function(build_external target)
     BUILD_COMMAND ${arg_BUILD_COMMAND}
     INSTALL_COMMAND ${arg_INSTALL_COMMAND}
     BUILD_BYPRODUCTS ${arg_BUILD_BYPRODUCTS}
+    ${externalproject_extra}
   )
 endfunction()
 

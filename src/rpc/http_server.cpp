@@ -279,9 +279,8 @@ namespace cryptonote::rpc {
 
     // Replace the default tx pool hashes callback with our own (which adds long poll support):
     if (std::string_view{data.uri}.substr(1) == rpc::GET_TRANSACTION_POOL_HASHES_BIN::names()[0]) {
-        MINFO("HTTP RPC request '" << data.uri);
-
-       return invoke_txpool_hashes_bin(std::move(dataptr));
+      log::info(logcat, "HTTP RPC request '{}", data.uri);
+      return invoke_txpool_hashes_bin(std::move(dataptr));
     }
 
     const bool time_logging = BELDEX_LOG_ENABLED(debug);
@@ -355,20 +354,20 @@ namespace cryptonote::rpc {
 
   // HTTP-only long-polling support for the transaction pool hashes command
   void invoke_txpool_hashes_bin(std::shared_ptr<call_data> data) {
-    MTRACE("invoke_txpool_hashes_bin...");
+    log::trace(logcat, "invoke_txpool_hashes_bin...");
     GET_TRANSACTION_POOL_HASHES_BIN::request req{};
     std::string_view body;
 
     if (auto body_sv = data->request.body_view()) {
         body = *body_sv;
-        LOG_PRINT_L2("invoke_txpool_hashes_bin body length:" << body.length());
+        log::debug(logcat, "invoke_txpool_hashes_bin body length:{}", body.length());
     }
 
     else
       throw parse_error{"Internal error: got unexpected request body type"};
 
-    LOG_PRINT_L2("invoke_txpool_hashes_bin load_t_from_binary");
-    LOG_PRINT_L2("invoke_txpool_hashes_bin body:" << body);
+    log::debug(logcat, "invoke_txpool_hashes_bin load_t_from_binary");
+    log::debug(logcat, "invoke_txpool_hashes_bin body:{}", body);
 
     //if (body.length()>0)
    // {
@@ -380,12 +379,12 @@ namespace cryptonote::rpc {
     //}
 
     std::vector<crypto::hash> pool_hashes;
-    MTRACE("invoke_txpool_hashes_bin get_transaction_hashes...");
+    log::trace(logcat, "invoke_txpool_hashes_bin get_transaction_hashes...");
     data->core_rpc.get_core().get_pool().get_transaction_hashes(pool_hashes, data->request.context.admin, req.flashed_txs_only /*include_only_flashed*/);
 
     if (req.long_poll)
     {
-        MTRACE("invoke_txpool_hashes_bin long_poll...");
+        log::trace(logcat, "invoke_txpool_hashes_bin long_poll...");
       crypto::hash checksum{};
       for (const auto& h : pool_hashes) checksum ^= h;
 
@@ -401,7 +400,7 @@ namespace cryptonote::rpc {
     }
 
     // Either not a long poll request or checksum didn't match
-    MTRACE("invoke_txpool_hashes_bin queue_response...");
+    log::trace(logcat, "invoke_txpool_hashes_bin queue_response...");
     queue_response(std::move(data), pool_hashes_response(std::move(pool_hashes)));
   }
 

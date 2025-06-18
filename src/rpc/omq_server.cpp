@@ -225,7 +225,7 @@ omq_rpc::omq_rpc(cryptonote::core& core, core_rpc_server& rpc, const boost::prog
         // number instead of a JSON object.  If you want to find some, `grep number2 epee` (for
         // real).
         log::info(logcat, "OMQ RPC request '{}{}' called with invalid/unparseable data: {}", (call.is_public ? "rpc." : "admin."), name, e.what());
-        MDEBUG("Bad request body:" << m.data.empty() ? "(empty)" : m.data[0]);
+        log::debug(logcat, "Bad request body:{}", m.data.empty() ? "(empty)" : m.data[0]);
         m.send_reply(OMQ_BAD_REQUEST, "Unable to parse request: "s + e.what());
         return;
       } catch (const rpc_error& e) {

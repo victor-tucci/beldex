@@ -33,7 +33,6 @@ target_link_libraries(difficulty-tests
     cncrypto
     epee
     cryptonote_basic
-    easylogging
     extra)
 set_property(TARGET difficulty-tests
   PROPERTY

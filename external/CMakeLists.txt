@@ -51,7 +51,7 @@ endif()
 
 if(NOT OXENMQ_FOUND)
   message(STATUS "Using in-tree oxenmq")
-  add_subdirectory(loki-mq)
+  add_subdirectory(oxen-mq)
 else()
   add_library(oxenmq INTERFACE)
   target_link_libraries(oxenmq INTERFACE PkgConfig::OXENMQ)
@@ -60,9 +60,7 @@ else()
 endif()
 
 add_subdirectory(db_drivers)
-add_subdirectory(easylogging++ easyloggingpp)
 add_subdirectory(randomx EXCLUDE_FROM_ALL)
-# add_subdirectory(fmt)
 add_subdirectory(date EXCLUDE_FROM_ALL)
 
 set(JSON_MultipleHeaders ON CACHE BOOL "") # Allows multi-header nlohmann use

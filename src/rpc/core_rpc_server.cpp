@@ -212,7 +212,7 @@ namespace cryptonote::rpc {
   //   if (!set_bootstrap_daemon(command_line::get_arg(vm, arg_bootstrap_daemon_address),
   //                             command_line::get_arg(vm, arg_bootstrap_daemon_login)))
   //   {
-  //     MERROR("Failed to parse bootstrap daemon address");
+  //     log::error(logcat, "Failed to parse bootstrap daemon address");
   //   }
   //   m_was_bootstrap_ever_used = false;
   // }
@@ -1570,7 +1570,7 @@ namespace cryptonote::rpc {
       std::optional<uint64_t> bootstrap_daemon_height = m_bootstrap_daemon->get_height();
       if (!bootstrap_daemon_height)
       {
-        MERROR("Failed to fetch bootstrap daemon height");
+        log::error(logcat, "Failed to fetch bootstrap daemon height");
         lock.unlock();
         return lock;
       }
@@ -1578,7 +1578,7 @@ namespace cryptonote::rpc {
       uint64_t target_height = m_core.get_target_blockchain_height();
       if (bootstrap_daemon_height < target_height)
       {
-        MINFO("Bootstrap daemon is out of sync");
+        log::info(logcat, "Bootstrap daemon is out of sync");
         lock.unlock();
         m_bootstrap_daemon->set_failed();
         return lock;
@@ -1586,12 +1586,12 @@ namespace cryptonote::rpc {
 
       uint64_t top_height           = m_core.get_current_blockchain_height();
       m_should_use_bootstrap_daemon = top_height + 10 < bootstrap_daemon_height;
-      MINFO((m_should_use_bootstrap_daemon ? "Using" : "Not using") << " the bootstrap daemon (our height: " << top_height << ", bootstrap daemon's height: " << *bootstrap_daemon_height << ")");
+      log::info(logcat, "{} the bootstrap daemon (our height: {}, bootstrap daemon's height: {})", (m_should_use_bootstrap_daemon ? "Using" : "Not using"), top_height, *bootstrap_daemon_height);
     }
 
     if (!m_should_use_bootstrap_daemon)
     {
-      MINFO("The local daemon is fully synced; disabling bootstrap daemon requests");
+      log::info(logcat, "The local daemon is fully synced; disabling bootstrap daemon requests");
       lock.unlock();
     }
 
@@ -2600,7 +2600,7 @@ namespace cryptonote::rpc {
       if (!master_nodes::get_portions_from_percent_str(get_master_node_registration_cmd.request.operator_cut, portions_cut))
       {
         get_master_node_registration_cmd.response["status"] = "Invalid value: " + get_master_node_registration_cmd.request.operator_cut + ". Should be between [0-100]";
-        MERROR(get_master_node_registration_cmd.response["status"]);
+        log::error(logcat, "{}", get_master_node_registration_cmd.response["status"]);
         return;
       }
 
@@ -3089,7 +3089,7 @@ namespace cryptonote::rpc {
           cryptonote::tx_extra_master_node_state_change state_change;
           if (!cryptonote::get_master_node_state_change_from_tx_extra(tx.extra, state_change, hard_fork_version))
           {
-            LOG_ERROR("Could not get state change from tx, possibly corrupt tx, hf_version "<< static_cast<int>(hard_fork_version));
+            log::error(logcat, "Could not get state change from tx, possibly corrupt tx, hf_version {}", static_cast<int>(hard_fork_version));
             continue;
           }
 

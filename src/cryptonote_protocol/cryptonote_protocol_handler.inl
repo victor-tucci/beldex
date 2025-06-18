@@ -508,7 +508,7 @@ namespace cryptonote
     }
     else
     {
-        LOG_PRINT_CCONTEXT_L0("process_payload_sync_data state_synchronizing");
+      log::warning(logcat, "process_payload_sync_data state_synchronizing");
       context.m_state = cryptonote_connection_context::state_synchronizing;
     }
 

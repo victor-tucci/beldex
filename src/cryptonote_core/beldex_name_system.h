@@ -273,7 +273,7 @@ public:
   /// Destroys the internal sqlite3 statement on destruction
   ~sql_compiled_statement();
 
-  /// Attempts to prepare the given statement.  MERRORs and returns false on failure.  If the object
+  /// Attempts to prepare the given statement.  log::errors and returns false on failure.  If the object
   /// already has a prepare statement then it is finalized first.
   bool compile(std::string_view query, bool optimise_for_multiple_usage = true);
 

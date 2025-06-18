@@ -644,8 +644,11 @@ public:
     opts.kept_by_block = m_txs_keeped_by_block;
     m_c.handle_incoming_tx(t_serializable_object_to_blob(tx), tvc, opts);
     bool tx_added = pool_size + 1 == m_c.get_pool().get_transactions_count();
-    bool r = m_validator.check_tx_verification_context(tvc, tx_added, m_ev_index, tx);
-    CHECK_AND_NO_ASSERT_MES(r, false, "tx verification context check failed");
+    if (!m_validator.check_tx_verification_context(tvc, tx_added, m_ev_index, tx))
+    {
+      oxen::log::warning(globallogcat, "tx verification context check failed");
+      return false;
+    }
     return true;
   }
 
@@ -664,8 +667,11 @@ public:
     for (auto &i : parsed)
         tvcs.push_back(i.tvc);
     size_t tx_added = m_c.get_pool().get_transactions_count() - pool_size;
-    bool r = m_validator.check_tx_verification_context_array(tvcs, tx_added, m_ev_index, txs);
-    CHECK_AND_NO_ASSERT_MES(r, false, "tx verification context check failed");
+    if (!m_validator.check_tx_verification_context_array(tvcs, tx_added, m_ev_index, txs))
+    {
+      oxen::log::warning(globallogcat, "tx verification context check failed");
+      return false;
+    }
     return true;
   }
 
@@ -682,9 +688,12 @@ public:
     }
     else
       bvc.m_verifivation_failed = true;
-    bool r = m_validator.check_block_verification_context(bvc, m_ev_index, b);
-    CHECK_AND_NO_ASSERT_MES(r, false, "block verification context check failed");
-    return r;
+    if (!m_validator.check_block_verification_context(bvc, m_ev_index, b))
+    {
+      oxen::log::warning(globallogcat, "block verification context check failed");
+      return false;
+    }
+    return true;
   }
 
   // TODO(beldex): Deprecate callback_entry for beldex_callback_entry, why don't you
@@ -724,8 +733,11 @@ public:
     } catch (...) {
       blk = cryptonote::block();
     }
-    bool r = m_validator.check_block_verification_context(bvc, m_ev_index, blk);
-    CHECK_AND_NO_ASSERT_MES(r, false, "block verification context check failed");
+    if (!m_validator.check_block_verification_context(bvc, m_ev_index, blk))
+    {
+      oxen::log::warning(globallogcat, "block verification context check failed");
+      return false;
+    }
     return true;
   }
 
@@ -748,20 +760,30 @@ public:
       tx = cryptonote::transaction();
     }
 
-    bool r = m_validator.check_tx_verification_context(tvc, tx_added, m_ev_index, tx);
-    CHECK_AND_NO_ASSERT_MES(r, false, "transaction verification context check failed");
+    if (!m_validator.check_tx_verification_context(tvc, tx_added, m_ev_index, tx))
+    {
+      oxen::log::warning(globallogcat, "transaction verification context check failed");
+      return false;
+    }
     return true;
   }
 
   //
-  // NOTE: Loki
+  // NOTE: Beldex
   //
   bool operator()(const beldex_blockchain_addable<cryptonote::checkpoint_t> &entry) const
   {
     log_event("beldex_blockchain_addable<cryptonote::checkpoint_t>");
     cryptonote::Blockchain &blockchain = m_c.get_blockchain_storage();
     bool added = blockchain.update_checkpoint(entry.data);
-    CHECK_AND_NO_ASSERT_MES(added == entry.can_be_added_to_blockchain, false, (entry.fail_msg.size() ? entry.fail_msg : "Failed to add checkpoint (no reason given)"));
+    if (added != entry.can_be_added_to_blockchain)
+    {
+      if (entry.fail_msg.size())
+        oxen::log::warning(globallogcat, entry.fail_msg);
+      else
+        oxen::log::warning(globallogcat, "Failed to add checkpoint (no reason given)");
+      return false;
+    }
     return true;
   }
 
@@ -770,7 +792,14 @@ public:
     log_event("beldex_blockchain_addable<master_nodes::quorum_vote_t>");
     cryptonote::vote_verification_context vvc = {};
     bool added                                = m_c.add_master_node_vote(entry.data, vvc);
-    CHECK_AND_NO_ASSERT_MES(added == entry.can_be_added_to_blockchain, false, (entry.fail_msg.size() ? entry.fail_msg : "Failed to add master node vote (no reason given)"));
+    if (added != entry.can_be_added_to_blockchain)
+    {
+      if (entry.fail_msg.size())
+        oxen::log::warning(globallogcat, entry.fail_msg);
+      else
+        oxen::log::warning(globallogcat, "Failed to add master node vote (no reason given)");
+      return false;
+    }
     return true;
   }
 
@@ -795,7 +824,14 @@ public:
       bvc.m_verifivation_failed = true;
 
     bool added = !bvc.m_verifivation_failed;
-    CHECK_AND_NO_ASSERT_MES(added == entry.can_be_added_to_blockchain, false, (entry.fail_msg.size() ? entry.fail_msg : "Failed to add block with checkpoint (no reason given)"));
+    if (added != entry.can_be_added_to_blockchain)
+    {
+      if (entry.fail_msg.size())
+        oxen::log::warning(globallogcat, entry.fail_msg);
+      else
+        oxen::log::warning(globallogcat, "Failed to add block with checkpoint (no reason given)");
+      return false;
+    }
     return true;
   }
   
@@ -815,7 +851,14 @@ public:
       bvc.m_verifivation_failed = true;
 
     bool added = !bvc.m_verifivation_failed;
-    CHECK_AND_NO_ASSERT_MES(added == entry.can_be_added_to_blockchain, false, (entry.fail_msg.size() ? entry.fail_msg : "Failed to add block (no reason given)"));
+    if (added != entry.can_be_added_to_blockchain)
+    {
+      if (entry.fail_msg.size())
+        oxen::log::warning(globallogcat, entry.fail_msg);
+      else
+        oxen::log::warning(globallogcat, "Failed to add block (no reason given)");
+      return false;
+    }
     return true;
   }
 
@@ -834,7 +877,14 @@ public:
       bvc.m_verifivation_failed = true;
 
     bool added = !bvc.m_verifivation_failed;
-    CHECK_AND_NO_ASSERT_MES(added == entry.can_be_added_to_blockchain, false, (entry.fail_msg.size() ? entry.fail_msg : "Failed to add block (no reason given)"));
+    if (added != entry.can_be_added_to_blockchain)
+    {
+      if (entry.fail_msg.size())
+        oxen::log::warning(globallogcat, entry.fail_msg);
+      else
+        oxen::log::warning(globallogcat, "Failed to add block (no reason given)");
+      return false;
+    }
     return true;
   }
 
@@ -849,8 +899,16 @@ public:
 
     bool added = (pool_size + 1) == m_c.get_pool().get_transactions_count();
 
-    CHECK_AND_NO_ASSERT_MES(added == entry.can_be_added_to_blockchain, false, (entry.fail_msg.size() ? entry.fail_msg :
-                entry.can_be_added_to_blockchain ? "Failed to add transaction that should have been accepted" : "TX adding should have failed, but didn't"));
+    if (added != entry.can_be_added_to_blockchain)
+    {
+      if (entry.fail_msg.size())
+        oxen::log::warning(globallogcat, entry.fail_msg);
+      else if (entry.can_be_added_to_blockchain)
+        oxen::log::warning(globallogcat, "Failed to add transaction that should have been accepted");
+      else
+        oxen::log::warning(globallogcat, "TX adding should have failed, but didn't");
+      return false;
+    }
     return true;
   }
 

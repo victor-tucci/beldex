@@ -94,8 +94,6 @@ int main(int argc, char* argv[])
 
   block_stop = command_line::get_arg(vm, arg_block_stop);
 
-  LOG_PRINT_L0("Starting...");
-
   auto m_config_folder = command_line::get_arg(vm, cryptonote::arg_data_dir);
   auto log_file_path = m_config_folder + "beldex-blockchain-export.log";
   log::Level log_level;

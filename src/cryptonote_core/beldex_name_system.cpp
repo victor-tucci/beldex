@@ -2146,7 +2146,7 @@ bool add_bns_entry(bns::name_system_db &bns_db, uint64_t height, cryptonote::tx_
     auto [sql, bind] = update_record_query(bns_db, height, entry, tx_hash);
 
     if (sql.empty())
-      return false; // already MERROR'd
+      return false; // already log::error'd
 
     // Compile sql statement
     sql_compiled_statement statement{bns_db};
@@ -2320,7 +2320,7 @@ bool name_system_db::prune_db(uint64_t height)
       if (sql_run_statement(bns_sql_type::pruning, prune_owners_sql, nullptr))
         result = true;
 
-    MDEBUG("Detach request for BNS (last processed is" <<  this->last_processed_height << "), " << (result ? "detached" : "failed to detach") << " to " << height);
+    log::warning(logcat, "Detach request for BNS (last processed is{}), {} to {}", this->last_processed_height, (result ? "detached" : "failed to detach"), height);
 
     if (result)
       this->last_processed_height = (height - 1);
