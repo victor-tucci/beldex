@@ -34,7 +34,7 @@
  *
  * \brief Source file that defines simple_wallet class.
  */
-#include <fmt/color.h>
+
 #include "common/string_util.h"
 #include "beldex_economy.h"
 #include <algorithm>
@@ -6446,15 +6446,15 @@ bool simple_wallet::query_locked_stakes(bool print_details, bool print_key_image
     //
     // If we aren't showing key images then all the key image details get omitted.
 
-    msg += "Master Node: {}\n"_format( node_info.master_node_pubkey);
+    msg += "Master Node: {}\n"_format(node_info.master_node_pubkey);
     if (node_info.requested_unlock_height != master_nodes::KEY_IMAGE_AWAITING_UNLOCK_HEIGHT)
-      msg += "Unlock height: {}\n"_format( node_info.requested_unlock_height);
+      msg += "Unlock height: {}\n"_format(node_info.requested_unlock_height);
 
     bool just_me = contributors.size() == 1;
 
-    auto required = " of {} required"_format( cryptonote::format_money(node_info.staking_requirement));
+    auto required = " of {} required"_format(cryptonote::format_money(node_info.staking_requirement));
     if (!just_me) {
-      msg += "Total Contributions: {}{}\n"_format( cryptonote::format_money(total), required);
+      msg += "Total Contributions: {}{}\n"_format(cryptonote::format_money(total), required);
       required.clear();
     }
 
@@ -6481,7 +6481,7 @@ bool simple_wallet::query_locked_stakes(bool print_details, bool print_key_image
         required.clear();
       }
       if (print_key_images)
-        msg += " (Key image: {})"_format( c.key_image);
+        msg += " (Key image: {})"_format(c.key_image);
       msg += '\n';
     }
 
@@ -6500,7 +6500,7 @@ bool simple_wallet::query_locked_stakes(bool print_details, bool print_key_image
         if (locked.size() == 1)
         {
           if (print_key_images)
-            msg += "      Key image: {}\n"_format( locked[0].key_image);
+            msg += "      Key image: {}\n"_format(locked[0].key_image);
         }
         else
         {
@@ -6509,7 +6509,7 @@ bool simple_wallet::query_locked_stakes(bool print_details, bool print_key_image
             msg += "      ‣ ";
             msg += cryptonote::format_money(c.amount);
             if (print_key_images)
-              msg += " (Key image: {})\n"_format( c.key_image);
+              msg += " (Key image: {})\n"_format(c.key_image);
             else
               msg += '\n';
           }
@@ -6571,9 +6571,9 @@ bool simple_wallet::query_locked_stakes(bool print_details, bool print_key_image
 
       for (const auto& black : blacklisted)
       {
-        msg +="    • {} (Unlock height {}"_format( cryptonote::format_money(black.amount), black.unlock_height);
+        msg += "    • {} (Unlock height {}"_format(cryptonote::format_money(black.amount), black.unlock_height);
         if (print_key_images)
-          msg +="; Key image: {})\n"_format( black.key_image);
+          msg += "; Key image: {})\n"_format(black.key_image);
         else
           msg += ")\n";
       }
@@ -6933,7 +6933,7 @@ bool simple_wallet::bns_update_mapping(std::vector<std::string> args)
 
     auto validate_encrypted_hex = [&](const std::string& label, const std::string& hex) -> bool {
       if (!oxenc::is_hex(hex) || hex.size() > 2 * bns::mapping_value::BUFFER_SIZE) {
-        log::error(logcat, "Invalid BNS data for {} returned from beldexd", label);
+        log::error(logcat, "Invalid BNS data returned from beldexd");
         fail_msg_writer() << tr("Invalid BNS data returned from beldexd");
         return false;
       }

@@ -80,11 +80,18 @@ namespace beldex::logging
   }
 
   void
-  init(const std::string& log_location, log::Level log_level)
+  init(const std::string& log_location, log::Level log_level, bool log_to_stdout)
   {
     log::reset_level(log_level);
-    log::add_sink(log::Type::Print, "stdout");
+    if (log_to_stdout)
+      log::add_sink(log::Type::Print, "stdout");
+    set_file_sink(log_location);
+    set_additional_log_categories(log_level);
+  }
 
+  void
+  set_file_sink(const std::string& log_location)
+  {
     constexpr size_t LOG_FILE_SIZE_LIMIT = 1024 * 1024 * 50;  // 50MiB
     constexpr size_t EXTRA_FILES = 1;
 
@@ -107,8 +114,6 @@ namespace beldex::logging
           ex.what());
       return;
     }
-
-    set_additional_log_categories(log_level);
 
     log::info(logcat, "Writing logs to {}", log_location);
   }
