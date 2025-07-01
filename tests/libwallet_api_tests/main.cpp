@@ -238,8 +238,7 @@ struct WalletTest2 : public testing::Test
 
 // TEST_F(WalletManagerTest, WalletMaxAmountAsString)
 // {
-//     LOG_PRINT_L3("max amount: " << Wallet::Wallet::displayAmount(
-//                      Wallet::Wallet::maximumAllowedAmount()));
+//     oxen::log::trace(logcat, "max amount: {}", Wallet::Wallet::displayAmount(Wallet::Wallet::maximumAllowedAmount()));
 // }
 
 
@@ -259,11 +258,11 @@ struct WalletTest2 : public testing::Test
 // {
 //     if (mutex)
 //         mutex->lock();
-//     LOG_PRINT_L3("opening wallet in thread: " << boost::this_thread::get_id());
+//     oxen::log::trace(logcat, "opening wallet in thread: {}", boost::this_thread::get_id());
 //     *wallet = wmgr->openWallet(WALLET_NAME, pass, Wallet::NetworkType::TESTNET);
-//     LOG_PRINT_L3("wallet address: " << (*wallet)->mainAddress());
-//     LOG_PRINT_L3("wallet status: " << (*wallet)->good());
-//     LOG_PRINT_L3("closing wallet in thread: " << boost::this_thread::get_id());
+//     oxen::log::trace(logcat, "wallet address: {}", (*wallet)->mainAddress());
+//     oxen::log::trace(logcat, "wallet status: {}", (*wallet)->good());
+//     oxen::log::trace(logcat, "closing wallet in thread: {}", boost::this_thread::get_id());
 //     if (mutex)
 //         mutex->unlock();
 // }

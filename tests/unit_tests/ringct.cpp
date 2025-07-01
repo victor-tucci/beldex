@@ -778,11 +778,10 @@ TEST(ringct, reject_gen_simple_ver_non_simple)
 
 TEST(ringct, key_ostream)
 {
-  std::stringstream out;
-  out << "BEGIN" << rct::H << "END";
+  auto out = "BEGIN{}END"_format(rct::H);
   EXPECT_EQ(
     std::string{"BEGIN<8b655970153799af2aeadc9ff1add0ea6c7251d54154cfa92c173a0dd39c1f94>END"},
-    out.str()
+    out
   );
 }
 

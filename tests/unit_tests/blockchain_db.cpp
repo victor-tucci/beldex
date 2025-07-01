@@ -41,6 +41,7 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "common/fs.h"
 #include "common/hex.h"
+#include "logging/beldex_logger.h"
 
 #include "random_path.h"
 

@@ -125,7 +125,7 @@ bool transactions_flow_test(std::string& working_folder,
   std::string& daemon_addr_b,
   uint64_t amount_to_transfer, size_t mix_in_factor, size_t transactions_count, size_t transactions_per_second)
 {
-  LOG_PRINT_L0("-----------------------STARTING TRANSACTIONS FLOW TEST-----------------------");
+  oxen::log::warning(logcat, "-----------------------STARTING TRANSACTIONS FLOW TEST-----------------------");
   tools::wallet2 w1, w2;
   if(path_source_wallet.empty())
     path_source_wallet = generate_random_wallet_name();
@@ -141,7 +141,7 @@ bool transactions_flow_test(std::string& working_folder,
   }
   catch (const std::exception& e)
   {
-    LOG_ERROR("failed to generate wallet: " << e.what());
+    oxen::log::error(logcat, "failed to generate wallet: {}", e.what());
     return false;
   }
 
@@ -152,15 +152,15 @@ bool transactions_flow_test(std::string& working_folder,
   bool ok;
   if(!w1.refresh(true, blocks_fetched, received_money, ok))
   {
-    LOG_ERROR( "failed to refresh source wallet from " << daemon_addr_a );
+    oxen::log::error(logcat, "failed to refresh source wallet from {}", daemon_addr_a);
     return false;
   }
 
   w2.init(daemon_addr_b);
 
-  MGINFO_GREEN("Using wallets:\n"
+  oxen::log::info(logcat, fmt::format(fg(fmt::terminal_color::green), "Using wallets:\n"
     << "Source:  " << w1.get_account().get_public_address_str(MAINNET) << "\nPath: " << working_folder + "/" + path_source_wallet << "\n"
-    << "Target:  " << w2.get_account().get_public_address_str(MAINNET) << "\nPath: " << working_folder + "/" + path_target_wallet);
+    << "Target:  " << w2.get_account().get_public_address_str(MAINNET) << "\nPath: " << working_folder + "/" + path_target_wallet));
 
   //lets do some money
   epee::net_utils::http::http_simple_client http_client;
@@ -201,7 +201,7 @@ bool transactions_flow_test(std::string& working_folder,
         cryptonote::transaction tx_s;
         bool r = do_send_money(w1, w1, 0, td.m_tx.vout[td.m_internal_output_index].amount - TEST_FEE, tx_s, 50);
         CHECK_AND_ASSERT_MES(r, false, "Failed to send starter tx " << get_transaction_hash(tx_s));
-        MGINFO_GREEN("Starter transaction sent " << get_transaction_hash(tx_s));
+        oxen::log::info(logcat, fmt::format(fg(fmt::terminal_color::green), "Starter transaction sent " << get_transaction_hash(tx_s)));
         if(++count >= FIRST_N_TRANSFERS)
           break;
       }
@@ -230,7 +230,7 @@ bool transactions_flow_test(std::string& working_folder,
     while(w1.unlocked_balance(0, true) < amount_to_tx + TEST_FEE)
     {
       std::this_thread::sleep_for(1s);
-      LOG_PRINT_L0("not enough money, waiting for cashback or mining");
+      oxen::log::warning(logcat, "not enough money, waiting for cashback or mining");
       w1.refresh(true, blocks_fetched, received_money, ok);
     }
 
@@ -245,11 +245,11 @@ bool transactions_flow_test(std::string& working_folder,
 
     if(!do_send_money(w1, w2, mix_in_factor, amount_to_tx, tx))
     {
-      LOG_PRINT_L0("failed to transfer money, tx: " << get_transaction_hash(tx) << ", refresh and try again" );
+      oxen::log::warning(logcat, "failed to transfer money, tx: {}, refresh and try again", get_transaction_hash(tx));
       w1.refresh(true, blocks_fetched, received_money, ok);
       if(!do_send_money(w1, w2, mix_in_factor, amount_to_tx, tx))
       {
-        LOG_PRINT_L0( "failed to transfer money, second chance. tx: " << get_transaction_hash(tx) << ", exit" );
+        oxen::log::warning(logcat, "failed to transfer money, second chance. tx: {}, exit", get_transaction_hash(tx));
         LOCAL_ASSERT(false);
         return false;
       }
@@ -258,7 +258,7 @@ bool transactions_flow_test(std::string& working_folder,
 
     transfered_money += amount_to_tx;
 
-    LOG_PRINT_L0("transferred " << amount_to_tx << ", i=" << i );
+    oxen::log::warning(logcat, "transferred {}, i={}", amount_to_tx, i);
     tx_test_entry& ent = txs[get_transaction_hash(tx)] = {};
     ent.amount_transfered = amount_to_tx;
     ent.tx = tx;
@@ -267,9 +267,9 @@ bool transactions_flow_test(std::string& working_folder,
   }
 
 
-  LOG_PRINT_L0( "waiting some new blocks...");
+  oxen::log::warning(logcat, "waiting some new blocks...");
   std::this_thread::sleep_for(TARGET_BLOCK_TIME_12*20*1s);//wait two blocks before sync on another wallet on another daemon
-  LOG_PRINT_L0( "refreshing...");
+  oxen::log::warning(logcat, "refreshing...");
   bool recvd_money = false;
   while(w2.refresh(true, blocks_fetched, recvd_money, ok) && ( (blocks_fetched && recvd_money) || !blocks_fetched  ) )
   {
@@ -279,8 +279,8 @@ bool transactions_flow_test(std::string& working_folder,
   uint64_t money_2 = w2.balance(0, true);
   if(money_2 == transfered_money)
   {
-    MGINFO_GREEN("-----------------------FINISHING TRANSACTIONS FLOW TEST OK-----------------------");
-    MGINFO_GREEN("transferred " << print_money(transfered_money) << " via " << i << " transactions" );
+    oxen::log::info(logcat, fmt::format(fg(fmt::terminal_color::green), "-----------------------FINISHING TRANSACTIONS FLOW TEST OK-----------------------"));
+    oxen::log::info(logcat, fmt::format(fg(fmt::terminal_color::green), "transferred {} via {} transactions", print_money(transfered_money), i));
     return true;
   }else
   {
@@ -297,13 +297,13 @@ bool transactions_flow_test(std::string& working_folder,
     {
       if(tx_pair.second.m_received_count != 1)
       {
-        MERROR("Transaction lost: " << get_transaction_hash(tx_pair.second.tx));
+        oxen::log::error(logcat, "Transaction lost: {}", get_transaction_hash(tx_pair.second.tx));
       }
 
     }
 
-    MERROR("-----------------------FINISHING TRANSACTIONS FLOW TEST FAILED-----------------------" );
-    MERROR("income " << print_money(money_2) << " via " << i << " transactions, expected money = " << print_money(transfered_money) );
+    oxen::log::error(logcat, "-----------------------FINISHING TRANSACTIONS FLOW TEST FAILED-----------------------");
+    oxen::log::error(logcat, "income {} via {} transactions, expected money = {}", print_money(money_2), i, print_money(transfered_money));
     LOCAL_ASSERT(false);
     return false;
   }

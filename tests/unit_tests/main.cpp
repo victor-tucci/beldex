@@ -55,7 +55,6 @@ int main(int argc, char** argv)
 
   tools::on_startup();
   epee::string_tools::set_module_name_and_folder(argv[0]);
-  mlog_configure(mlog_get_default_log_path("unit_tests.log"), true);
   epee::debug::get_set_enable_assert(true, false);
 
   ::testing::InitGoogleTest(&argc, argv);
@@ -77,11 +76,13 @@ int main(int argc, char** argv)
     return 1;
 
   unit_test::data_dir = command_line::get_arg(vm, arg_data_dir);
-  const int log_level = command_line::get_arg(vm, arg_log_level);
-  if (0 <= log_level && log_level <= 4)
-  {
-    mlog_set_log_level(log_level);
+  oxen::log::Level log_level;
+  if (auto level = beldex::logging::parse_level(command_line::get_arg(vm, arg_log_level))) {
+      log_level = *level;
+  } else {
+      throw std::runtime_error{"Incorrect log level"};
   }
+  beldex::logging::init("unit_tests.log", log_level);
 
   CATCH_ENTRY_L0("main", 1);
 

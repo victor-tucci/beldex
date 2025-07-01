@@ -441,7 +441,7 @@ TEST(serialization, serializes_transaction_signatures_correctly)
   tx.signatures[1].resize(2);
   for (char i : {0, 1})
     for (char j : {0, 1})
-      tx.signatures[i][j].c.data[2*i + j] = ((i+1) << 4) + 2*i + j + 1;
+      tx.signatures[i][j].c()[2*i + j] = ((i+1) << 4) + 2*i + j + 1;
   tx.invalidate_hashes();
   ASSERT_NO_THROW(blob = serialization::dump_binary(tx));
   ASSERT_EQ(oxenc::to_hex(blob),

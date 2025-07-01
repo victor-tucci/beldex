@@ -53,9 +53,6 @@ int main(int argc, char* argv[])
   // Bypass tx version checks for core tests:
   cryptonote::hack::test_suite_permissive_txes = true;
 
-  //set up logging options
-  mlog_configure(mlog_get_default_log_path("core_tests.log"), true);
-  
   po::options_description desc_options("Allowed options");
   command_line::add_arg(desc_options, command_line::arg_help);
   command_line::add_arg(desc_options, arg_filter);
@@ -78,10 +75,13 @@ int main(int argc, char* argv[])
     return 0;
   }
 
+  auto log_level = oxen::log::Level::info;
   if (!command_line::is_arg_defaulted(vm, arg_log_level))
-    mlog_set_log(command_line::get_arg(vm, arg_log_level).c_str());
-  else
-    mlog_set_log_level(0);
+    if (auto level = beldex::logging::parse_level(command_line::get_arg(vm, arg_log_level).c_str()))
+      log_level = *level;
+
+  //set up logging options
+  beldex::logging::init("core_tests.log", log_level); 
 
   const std::string filter = command_line::get_arg(vm, arg_filter);
 
@@ -305,20 +305,14 @@ int main(int argc, char* argv[])
       GENERATE_AND_PLAY(gen_multisig_tx_valid_48_1_234_many_inputs);
 #endif
 
-    el::Level level = (failed_tests.empty() ? el::Level::Info : el::Level::Error);
-    if (!list_tests)
-    {
-      MLOG(level, "\nREPORT:");
-      MLOG(level, "  Test run: " << tests_count);
-      MLOG(level, "  Failures: " << failed_tests.size());
-    }
+    if (!list_tests && failed_tests.empty())
+      oxen::log::info(globallogcat, "\nREPORT:\n  Test run: {}\n  Failures: {}", tests_count, failed_tests.size());
     if (!failed_tests.empty())
     {
-      MLOG(level, "FAILED TESTS:");
-      for (auto &test_name : failed_tests)
-      {
-        MLOG(level, "  " << test_name);
-      }
+      oxen::log::error(globallogcat, "\nREPORT:\n  Test run: {}\n  Failures: {}", tests_count, failed_tests.size());
+      oxen::log::error(globallogcat, "Failed TESTS:");
+      for (auto& test_name : failed_tests)
+        oxen::log::error(globallogcat, "  {}", test_name);
     }
   }
 

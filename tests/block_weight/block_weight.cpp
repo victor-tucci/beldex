@@ -88,13 +88,13 @@ public:
     return ret;
   }
   virtual crypto::hash get_block_hash_from_height(const uint64_t &height) const override {
-    crypto::hash hash = crypto::null_hash;
-    *(uint64_t*)&hash = height;
+    crypto::hash hash{};
+    *reinterpret_cast<uint64_t*>(hash.data()) = height;
     return hash;
   }
   virtual crypto::hash top_block_hash(uint64_t *block_height = NULL) const override {
     uint64_t h = height();
-    crypto::hash top = crypto::null_hash;
+    crypto::hash top{};
     if (h)
       *(uint64_t*)&top = h - 1;
     if (block_height)

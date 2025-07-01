@@ -9,7 +9,7 @@ anybad=
 for bin in beldexd beldex-{wallet-{cli,rpc},gen-trusted-multisig,blockchain-{ancestry,depth,export,import,mark-spent-outputs,stats,usage}}; do
     bad=
     if [ "$DRONE_STAGE_OS" == "darwin" ]; then
-        if otool -L bin/$bin | grep -Ev '^bin/'$bin':|^\t(/usr/lib/libSystem\.|/usr/lib/libc\+\+\.|/System/Library/Frameworks/(CoreFoundation|IOKit|Security))'; then
+        if otool -L bin/$bin | grep -Ev '^bin/'$bin':|^\t(/usr/lib/lib(System|c\+\+|objc)\.|/System/Library/Frameworks/(AppKit|CoreFoundation|IOKit|SystemConfiguration))'; then
             bad=1
         fi
     elif [ "$DRONE_STAGE_OS" == "linux" ]; then

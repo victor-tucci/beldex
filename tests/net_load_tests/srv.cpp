@@ -34,13 +34,14 @@
 #include "epee/misc_log_ex.h"
 #include "epee/storages/levin_abstract_invoke2.h"
 #include "common/util.h"
+#include "logging/beldex_logger.h"
 
 #include "net_load_tests.h"
 
 using namespace net_load_tests;
 using namespace std::literals;
 
-#define EXIT_ON_ERROR(cond) { if (!(cond)) { LOG_PRINT_L0("ERROR: " << #cond); exit(1); } else {} }
+#define EXIT_ON_ERROR(cond) { if (!(cond)) { oxen::log::warning(globallogcat, "ERROR: {}", #cond); exit(1); } else {} }
 
 namespace
 {
@@ -48,7 +49,7 @@ namespace
   {
     srv_levin_commands_handler(test_tcp_server& tcp_server)
       : m_tcp_server(tcp_server)
-      , m_open_close_test_conn_id(boost::uuids::nil_uuid())
+      , m_open_close_test_conn_id{}
     {
     }
 
@@ -73,8 +74,8 @@ namespace
       std::unique_lock lock{m_open_close_test_mutex};
       if (context.m_connection_id == m_open_close_test_conn_id)
       {
-        LOG_PRINT_L0("Stop open/close test");
-        m_open_close_test_conn_id = boost::uuids::nil_uuid();
+        oxen::log::warning(globallogcat, "Stop open/close test");
+        m_open_close_test_conn_id = {};
         m_open_close_test_helper.reset(0);
       }
     }
@@ -102,7 +103,7 @@ namespace
       rsp.opened_connections_count = m_tcp_server.get_config_object().get_connections_count();
       rsp.new_connection_counter = new_connection_counter();
       rsp.close_connection_counter = close_connection_counter();
-      LOG_PRINT_L0("Statistics: " << rsp.to_string());
+      oxen::log::warning(globallogcat, "Statistics: {}", rsp.to_string());
       return 1;
     }
 
@@ -119,7 +120,7 @@ namespace
       std::unique_lock lock{m_open_close_test_mutex};
       if (0 == m_open_close_test_helper.get())
       {
-        LOG_PRINT_L0("Start open/close test (" << req.open_request_target << ", " << req.max_opened_conn_count << ")");
+        oxen::log::warning(globallogcat, "Start open/close test ({}, {})", req.open_request_target, req.max_opened_conn_count);
 
         m_open_close_test_conn_id = context.m_connection_id;
         m_open_close_test_helper.reset(new open_close_test_helper(m_tcp_server, req.open_request_target, req.max_opened_conn_count));
@@ -133,14 +134,14 @@ namespace
 
     int handle_shutdown(int command, const CMD_SHUTDOWN::request& req, test_connection_context& /*context*/)
     {
-      LOG_PRINT_L0("Got shutdown request. Shutting down...");
+      oxen::log::warning(globallogcat, "Got shutdown request. Shutting down...");
       m_tcp_server.send_stop_signal();
       return 1;
     }
 
     int handle_send_data_requests(int /*command*/, const CMD_SEND_DATA_REQUESTS::request& req, test_connection_context& context)
     {
-      boost::uuids::uuid cmd_conn_id = context.m_connection_id;
+      auto cmd_conn_id = context.m_connection_id;
       m_tcp_server.get_config_object().foreach_connection([&](test_connection_context& ctx) {
         if (ctx.m_connection_id != cmd_conn_id)
         {
@@ -151,11 +152,11 @@ namespace
             m_tcp_server.get_config_object(), [=](int code, const CMD_DATA_REQUEST::response& rsp, const test_connection_context&) {
               if (code <= 0)
               {
-                LOG_PRINT_L0("Failed to invoke CMD_DATA_REQUEST. code = " << code);
+                oxen::log::warning(globallogcat, "Failed to invoke CMD_DATA_REQUEST. code = {}", code);
               }
           });
           if (!r)
-            LOG_PRINT_L0("Failed to invoke CMD_DATA_REQUEST");
+            oxen::log::warning(globallogcat, "Failed to invoke CMD_DATA_REQUEST");
         }
         return true;
       });
@@ -164,9 +165,9 @@ namespace
     }
 
   private:
-    void close_connections(boost::uuids::uuid cmd_conn_id)
+    void close_connections(const epee::connection_id_t& cmd_conn_id)
     {
-      LOG_PRINT_L0("Closing connections. Number of opened connections: " << m_tcp_server.get_config_object().get_connections_count());
+      oxen::log::warning(globallogcat, "Closing connections. Number of opened connections: {}", m_tcp_server.get_config_object().get_connections_count());
 
       size_t count = 0;
       bool r = m_tcp_server.get_config_object().foreach_connection([&](test_connection_context& ctx) {
@@ -180,7 +181,7 @@ namespace
           }
           else
           {
-            LOG_PRINT_L0(count << " connection already closed");
+            oxen::log::warning(globallogcat, "{} connection already closed", count);
           }
         }
         return true;
@@ -199,7 +200,7 @@ namespace
           }
           else
           {
-            LOG_PRINT_L0("ERROR: " << ec.message() << ':' << ec.value());
+            oxen::log::warning(globallogcat, "ERROR: {}:{}", ec.message(), ec.value());
           }
         });
       }
@@ -208,7 +209,7 @@ namespace
   private:
     test_tcp_server& m_tcp_server;
 
-    boost::uuids::uuid m_open_close_test_conn_id;
+    epee::connection_id_t m_open_close_test_conn_id;
     std::mutex m_open_close_test_mutex;
     std::unique_ptr<open_close_test_helper> m_open_close_test_helper;
   };
@@ -219,7 +220,7 @@ int main(int argc, char** argv)
   TRY_ENTRY();
   tools::on_startup();
   //set up logging options
-  mlog_configure(mlog_get_default_log_path("net_load_tests_srv.log"), true);
+  beldex::logging::init("net_load_tests_srv.log", oxen::log::Level::debug);
 
   size_t thread_count = std::max(min_thread_count, std::thread::hardware_concurrency() / 2);
 

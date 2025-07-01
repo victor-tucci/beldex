@@ -103,6 +103,7 @@ target_link_libraries(unit_tests
     version
     Boost::thread
     gtest
+    logging
     extra)
 set_property(TARGET unit_tests
   PROPERTY

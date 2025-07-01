@@ -92,9 +92,7 @@ bool beldex_checkpointing_alt_chain_handle_alt_blocks_at_tip::generate(std::vect
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_alt_block_count");
 
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(top_height, curr_height);
     CHECK_EQ(top_hash, curr_hash);
     CHECK_TEST_CONDITION(c.get_blockchain_storage().get_alternative_blocks_count() > 0);
@@ -116,9 +114,7 @@ bool beldex_checkpointing_alt_chain_handle_alt_blocks_at_tip::generate(std::vect
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_chain_reorged");
     CHECK_EQ(c.get_blockchain_storage().get_alternative_blocks_count(), 0);
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(expected_top_hash, top_hash);
     return true;
   });
@@ -152,9 +148,7 @@ bool beldex_checkpointing_alt_chain_more_master_node_checkpoints_less_pow_overta
   beldex_register_callback(events, "check_switched_to_alt_chain", [fork_top_hash, fork_top_height](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_switched_to_alt_chain");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(top_height, fork_top_height);
     CHECK_EQ(top_hash, fork_top_hash);
     return true;
@@ -221,9 +215,7 @@ bool beldex_checkpointing_alt_chain_receive_checkpoint_votes_should_reorg_back::
   beldex_register_callback(events, "check_switched_to_alt_chain", [fork_top_hash](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_switched_to_alt_chain");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(fork_top_hash, top_hash);
     return true;
   });
@@ -293,9 +285,7 @@ bool beldex_checkpointing_alt_chain_with_increasing_master_node_checkpoints::gen
   beldex_register_callback(events, "check_still_on_main_chain", [gen_top_hash](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_still_on_main_chain");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(top_hash, gen_top_hash);
     return true;
   });
@@ -314,9 +304,7 @@ bool beldex_checkpointing_alt_chain_with_increasing_master_node_checkpoints::gen
   beldex_register_callback(events, "check_switched_to_alt_chain", [fork_top_hash](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_switched_to_alt_chain");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(fork_top_hash, top_hash);
     return true;
   });
@@ -460,9 +448,7 @@ bool beldex_core_block_reward_unpenalized_pre_POS::generate(std::vector<test_eve
   beldex_register_callback(events, "check_block_rewards", [unpenalized_block_reward, expected_master_node_reward](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_block_rewards");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
 
     bool orphan;
     cryptonote::block top_block;
@@ -515,9 +501,7 @@ bool beldex_core_block_reward_unpenalized_post_POS::generate(std::vector<test_ev
   beldex_register_callback(events, "check_block_rewards", [unpenalized_reward, tx_fee](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_block_rewards");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
 
     bool orphan;
     cryptonote::block top_block;
@@ -530,9 +514,9 @@ bool beldex_core_block_reward_unpenalized_post_POS::generate(std::vector<test_ev
     CHECK_TEST_CONDITION_MSG(rewards_from_fee > 0 && rewards_from_fee < tx_fee, "Block producer should receive a penalised tx fee less than " << cryptonote::print_money(tx_fee) << "received, " << cryptonote::print_money(rewards_from_fee) << "");
     CHECK_TEST_CONDITION_MSG(top_block.miner_tx.vout[1].amount == unpenalized_reward, "Master Node should receive full reward " << unpenalized_reward);
 
-    MGINFO("rewards_from_fee: "   << cryptonote::print_money(rewards_from_fee));
-    MGINFO("tx_fee: "             << cryptonote::print_money(tx_fee));
-    MGINFO("unpenalized_amount: " << cryptonote::print_money(unpenalized_reward));
+    oxen::log::info(globallogcat, "rewards_from_fee: {}", cryptonote::print_money(rewards_from_fee));
+    oxen::log::info(globallogcat, "tx_fee: {}", cryptonote::print_money(tx_fee));
+    oxen::log::info(globallogcat, "unpenalized_amount: {}", cryptonote::print_money(unpenalized_reward));
     return true;
   });
   return true;
@@ -602,9 +586,7 @@ bool beldex_core_fee_burning::generate(std::vector<test_event_entry>& events)
   beldex_register_callback(events, "check_fee_burned", [good_hash, good_miner_reward](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_fee_burned");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
 
     bool orphan;
     cryptonote::block top_block;
@@ -1586,7 +1568,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
       // Blockchain name empty
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
-        data.name_hash                             = {};
+        data.name_hash.zero();
         data.encrypted_wallet_value                = miner_key.wallet_value.make_encrypted("").to_string();
         make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Blockchain) Empty wallet name in BNS is invalid");
       }
@@ -1613,7 +1595,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
       // belnet name empty
       {
         cryptonote::tx_extra_beldex_name_system data = valid_data;
-        data.name_hash                             = {};
+        data.name_hash.zero();
         data.encrypted_belnet_value                = miner_key.belnet_value.make_encrypted("").to_string();
         make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(belnet) Empty domain name in BNS is invalid");
       }
@@ -1656,7 +1638,7 @@ bool beldex_name_system_invalid_tx_extra_params::generate(std::vector<test_event
     // Bchat name empty
     {
       cryptonote::tx_extra_beldex_name_system data = valid_data;
-      data.name_hash                             = {};
+      data.name_hash.zero();
       data.encrypted_bchat_value                 = miner_key.bchat_value.make_encrypted("").to_string();
       make_bns_tx_with_custom_extra(gen, events, miner, data, false, "(Bchat) Name empty");
     }
@@ -2141,7 +2123,7 @@ static crypto::hash ons_signature_hash(Args&&... args) {
   crypto::hash hash{};
   auto data = bns::tx_extra_signature(std::forward<Args>(args)...);
   if (!data.empty())
-    crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
+    crypto_generichash(hash.data(), hash.size(), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
   return hash;
 }
 
@@ -2171,8 +2153,8 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     crypto::ed25519_secret_key owner1_key;
     crypto::ed25519_secret_key owner2_key;
 
-    crypto_sign_ed25519_keypair(owner1.ed25519.data, owner1_key.data);
-    crypto_sign_ed25519_keypair(owner2.ed25519.data, owner2_key.data);
+    crypto_sign_ed25519_keypair(owner1.ed25519.data(), owner1_key.data());
+    crypto_sign_ed25519_keypair(owner2.ed25519.data(), owner2_key.data());
     owner1.type = bns::generic_owner_sig_type::ed25519;
     owner2.type = bns::generic_owner_sig_type::ed25519;
 
@@ -2300,7 +2282,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     bns::generic_owner owner2 = bns::make_monero_owner(account2.get_keys().m_account_address, false /*subaddress*/);
     crypto::ed25519_secret_key owner1_key;
 
-    crypto_sign_ed25519_keypair(owner1.ed25519.data, owner1_key.data);
+    crypto_sign_ed25519_keypair(owner1.ed25519.data(), owner1_key.data());
     owner1.type = bns::generic_owner_sig_type::ed25519;
 
     std::string name = "hello_driver";
@@ -2360,7 +2342,7 @@ bool beldex_name_system_update_mapping_multiple_owners::generate(std::vector<tes
     bns::generic_owner owner2;
 
     crypto::ed25519_secret_key owner2_key;
-    crypto_sign_ed25519_keypair(owner2.ed25519.data, owner2_key.data);
+    crypto_sign_ed25519_keypair(owner2.ed25519.data(), owner2_key.data());
     owner2.type = bns::generic_owner_sig_type::ed25519;
 
     std::string name = "hello_passenger";
@@ -2770,11 +2752,11 @@ bool beldex_master_nodes_gen_nodes::generate(std::vector<test_event_entry> &even
   return true;
 }
 
-using sn_info_t = master_nodes::master_node_pubkey_info;
-static bool contains(const std::vector<sn_info_t>& infos, const crypto::public_key& key)
+using mn_info_t = master_nodes::master_node_pubkey_info;
+static bool contains(const std::vector<mn_info_t>& infos, const crypto::public_key& key)
 {
   const auto it =
-    std::find_if(infos.begin(), infos.end(), [&key](const sn_info_t& info) { return info.pubkey == key; });
+    std::find_if(infos.begin(), infos.end(), [&key](const mn_info_t& info) { return info.pubkey == key; });
   return it != infos.end();
 }
 
@@ -2807,7 +2789,7 @@ bool beldex_master_nodes_test_rollback::generate(std::vector<test_event_entry>& 
   beldex_register_callback(events, "test_registrations", [&events, deregister_index, reg_evnt_idx](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("test_registrations");
-    const auto sn_list = c.get_master_node_list_state({});
+    const auto mn_list = c.get_master_node_list_state({});
     /// Test that node A is still registered
     {
       /// obtain public key of node A
@@ -2825,7 +2807,7 @@ bool beldex_master_nodes_test_rollback::generate(std::vector<test_event_entry>& 
       const auto pk_a = uptime_quorum->workers.at(deregistration.master_node_index);
 
       /// Check present
-      const bool found_a = contains(sn_list, pk_a);
+      const bool found_a = contains(mn_list, pk_a);
       CHECK_AND_ASSERT_MES(found_a, false, "Node deregistered in alt chain is not found in the main chain after reorg.");
     }
 
@@ -2838,12 +2820,12 @@ bool beldex_master_nodes_test_rollback::generate(std::vector<test_event_entry>& 
 
       crypto::public_key pk_b;
       if (!cryptonote::get_master_node_pubkey_from_tx_extra(reg_tx.data.tx.extra, pk_b)) {
-        MERROR("Could not get master node key from tx extra");
+        oxen::log::error(globallogcat, "Could not get master node key from tx extra");
         return false;
       }
 
       /// Check not present
-      const bool found_b = contains(sn_list, pk_b);
+      const bool found_b = contains(mn_list, pk_b);
       CHECK_AND_ASSERT_MES(!found_b, false, "Node registered in alt chain is present in the main chain after reorg.");
     }
     return true;
@@ -2861,13 +2843,13 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
   gen.add_blocks_until_version(hard_forks.rbegin()[1].version);
 
   /// Create some master nodes before hf version 10
-  constexpr size_t INIT_SN_COUNT  = 13;
-  constexpr size_t TOTAL_SN_COUNT = 25;
+  constexpr size_t INIT_MN_COUNT  = 13;
+  constexpr size_t TOTAL_MN_COUNT = 25;
   gen.add_n_blocks(90);
   gen.add_mined_money_unlock_blocks();
 
   /// register some master nodes
-  add_master_nodes(gen, INIT_SN_COUNT);
+  add_master_nodes(gen, INIT_MN_COUNT);
 
   /// create a few blocks with active master nodes
   gen.add_n_blocks(5);
@@ -2877,9 +2859,9 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
   beldex_register_callback(events, "test_initial_swarms", [](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("test_swarms_basic::test_initial_swarms");
-    const auto sn_list = c.get_master_node_list_state({}); /// Check that there is one active swarm and the swarm queue is not empty
+    const auto mn_list = c.get_master_node_list_state({}); /// Check that there is one active swarm and the swarm queue is not empty
     std::map<master_nodes::swarm_id_t, std::vector<crypto::public_key>> swarms;
-    for (const auto& entry : sn_list)
+    for (const auto& entry : mn_list)
     {
       const auto id = entry.info->swarm_id;
       swarms[id].push_back(entry.pubkey);
@@ -2896,12 +2878,12 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
     gen.create_and_add_next_block({tx});
   }
 
-  beldex_register_callback(events, "test_with_one_more_sn", [](cryptonote::core &c, size_t ev_index) /// test that another swarm has been created
+  beldex_register_callback(events, "test_with_one_more_mn", [](cryptonote::core &c, size_t ev_index) /// test that another swarm has been created
   {
-    DEFINE_TESTS_ERROR_CONTEXT("test_with_one_more_sn");
-    const auto sn_list = c.get_master_node_list_state({});
+    DEFINE_TESTS_ERROR_CONTEXT("test_with_one_more_mn");
+    const auto mn_list = c.get_master_node_list_state({});
     std::map<master_nodes::swarm_id_t, std::vector<crypto::public_key>> swarms;
-    for (const auto& entry : sn_list)
+    for (const auto& entry : mn_list)
     {
       const auto id = entry.info->swarm_id;
       swarms[id].push_back(entry.pubkey);
@@ -2910,18 +2892,18 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
     return true;
   });
 
-  for (auto i = INIT_SN_COUNT + 1; i < TOTAL_SN_COUNT; ++i)
+  for (auto i = INIT_MN_COUNT + 1; i < TOTAL_MN_COUNT; ++i)
   {
     const auto tx = gen.create_and_add_registration_tx(gen.first_miner());
     gen.create_and_add_next_block({tx});
   }
 
-  beldex_register_callback(events, "test_with_more_sn", [](cryptonote::core &c, size_t ev_index) /// test that another swarm has been created
+  beldex_register_callback(events, "test_with_more_mn", [](cryptonote::core &c, size_t ev_index) /// test that another swarm has been created
   {
-    DEFINE_TESTS_ERROR_CONTEXT("test_with_more_sn");
-    const auto sn_list = c.get_master_node_list_state({});
+    DEFINE_TESTS_ERROR_CONTEXT("test_with_more_mn");
+    const auto mn_list = c.get_master_node_list_state({});
     std::map<master_nodes::swarm_id_t, std::vector<crypto::public_key>> swarms;
-    for (const auto& entry : sn_list)
+    for (const auto& entry : mn_list)
     {
       const auto id = entry.info->swarm_id;
       swarms[id].push_back(entry.pubkey);
@@ -2931,7 +2913,7 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
   });
 
   std::vector<cryptonote::transaction> dereg_txs; /// deregister enough mnode to bring all 3 swarm to the min size
-  const size_t excess = TOTAL_SN_COUNT - 3 * master_nodes::MIN_SWARM_SIZE;
+  const size_t excess = TOTAL_MN_COUNT - 3 * master_nodes::MIN_SWARM_SIZE;
   master_nodes::quorum_manager top_quorum = gen.top_quorum();
   for (size_t i = 0; i < excess; ++i)
   {
@@ -2944,9 +2926,9 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
   beldex_register_callback(events, "test_after_first_deregisters", [](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("test_after_first_deregisters");
-    const auto sn_list = c.get_master_node_list_state({});
+    const auto mn_list = c.get_master_node_list_state({});
     std::map<master_nodes::swarm_id_t, std::vector<crypto::public_key>> swarms;
-    for (const auto& entry : sn_list)
+    for (const auto& entry : mn_list)
     {
       const auto id = entry.info->swarm_id;
       swarms[id].push_back(entry.pubkey);
@@ -2967,9 +2949,9 @@ bool beldex_master_nodes_test_swarms_basic::generate(std::vector<test_event_entr
   beldex_register_callback(events, "test_after_final_deregisters", [](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("test_after_first_deregisters");
-    const auto sn_list = c.get_master_node_list_state({});
+    const auto mn_list = c.get_master_node_list_state({});
     std::map<master_nodes::swarm_id_t, std::vector<crypto::public_key>> swarms;
-    for (const auto &entry : sn_list)
+    for (const auto &entry : mn_list)
     {
       const auto id = entry.info->swarm_id;
       swarms[id].push_back(entry.pubkey);
@@ -2993,21 +2975,21 @@ bool beldex_master_nodes_insufficient_contribution::generate(std::vector<test_ev
 
   uint64_t operator_portions = cryptonote::old::STAKING_PORTIONS / 2;
   uint64_t remaining_portions = cryptonote::old::STAKING_PORTIONS - operator_portions;
-  cryptonote::keypair sn_keys{hw::get_device("default")};
-  cryptonote::transaction register_tx = gen.create_registration_tx(gen.first_miner_, sn_keys, operator_portions);
+  cryptonote::keypair mn_keys{hw::get_device("default")};
+  cryptonote::transaction register_tx = gen.create_registration_tx(gen.first_miner_, mn_keys, operator_portions);
   gen.add_tx(register_tx);
   gen.create_and_add_next_block({register_tx});
 
-  cryptonote::transaction stake = gen.create_and_add_staking_tx(sn_keys.pub, gen.first_miner_, MK_COINS(1));
+  cryptonote::transaction stake = gen.create_and_add_staking_tx(mn_keys.pub, gen.first_miner_, MK_COINS(1));
   gen.create_and_add_next_block({stake});
 
-  beldex_register_callback(events, "test_insufficient_stake_does_not_get_accepted", [sn_keys](cryptonote::core &c, size_t ev_index)
+  beldex_register_callback(events, "test_insufficient_stake_does_not_get_accepted", [mn_keys](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("test_insufficient_stake_does_not_get_accepted");
-    const auto sn_list = c.get_master_node_list_state({sn_keys.pub});
-    CHECK_TEST_CONDITION(sn_list.size() == 1);
+    const auto mn_list = c.get_master_node_list_state({mn_keys.pub});
+    CHECK_TEST_CONDITION(mn_list.size() == 1);
 
-    master_nodes::master_node_pubkey_info const &pubkey_info = sn_list[0];
+    master_nodes::master_node_pubkey_info const &pubkey_info = mn_list[0];
     CHECK_EQ(pubkey_info.info->total_contributed, MK_COINS(50));
     return true;
   });
@@ -3201,9 +3183,7 @@ bool beldex_POS_generate_blocks::generate(std::vector<test_event_entry> &events)
   beldex_register_callback(events, "check_POS_blocks", [](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_POS_blocks");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     cryptonote::block top_block = c.get_blockchain_storage().get_db().get_block(top_hash);
     CHECK_TEST_CONDITION(cryptonote::block_has_POS_components(top_block));
     return true;
@@ -3293,9 +3273,7 @@ bool beldex_POS_chain_split::generate(std::vector<test_event_entry> &events)
   beldex_register_callback(events, "check_reorganized_to_POS_chain_with_checkpoints", [fork_top_hash](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_reorganized_to_POS_chain_with_checkpoints");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(fork_top_hash, top_hash);
     return true;
   });
@@ -3325,9 +3303,7 @@ bool beldex_POS_chain_split_with_no_checkpoints::generate(std::vector<test_event
   beldex_register_callback(events, "check_reorganized_to_POS_chain_with_no_checkpoints", [fork_top_hash](cryptonote::core &c, size_t ev_index)
   {
     DEFINE_TESTS_ERROR_CONTEXT("check_reorganized_to_POS_chain_with_no_checkpoints");
-    uint64_t top_height;
-    crypto::hash top_hash;
-    c.get_blockchain_top(top_height, top_hash);
+    const auto [top_height, top_hash] = c.get_blockchain_top();
     CHECK_EQ(fork_top_hash, top_hash);
     return true;
   });

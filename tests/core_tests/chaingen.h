@@ -40,11 +40,13 @@
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/program_options.hpp>
 #include <boost/serialization/vector.hpp>
+#include <fmt/color.h>
 
 #include "cryptonote_protocol/quorumnet.h"
 #include "common/boost_serialization_helper.h"
 #include "common/command_line.h"
 #include "common/threadpool.h"
+#include "epee/misc_log_ex.h"
 
 #include "cryptonote_basic/account_boost_serialization.h"
 #include "cryptonote_basic/cryptonote_basic.h"
@@ -60,8 +62,8 @@
 
 #include "blockchain_db/testdb.h"
 
-#undef LOKI_DEFAULT_LOG_CATEGORY
-#define LOKI_DEFAULT_LOG_CATEGORY "tests.core"
+#undef BELDEX_DEFAULT_LOG_CATEGORY
+#define BELDEX_DEFAULT_LOG_CATEGORY "tests.core"
 
 #define TESTS_DEFAULT_FEE ((uint64_t)200000000) // 2 * pow(10, 8)
 #define TEST_DEFAULT_DIFFICULTY 1
@@ -352,22 +354,12 @@ public:
   }
 };
 
-template<typename T>
-std::string dump_keys(T * buff32)
+// Dumps the 32-byte contents of some pointer as: [0x01,0xf1,0xbb,....,0xff].
+// (I have no idea why this makes any sense, look, squirrel!)
+inline std::string dump_keys(const void* buff32)
 {
-  std::ostringstream ss;
-  char buff[10];
-
-  ss << "[";
-  for(int i = 0; i < 32; i++)
-  {
-    snprintf(buff, 10, "0x%02x", ((uint8_t)buff32[i] & 0xff));
-    ss << buff;
-    if (i < 31)
-      ss << ",";
-  }
-  ss << "]";
-  return ss.str();
+  auto* begin = reinterpret_cast<const unsigned char*>(buff32);
+  return "[{:#04x}]"_format(fmt::join(begin, begin+32, ","));
 }
 
 struct output_index {
@@ -447,7 +439,7 @@ struct output_index {
 
 typedef std::tuple<uint64_t, crypto::public_key, rct::key> get_outs_entry;
 typedef std::pair<crypto::hash, size_t> output_hasher;
-struct output_hasher_hasher { size_t operator()(const output_hasher &h) const { return *reinterpret_cast<const size_t *>(h.first.data) + h.second; } };
+struct output_hasher_hasher { size_t operator()(const output_hasher &h) const { return *reinterpret_cast<const size_t *>(h.first.data()) + h.second; } };
 typedef std::map<uint64_t, std::vector<size_t> > map_output_t;
 typedef std::map<uint64_t, std::vector<output_index> > map_output_idx_t;
 typedef std::unordered_map<crypto::hash, cryptonote::block> map_block_t;
@@ -922,15 +914,15 @@ public:
   bool operator()(const std::string &msg) const
   {
     log_event("event_msgevent_marker");
-    MGINFO_MAGENTA(msg);
+    oxen::log::info(globallogcat, fmt::format(fg(fmt::terminal_color::magenta), msg));
     return true;
   }
 
 private:
   void log_event(const std::string& event_type) const
   {
-    if (LOG_ENABLED(Info))
-      MGINFO_YELLOW("=== EVENT # " << m_ev_index << ": " << event_type);
+    if (globallogcat->should_log(oxen::log::Level::info))
+      oxen::log::debug(globallogcat, fmt::format(fg(fmt::terminal_color::yellow), "=== EVENT # {}: {}", m_ev_index, event_type));
   }
 };
 //--------------------------------------------------------------------------
@@ -1017,7 +1009,7 @@ inline bool do_replay_events_get_core(std::vector<test_event_entry>& events, cry
   cryptonote::test_options const *testing_options = (use_derived_hardforks) ? &derived_test_options : &gto.test_options;
   if (!c.init(vm, testing_options))
   {
-    MERROR("Failed to init core");
+    oxen::log::error(globallogcat, "Failed to init core");
     return false;
   }
   c.get_blockchain_storage().get_db().set_batch_transactions(true);
@@ -1032,7 +1024,7 @@ inline bool do_replay_file(const std::string& filename)
   std::vector<test_event_entry> events;
   if (!tools::unserialize_obj_from_file(events, filename))
   {
-    MERROR("Failed to deserialize data from file: ");
+    oxen::log::error(globallogcat, "Failed to deserialize data from file: ");
     return false;
   }
 
@@ -1097,9 +1089,9 @@ inline bool do_replay_file(const std::string& filename)
   generator.construct_block(BLK_NAME, PREV_BLOCK, MINER_ACC);                         \
   VEC_EVENTS.push_back(BLK_NAME);
 
-#define MAKE_NEXT_BLOCK_V2(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, WINNER, SN_INFO)            \
+#define MAKE_NEXT_BLOCK_V2(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, WINNER, MN_INFO)            \
   cryptonote::block BLK_NAME;                                                           \
-  generator.construct_block(BLK_NAME, PREV_BLOCK, MINER_ACC, {}, WINNER, SN_INFO);                   \
+  generator.construct_block(BLK_NAME, PREV_BLOCK, MINER_ACC, {}, WINNER, MN_INFO);                   \
   VEC_EVENTS.push_back(BLK_NAME);
 
 #define MAKE_NEXT_BLOCK_TX1(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, TX1)         \
@@ -1128,13 +1120,13 @@ inline bool do_replay_file(const std::string& filename)
     BLK_NAME = blk_last;                                                              \
   }
 
-#define REWIND_BLOCKS_N_V2(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, COUNT, WINNER, SN_INFO) \
+#define REWIND_BLOCKS_N_V2(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, COUNT, WINNER, MN_INFO) \
   cryptonote::block BLK_NAME;                                                           \
   {                                                                                   \
     cryptonote::block blk_last = PREV_BLOCK;                                            \
     for (size_t i = 0; i < COUNT; ++i)                                                \
     {                                                                                 \
-      MAKE_NEXT_BLOCK_V2(VEC_EVENTS, blk, blk_last, MINER_ACC, WINNER, SN_INFO);      \
+      MAKE_NEXT_BLOCK_V2(VEC_EVENTS, blk, blk_last, MINER_ACC, WINNER, MN_INFO);      \
       blk_last = blk;                                                                 \
     }                                                                                 \
     BLK_NAME = blk_last;                                                              \
@@ -1213,24 +1205,24 @@ inline bool do_replay_file(const std::string& filename)
 #define PLAY(filename, generator_class) \
     if(!do_replay_file<generator_class>(filename)) \
     { \
-      MERROR("Failed to pass test : " << #generator_class); \
+      oxen::log::error(globallogcat, "Failed to pass test : {}", #generator_class); \
       return 1; \
     }
 
 #define CATCH_REPLAY(generator_class)                                                                                  \
-  catch (const std::exception &ex) { MERROR(#generator_class << " generation failed: what=" << ex.what()); }           \
-  catch (...) { MERROR(#generator_class << " generation failed: generic exception"); }
+  catch (const std::exception &ex) { oxen::log::error(globallogcat, "{} generation failed: what={}", #generator_class, ex.what()); } \
+  catch (...) { oxen::log::error(globallogcat, "{} generation failed: generic exception", #generator_class); }
 
 #define REPLAY_CORE(generator_class, generator_class_instance)                                                         \
   {                                                                                                                    \
     cryptonote::core core;                                                                                             \
     if (generated && do_replay_events_get_core<generator_class>(events, &core, generator_class_instance))              \
     {                                                                                                                  \
-      MGINFO_GREEN("#TEST# Succeeded " << #generator_class);                                                           \
+      oxen::log::info(globallogcat, fmt::format(fg(fmt::terminal_color::green), "#TEST# Succeeded {}", #generator_class)); \
     }                                                                                                                  \
     else                                                                                                               \
     {                                                                                                                  \
-      MERROR("#TEST# Failed " << #generator_class);                                                                    \
+      oxen::log::error(globallogcat, "#TEST# Failed {}", #generator_class);                                            \
       failed_tests.push_back(#generator_class);                                                                        \
     }                                                                                                                  \
     core.deinit();                                                                                                     \
@@ -1241,11 +1233,11 @@ inline bool do_replay_file(const std::string& filename)
     if (generated &&                                                                                                   \
         replay_events_through_core_plain<generator_class>(events, CORE, generator_class_instance, false /*reinit*/))   \
     {                                                                                                                  \
-      MGINFO_GREEN("#TEST# Succeeded " << #generator_class);                                                           \
+      oxen::log::info(globallogcat, fmt::format(fg(fmt::terminal_color::green), "#TEST# Succeeded {}", #generator_class)); \
     }                                                                                                                  \
     else                                                                                                               \
     {                                                                                                                  \
-      MERROR("#TEST# Failed " << #generator_class);                                                                    \
+      oxen::log::error(globallogcat, "#TEST# Failed {}", #generator_class);                                            \
       failed_tests.push_back(#generator_class);                                                                        \
     }                                                                                                                  \
   }
@@ -1531,7 +1523,7 @@ struct beldex_chain_generator
   cryptonote::transaction                              create_and_add_beldex_name_system_tx_renew(cryptonote::account_base const &src, cryptonote::hf hf_version, bns::mapping_years mapping_years, std::string const &name, bns::generic_signature *signature = nullptr, bool kept_by_block = false);
   cryptonote::transaction                              create_and_add_tx                 (const cryptonote::account_base& src, const cryptonote::account_public_address& dest, uint64_t amount, uint64_t fee = TESTS_DEFAULT_FEE, bool kept_by_block = false);
   cryptonote::transaction                              create_and_add_state_change_tx(master_nodes::new_state state, const crypto::public_key& pub_key, uint16_t reasons_all, uint16_t reasons_any, uint64_t height = -1, const std::vector<uint64_t>& voters = {}, uint64_t fee = 0, bool kept_by_block = false);
-  cryptonote::transaction                              create_and_add_registration_tx(const cryptonote::account_base& src, const cryptonote::keypair& sn_keys = cryptonote::keypair{hw::get_device("default")}, bool kept_by_block = false);
+  cryptonote::transaction                              create_and_add_registration_tx(const cryptonote::account_base& src, const cryptonote::keypair& mn_keys = cryptonote::keypair{hw::get_device("default")}, bool kept_by_block = false);
   cryptonote::transaction                              create_and_add_staking_tx     (const crypto::public_key &pub_key, const cryptonote::account_base &src, uint64_t amount, bool kept_by_block = false);
   beldex_blockchain_entry                              &create_and_add_next_block     (const std::vector<cryptonote::transaction>& txs = {}, cryptonote::checkpoint_t const *checkpoint = nullptr, bool can_be_added_to_blockchain = true, std::string const &fail_msg = {});
   // Same as create_and_add_tx, but also adds 95kB of junk into tx_extra to bloat up the tx size.

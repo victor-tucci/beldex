@@ -91,7 +91,7 @@ void registerInitialMnodes(swarm_mnode_map_t& swarm_to_mnodes, size_t reg_per_bl
     calc_swarm_changes(swarm_to_mnodes, i /* seed */);
     unassigned_mnodes.clear();
     num_mnodes += reg_per_block;
-    LOG_PRINT_L2("num_mnodes: " << num_mnodes);
+    oxen::log::debug(globallogcat, "num_mnodes: {}", num_mnodes);
     validateSwarmsNoDereg(swarm_to_mnodes, num_mnodes);
   }
 }

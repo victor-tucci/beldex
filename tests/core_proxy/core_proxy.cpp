@@ -1,21 +1,21 @@
 // Copyright (c) 2014-2018, The Monero Project
-//
+// 
 // All rights reserved.
-//
+// 
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-//
+// 
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-//
+// 
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-//
+// 
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-//
+// 
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -25,7 +25,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+// 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 // node.cpp : Defines the entry point for the console application.
@@ -45,6 +45,7 @@
 //#include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_protocol/cryptonote_protocol_handler.h"
 #include "cryptonote_protocol/cryptonote_protocol_handler.inl"
+#include "cryptonote_core/cryptonote_tx_utils.h"
 #include "core_proxy.h"
 #include "version.h"
 
@@ -72,8 +73,7 @@ int main(int argc, char* argv[])
   epee::string_tools::set_module_name_and_folder(argv[0]);
 
   //set up logging options
-  mlog_configure(mlog_get_default_log_path("core_proxy.log"), true);
-  mlog_set_log_level(2);
+  beldex::logging::init("core_proxy.log", oxen::log::Level::debug);
 
 
   po::options_description desc("Allowed options");
@@ -91,8 +91,8 @@ int main(int argc, char* argv[])
   if (!r)
     return 1;
 
-  MGINFO("Module folder: " << argv[0]);
-  MGINFO("Node starting ...");
+  oxen::log::info(logcat, "Module folder: {}", argv[0]);
+  oxen::log::info(logcat, "Node starting ...");
 
 
   //create objects and link them
@@ -107,32 +107,32 @@ int main(int argc, char* argv[])
 
   //initialize objects
 
-  MGINFO("Initializing p2p server...");
+  oxen::log::info(logcat, "Initializing p2p server...");
   bool res = p2psrv.init(vm);
   CHECK_AND_ASSERT_MES(res, 1, "Failed to initialize p2p server.");
-  MGINFO("P2p server initialized OK");
+  oxen::log::info(logcat, "P2p server initialized OK");
 
-  MGINFO("Initializing cryptonote protocol...");
+  oxen::log::info(logcat, "Initializing cryptonote protocol...");
   res = cprotocol.init(vm);
   CHECK_AND_ASSERT_MES(res, 1, "Failed to initialize cryptonote protocol.");
-  MGINFO("Cryptonote protocol initialized OK");
+  oxen::log::info(logcat, "Cryptonote protocol initialized OK");
 
   //initialize core here
-  MGINFO("Initializing proxy core...");
+  oxen::log::info(logcat, "Initializing proxy core...");
   res = pr_core.init(vm);
-  CHECK_AND_ASSERT_MES(res, 1, "Failed to initialize core");
-  MGINFO("Core initialized OK");
+  CHECK_AND_ASSERT_MES(res, 1, "Failed to initialize core");  
+  oxen::log::info(logcat, "Core initialized OK");
 
-  MGINFO("Starting p2p net loop...");
+  oxen::log::info(logcat, "Starting p2p net loop...");
   p2psrv.run();
-  MGINFO("p2p net loop stopped");
+  oxen::log::info(logcat, "p2p net loop stopped");
 
   //deinitialize components
-  MGINFO("Deinitializing core...");
+  oxen::log::info(logcat, "Deinitializing core...");
   pr_core.deinit();
-  MGINFO("Deinitializing cryptonote_protocol...");
+  oxen::log::info(logcat, "Deinitializing cryptonote_protocol...");
   cprotocol.deinit();
-  MGINFO("Deinitializing p2p...");
+  oxen::log::info(logcat, "Deinitializing p2p...");
   p2psrv.deinit();
 
 
@@ -140,7 +140,7 @@ int main(int argc, char* argv[])
   cprotocol.set_p2p_endpoint(NULL);
 
 
-  MGINFO("Node stopped.");
+  oxen::log::info(logcat, "Node stopped.");
   return 0;
 
   CATCH_ENTRY_L0("main", 1);
@@ -164,17 +164,12 @@ std::vector<cryptonote::core::tx_verification_batch_info> tests::proxy_core::par
 
     for (size_t i = 0; i < tx_blobs.size(); i++) {
         auto &txi = tx_info[i];
-        crypto::hash tx_prefix_hash = null_hash;
+        crypto::hash tx_prefix_hash{};
         if (opts.kept_by_block) {
             txi.result = txi.parsed = true;
         } else if (parse_and_validate_tx_from_blob(tx_blobs[i], txi.tx, txi.tx_hash, tx_prefix_hash)) {
-            std::cout << "TX\n\n";
-            std::cout << txi.tx_hash << "\n";
-            std::cout << tx_prefix_hash << "\n";
-            std::cout << tx_blobs[i].size() << "\n";
-            //std::cout << oxenc::to_hex(tx_blob) << "\n\n";
-            std::cout << obj_to_json_str(txi.tx) << "\n";
-            std::cout << "\nENDTX\n";
+          fmt::print("TX\n\n{}\n{}\n{}\n{}\n\nENDTX\n",
+              txi.tx_hash, tx_prefix_hash, tx_blobs[i].size(), obj_to_json_str(txi.tx));
             txi.result = txi.parsed = true;
             txi.blob = &tx_blobs[i];
         } else {
@@ -228,13 +223,8 @@ bool tests::proxy_core::handle_incoming_block(const cryptonote::blobdata& block_
 
     crypto::hash h = get_block_hash(b);
     crypto::hash lh = get_block_longhash_w_blockchain(cryptonote::FAKECHAIN, NULL, b, 0, 0);
-    std::cout << "BLOCK\n\n";
-    std::cout << h << '\n';
-    std::cout << lh << '\n';
-    std::cout << get_transaction_hash(b.miner_tx) << '\n';
-    std::cout << get_object_blobsize(b.miner_tx) << '\n';
-    std::cout << obj_to_json_str(b) << '\n';
-    std::cout << "\nENDBLOCK\n\n";
+    fmt::print("BLOCK\n\n{}\n{}\n{}\n{}\n{}\n\nENDBLOCK\n\n",
+        h, lh, get_transaction_hash(b.miner_tx), get_object_blobsize(b.miner_tx), obj_to_json_str(b));
 
     if (!add_block(h, lh, b, block_blob, checkpoint))
         return false;
@@ -259,9 +249,8 @@ bool tests::proxy_core::get_short_chain_history(std::list<crypto::hash>& ids) {
     return true;
 }
 
-void tests::proxy_core::get_blockchain_top(uint64_t& height, crypto::hash& top_id) {
-    height = 0;
-    top_id = get_block_hash(m_genesis);
+std::pair<uint64_t, crypto::hash> tests::proxy_core::get_blockchain_top() {
+    return std::make_pair(0, get_block_hash(m_genesis));
 }
 
 bool tests::proxy_core::init(const boost::program_options::variables_map& /*vm*/) {
@@ -285,7 +274,7 @@ void tests::proxy_core::build_short_history(std::list<crypto::hash> &m_history, 
         m_history.push_front(cit->first);
 
         size_t n = 1 << m_history.size();
-        while (m_hash2blkidx.end() != cit && crypto::null_hash != cit->second.blk.prev_id && n > 0) {
+        while (m_hash2blkidx.end() != cit && cit->second.blk.prev_id && n > 0) {
             n--;
             cit = m_hash2blkidx.find(cit->second.blk.prev_id);
         }
@@ -295,10 +284,10 @@ void tests::proxy_core::build_short_history(std::list<crypto::hash> &m_history, 
 bool tests::proxy_core::add_block(const crypto::hash &_id, const crypto::hash &_longhash, const cryptonote::block &_blk, const cryptonote::blobdata &_blob, cryptonote::checkpoint_t const *) {
     size_t height = 0;
 
-    if (crypto::null_hash != _blk.prev_id) {
+    if (_blk.prev_id) {
         std::unordered_map<crypto::hash, tests::block_index>::const_iterator cit = m_hash2blkidx.find(_blk.prev_id);
         if (m_hash2blkidx.end() == cit) {
-            std::cerr << "ERROR: can't find previous block with id \"" << _blk.prev_id << "\"\n";
+            fmt::print(stderr, "ERROR: can't find previous block with id \"{}\"\n", _blk.prev_id);
             return false;
         }
 

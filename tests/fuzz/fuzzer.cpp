@@ -28,6 +28,7 @@
 
 #include <boost/program_options.hpp>
 #include "epee/string_tools.h"
+#include "epee/misc_log_ex.h"
 #include "common/command_line.h"
 #include "common/util.h"
 #include "fuzzer.h"

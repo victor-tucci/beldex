@@ -442,7 +442,7 @@ static bool construct_miner_tx_with_extra_output(cryptonote::transaction& tx,
     const auto hard_fork_version = hf::hf7; // NOTE(beldex): We know this test doesn't need the new block reward formula
     uint64_t block_reward, block_reward_unpenalized;
     if (!get_base_block_reward(0, 0, already_generated_coins, block_reward, block_reward_unpenalized, hf::hf1, 0)) {
-        LOG_PRINT_L0("Block is too big");
+        oxen::log::warning(globallogcat, "Block is too big");
         return false;
     }
 
@@ -474,7 +474,7 @@ static bool construct_miner_tx_with_extra_output(cryptonote::transaction& tx,
 
         if (!get_deterministic_output_key(
               governance_wallet_address.address, gov_key, tx.vout.size(), out_eph_public_key)) {
-            MERROR("Failed to generate deterministic output key for governance wallet output creation");
+            oxen::log::error(globallogcat, "Failed to generate deterministic output key for governance wallet output creation");
             return false;
         }
 

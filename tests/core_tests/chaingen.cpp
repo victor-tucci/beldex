@@ -58,6 +58,7 @@
 #include "chaingen.h"
 #include "device/device.hpp"
 #include "crypto/crypto.h"
+#include "fmt/color.h"
 
 extern "C"
 {
@@ -412,9 +413,9 @@ cryptonote::transaction beldex_chain_generator::create_and_add_state_change_tx(m
   return result;
 }
 
-cryptonote::transaction beldex_chain_generator::create_and_add_registration_tx(const cryptonote::account_base &src, const cryptonote::keypair &sn_keys, bool kept_by_block)
+cryptonote::transaction beldex_chain_generator::create_and_add_registration_tx(const cryptonote::account_base &src, const cryptonote::keypair &mn_keys, bool kept_by_block)
 {
-  cryptonote::transaction result = create_registration_tx(src, sn_keys);
+  cryptonote::transaction result = create_registration_tx(src, mn_keys);
   add_tx(result, true /*can_be_added_to_blockchain*/, "" /*fail_msg*/, kept_by_block);
   return result;
 }
@@ -484,7 +485,7 @@ beldex_chain_generator::create_registration_tx(const cryptonote::account_base &s
     crypto::hash hash;
     if (!cryptonote::get_registration_hash(contributors, src_operator_cut, portions, exp_timestamp, hash))
     {
-      MERROR("Could not make registration hash from addresses and portions");
+      oxen::log::error(globallogcat, "Could not make registration hash from addresses and portions");
       return {};
     }
 
@@ -638,7 +639,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx(cry
   auto lcname = tools::lowercase_ascii_string(name);
   crypto::hash name_hash       = bns::name_to_hash(lcname);
   std::string name_base64_hash = bns::name_to_base64_hash(lcname);
-  crypto::hash prev_txid = crypto::null_hash;
+  crypto::hash prev_txid{};
   if (bns::mapping_record mapping = bns_db_->get_mapping(name_base64_hash, new_height))
     prev_txid = mapping.txid;
 
@@ -750,7 +751,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_upd
     auto data = bns::tx_extra_signature(encrypted_bchat_value.to_view(), encrypted_wallet_value.to_view(), encrypted_belnet_value.to_view(), encrypted_eth_addr_value.to_view(), owner, backup_owner, prev_txid);
     crypto::hash hash{};
     if (!data.empty())
-        crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
+        crypto_generichash(hash.data(), hash.size(), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
     generate_signature(hash, src.get_keys().m_account_address.m_spend_public_key, src.get_keys().m_spend_secret_key, signature->monero);
     signature->type = bns::generic_owner_sig_type::monero;
   }
@@ -818,7 +819,7 @@ cryptonote::transaction beldex_chain_generator::create_beldex_name_system_tx_ren
     auto data = bns::tx_extra_signature(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,prev_txid);
     crypto::hash hash{};
     if (!data.empty())
-        crypto_generichash(reinterpret_cast<unsigned char*>(hash.data), sizeof(hash), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
+        crypto_generichash(hash.data(), hash.size(), reinterpret_cast<const unsigned char*>(data.data()), data.size(), nullptr, 0);
     generate_signature(hash, src.get_keys().m_account_address.m_spend_public_key, src.get_keys().m_spend_secret_key, signature->monero);
     signature->type = bns::generic_owner_sig_type::monero;
   }
@@ -845,7 +846,7 @@ static void fill_nonce_with_test_generator(test_generator *generator, cryptonote
   cryptonote::randomx_longhash_context randomx_context = {};
   if (generator->m_hf_version >= cryptonote::hf::hf13_checkpointing)
   {
-    randomx_context.seed_height = crypto::rx_seedheight(height);
+    randomx_context.seed_height = rx_seedheight(height);
     cryptonote::block prev      = blk;
     do
     {
@@ -872,7 +873,7 @@ void fill_nonce_with_beldex_generator(beldex_chain_generator const *generator, c
   cryptonote::randomx_longhash_context randomx_context = {};
   if (generator->blocks().size() && generator->hardfork() >= cryptonote::hf::hf13_checkpointing)
   {
-    randomx_context.seed_height = crypto::rx_seedheight(height);
+    randomx_context.seed_height = rx_seedheight(height);
     randomx_context.seed_block_hash = cryptonote::get_block_hash(generator->blocks()[randomx_context.seed_height].block);
     randomx_context.current_blockchain_height = height;
   }
@@ -895,7 +896,7 @@ beldex_blockchain_entry beldex_chain_generator::create_genesis_block(const crypt
   blk.major_version            = hf_version_;
   blk.minor_version            = static_cast<int>(hf_version_);
   blk.timestamp                = timestamp;
-  blk.prev_id                  = crypto::null_hash;
+  blk.prev_id.zero();
 
   // TODO(doyle): Does this evaluate to 0? If so we can simplify this a lot more
   size_t target_block_weight = get_transaction_weight(blk.miner_tx);
@@ -987,10 +988,10 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
   // NOTE: Calculate governance
   cryptonote::beldex_miner_tx_context miner_tx_context;
   master_nodes::quorum POS_quorum;
-  std::vector<master_nodes::pubkey_and_mninfo> active_snode_list =
+  std::vector<master_nodes::pubkey_and_mninfo> active_mnode_list =
       params.prev.master_node_state.active_master_nodes_infos();
 
-  bool POS_block_is_possible = blk.major_version >= cryptonote::hf::hf17_POS && active_snode_list.size() >= master_nodes::POS_min_master_nodes(cryptonote::network_type::FAKECHAIN);
+  bool POS_block_is_possible = blk.major_version >= cryptonote::hf::hf17_POS && active_mnode_list.size() >= master_nodes::POS_min_master_nodes(cryptonote::network_type::FAKECHAIN);
   bool make_POS_block        = (params.type == beldex_create_block_type::automatic && POS_block_is_possible) || params.type == beldex_create_block_type::POS;
 
   if (make_POS_block)
@@ -1003,7 +1004,7 @@ bool beldex_chain_generator::block_begin(beldex_blockchain_entry &entry, beldex_
 
     // NOTE: Get POS Quorum necessary for this block
     std::vector<crypto::hash> entropy = master_nodes::get_POS_entropy_for_next_block(db_, params.prev.block, blk.POS.round);
-    POS_quorum = master_nodes::generate_POS_quorum(cryptonote::network_type::FAKECHAIN, params.block_leader.key, blk.major_version, active_snode_list, entropy, blk.POS.round);
+    POS_quorum = master_nodes::generate_POS_quorum(cryptonote::network_type::FAKECHAIN, params.block_leader.key, blk.major_version, active_mnode_list, entropy, blk.POS.round);
     assert(POS_quorum.validators.size() == master_nodes::POS_QUORUM_NUM_VALIDATORS);
     assert(POS_quorum.workers.size() == 1);
 
@@ -1214,7 +1215,7 @@ std::vector<uint64_t> beldex_chain_generator::last_n_block_weights(uint64_t heig
 void test_generator::get_block_chain(std::vector<block_info>& blockchain, const crypto::hash& head, size_t n) const
 {
   crypto::hash curr = head;
-  while (crypto::null_hash != curr && blockchain.size() < n)
+  while (curr && blockchain.size() < n)
   {
     auto it = m_blocks_info.find(curr);
     if (m_blocks_info.end() == it)
@@ -1235,7 +1236,7 @@ void test_generator::get_block_chain(std::vector<cryptonote::block> &blockchain,
                                      size_t n) const
 {
   crypto::hash curr = head;
-  while (crypto::null_hash != curr && blockchain.size() < n)
+  while (curr && blockchain.size() < n)
   {
     auto it = m_blocks_info.find(curr);
     if (m_blocks_info.end() == it)
@@ -1430,7 +1431,7 @@ bool test_generator::construct_block(cryptonote::block &blk,
 {
   std::vector<uint64_t> block_weights;
   std::list<cryptonote::transaction> tx_list;
-  return construct_block(blk, 0, crypto::null_hash, miner_acc, timestamp, 0, block_weights, tx_list);
+  return construct_block(blk, 0, crypto::null<crypto::hash>, miner_acc, timestamp, 0, block_weights, tx_list);
 }
 
 bool test_generator::construct_block(cryptonote::block &blk,
@@ -1533,7 +1534,7 @@ cryptonote::transaction make_registration_tx(std::vector<test_event_entry>& even
   crypto::hash hash;
   if (!cryptonote::get_registration_hash(contributors, operator_cut, portions, exp_timestamp, hash))
   {
-    MERROR("Could not make registration hash from addresses and portions");
+    oxen::log::error(globallogcat, "Could not make registration hash from addresses and portions");
     return {};
   }
 
@@ -1588,13 +1589,13 @@ uint64_t get_amount(const cryptonote::account_base& account, const cryptonote::t
     else if (tx.rct_signatures.type == rct::RCTType::Null)
       money_transferred = tx.vout[i].amount;
     else {
-      LOG_PRINT_L0(__func__ << ": Unsupported rct type: " << (int)tx.rct_signatures.type);
+      oxen::log::warning(globallogcat, "{}: Unsupported rct type: {}", __func__, (int)tx.rct_signatures.type);
       return 0;
     }
   }
   catch (const std::exception &e)
   {
-    LOG_PRINT_L0("Failed to decode input " << i << ": " << e.what());
+    oxen::log::warning(globallogcat, "Failed to decode input {}: {}", i, e.what());
     return 0;
   }
 
@@ -2022,9 +2023,9 @@ std::string block_tracker::dump_data()
       ss << "    idx: " << oi.idx
       << ", rct: " << oi.rct
       << ", xmr: " << oi.amount
-      << ", key: " << dump_keys(out.key.data)
+      << ", key: " << dump_keys(out.key.data())
       << ", msk: " << dump_keys(oi.comm.bytes)
-      << ", txid: " << dump_keys(oi.p_tx->hash.data)
+      << ", txid: " << dump_keys(oi.p_tx->hash.data())
       << '\n';
     }
   }
@@ -2484,7 +2485,7 @@ bool find_block_chain(const std::vector<test_event_entry> &events, std::vector<c
   {
     blockchain.push_back(*it->second);
     id = it->second->prev_id;
-    if (crypto::null_hash == id)
+    if (!id)
     {
       b_success = true;
       break;
@@ -2542,7 +2543,7 @@ bool find_block_chain(const std::vector<test_event_entry> &events, std::vector<c
   {
     blockchain.push_back(it->second);
     id = it->second->prev_id;
-    if (crypto::null_hash == id)
+    if (!id)
     {
       b_success = true;
       break;
@@ -2562,7 +2563,7 @@ bool test_chain_unit_base::verify(const std::string& cb_name, cryptonote::core& 
   auto cb_it = m_callbacks.find(cb_name);
   if(cb_it == m_callbacks.end())
   {
-    LOG_ERROR("Failed to find callback " << cb_name);
+    oxen::log::error(globallogcat, "Failed to find callback {}", cb_name);
     return false;
   }
   return cb_it->second(c, ev_index, events);

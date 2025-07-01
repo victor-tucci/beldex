@@ -29,7 +29,6 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "ringct/rctSigs.h"
-#include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_core/uptime_proof.h"
 #include "multisig/multisig.h"
 #include "common/apply_permutation.h"
@@ -41,6 +40,12 @@ using namespace crypto;
 using namespace cryptonote;
 
 //#define NO_MULTISIG
+
+struct secret_key_hasher {
+    size_t operator()(const crypto::secret_key& k) const {
+        return *reinterpret_cast<const size_t*>(k.data());
+    }
+};
 
 void make_multisig_accounts(std::vector<cryptonote::account_base>& account, uint32_t threshold)
 {
@@ -98,7 +103,7 @@ void make_multisig_accounts(std::vector<cryptonote::account_base>& account, uint
   std::unordered_set<crypto::public_key> all_multisig_keys;
   for (size_t msidx = 0; msidx < account.size(); ++msidx)
   {
-    std::unordered_set<crypto::secret_key> view_keys(all_view_keys.begin(), all_view_keys.end());
+    std::unordered_set<crypto::secret_key, secret_key_hasher> view_keys(all_view_keys.begin(), all_view_keys.end());
     view_keys.erase(all_view_keys[msidx]);
 
     crypto::secret_key view_skey = cryptonote::generate_multisig_view_secret_key(account[msidx].get_keys().m_view_secret_key, std::vector<secret_key>(view_keys.begin(), view_keys.end()));
@@ -210,9 +215,9 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
   for (size_t n = 0; n < n_coinbases; ++n)
   {
     tx_pub_key[n] = get_tx_pub_key_from_extra(blocks[n].miner_tx);
-    MDEBUG("tx_pub_key: " << tx_pub_key);
+    //oxen::log::debug(logcat, "tx_pub_key: {}", tx_pub_key);
     output_pub_key[n] = var::get<txout_to_key>(blocks[n].miner_tx.vout[0].target).key;
-    MDEBUG("output_pub_key: " << output_pub_key);
+    //oxen::log::debug(logcat, "output_pub_key: {}", output_pub_key);
   }
 
   std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
@@ -251,19 +256,19 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
         r = cryptonote::generate_multisig_key_image(miner_account[msidx].get_keys(), kiidx, output_pub_key[tdidx], account_ki[msidx][tdidx][kiidx]);
         CHECK_AND_ASSERT_MES(r, false, "Failed to generate multisig export key image");
       }
-      MDEBUG("Party " << msidx << ":");
-      MDEBUG("spend: sec " << miner_account[msidx].get_keys().m_spend_secret_key << ", pub " << miner_account[msidx].get_keys().m_account_address.m_spend_public_key);
-      MDEBUG("view: sec " << miner_account[msidx].get_keys().m_view_secret_key << ", pub " << miner_account[msidx].get_keys().m_account_address.m_view_public_key);
-      for (const auto &k: miner_account[msidx].get_multisig_keys())
-        MDEBUG("msk: " << k);
-      for (size_t n = 0; n < account_k[msidx][tdidx].size(); ++n)
-      {
-        MDEBUG("k: " << account_k[msidx][tdidx][n]);
-        MDEBUG("L: " << account_L[msidx][tdidx][n]);
-        MDEBUG("R: " << account_R[msidx][tdidx][n]);
-      }
-      for (const auto &ki: account_ki[msidx][tdidx])
-        MDEBUG("ki: " << ki);
+      //oxen::log::debug(logcat, "Party {}:", msidx);
+      //oxen::log::debug(logcat, "spend: sec {}, pub {}", miner_account[msidx].get_keys().m_spend_secret_key, miner_account[msidx].get_keys().m_account_address.m_spend_public_key);
+      //oxen::log::debug(logcat, "view: sec {}, pub {}", miner_account[msidx].get_keys().m_view_secret_key, miner_account[msidx].get_keys().m_account_address.m_view_public_key);
+      //for (const auto &k: miner_account[msidx].get_multisig_keys())
+        //oxen::log::debug(logcat, "msk: {}", k);
+      //for (size_t n = 0; n < account_k[msidx][tdidx].size(); ++n)
+      //{
+        //oxen::log::debug(logcat, "k: {}", account_k[msidx][tdidx][n]);
+        //oxen::log::debug(logcat, "L: {}", account_L[msidx][tdidx][n]);
+        //oxen::log::debug(logcat, "R: {}", account_R[msidx][tdidx][n]);
+      //}
+      //for (const auto &ki: account_ki[msidx][tdidx])
+        //oxen::log::debug(logcat, "ki: {}", ki);
     }
   }
 #endif
@@ -281,9 +286,9 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
     kLRki.k = rct::sk2rct(account_k[creator][tdidx][0]);
     kLRki.L = rct::pk2rct(account_L[creator][tdidx][0]);
     kLRki.R = rct::pk2rct(account_R[creator][tdidx][0]);
-    MDEBUG("Starting with k " << kLRki.k);
-    MDEBUG("Starting with L " << kLRki.L);
-    MDEBUG("Starting with R " << kLRki.R);
+    //oxen::log::debug(logcat, "Starting with k {}", kLRki.k);
+    //oxen::log::debug(logcat, "Starting with L {}", kLRki.L);
+    //oxen::log::debug(logcat, "Starting with R {}", kLRki.R);
     for (size_t msidx = 0; msidx < total; ++msidx)
     {
       if (msidx == creator)
@@ -295,8 +300,8 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
         if (used_L.find(account_L[msidx][tdidx][lr]) == used_L.end())
         {
           used_L.insert(account_L[msidx][tdidx][lr]);
-          MDEBUG("Adding L " << account_L[msidx][tdidx][lr] << " (for k " << account_k[msidx][tdidx][lr] << ")");
-          MDEBUG("Adding R " << account_R[msidx][tdidx][lr]);
+          //oxen::log::debug(logcat, "Adding L {} (for k {})", account_L[msidx][tdidx][lr], account_k[msidx][tdidx][lr]);
+          //oxen::log::debug(logcat, "Adding R {}", account_R[msidx][tdidx][lr]);
           rct::addKeys((rct::key&)kLRki.L, kLRki.L, rct::pk2rct(account_L[msidx][tdidx][lr]));
           rct::addKeys((rct::key&)kLRki.R, kLRki.R, rct::pk2rct(account_R[msidx][tdidx][lr]));
           break;
@@ -309,9 +314,9 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
         pkis.push_back(account_ki[msidx][tdidx][n]);
     r = cryptonote::generate_multisig_composite_key_image(miner_account[0].get_keys(), subaddresses, output_pub_key[tdidx], tx_pub_key[tdidx], additional_tx_keys, 0, pkis, (crypto::key_image&)kLRki.ki);
     CHECK_AND_ASSERT_MES(r, false, "Failed to generate composite key image");
-    MDEBUG("composite ki: " << kLRki.ki);
-    MDEBUG("L: " << kLRki.L);
-    MDEBUG("R: " << kLRki.R);
+    //oxen::log::debug(logcat, "composite ki: {}", kLRki.ki);
+    //oxen::log::debug(logcat, "L: {}", kLRki.L);
+    //oxen::log::debug(logcat, "R: {}", kLRki.R);
     for (size_t n = 1; n < total; ++n)
     {
       rct::key ki;
@@ -341,7 +346,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
     {
       rct::ctkey ctkey;
       ctkey.dest = rct::pk2rct(var::get<txout_to_key>(blocks[m].miner_tx.vout[0].target).key);
-      MDEBUG("using " << (m == n ? "real" : "fake") << " input " << ctkey.dest);
+      //oxen::log::debug(logcat, "using {} input {}", (m == n ? "real" : "fake"), ctkey.dest);
       ctkey.mask = rct::commit(blocks[m].miner_tx.vout[0].amount, rct::identity()); // since those are coinbases, the masks are known
       src.outputs.push_back(std::make_pair(m, ctkey));
     }
@@ -390,7 +395,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
 
 #ifndef NO_MULTISIG
   // sign
-  std::unordered_set<crypto::secret_key> used_keys;
+  std::unordered_set<crypto::secret_key, secret_key_hasher> used_keys;
   const std::vector<crypto::secret_key> &msk0 = miner_account[creator].get_multisig_keys();
   for (const auto &sk: msk0)
     used_keys.insert(sk);
@@ -429,13 +434,13 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
     tools::apply_permutation(ins_order, indices);
     tools::apply_permutation(ins_order, k);
 
-    MDEBUG("signing with k size " << k.size());
-    MDEBUG("signing with k " << k.back());
-    MDEBUG("signing with sk " << skey);
-    for (const auto &sk: used_keys)
-      MDEBUG("  created with sk " << sk);
-    MDEBUG("signing with c size " << msout.c.size());
-    MDEBUG("signing with c " << msout.c.back());
+    //oxen::log::debug(logcat, "signing with k size {}", k.size());
+    //oxen::log::debug(logcat, "signing with k {}", k.back());
+    //oxen::log::debug(logcat, "signing with sk {}", skey);
+    //for (const auto &sk: used_keys)
+      //oxen::log::debug(logcat, "  created with sk {}", sk);
+    //oxen::log::debug(logcat, "signing with c size {}", msout.c.size());
+    //oxen::log::debug(logcat, "signing with c {}", msout.c.back());
     r = rct::signMultisig(tx.rct_signatures, indices, k, msout, skey);
     CHECK_AND_ASSERT_MES(r, false, "failed to sign transaction");
   }
@@ -475,7 +480,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
   if (!valid)
     DO_CALLBACK(events, "mark_invalid_tx");
   events.push_back(tx);
-  LOG_PRINT_L0("Test tx: " << obj_to_json_str(tx));
+  //oxen::log::warning(logcat, "Test tx: {}", obj_to_json_str(tx));
 
   return true;
 }

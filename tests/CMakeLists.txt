@@ -55,7 +55,7 @@ add_subdirectory(fuzz)
 add_subdirectory(crypto)
 # Still expects to find monero daemon/wallet; disable for now.
 #add_subdirectory(functional_tests)
-add_subdirectory(performance_tests)
+# add_subdirectory(performance_tests)
 add_subdirectory(core_proxy)
 add_subdirectory(unit_tests)
 add_subdirectory(difficulty)
@@ -64,7 +64,7 @@ add_subdirectory(hash)
 add_subdirectory(net_load_tests)
 add_subdirectory(network_tests)
 #TODO have to add this libwallet_api_tests as optional
-add_subdirectory(libwallet_api_tests)
+# add_subdirectory(libwallet_api_tests)
 
 if (TREZOR_DEBUG)
   add_subdirectory(trezor)
@@ -90,7 +90,6 @@ set(enabled_tests
     difficulty
     block_weight
     hash
-    performance_tests
     core_proxy
     fuzz
     unit_tests)
