@@ -87,7 +87,6 @@
 #endif
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include <fmt/core.h>
-#include <fmt/color.h>
 
 extern "C"
 {

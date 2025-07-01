@@ -279,7 +279,7 @@ namespace cryptonote::rpc {
 
     // Replace the default tx pool hashes callback with our own (which adds long poll support):
     if (std::string_view{data.uri}.substr(1) == rpc::GET_TRANSACTION_POOL_HASHES_BIN::names()[0]) {
-      log::info(logcat, "HTTP RPC request '{}", data.uri);
+      log::debug(logcat, "HTTP RPC request '{}", data.uri);
       return invoke_txpool_hashes_bin(std::move(dataptr));
     }
 
@@ -334,7 +334,7 @@ namespace cryptonote::rpc {
     if (time_logging)
       call_duration = " in " + tools::friendly_duration(std::chrono::steady_clock::now() - start);
     if (BELDEX_LOG_ENABLED(info))
-      log::info(logcat, "HTTP RPC {} [{}] OK ({} bytes){}", data.uri, data.request.context.remote, result.size(), call_duration);
+      log::debug(logcat, "HTTP RPC {} [{}] OK ({} bytes){}", data.uri, data.request.context.remote, result.size(), call_duration);
 
     queue_response(std::move(dataptr), std::move(result));
   }

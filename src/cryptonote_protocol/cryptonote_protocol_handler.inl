@@ -424,7 +424,7 @@ namespace cryptonote
       }
 
       if (context.m_need_flash_sync)
-        log::info(logcat, "{}Need to synchronized flash signatures", context);
+        log::debug(logcat, "{}Need to synchronized flash signatures", context);
     }
 
     uint64_t target = m_core.get_target_blockchain_height();
@@ -440,30 +440,30 @@ namespace cryptonote
         Nz. */
 
         auto nettype = m_core.get_nettype();
-        log::warning(logcat, "process_payload_sync_data hard_fork_begins");
+        log::debug(logcat, "process_payload_sync_data hard_fork_begins");
         auto hf17 = hard_fork_begins(nettype, hf::hf17_POS);
-        log::warning(logcat, "process_payload_sync_data hf17?");
+        log::debug(logcat, "process_payload_sync_data hf17?");
         if (hf17)
         {
-            log::warning(logcat, "process_payload_sync_data hf17");
+            log::debug(logcat, "process_payload_sync_data hf17");
             std::chrono::seconds behindtime = 0 * old::TARGET_BLOCK_TIME_12;
             int64_t diff = static_cast<int64_t>(hshd.current_height) - static_cast<int64_t>(curr_height);
             uint64_t abs_diff = std::abs(diff);
 
             if (curr_height<*hf17){
-                log::warning(logcat, "process_payload_sync_data curr_height<hf17");
+                log::debug(logcat, "process_payload_sync_data curr_height<hf17");
                 uint64_t old_diff = static_cast<int64_t>(*hf17) - static_cast<int64_t>(curr_height);
                 behindtime = old_diff * old::TARGET_BLOCK_TIME_12;
                 uint64_t max_block_height = std::max(hshd.current_height, curr_height);
                 behindtime = behindtime + ((max_block_height - *hf17)  * TARGET_BLOCK_TIME);
             } else{
-                log::warning(logcat, "process_payload_sync_data curr_height>hf17");
+                log::debug(logcat, "process_payload_sync_data curr_height>hf17");
                 behindtime =   (abs_diff * TARGET_BLOCK_TIME);
             }
             std::string sync_msg = "{}Sync data returned a new top block candidate: {} -> {} [Your node is {} blocks ({} {})]\nSYNCHRONIZATION started"_format(
                                     context, curr_height, hshd.current_height, abs_diff, tools::get_human_readable_timespan(behindtime), (0 <= diff ? "behind" : "ahead"));
             if (is_initial)
-              log::info(globallogcat, fg(fmt::terminal_color::cyan), sync_msg);
+              log::debug(globallogcat, fg(fmt::terminal_color::cyan), sync_msg);
             else
               log::debug(globallogcat, sync_msg);
         }
@@ -473,7 +473,7 @@ namespace cryptonote
         }
 
 
-        log::warning(logcat, "process_payload_sync_data after hf17");
+        log::debug(logcat, "process_payload_sync_data after hf17");
       m_period_start_time = m_sync_start_time = std::chrono::steady_clock::now();
       m_sync_start_height = curr_height;
 
@@ -508,7 +508,7 @@ namespace cryptonote
     }
     else
     {
-      log::warning(logcat, "process_payload_sync_data state_synchronizing");
+      log::debug(logcat, "process_payload_sync_data state_synchronizing");
       context.m_state = cryptonote_connection_context::state_synchronizing;
     }
 
@@ -2629,13 +2629,13 @@ skip:
       if (cntxt.m_state >= cryptonote_connection_context::state_synchronizing && cntxt.m_connection_id != context.m_connection_id){
         target = std::max(target, cntxt.m_remote_blockchain_height);
       }
-      log::info(logcat, "Target found:{}", target);
+      
       return true;
     });
     const uint64_t previous_target = m_core.get_target_blockchain_height();
     if (target < previous_target)
     {
-      log::info(logcat, "Target height decreasing from {} to {}", previous_target, target);
+      log::debug(logcat, "Target height decreasing from {} to {}", previous_target, target);
       m_core.set_target_blockchain_height(target);
       if (target == 0 && context.m_state > cryptonote_connection_context::state_before_handshake && !m_stopping)
         log::warning(globallogcat, fg(fmt::terminal_color::yellow), "beldexd is now disconnected from the network");
