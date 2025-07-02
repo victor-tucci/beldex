@@ -440,30 +440,30 @@ namespace cryptonote
         Nz. */
 
         auto nettype = m_core.get_nettype();
-        log::debug(logcat, "process_payload_sync_data hard_fork_begins");
+        log::trace(logcat, "process_payload_sync_data hard_fork_begins");
         auto hf17 = hard_fork_begins(nettype, hf::hf17_POS);
-        log::debug(logcat, "process_payload_sync_data hf17?");
+        log::trace(logcat, "process_payload_sync_data hf17?");
         if (hf17)
         {
-            log::debug(logcat, "process_payload_sync_data hf17");
+            log::trace(logcat, "process_payload_sync_data hf17");
             std::chrono::seconds behindtime = 0 * old::TARGET_BLOCK_TIME_12;
             int64_t diff = static_cast<int64_t>(hshd.current_height) - static_cast<int64_t>(curr_height);
             uint64_t abs_diff = std::abs(diff);
 
-            if (curr_height<*hf17){
-                log::debug(logcat, "process_payload_sync_data curr_height<hf17");
+            if (curr_height < *hf17){
+                log::trace(logcat, "process_payload_sync_data curr_height<hf17");
                 uint64_t old_diff = static_cast<int64_t>(*hf17) - static_cast<int64_t>(curr_height);
                 behindtime = old_diff * old::TARGET_BLOCK_TIME_12;
                 uint64_t max_block_height = std::max(hshd.current_height, curr_height);
                 behindtime = behindtime + ((max_block_height - *hf17)  * TARGET_BLOCK_TIME);
             } else{
-                log::debug(logcat, "process_payload_sync_data curr_height>hf17");
+                log::trace(logcat, "process_payload_sync_data curr_height>hf17");
                 behindtime =   (abs_diff * TARGET_BLOCK_TIME);
             }
             std::string sync_msg = "{}Sync data returned a new top block candidate: {} -> {} [Your node is {} blocks ({} {})]\nSYNCHRONIZATION started"_format(
                                     context, curr_height, hshd.current_height, abs_diff, tools::get_human_readable_timespan(behindtime), (0 <= diff ? "behind" : "ahead"));
             if (is_initial)
-              log::debug(globallogcat, fg(fmt::terminal_color::cyan), sync_msg);
+              log::info(globallogcat, fg(fmt::terminal_color::cyan), sync_msg);
             else
               log::debug(globallogcat, sync_msg);
         }
@@ -473,7 +473,7 @@ namespace cryptonote
         }
 
 
-        log::debug(logcat, "process_payload_sync_data after hf17");
+      log::trace(logcat, "process_payload_sync_data after hf17");
       m_period_start_time = m_sync_start_time = std::chrono::steady_clock::now();
       m_sync_start_height = curr_height;
 
@@ -1103,7 +1103,7 @@ namespace cryptonote
     // so don't drop the connection).
     if (!syncing && (!all_okay || bad_flashes))
     {
-      log::info(logcat, "{} verification(s) failed, dropping connection", (!all_okay && bad_flashes ? "Tx and Flash" : !all_okay ? "Tx" : "Flash"));
+      log::debug(logcat, "{} verification(s) failed, dropping connection", (!all_okay && bad_flashes ? "Tx and Flash" : !all_okay ? "Tx" : "Flash"));
       drop_connection(context, false, false);
     }
 

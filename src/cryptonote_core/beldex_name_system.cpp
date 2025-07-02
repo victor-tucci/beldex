@@ -2320,7 +2320,7 @@ bool name_system_db::prune_db(uint64_t height)
       if (sql_run_statement(bns_sql_type::pruning, prune_owners_sql, nullptr))
         result = true;
 
-    log::warning(logcat, "Detach request for BNS (last processed is{}), {} to {}", this->last_processed_height, (result ? "detached" : "failed to detach"), height);
+    log::debug(logcat, "Detach request for BNS (last processed is {}), {} to {}", this->last_processed_height, (result ? "detached" : "failed to detach"), height);
 
     if (result)
       this->last_processed_height = (height - 1);

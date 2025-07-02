@@ -1495,7 +1495,7 @@ namespace cryptonote
           q = get_quorum(master_nodes::quorum_type::flash, q_height);
         if (!q)
         {
-          log::info(logcat, "Don't have a quorum for height {} (yet?), ignoring this flash", q_height);
+          log::trace(logcat, "Don't have a quorum for height {} (yet?), ignoring this flash", q_height);
           no_quorum = true;
           break;
         }

@@ -1971,7 +1971,7 @@ bool rpc_command_executor::pop_blocks(uint64_t num_blocks)
     return false;
   auto& pop_blocks = *maybe_pop_blocks;
 
-  tools::success_msg_writer("new height: {}", pop_blocks["height"]);
+  tools::success_msg_writer("new height: {}", pop_blocks["height"].get<int64_t>());
   return true;
 }
 

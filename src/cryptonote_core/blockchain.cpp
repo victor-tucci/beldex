@@ -688,12 +688,14 @@ void Blockchain::pop_blocks(uint64_t nblocks)
     std::chrono::steady_clock::time_point pop_blocks_started = std::chrono::steady_clock::now();
     for (int progress = 0; i < nblocks; ++i)
     {
-      if (nblocks >= blocks_expected_per_day && (i != 0 && (i % blocks_per_update == 0)))
-      {
-        log::info(logcat, "... popping blocks {}% completed, height: {} ({}s)",
-          (++progress * PERCENT_PER_PROGRESS_UPDATE), (blockchain_height - i),
-          std::chrono::duration<double>{std::chrono::steady_clock::now() - pop_blocks_started}.count()
-        );
+      if (nblocks >= blocks_expected_per_day && (i != 0 && (i % blocks_per_update == 0))) {
+        log::info(
+            globallogcat,
+            "... popping blocks {}% completed, height: {} ({}s)",
+            (++progress * PERCENT_PER_PROGRESS_UPDATE),
+            (blockchain_height - i),
+            std::chrono::duration<double>{std::chrono::steady_clock::now() - pop_blocks_started}.count());
+            
         pop_blocks_started = std::chrono::steady_clock::now();
       }
 
