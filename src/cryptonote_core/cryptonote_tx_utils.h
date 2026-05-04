@@ -145,6 +145,14 @@ namespace cryptonote
     rct::key mask;                      //ringct amount mask
     rct::multisig_kLRki multisig_kLRki; //multisig info
 
+    // Confidential asset fields (HF21+). Null values indicate a native BDX input.
+    crypto::public_key asset_id          = crypto::null_pkey; // plaintext asset ID; null = BDX
+    crypto::public_key blinded_asset_id  = crypto::null_pkey; // T = asset_id + r*X from the output
+    crypto::public_key amount_commitment = crypto::null_pkey; // C = amount*asset_id + mask*G
+    crypto::public_key concealing_point  = crypto::null_pkey; // Q from the output
+
+    bool is_zarcanum() const { return asset_id != crypto::null_pkey; }
+
     void push_output(uint64_t idx, const crypto::public_key &k, uint64_t amount) { outputs.push_back(std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::zeroCommit(amount)}))); }
 
     BEGIN_SERIALIZE_OBJECT()
@@ -170,10 +178,14 @@ namespace cryptonote
     account_public_address addr;        // Destination Address
     bool is_subaddress;
     bool is_integrated;
+    // Confidential asset (HF21+). null_pkey = native BDX output (txout_to_key).
+    crypto::public_key asset_id = crypto::null_pkey;
 
     tx_destination_entry() : amount(0), addr{}, is_subaddress(false), is_integrated(false) { }
     tx_destination_entry(uint64_t a, const account_public_address &ad, bool is_subaddress) : amount(a), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
     tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, bool is_subaddress) : original(o), amount(a), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
+
+    bool is_zarcanum() const { return asset_id != crypto::null_pkey; }
 
     bool operator==(const tx_destination_entry& other) const
     {
@@ -201,6 +213,7 @@ namespace cryptonote
       FIELD(addr)
       FIELD(is_subaddress)
       FIELD(is_integrated)
+      FIELD(asset_id)
     END_SERIALIZE()
   };
 

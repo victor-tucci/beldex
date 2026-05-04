@@ -122,6 +122,14 @@ namespace rct {
     key scalarmultKey(const key &P, const key &a);
     //Computes aH where H= toPoint(cn_fast_hash(G)), G the basepoint
     key scalarmultH(const key & a);
+    // Computes a*X where X = 8*hash_to_curve("beldex_asset_id_blinding_generator") (HF21+)
+    key scalarmultX(const key& a);
+    // Returns the X generator as a rct::key (byte-encoded point)
+    key getX();
+    // Commitment for a confidential asset output: C = amount*asset_id + mask*G
+    key commitAsset(const key& mask, const key& asset_id, xmr_amount amount);
+    // Blind an asset ID: T = asset_id + r*X
+    key blindAssetId(const key& asset_id, const key& r);
     // multiplies a point by 8
     key scalarmult8(const key & P);
     void scalarmult8(ge_p3 &res, const key & P);

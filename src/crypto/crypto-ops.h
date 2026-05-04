@@ -144,6 +144,8 @@ extern const fe fe_fffb3;
 extern const fe fe_fffb4;
 extern const ge_p3 ge_p3_identity;
 extern const ge_p3 ge_p3_H;
+// X = 8 * hash_to_curve("beldex_asset_id_blinding_generator") — asset ID blinding base (HF21+)
+const ge_p3& rct_get_ge_p3_X();
 void ge_fromfe_frombytes_vartime(ge_p2 *, const unsigned char *);
 void sc_0(unsigned char *);
 void sc_reduce32(unsigned char *);

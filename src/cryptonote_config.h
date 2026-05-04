@@ -204,6 +204,7 @@ enum class hf : uint8_t
     hf18_bns,
     hf19_enhance_bns, // provided EVM address in BNS
     hf20_bulletproof_plus,
+    hf21_confidential_assets, // Confidential custom asset transfers
 
     _next,
     none = 0
@@ -235,6 +236,7 @@ namespace feature {
   constexpr auto CLSAG                        = hf::hf15_flash;
   constexpr auto PROOF_BTENC                  = hf::hf18_bns;
   constexpr auto BULLETPROOF_PLUS             = hf::hf20_bulletproof_plus;
+  constexpr auto CONFIDENTIAL_ASSETS          = hf::hf21_confidential_assets;
 }
 
 enum network_type : uint8_t

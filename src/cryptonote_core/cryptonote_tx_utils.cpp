@@ -1009,6 +1009,10 @@ namespace cryptonote
               }
           }
           for (size_t i = 0; i < tx.vout.size(); ++i) {
+              // tx_out_zarcanum outputs carry their own commitments and are
+              // not included in the legacy RCT dest_keys / outamounts vectors.
+              if (std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target))
+                  continue;
               dest_keys.push_back(rct::pk2rct(var::get<txout_to_key>(tx.vout[i].target).key));
               outamounts.push_back(tx.vout[i].amount);
               amount_out += tx.vout[i].amount;
