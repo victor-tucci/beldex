@@ -1681,6 +1681,19 @@ void wallet2::check_acc_out_precomp(const tx_out &o, const crypto::key_derivatio
   hw::device &hwdev = m_account.get_device();
   std::unique_lock hwdev_lock{hwdev};
   hwdev.set_mode(hw::device::mode::TRANSACTION_PARSE);
+
+  // HF21: handle tx_out_zarcanum by checking stealth_address ownership
+  if (std::holds_alternative<tx_out_zarcanum>(o.target))
+  {
+    const auto& zout = var::get<tx_out_zarcanum>(o.target);
+    // Check ownership via stealth_address
+    tx_scan_info.received = is_out_to_acc_precomp(m_subaddresses, zout.stealth_address,
+                                                   derivation, additional_derivations, i, hwdev);
+    tx_scan_info.money_transfered = 0; // decoded in scan_output
+    tx_scan_info.error = false;
+    return;
+  }
+
   if (!std::holds_alternative<txout_to_key>(o.target))
   {
      tx_scan_info.error = true;
@@ -1780,6 +1793,61 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
       m_encrypt_keys_after_refresh = *pwd;
     }
   }
+
+  // ── HF21: confidential asset output path ─────────────────────────────────
+  if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[vout_index].target))
+  {
+    const auto& zout = var::get<cryptonote::tx_out_zarcanum>(tx.vout[vout_index].target);
+
+    uint64_t amount = 0;
+    crypto::public_key asset_id{};
+    rct::key amount_mask{}, asset_blinding_mask{};
+
+    bool decoded = cryptonote::decode_zarcanum_output(
+        m_account.get_keys(), zout,
+        tx_scan_info.received->derivation, vout_index,
+        amount, asset_id, amount_mask, asset_blinding_mask);
+
+    if (!decoded || amount == 0)
+    {
+      MERROR("Failed to decode zarcanum output at index " << vout_index);
+      tx_scan_info.error = true;
+      return;
+    }
+
+    // Key image: I = H_p(stealth_address) * spend_key
+    bool r = cryptonote::generate_key_image_helper_precomp(
+        m_account.get_keys(), zout.stealth_address,
+        tx_scan_info.received->derivation, vout_index,
+        tx_scan_info.received->index,
+        tx_scan_info.in_ephemeral, tx_scan_info.ki,
+        m_account.get_device());
+    THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error,
+        "Failed to generate key image for zarcanum output");
+
+    tx_scan_info.money_transfered = amount;
+    tx_scan_info.mask             = amount_mask;
+    tx_scan_info.asset_id         = asset_id;
+    tx_scan_info.asset_mask       = asset_blinding_mask;
+
+    THROW_WALLET_EXCEPTION_IF(std::find(outs.begin(), outs.end(), vout_index) != outs.end(),
+        error::wallet_internal_error, "Same output cannot be added twice");
+    outs.push_back(vout_index);
+
+    uint64_t unlock_time = tx.get_unlock_time(vout_index);
+    tx_money_got_in_out entry = {};
+    entry.type        = wallet::pay_type::in;
+    entry.index       = tx_scan_info.received->index;
+    entry.amount      = amount;
+    entry.unlock_time = unlock_time;
+    entry.asset_id    = asset_id;
+    tx_money_got_in_outs.push_back(entry);
+
+    tx_scan_info.amount      = amount;
+    tx_scan_info.unlock_time = unlock_time;
+    return;
+  }
+  // ── Standard BDX output path (txout_to_key) ───────────────────────────────
 
   if (m_multisig)
   {
@@ -2119,7 +2187,15 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
             td.m_subaddr_index = tx_scan_info[o].received->index;
             if (should_expand(tx_scan_info[o].received->index))
               expand_subaddresses(tx_scan_info[o].received->index);
-            if (tx.vout[o].amount == 0)
+            if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[o].target))
+            {
+              // HF21 confidential asset output
+              td.m_mask       = tx_scan_info[o].mask;
+              td.m_rct        = true;
+              td.m_asset_id   = tx_scan_info[o].asset_id;
+              td.m_asset_mask = tx_scan_info[o].asset_mask;
+            }
+            else if (tx.vout[o].amount == 0)
             {
               td.m_mask = tx_scan_info[o].mask;
               td.m_rct = true;

@@ -186,6 +186,8 @@ private:
     wallet::pay_type type;
     uint64_t amount;
     uint64_t unlock_time;
+    // HF21: null_pkey = native BDX output
+    crypto::public_key asset_id = crypto::null_pkey;
   };
 
   class hashchain
@@ -311,6 +313,9 @@ private:
       uint64_t unlock_time;
       bool error;
       std::optional<cryptonote::subaddress_receive_info> received;
+      // HF21: confidential asset fields (null = native BDX)
+      crypto::public_key asset_id        = crypto::null_pkey;
+      rct::key           asset_mask      = rct::zero();
 
       tx_scan_info_t(): amount(0), money_transfered(0), error(true) {}
     };
