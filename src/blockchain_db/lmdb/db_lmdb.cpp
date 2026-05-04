@@ -258,8 +258,11 @@ const char* const LMDB_MASTER_NODE_LATEST = "master_node_proofs"; // contains th
 
 const char* const LMDB_PROPERTIES = "properties";
 const char* const LMDB_ASSET_HISTORIES = "asset_histories";
+// HF21: per-asset output index for BGE surjection ring construction
+// key = asset_id (32 bytes) || uint64_t seqno  →  value = uint64_t global_output_index
+const char* const LMDB_ASSET_OUTPUTS = "asset_outputs";
 
-constexpr unsigned int LMDB_DB_COUNT = 24; // Should agree with the number of db's above
+constexpr unsigned int LMDB_DB_COUNT = 25; // Should agree with the number of db's above
 
 const char zerokey[8] = {0};
 const MDB_val zerokval = { sizeof(zerokey), (void *)zerokey };
@@ -403,6 +406,7 @@ void setup_rcursor(const MDB_dbi& db, MDB_cursor*& cursor, MDB_txn* txn, bool* r
 #define m_cur_hf_versions	m_cursors->hf_versions
 #define m_cur_properties	m_cursors->properties
 #define m_cur_asset_histories	m_cursors->asset_histories
+#define m_cur_asset_outputs	m_cursors->asset_outputs
 
 namespace cryptonote
 {
@@ -1205,6 +1209,14 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
       throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
 
+  // HF21: for confidential asset outputs, also record in the per-asset index
+  // so the wallet can enumerate all outputs of a specific asset for BGE ring.
+  // The plaintext asset_id is populated by append_assets_from_transactions()
+  // which runs after block acceptance and has access to tx.extra.
+  // Here we only need the global output index to be stored; asset_id is stored
+  // by the caller that knows the tx context (see blockchain.cpp add_block path).
+  // Therefore: add_asset_output() is called from blockchain.cpp, not here.
+
   return ok.amount_index;
 }
 
@@ -1549,6 +1561,8 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
 
   lmdb_db_open(txn, LMDB_MASTER_NODE_LATEST, MDB_CREATE, m_master_node_proofs, "Failed to open db handle for m_master_node_proofs");
   lmdb_db_open(txn, LMDB_ASSET_HISTORIES, MDB_CREATE, m_asset_histories, "Failed to open db handle for m_asset_histories");
+  // HF21: per-asset output index (key = asset_id||seqno, value = global_output_index)
+  lmdb_db_open(txn, LMDB_ASSET_OUTPUTS, MDB_CREATE, m_asset_outputs, "Failed to open db handle for m_asset_outputs");
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
@@ -6472,6 +6486,112 @@ std::vector<crypto::public_key> BlockchainLMDB::get_all_asset_ids() const
   }
 
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HF21: per-asset output index  (m_asset_outputs)
+//
+// Key layout: asset_id (32 bytes) || seqno (8 bytes, little-endian uint64)
+// Value:      global_output_index (8 bytes, little-endian uint64)
+//
+// Used by wallet / validator to enumerate zarcanum outputs of a specific asset
+// for constructing the BGE surjection proof ring.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void make_asset_key(uint8_t buf[40],
+                            const crypto::public_key& asset_id,
+                            uint64_t seqno)
+{
+  memcpy(buf, &asset_id, 32);
+  memcpy(buf + 32, &seqno, 8);
+}
+
+void BlockchainLMDB::add_asset_output(const crypto::public_key& asset_id,
+                                       uint64_t global_output_index)
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  check_open();
+  mdb_txn_cursors* m_cursors = &m_wcursors;
+  CURSOR(asset_outputs)
+
+  uint64_t seqno = get_asset_output_count(asset_id);
+
+  uint8_t key_buf[40];
+  make_asset_key(key_buf, asset_id, seqno);
+  MDB_val k{sizeof(key_buf), key_buf};
+  MDB_val v{sizeof(uint64_t), &global_output_index};
+
+  if (auto r = mdb_cursor_put(m_cur_asset_outputs, &k, &v, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to add asset output: ", r).c_str()));
+}
+
+uint64_t BlockchainLMDB::get_asset_output_count(const crypto::public_key& asset_id) const
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  check_open();
+  TXN_PREFIX_RDONLY();
+  RCURSOR(asset_outputs)
+
+  // Seek to the first key with this asset_id prefix and count matching entries.
+  uint8_t prefix[32];
+  memcpy(prefix, &asset_id, 32);
+  MDB_val k{sizeof(prefix), prefix};
+  MDB_val v;
+  uint64_t count = 0;
+  int rc = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_SET_RANGE);
+  while (rc == MDB_SUCCESS)
+  {
+    if (k.mv_size < 32 || memcmp(k.mv_data, prefix, 32) != 0)
+      break;
+    ++count;
+    rc = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_NEXT);
+  }
+
+  TXN_POSTFIX_RDONLY();
+  return count;
+}
+
+uint64_t BlockchainLMDB::get_asset_output_global_index(const crypto::public_key& asset_id,
+                                                         uint64_t n) const
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  check_open();
+  TXN_PREFIX_RDONLY();
+  RCURSOR(asset_outputs)
+
+  uint8_t key_buf[40];
+  make_asset_key(key_buf, asset_id, n);
+  MDB_val k{sizeof(key_buf), key_buf};
+  MDB_val v;
+  if (auto r = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_SET))
+    throw1(OUTPUT_DNE(lmdb_error("asset output not found at index: ", r).c_str()));
+  if (v.mv_size != sizeof(uint64_t))
+    throw0(DB_ERROR("asset output value size mismatch"));
+
+  uint64_t result = *static_cast<const uint64_t*>(v.mv_data);
+  TXN_POSTFIX_RDONLY();
+  return result;
+}
+
+void BlockchainLMDB::remove_last_asset_output(const crypto::public_key& asset_id)
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  check_open();
+  mdb_txn_cursors* m_cursors = &m_wcursors;
+  CURSOR(asset_outputs)
+
+  uint64_t count = get_asset_output_count(asset_id);
+  if (count == 0)
+    throw0(DB_ERROR("remove_last_asset_output: no outputs for this asset"));
+
+  uint8_t key_buf[40];
+  make_asset_key(key_buf, asset_id, count - 1);
+  MDB_val k{sizeof(key_buf), key_buf};
+  MDB_val v;
+  if (auto r = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_SET))
+    throw1(OUTPUT_DNE(lmdb_error("remove_last_asset_output: entry not found: ", r).c_str()));
+  if (auto r = mdb_cursor_del(m_cur_asset_outputs, 0))
+    throw0(DB_ERROR(lmdb_error("remove_last_asset_output: delete failed: ", r).c_str()));
 }
 
 

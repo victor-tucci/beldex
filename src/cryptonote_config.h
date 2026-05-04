@@ -56,6 +56,27 @@ inline constexpr uint64_t DEFAULT_TX_SPENDABLE_AGE_V17         = 2;
 inline constexpr uint64_t TX_OUTPUT_DECOYS                     = 9;
 inline constexpr size_t   TX_BULLETPROOF_MAX_OUTPUTS           = 16;
 inline constexpr size_t   TX_BULLETPROOF_PLUS_MAX_OUTPUTS      = 16;
+
+// ── Confidential asset ring design (HF21+) ─────────────────────────────────
+//
+// Zarcanum inputs (spending a tx_out_zarcanum) use the SAME output_amounts[0]
+// pool as native BDX RingCT outputs for decoy selection.  Both BDX RCT outputs
+// (txout_to_key) and confidential asset outputs (tx_out_zarcanum) store
+// tx_out.amount == 0 on-chain, so they live in the same LMDB bucket.
+//
+// The CLSAG ring is 1-layer (key only):
+//   - BDX decoy  → ring member pubkey = txout_to_key.key
+//   - ZC decoy   → ring member pubkey = tx_out_zarcanum.stealth_address
+//   - ZC real    → ring member pubkey = tx_out_zarcanum.stealth_address
+//
+// Amount balance and asset integrity are proven separately:
+//   - Balance:   linear_composition_proof  (proves tx balances in G and X)
+//   - Asset:     BGE surjection proof       (proves output asset is real)
+//   - Range:     BulletproofPlus            (proves amounts in [0, 2^64))
+//
+// Result: no bootstrapping problem — day-1 asset transfers can draw decoys
+// from the existing BDX output pool (millions of outputs available).
+inline constexpr size_t ASSET_RING_SIZE = TX_OUTPUT_DECOYS; // same as BDX
 inline constexpr uint64_t PUBLIC_ADDRESS_TEXTBLOB_VER          = 0;
 
 inline constexpr uint64_t FINAL_SUBSIDY_PER_MINUTE             = 500000000; // 3 * pow(10, 7)

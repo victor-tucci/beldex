@@ -1829,6 +1829,17 @@ public:
   virtual bool asset_exists(const crypto::public_key &asset_id) const = 0;
   virtual std::vector<crypto::public_key> get_all_asset_ids() const = 0;
 
+  // HF21: per-asset output index used to build BGE surjection ring.
+  // Maps asset_id → ordered list of global_output_indices for that asset.
+  // add_asset_output  : called when a tx_out_zarcanum is stored on-chain.
+  // get_asset_output_count : total zarcanum outputs for this asset.
+  // get_asset_output_global_index : n-th output's global_output_index (0-based).
+  // remove_last_asset_output : called on block pop / reorg.
+  virtual void     add_asset_output(const crypto::public_key& asset_id, uint64_t global_output_index) = 0;
+  virtual uint64_t get_asset_output_count(const crypto::public_key& asset_id) const = 0;
+  virtual uint64_t get_asset_output_global_index(const crypto::public_key& asset_id, uint64_t n) const = 0;
+  virtual void     remove_last_asset_output(const crypto::public_key& asset_id) = 0;
+
   // This function accepts an empty timestamps/difficulties array to fill, or
   // a prior timestamps/difficulties array that was filled by a previous call to
   // this same function in which case it will optimally insert and remove the

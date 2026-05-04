@@ -450,6 +450,12 @@ private:
   bool asset_exists(const crypto::public_key &asset_id) const override;
   std::vector<crypto::public_key> get_all_asset_ids() const override;
 
+  // HF21: per-asset output index (BGE ring construction)
+  void     add_asset_output(const crypto::public_key& asset_id, uint64_t global_output_index) override;
+  uint64_t get_asset_output_count(const crypto::public_key& asset_id) const override;
+  uint64_t get_asset_output_global_index(const crypto::public_key& asset_id, uint64_t n) const override;
+  void     remove_last_asset_output(const crypto::public_key& asset_id) override;
+
 private:
   template <typename T,
             std::enable_if_t<std::is_same_v<T, cryptonote::block> ||
@@ -489,6 +495,8 @@ private:
   MDB_dbi m_master_node_data;
   MDB_dbi m_master_node_proofs;
   MDB_dbi m_asset_histories;
+  // HF21: per-asset output index for BGE surjection ring construction
+  MDB_dbi m_asset_outputs;
 
   MDB_dbi m_properties;
 
