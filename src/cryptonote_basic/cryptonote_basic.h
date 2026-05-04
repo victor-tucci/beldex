@@ -268,6 +268,12 @@ namespace cryptonote
     std::vector<std::vector<crypto::signature>> signatures; //count signatures  always the same as inputs count
     rct::rctSig rct_signatures;
 
+    // Confidential asset proofs (HF21+). Empty for non-asset transactions.
+    // Contains: zc_asset_surjection_proof, zc_balance_proof,
+    //           asset_operation_proof, asset_operation_ownership_proof,
+    //           ZC_sig (one per ZC input being spent).
+    std::vector<rct::asset_proof_v> asset_proofs;
+
     // hash cache
     mutable crypto::hash hash;
     mutable size_t blob_size;
@@ -276,6 +282,12 @@ namespace cryptonote
 
     std::atomic<unsigned int> unprunable_size;
     std::atomic<unsigned int> prefix_size;
+
+    // Returns true if any output is a tx_out_zarcanum (confidential asset).
+    bool has_zarcanum_outputs() const {
+      return std::any_of(vout.begin(), vout.end(),
+        [](const tx_out& o){ return std::holds_alternative<tx_out_zarcanum>(o.target); });
+    }
 
     transaction() { set_null(); }
     transaction(const transaction &t);
@@ -358,6 +370,13 @@ namespace cryptonote
             auto obj = ar.begin_object();
             rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, vin.size(), vout.size(),
                 vin.size() > 0 && std::holds_alternative<txin_to_key>(vin[0]) ? var::get<txin_to_key>(vin[0]).key_offsets.size() - 1 : 0);
+          }
+
+          // HF21: confidential asset proofs (present only when has_zarcanum_outputs())
+          if (!asset_proofs.empty() || has_zarcanum_outputs())
+          {
+            ar.tag("asset_proofs");
+            serialization::value(ar, asset_proofs);
           }
         }
       }

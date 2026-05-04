@@ -42,6 +42,7 @@ extern "C" {
 }
 #include "crypto/generic-ops.h"
 #include "crypto/crypto.h"
+#include "crypto/asset_proofs.h"  // schnorr_sig_s, linear_composition_proof_s, BGE_proof_s
 
 #include "common/hex.h"
 #include "serialization/variant.h"
@@ -277,6 +278,82 @@ namespace rct {
     size_t n_bulletproof_plus_max_amounts(const BulletproofPlus &proof);
     size_t n_bulletproof_plus_amounts(const std::vector<BulletproofPlus> &proofs);
     size_t n_bulletproof_plus_max_amounts(const std::vector<BulletproofPlus> &proofs);
+
+    // ── Confidential asset proof wrappers (HF21+) ─────────────────────────
+    // These are embedded in transaction::asset_proofs.
+
+    // One BGE surjection proof per tx_out_zarcanum output.
+    // Proves blinded_asset_id T = ring[j] + r*X for some real asset in inputs.
+    struct zc_asset_surjection_proof
+    {
+      std::vector<crypto::BGE_proof_s> bge_proofs; // one per ZC output
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELD(bge_proofs)
+      END_SERIALIZE()
+    };
+
+    // Proves the transaction balances across both G and X dimensions.
+    // balance_point = sum(output_T * r_out) - sum(input_pseudo_T * r_in) = a*G + b*X
+    struct zc_balance_proof
+    {
+      crypto::linear_composition_proof_s lcp;
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELD(lcp)
+      END_SERIALIZE()
+    };
+
+    // For emit_asset / public_burn with hidden supply:
+    // proves amount_commitment encodes the correct amount.
+    struct asset_operation_proof
+    {
+      // hidden supply: proves C = a*asset_id + b*G (linear composition over asset_id, G)
+      boost::optional<crypto::linear_composition_proof_s> opt_composition_proof;
+      // non-hidden supply: proves C - supply*asset_id = b*G  (Schnorr over G)
+      boost::optional<crypto::schnorr_sig_s>              opt_g_proof;
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELD(opt_composition_proof)
+        FIELD(opt_g_proof)
+      END_SERIALIZE()
+    };
+
+    // Proves the sender holds the asset owner private key (for emit/update/burn).
+    // Schnorr signature over G against descriptor.owner.
+    struct asset_operation_ownership_proof
+    {
+      crypto::schnorr_sig_s sig;
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELD(sig)
+      END_SERIALIZE()
+    };
+
+    // ZC input spend record (one per tx_out_zarcanum being spent).
+    // 1-layer CLSAG ring over public keys from output_amounts[0] pool
+    // (mix of BDX txout_to_key outputs and prior tx_out_zarcanum outputs).
+    struct ZC_sig
+    {
+      crypto::key_image  key_image;            // I = H_p(stealth_address) * spend_key
+      clsag              clsag_sig;            // 1-layer ring over pubkeys
+      key                pseudo_out_commitment;// C_pseudo = amount*asset_id + delta*G
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELD(key_image)
+        FIELD(clsag_sig)
+        FIELD(pseudo_out_commitment)
+      END_SERIALIZE()
+    };
+
+    // Variant carrying all asset-related proofs for a transaction.
+    // Stored in transaction::asset_proofs (empty for non-asset txs).
+    using asset_proof_v = std::variant<
+      zc_asset_surjection_proof,   // BGE per output
+      zc_balance_proof,            // balance proof
+      asset_operation_proof,       // emit/burn commitment proof
+      asset_operation_ownership_proof // emit/burn owner Schnorr
+    >;
 
     template <typename Archive, typename T>
     auto start_array(Archive& ar, std::string_view tag, std::vector<T>& v, size_t size) {
