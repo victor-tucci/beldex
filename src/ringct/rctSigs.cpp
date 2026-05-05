@@ -1799,4 +1799,76 @@ namespace rct {
         else
             return signMultisigMLSAG(rv, indices, k, msout, secret_key);
     }
+
+    // ── HF21: ZC_sig generation and verification ─────────────────────────────
+    //
+    // ZC_sig uses a 1-layer CLSAG over the ring of public keys.
+    // Ring members are drawn from output_amounts[0] (BDX + ZC shared pool).
+    // The commitment layer is omitted — balance is proven by zc_balance_proof.
+
+    ZC_sig genZCSig(const key& message,
+                    const keyV& ring_pubkeys,
+                    const ctkey& spend_sk,
+                    const key& pseudo_out_C,
+                    unsigned int real_index,
+                    hw::device& hwdev)
+    {
+        CHECK_AND_ASSERT_THROW_MES(!ring_pubkeys.empty(), "Empty ring for ZC_sig");
+        CHECK_AND_ASSERT_THROW_MES(real_index < ring_pubkeys.size(), "Invalid real_index");
+
+        // Build ctkeyV with zero masks — the commitment layer is not used in
+        // the 1-layer ring.  Only the dest (pubkey) field matters for CLSAG_Gen.
+        ctkeyV ring;
+        ring.reserve(ring_pubkeys.size());
+        for (const auto& pk : ring_pubkeys)
+            ring.push_back({pk, rct::zero()});
+
+        // z = 0 because there is no commitment-layer secret in the 1-layer ring.
+        // C_offset = zero so the commitment difference is trivially zero.
+        ctkey in_sk;
+        in_sk.dest = spend_sk.dest;
+        in_sk.mask = rct::zero();  // no commitment blinding for 1-layer ring
+
+        // Use CLSAG_Gen with z=0 and C_offset=zero (1-layer mode).
+        keyV P, C, C_nonzero;
+        P.reserve(ring.size());
+        C.reserve(ring.size());
+        C_nonzero.reserve(ring.size());
+        for (const ctkey& k : ring)
+        {
+            P.push_back(k.dest);
+            C_nonzero.push_back(rct::zero());
+            C.push_back(rct::zero());  // C[i] = C_nonzero[i] - C_offset = 0 - 0
+        }
+
+        key z = rct::zero();  // commitment blinding secret = 0 (1-layer)
+        key C_offset = rct::zero();
+
+        clsag sig = CLSAG_Gen(message, P, in_sk.dest, C, z, C_nonzero, C_offset,
+                              real_index, nullptr, nullptr, nullptr, hwdev);
+
+        ZC_sig result;
+        result.key_image           = rct::rct2ki(rct::identity()); // filled by caller
+        result.clsag_sig           = sig;
+        result.pseudo_out_commitment = pseudo_out_C;
+        return result;
+    }
+
+    bool verZCSig(const key& message,
+                  const ZC_sig& sig,
+                  const keyV& ring_pubkeys,
+                  const key& pseudo_out_C)
+    {
+        if (ring_pubkeys.empty()) return false;
+
+        // Rebuild the ctkey ring with zero masks.
+        ctkeyV ring;
+        ring.reserve(ring_pubkeys.size());
+        for (const auto& pk : ring_pubkeys)
+            ring.push_back({pk, rct::zero()});
+
+        // 1-layer CLSAG verify: C_offset = zero
+        return verRctCLSAGSimple(message, sig.clsag_sig, ring, rct::zero());
+    }
+
 }

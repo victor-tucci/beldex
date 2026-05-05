@@ -9901,7 +9901,17 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       size_t requested_outputs_count = base_requested_outputs_count + (td.is_rct() ? MINED_MONEY_UNLOCK_WINDOW - DEFAULT_TX_SPENDABLE_AGE_V17 : 0);
       outs.push_back(std::vector<get_outs_entry>());
       outs.back().reserve(fake_outputs_count + 1);
-      const rct::key mask = td.is_rct() ? rct::commit(td.amount(), td.m_mask) : rct::zeroCommit(td.amount());
+
+      // HF21: For ZC outputs the commitment is C = amount*asset_id + mask*G,
+      // stored directly in amount_commitment. For BDX use the standard formula.
+      const rct::key mask = td.is_zarcanum()
+          ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+                td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
+          : (td.is_rct() ? rct::commit(td.amount(), td.m_mask)
+                         : rct::zeroCommit(td.amount()));
+
+      // The public key used in the ring: stealth_address for ZC, .key for BDX.
+      const crypto::public_key real_out_key = td.get_public_key();
 
       uint64_t num_outs = 0;
       const uint64_t amount = td.is_rct() ? 0 : td.amount();
@@ -9930,7 +9940,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       {
         size_t i = base + n;
         if (get_outputs[i].index == td.m_global_output_index)
-          if (got_outs[i].key == var::get<txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key)
+          if (got_outs[i].key == real_out_key)  // handles both txout_to_key and tx_out_zarcanum
             if (got_outs[i].mask == mask)
             {
               real_out_found = true;
@@ -9941,7 +9951,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
           "Daemon response did not include the requested real output");
 
       // pick real out first (it will be sorted when done)
-      outs.back().push_back(std::make_tuple(td.m_global_output_index, var::get<txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key, mask));
+      outs.back().push_back(std::make_tuple(td.m_global_output_index, real_out_key, mask));
 
       // then pick outs from an existing ring, if any
       if (td.m_key_image_known && !td.m_key_image_partial)
@@ -10008,7 +10018,12 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     {
       const transfer_details &td = m_transfers[idx];
       std::vector<get_outs_entry> v;
-      const rct::key mask = td.is_rct() ? rct::commit(td.amount(), td.m_mask) : rct::zeroCommit(td.amount());
+      // HF21: ZC outputs use stored amount_commitment; BDX uses standard formula.
+      const rct::key mask = td.is_zarcanum()
+          ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+                td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
+          : (td.is_rct() ? rct::commit(td.amount(), td.m_mask)
+                         : rct::zeroCommit(td.amount()));
       v.push_back(std::make_tuple(td.m_global_output_index, td.get_public_key(), mask));
       outs.push_back(v);
     }
@@ -10167,13 +10182,28 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     tx_output_entry real_oe;
     real_oe.first = td.m_global_output_index;
     real_oe.second.dest = rct::pk2rct(td.get_public_key());
-    real_oe.second.mask = rct::commit(td.amount(), td.m_mask);
+    // HF21: ZC outputs carry their own commitment; BDX uses standard formula.
+    real_oe.second.mask = td.is_zarcanum()
+        ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+              td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
+        : rct::commit(td.amount(), td.m_mask);
     *it_to_replace = real_oe;
     src.real_out_tx_key = get_tx_pub_key_from_extra(td.m_tx, td.m_pk_index);
     src.real_out_additional_tx_keys = get_additional_tx_pub_keys_from_extra(td.m_tx);
     src.real_output = it_to_replace - src.outputs.begin();
     src.real_output_in_tx_index = td.m_internal_output_index;
     src.mask = td.m_mask;
+    // HF21: populate ZC-specific source fields so construct_tx_with_tx_key
+    // can build the pseudo-output commitment for ZC_sig.
+    if (td.is_zarcanum())
+    {
+      const auto& zout = var::get<cryptonote::tx_out_zarcanum>(
+          td.m_tx.vout[td.m_internal_output_index].target);
+      src.asset_id         = td.m_asset_id;
+      src.blinded_asset_id = zout.blinded_asset_id;
+      src.amount_commitment = zout.amount_commitment;
+      src.concealing_point  = zout.concealing_point;
+    }
     if (m_multisig)
     {
       auto ignore_set = ignore_sets.empty() ? std::unordered_set<crypto::public_key>() : ignore_sets.front();
@@ -10263,6 +10293,63 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   LOG_PRINT_L2("constructed tx, r="<<r);
   THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, dsts, unlock_time, m_nettype);
   THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx), error::tx_too_big, tx, upper_transaction_weight_limit);
+
+  // ── HF21: generate ZC_sig for each ZC input being spent ─────────────────
+  // The CLSAG is 1-layer (key only): ring = pubkeys from output_amounts[0],
+  // identical to a BDX ring except the real member is a stealth_address.
+  // A pseudo-output commitment is chosen with a fresh random mask so the
+  // balance proof can link input commitments to output commitments.
+  if (tx_params.hf_version >= feature::CONFIDENTIAL_ASSETS)
+  {
+    for (size_t i = 0; i < selected_transfers.size(); ++i)
+    {
+      const transfer_details& td = m_transfers[selected_transfers[i]];
+      if (!td.is_zarcanum())
+        continue;
+
+      // Build ZC_sig for this input.
+      rct::ZC_sig zc_sig{};
+
+      // Key image is already computed and stored in td.m_key_image (set in scan_output).
+      zc_sig.key_image = td.m_key_image;
+
+      // Pseudo-output commitment: C_pseudo = amount*asset_id + delta*G
+      // where delta is a fresh random mask.  Balance proof links
+      // sum(pseudo_C) - sum(output_C) = 0 via linear_composition_proof.
+      rct::key delta = rct::skGen();
+      rct::key asset_id_rct = rct::pk2rct(td.m_asset_id);
+      zc_sig.pseudo_out_commitment = rct::commitAsset(delta, asset_id_rct, td.amount());
+
+      // Ring: pubkeys from sources[i].outputs  (already built by get_outs)
+      // The ring is over raw public keys — stealth_address for ZC outputs,
+      // txout_to_key.key for BDX outputs.  Both are valid CLSAG ring members.
+      rct::ctkeyV ring;
+      ring.reserve(sources[i].outputs.size());
+      for (const auto& oe : sources[i].outputs)
+        ring.push_back(oe.second);  // {dest (pubkey), mask (commitment)}
+
+      // Sign: 1-layer CLSAG over the ring of pubkeys.
+      // The signing key is the spend key corresponding to stealth_address.
+      crypto::secret_key spend_key;
+      cryptonote::generate_key_image_helper_precomp(
+          m_account.get_keys(),
+          td.get_public_key(),
+          td.m_tx.vout[td.m_internal_output_index].target.index() ==
+              typeid(cryptonote::tx_out_zarcanum).hash_code()
+              ? sources[i].outputs[sources[i].real_output].second.dest
+              : rct::zero(),
+          0, {},   // derivation path already baked into key image
+          {0, 0}, {}, zc_sig.key_image,
+          m_account.get_device());
+      // Note: full spend key derivation for the CLSAG will be wired up in
+      // Phase 8 once the complete signing path is in place.  Here we record
+      // the pseudo-out commitment so the balance proof can be constructed.
+      // The clsag_sig field is left default-initialised; it will be populated
+      // by rctSigs.cpp in Phase 8.
+
+      tx.asset_proofs.push_back(std::move(zc_sig));
+    }
+  }
 
   // work out the permutation done on sources
   std::vector<size_t> ins_order;

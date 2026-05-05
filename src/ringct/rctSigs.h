@@ -78,6 +78,29 @@ namespace rct {
     clsag proveRctCLSAGSimple(const key &, const ctkeyV &, const ctkey &, const key &, const key &, const multisig_kLRki *, key *, key *, unsigned int, hw::device &);
     bool verRctCLSAGSimple(const key &, const clsag &, const ctkeyV &, const key &);
 
+    // HF21: ZC_sig — 1-layer CLSAG for spending a tx_out_zarcanum.
+    // Ring is a mix of BDX and ZC pubkeys from output_amounts[0].
+    // message      : transaction prefix hash
+    // ring_pubkeys : pubkeys of all ring members (P[i].dest), size = ring_size
+    // spend_sk     : sender's ephemeral spend key for the real output
+    // pseudo_out_C : pseudo-output commitment (amount*asset_id + delta*G)
+    // real_index   : index of the real output in ring_pubkeys
+    ZC_sig genZCSig(const key& message,
+                    const keyV& ring_pubkeys,
+                    const ctkey& spend_sk,
+                    const key& pseudo_out_C,
+                    unsigned int real_index,
+                    hw::device& hwdev);
+
+    // Verify a ZC_sig.
+    // message      : transaction prefix hash
+    // ring_pubkeys : pubkeys of all ring members
+    // pseudo_out_C : pseudo-output commitment from ZC_sig
+    bool verZCSig(const key& message,
+                  const ZC_sig& sig,
+                  const keyV& ring_pubkeys,
+                  const key& pseudo_out_C);
+
     //proveRange and verRange
     //proveRange gives C, and mask such that \sumCi = C
     //   c.f. https://eprint.iacr.org/2015/1098 section 5.1
