@@ -2928,20 +2928,34 @@ void wallet2::process_parsed_blocks(uint64_t start_height, const std::vector<cry
     for (size_t k = 0; k < n_vouts; ++k)
     {
       const auto &o = tx.vout[k];
+
+      // Determine the pubkey for ownership check.
+      // txout_to_key  → use .key (BDX)
+      // tx_out_zarcanum → use .stealth_address (HF21 confidential asset)
+      // Other types (txout_to_script etc.) → skip
+      const crypto::public_key *key_ptr = nullptr;
       if (std::holds_alternative<cryptonote::txout_to_key>(o.target))
+        key_ptr = &var::get<cryptonote::txout_to_key>(o.target).key;
+      else if (std::holds_alternative<cryptonote::tx_out_zarcanum>(o.target))
+        key_ptr = &var::get<cryptonote::tx_out_zarcanum>(o.target).stealth_address;
+
+      if (!key_ptr)
+        continue;
+
+      std::vector<crypto::key_derivation> additional_derivations;
+      additional_derivations.reserve(tx_cache_data[txidx].additional.size());
+      for (const auto &iod: tx_cache_data[txidx].additional)
+        additional_derivations.push_back(iod.derivation);
+
+      for (size_t l = 0; l < tx_cache_data[txidx].primary.size(); ++l)
       {
-        std::vector<crypto::key_derivation> additional_derivations;
-        additional_derivations.reserve(tx_cache_data[txidx].additional.size());
-        for (const auto &iod: tx_cache_data[txidx].additional)
-          additional_derivations.push_back(iod.derivation);
-        const auto &key = var::get<txout_to_key>(o.target).key;
-        for (size_t l = 0; l < tx_cache_data[txidx].primary.size(); ++l)
-        {
-          THROW_WALLET_EXCEPTION_IF(tx_cache_data[txidx].primary[l].received.size() != n_vouts,
-              error::wallet_internal_error, "Unexpected received array size");
-          tx_cache_data[txidx].primary[l].received[k] = is_out_to_acc_precomp(m_subaddresses, key, tx_cache_data[txidx].primary[l].derivation, additional_derivations, k, hwdev);
-          additional_derivations.clear();
-        }
+        THROW_WALLET_EXCEPTION_IF(tx_cache_data[txidx].primary[l].received.size() != n_vouts,
+            error::wallet_internal_error, "Unexpected received array size");
+        tx_cache_data[txidx].primary[l].received[k] =
+            is_out_to_acc_precomp(m_subaddresses, *key_ptr,
+                                   tx_cache_data[txidx].primary[l].derivation,
+                                   additional_derivations, k, hwdev);
+        additional_derivations.clear();
       }
     }
   };
