@@ -641,6 +641,33 @@ namespace tools
       }
       std::vector<wallet::transfer_details> transfers;
       m_wallet->get_transfers(transfers);
+
+      // HF21: aggregate per-asset balances from ZC transfer details
+      {
+        std::map<crypto::public_key, uint64_t> asset_total, asset_unlocked;
+        const uint64_t blockchain_height = m_wallet->get_blockchain_current_height();
+        for (const auto& td : transfers)
+        {
+          if (!td.is_zarcanum() || td.m_spent) continue;
+          const uint64_t unlock_time = td.m_tx.unlock_time;
+          const bool unlocked = (unlock_time == 0) ||
+              (unlock_time < cryptonote::CRYPTONOTE_MAX_BLOCK_NUMBER
+                  ? blockchain_height >= unlock_time
+                  : (uint64_t)std::time(nullptr) >= unlock_time);
+          asset_total[td.m_asset_id] += td.m_amount;
+          if (unlocked) asset_unlocked[td.m_asset_id] += td.m_amount;
+        }
+        for (const auto& [asset_id, total] : asset_total)
+        {
+          GET_BALANCE::asset_balance_entry entry{};
+          entry.asset_id         = tools::type_to_hex(asset_id);
+          entry.ticker           = "";  // populated by daemon RPC get_asset_info if needed
+          entry.balance          = total;
+          entry.unlocked_balance = asset_unlocked.count(asset_id) ? asset_unlocked.at(asset_id) : 0;
+          res.asset_balances.emplace_back(std::move(entry));
+        }
+      }
+
       for (const auto& p : balance_per_subaddress_per_account)
       {
         uint32_t account_index = p.first;

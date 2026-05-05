@@ -117,6 +117,17 @@ namespace tools::wallet_rpc {
       KV_MAP_SERIALIZABLE
     };
 
+    // HF21: per-asset balance entry
+    struct asset_balance_entry
+    {
+      std::string asset_id;           // Hex-encoded asset pubkey
+      std::string ticker;             // Asset ticker symbol (e.g. "TKN")
+      uint64_t    balance;            // Total balance (atomic units of the asset)
+      uint64_t    unlocked_balance;   // Spendable balance
+
+      KV_MAP_SERIALIZABLE
+    };
+
     struct response
     {
       uint64_t   balance;                              // The total balance (atomic units) of the currently opened wallet.
@@ -125,6 +136,8 @@ namespace tools::wallet_rpc {
       std::vector<per_subaddress_info> per_subaddress; // Balance information for each subaddress in an account.
       uint64_t blocks_to_unlock;                       // The number of blocks remaining for the balance to unlock
       uint64_t   time_to_unlock;                       // Timestamp of expected unlock
+      // HF21: per-asset balances (empty for wallets with no confidential asset outputs)
+      std::vector<asset_balance_entry> asset_balances;
 
       KV_MAP_SERIALIZABLE
     };
