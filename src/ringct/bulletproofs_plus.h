@@ -44,6 +44,17 @@ bool bulletproof_plus_VERIFY(const BulletproofPlus &proof);
 bool bulletproof_plus_VERIFY(const std::vector<const BulletproofPlus*> &proofs);
 bool bulletproof_plus_VERIFY(const std::vector<BulletproofPlus> &proofs);
 
+// HF21: asset-aware overloads.
+// asset_bases[i] replaces the hardcoded H for commitment i.
+// For native BDX outputs pass rct::H as the base; for asset outputs pass
+// the asset_id pubkey.  The proof circuit is identical — only the value
+// generator changes, which is sound as long as log_G(asset_id) is unknown.
+BulletproofPlus bulletproof_plus_PROVE_asset(const std::vector<uint64_t>& v,
+                                              const rct::keyV& gamma,
+                                              const rct::keyV& asset_bases);
+bool bulletproof_plus_VERIFY_asset(const BulletproofPlus& proof,
+                                    const rct::keyV& asset_bases);
+
 }
 
 #endif

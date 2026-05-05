@@ -77,6 +77,21 @@ inline constexpr size_t   TX_BULLETPROOF_PLUS_MAX_OUTPUTS      = 16;
 // Result: no bootstrapping problem — day-1 asset transfers can draw decoys
 // from the existing BDX output pool (millions of outputs available).
 inline constexpr size_t ASSET_RING_SIZE = TX_OUTPUT_DECOYS; // same as BDX
+
+// ── Mandatory fan-out for deploy / emit transactions (HF21+) ───────────────
+//
+// Every deploy_new_asset or emit_asset transaction MUST produce at least
+// MIN_ASSET_EMISSION_OUTPUTS tx_out_zarcanum outputs.
+//
+// Why: even though the ring draws from the shared BDX pool, we want
+// dedicated ZC ring members for future asset-specific BGE proofs.
+// The wallet auto-generates self-send outputs (to its own subaddresses)
+// to reach this minimum whenever the user's destinations fall short.
+//
+// Value = TX_OUTPUT_DECOYS + 1 = 10: guarantees a full ring of 9 decoys
+// + 1 real is always achievable using only prior ZC outputs of the same
+// asset, independent of the BDX pool.
+inline constexpr size_t MIN_ASSET_EMISSION_OUTPUTS = TX_OUTPUT_DECOYS + 1; // 10
 inline constexpr uint64_t PUBLIC_ADDRESS_TEXTBLOB_VER          = 0;
 
 inline constexpr uint64_t FINAL_SUBSIDY_PER_MINUTE             = 500000000; // 3 * pow(10, 7)
