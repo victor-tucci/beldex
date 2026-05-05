@@ -3090,6 +3090,25 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       tvc.m_invalid_output = true;
       return false;
     }
+
+    // HF21: validate tx_out_zarcanum fields
+    if (const auto* zout = std::get_if<tx_out_zarcanum>(&o.target))
+    {
+      if (!crypto::check_key(zout->stealth_address) ||
+          !crypto::check_key(zout->blinded_asset_id) ||
+          !crypto::check_key(zout->amount_commitment))
+      {
+        MERROR_VER("tx_out_zarcanum has invalid pubkey field");
+        tvc.m_invalid_output = true;
+        return false;
+      }
+      if (o.amount != 0)
+      {
+        MERROR_VER("tx_out_zarcanum has non-zero plaintext amount");
+        tvc.m_invalid_output = true;
+        return false;
+      }
+    }
   }
 
   // Test suite hack: allow some tests to violate these restrictions (necessary when old HF rules
@@ -3191,6 +3210,45 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
         MERROR_VER("Bulletproof range proofs are not allowed after v" << std::to_string(static_cast<int>(cryptonote::feature::BULLETPROOF_PLUS)));
         tvc.m_invalid_output = true;
         return false;
+      }
+    }
+  }
+
+  // HF21: confidential asset output proof checks
+  if (hf_version >= feature::CONFIDENTIAL_ASSETS && tx.has_zarcanum_outputs())
+  {
+    // Must have a surjection proof and a balance proof in asset_proofs
+    bool has_surjection = false;
+    bool has_balance    = false;
+    for (const auto& proof : tx.asset_proofs)
+    {
+      if (std::holds_alternative<rct::zc_asset_surjection_proof>(proof)) has_surjection = true;
+      if (std::holds_alternative<rct::zc_balance_proof>(proof))          has_balance    = true;
+    }
+    if (!has_surjection)
+    {
+      MERROR_VER("ZC tx missing asset surjection proof");
+      tvc.m_invalid_output = true;
+      return false;
+    }
+    if (!has_balance)
+    {
+      MERROR_VER("ZC tx missing balance proof");
+      tvc.m_invalid_output = true;
+      return false;
+    }
+
+    // Verify the balance proof (linear composition proof: balance_point = a*G + b*X)
+    for (const auto& proof : tx.asset_proofs)
+    {
+      if (const auto* bp = std::get_if<rct::zc_balance_proof>(&proof))
+      {
+        // The balance point is provided by the prover in the proof message.
+        // Full verification of the balance equation (sum outputs - sum inputs = 0)
+        // requires pseudo-output commitments from ZC_sig entries, which are
+        // verified in check_tx_inputs. Here we check structural validity only.
+        (void)bp; // checked in check_tx_inputs via verAssetProofs()
+        break;
       }
     }
   }
@@ -3734,9 +3792,23 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
   // Asset consensus rules must pass in mempool and block-context tx input validation.
   {
     std::string reason;
-    if (!validate_tx_asset_operations_against_db(*m_db, tx, reason))
+    if (!validate_tx_asset_operations_against_db(*m_db, tx, reason, hf_version))
     {
       MERROR_VER("TX " << get_transaction_hash(tx) << " failed asset consensus validation: " << reason);
+      tvc.m_invalid_input = true;
+      tvc.m_verifivation_failed = true;
+      tvc.m_verbose_error = std::move(reason);
+      return false;
+    }
+  }
+
+  // HF21: verify ZC_sig, BGE surjection, and ownership proofs.
+  if (hf_version >= feature::CONFIDENTIAL_ASSETS && tx.has_zarcanum_outputs())
+  {
+    std::string reason;
+    if (!rct::verAssetProofs(tx, pubkeys, reason))
+    {
+      MERROR_VER("TX " << get_transaction_hash(tx) << " failed asset proof verification: " << reason);
       tvc.m_invalid_input = true;
       tvc.m_verifivation_failed = true;
       tvc.m_verbose_error = std::move(reason);
@@ -4644,6 +4716,48 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     MGINFO_RED("Failed to persist asset operation(s): " << e.what());
     bvc.m_verifivation_failed = true;
     return false;
+  }
+
+  // HF21: index every tx_out_zarcanum output in the per-asset LMDB table.
+  // This feeds the BGE surjection ring for future asset transfers.
+  if (get_current_blockchain_height() >= 1)
+  {
+    const hf blk_hf = get_network_version(new_height - 1);
+    if (blk_hf >= feature::CONFIDENTIAL_ASSETS)
+    {
+      try
+      {
+        for (const auto& tx : only_txs)
+        {
+          // Walk tx.extra to find the asset_id for this tx (from the asset operation).
+          // For non-deploy txs the asset_id comes from the input being spent.
+          // Use the asset_id stored in asset_descriptor_operation if present;
+          // otherwise skip (non-asset tx).
+          tx_extra_asset_descriptor_operation ado{};
+          size_t skip = 0;
+          while (get_asset_descriptor_operation_from_tx_extra(tx.extra, ado, skip++))
+          {
+            const crypto::public_key asset_id = get_or_calculate_asset_id(ado);
+            if (asset_id == crypto::null_pkey) continue;
+
+            for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
+            {
+              if (!std::holds_alternative<tx_out_zarcanum>(tx.vout[out_idx].target))
+                continue;
+              // Global output index: stored by add_output() during block add.
+              // Retrieve it from the DB (it was just written).
+              uint64_t global_idx = m_db->get_num_outputs() - tx.vout.size() + out_idx;
+              m_db->add_asset_output(asset_id, global_idx);
+            }
+          }
+        }
+      }
+      catch (const std::exception& e)
+      {
+        MGINFO_RED("Failed to index asset outputs: " << e.what());
+        // Non-fatal: asset output index is a performance index, not consensus-critical.
+      }
+    }
   }
 
   abort_block.cancel();

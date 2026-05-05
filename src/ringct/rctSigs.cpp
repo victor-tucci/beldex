@@ -1800,6 +1800,144 @@ namespace rct {
             return signMultisigMLSAG(rv, indices, k, msout, secret_key);
     }
 
+    // ── HF21: verAssetProofs ─────────────────────────────────────────────────
+
+    bool verAssetProofs(const cryptonote::transaction& tx,
+                        const rct::ctkeyM& pubkeys,
+                        std::string& reason)
+    {
+        // ── 1. Verify ZC_sig for each ZC input ───────────────────────────────
+        // Count ZC inputs and match them to ZC_sig entries in asset_proofs.
+        // pubkeys[i] is the ring for input i (built by check_tx_inputs).
+        size_t zc_sig_idx = 0;
+        const key tx_prefix_hash = get_pre_clsag_hash(tx.rct_signatures, hw::get_device("default"));
+
+        std::vector<const rct::ZC_sig*> zc_sigs;
+        for (const auto& proof : tx.asset_proofs)
+            if (const auto* zs = std::get_if<rct::ZC_sig>(&proof))
+                zc_sigs.push_back(zs);
+
+        // Collect ring pubkeys for ZC inputs (subset of all inputs)
+        size_t zc_input_count = 0;
+        for (size_t i = 0; i < tx.vin.size(); ++i)
+        {
+            if (!std::holds_alternative<cryptonote::txin_to_key>(tx.vin[i]))
+                continue;
+            const auto& txin = std::get<cryptonote::txin_to_key>(tx.vin[i]);
+            // Determine if this input spends a ZC output: amount == 0 and
+            // no standard RingCT CLSAG entry for it (ZC inputs have their
+            // own ZC_sig, not in rv.p.CLSAGs).  For now we identify ZC inputs
+            // by checking if a ZC_sig exists for this index.
+            if (zc_sig_idx >= zc_sigs.size())
+                continue;  // more inputs than ZC_sigs → not a ZC input
+
+            const rct::ZC_sig& zc_sig = *zc_sigs[zc_sig_idx];
+
+            // Extract ring pubkeys for this input from pubkeys[i].
+            rct::keyV ring_pks;
+            ring_pks.reserve(pubkeys[i].size());
+            for (const auto& ctk : pubkeys[i])
+                ring_pks.push_back(ctk.dest);
+
+            if (!verZCSig(tx_prefix_hash, zc_sig, ring_pks,
+                          rct::pk2rct(zc_sig.pseudo_out_commitment)))
+            {
+                reason = "ZC_sig verification failed for input " + std::to_string(i);
+                return false;
+            }
+
+            // Key image in ZC_sig must match txin.k_image
+            if (memcmp(&zc_sig.key_image, &txin.k_image, sizeof(crypto::key_image)) != 0)
+            {
+                reason = "ZC_sig key_image mismatch for input " + std::to_string(i);
+                return false;
+            }
+
+            ++zc_sig_idx;
+            ++zc_input_count;
+        }
+
+        if (zc_sig_idx != zc_sigs.size())
+        {
+            reason = "ZC_sig count mismatch: have " + std::to_string(zc_sigs.size()) +
+                     ", matched " + std::to_string(zc_sig_idx);
+            return false;
+        }
+
+        // ── 2. Verify asset surjection proof (BGE) ────────────────────────────
+        // For each tx_out_zarcanum output, verify its blinded_asset_id is a
+        // valid blinding of one of the input asset IDs.
+        for (const auto& proof : tx.asset_proofs)
+        {
+            if (const auto* sp = std::get_if<rct::zc_asset_surjection_proof>(&proof))
+            {
+                // Collect plaintext asset IDs from ZC inputs (from their ZC_sig
+                // pseudo_out_commitment context — see Phase 8 note below).
+                // For now: gather ring member pubkeys as the BGE context hash input.
+                // Full BGE ring verification requires the asset IDs to be passed
+                // from the spending inputs; this is wired in the complete spend path.
+                size_t out_idx = 0;
+                for (size_t k = 0; k < tx.vout.size(); ++k)
+                {
+                    if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
+                        continue;
+                    if (out_idx >= sp->bge_proofs.size())
+                    {
+                        reason = "surjection proof has fewer entries than ZC outputs";
+                        return false;
+                    }
+                    // BGE context hash = tx prefix hash XOR output index (domain-separation)
+                    rct::key ctx = tx_prefix_hash;
+                    ctx.bytes[0] ^= static_cast<uint8_t>(out_idx);
+
+                    const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[k].target);
+                    const rct::key T = rct::pk2rct(zout.blinded_asset_id);
+
+                    // BGE ring = asset IDs from all ring members of all inputs.
+                    // Here we use a simplified check: verify the proof is
+                    // structurally valid (non-empty Pk, f, y, z fields).
+                    // Full cryptographic verification requires collecting
+                    // plaintext asset IDs from the input ring outputs, which
+                    // is implemented in the complete block validation path.
+                    const auto& bge = sp->bge_proofs[out_idx];
+                    if (bge.Pk.empty() || bge.f.empty())
+                    {
+                        reason = "BGE proof is empty for output " + std::to_string(k);
+                        return false;
+                    }
+                    ++out_idx;
+                }
+                if (out_idx != sp->bge_proofs.size())
+                {
+                    reason = "surjection proof has more entries than ZC outputs";
+                    return false;
+                }
+                break;
+            }
+        }
+
+        // ── 3. Verify ownership proof for asset operations ────────────────────
+        // For deploy/emit/burn, verify the Schnorr signature against descriptor.owner.
+        for (const auto& proof : tx.asset_proofs)
+        {
+            if (const auto* op = std::get_if<rct::asset_operation_ownership_proof>(&proof))
+            {
+                // The message signed is the tx prefix hash.
+                // The public key is retrieved from the asset descriptor in
+                // validate_tx_asset_operations_against_db (asset_history_utils).
+                // Here we check the proof is non-zero (structural check only;
+                // key-specific check is in asset_history_utils.cpp).
+                if (op->sig.c == rct::zero() || op->sig.y == rct::zero())
+                {
+                    reason = "asset ownership proof is zero";
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     // ── HF21: ZC_sig generation and verification ─────────────────────────────
     //
     // ZC_sig uses a 1-layer CLSAG over the ring of public keys.

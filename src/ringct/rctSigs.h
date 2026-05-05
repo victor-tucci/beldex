@@ -47,6 +47,7 @@ extern "C" {
 
 #include "rctTypes.h"
 #include "rctOps.h"
+#include "cryptonote_basic/cryptonote_basic.h"  // transaction, tx_out_zarcanum (HF21)
 
 //Define this flag when debugging to get additional info on the console
 #ifdef DBG
@@ -77,6 +78,14 @@ namespace rct {
     clsag CLSAG_Gen(const key &message, const keyV & P, const key & p, const keyV & C, const key & z, const keyV & C_nonzero, const key & C_offset, const unsigned int l);
     clsag proveRctCLSAGSimple(const key &, const ctkeyV &, const ctkey &, const key &, const key &, const multisig_kLRki *, key *, key *, unsigned int, hw::device &);
     bool verRctCLSAGSimple(const key &, const clsag &, const ctkeyV &, const key &);
+
+    // HF21: verify all asset proofs embedded in a transaction.
+    // Called from Blockchain::check_tx_inputs() after the RCT proof checks.
+    // Returns true and sets reason="" on success; false with a human-readable
+    // reason on any failure.
+    bool verAssetProofs(const cryptonote::transaction& tx,
+                        const rct::ctkeyM& pubkeys,   // ring pubkeys per input
+                        std::string& reason);
 
     // HF21: ZC_sig — 1-layer CLSAG for spending a tx_out_zarcanum.
     // Ring is a mix of BDX and ZC pubkeys from output_amounts[0].
