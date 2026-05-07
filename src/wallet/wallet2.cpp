@@ -6239,6 +6239,22 @@ uint64_t wallet2::unlocked_balance_all(bool strict, uint64_t *blocks_to_unlock, 
   return r;
 }
 //----------------------------------------------------------------------------------------------------
+// HF21: returns total unspent balance grouped by asset_id for the given account
+std::unordered_map<crypto::public_key, uint64_t>
+wallet2::asset_balances(uint32_t subaddr_index_major, bool strict) const
+{
+  std::unordered_map<crypto::public_key, uint64_t> result;
+  for (const auto& td : m_transfers)
+  {
+    if (td.m_spent)    continue;
+    if (!td.is_zarcanum()) continue;
+    if (td.m_subaddr_index.major != subaddr_index_major) continue;
+    if (strict && !is_transfer_unlocked(td)) continue;
+    result[td.m_asset_id] += td.m_amount;
+  }
+  return result;
+}
+//----------------------------------------------------------------------------------------------------
 void wallet2::get_transfers(wallet2::transfer_container& incoming_transfers) const
 {
   incoming_transfers = m_transfers;

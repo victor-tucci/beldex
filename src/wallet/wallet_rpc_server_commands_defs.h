@@ -2598,7 +2598,34 @@ This command is only required if the open wallet is one of the owners of a BNS r
       KV_MAP_SERIALIZABLE
     };
   };
-  
+
+  // HF21: Deploy a new confidential asset on-chain.
+  struct DEPLOY_NEW_ASSET : RESTRICTED
+  {
+    static constexpr auto names() { return NAMES("deploy_new_asset"); }
+    static constexpr const char* description =
+        "Deploy a new confidential asset. Pass the path to a JSON descriptor file containing: "
+        "ticker, full_name, total_max_supply, current_supply, decimal_point, hidden_supply, meta_info.";
+
+    struct request
+    {
+      std::string json_filename;   // Path to the asset JSON descriptor file
+      uint32_t    account_index  = 0;
+      uint32_t    priority       = 0;
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct response
+    {
+      std::string asset_id;        // Hex-encoded asset public key (derived from descriptor)
+      std::string tx_hash;         // Transaction hash of the deploy tx
+      std::string ticker;          // Confirmed ticker from descriptor
+
+      KV_MAP_SERIALIZABLE
+    };
+  };
+
   /// List of all supported rpc command structs to allow compile-time enumeration of all supported
   /// RPC types.  Every type added above that has an RPC endpoint needs to be added here, and needs
   /// a core_rpc_server::invoke() overload that takes a <TYPE>::request and returns a
@@ -2703,7 +2730,8 @@ This command is only required if the open wallet is one of the owners of a BNS r
     BNS_ADD_KNOWN_NAMES,
     BNS_DECRYPT_VALUE,
     BNS_ENCRYPT_VALUE,
-    COIN_BURN
+    COIN_BURN,
+    DEPLOY_NEW_ASSET
   >;
 
 }
