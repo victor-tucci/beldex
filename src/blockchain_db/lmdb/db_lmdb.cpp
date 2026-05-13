@@ -6547,7 +6547,7 @@ uint64_t BlockchainLMDB::get_asset_output_count(const crypto::public_key& asset_
     rc = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_NEXT);
   }
 
-  TXN_POSTFIX_RDONLY();
+  // auto_txn destructor releases the read transaction
   return count;
 }
 
@@ -6569,7 +6569,7 @@ uint64_t BlockchainLMDB::get_asset_output_global_index(const crypto::public_key&
     throw0(DB_ERROR("asset output value size mismatch"));
 
   uint64_t result = *static_cast<const uint64_t*>(v.mv_data);
-  TXN_POSTFIX_RDONLY();
+  // auto_txn destructor releases the read transaction
   return result;
 }
 

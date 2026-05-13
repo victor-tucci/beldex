@@ -17,6 +17,9 @@
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 
+// Include rctTypes.h FIRST so rct::key and crypto::*_proof_s are both defined
+// before asset_proofs.h body is processed (breaks the include-guard deadlock).
+#include "ringct/rctTypes.h"
 #include "crypto/asset_proofs.h"
 
 #include <cassert>

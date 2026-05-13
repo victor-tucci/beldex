@@ -21,7 +21,8 @@
 
 #include <cstdint>
 #include <vector>
-#include "ringct/rctTypes.h"  // rct::key, rct::keyV
+#include "ringct/rctTypes.h"       // rct::key, rct::keyV
+#include "serialization/serialization.h" // BEGIN_SERIALIZE_OBJECT, FIELD
 
 // ---------------------------------------------------------------------------
 // Confidential-asset zero-knowledge proof primitives (HF21+)
@@ -44,6 +45,11 @@ struct schnorr_sig_s
 {
     rct::key y;   // response scalar:  y = r - c*s  (mod l)
     rct::key c;   // challenge scalar: c = H(msg || P || R)
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(y)
+      FIELD(c)
+    END_SERIALIZE()
 };
 
 // Generate a Schnorr proof over G:  P = s*G
@@ -81,6 +87,12 @@ struct linear_composition_proof_s
     rct::key y0;  // response for G component: y0 = r0 - c*a
     rct::key y1;  // response for X component: y1 = r1 - c*b
     rct::key c;   // challenge: c = H(msg || P || R)
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(y0)
+      FIELD(y1)
+      FIELD(c)
+    END_SERIALIZE()
 };
 
 bool generate_linear_composition_proof(const rct::key&              msg,
@@ -113,6 +125,15 @@ struct BGE_proof_s
     rct::keyV f;           // polynomial response scalars, size = m * (n-1), n=4
     rct::key  y;           // blinding response for A+xB check
     rct::key  z;           // blinding response for ring check
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(A)
+      FIELD(B)
+      FIELD(Pk)
+      FIELD(f)
+      FIELD(y)
+      FIELD(z)
+    END_SERIALIZE()
 };
 
 // Generate a BGE proof.

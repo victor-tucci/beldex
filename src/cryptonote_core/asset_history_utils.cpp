@@ -308,6 +308,8 @@ bool validate_tx_asset_operations_against_db(
   size_t op_index = 0;
   tx_extra_asset_descriptor_operation op{};
   std::unordered_map<crypto::public_key, asset_consensus_state> states;
+  bool saw_asset_op = false;
+  crypto::public_key tx_asset_id = crypto::null_pkey;
 
   // Count zarcanum outputs once — checked per emit/register op below.
   const size_t zc_out_count = (hf_version >= feature::CONFIDENTIAL_ASSETS)
@@ -316,6 +318,8 @@ bool validate_tx_asset_operations_against_db(
 
   while (get_asset_descriptor_operation_from_tx_extra(tx.extra, op, op_index++))
   {
+    saw_asset_op = true;
+
     if (tx.type != txtype::deploy_new_asset)
     {
       reason = "asset descriptor operation is only allowed in deploy_new_asset transactions";
@@ -355,6 +359,14 @@ bool validate_tx_asset_operations_against_db(
     }
 
     const crypto::public_key asset_id = get_or_calculate_asset_id(op);
+    if (tx_asset_id == crypto::null_pkey)
+      tx_asset_id = asset_id;
+    else if (tx_asset_id != asset_id)
+    {
+      reason = "asset descriptor operations in a single transaction must reference exactly one asset_id";
+      return false;
+    }
+
     auto [it, inserted] = states.try_emplace(asset_id);
     if (inserted && !load_asset_state_from_history(db, asset_id, it->second, reason))
       return false;
@@ -364,6 +376,12 @@ bool validate_tx_asset_operations_against_db(
       reason = "asset state transition rejected: " + op_reason;
       return false;
     }
+  }
+
+  if (tx.type == txtype::deploy_new_asset && !saw_asset_op)
+  {
+    reason = "deploy_new_asset transaction must include at least one asset descriptor operation";
+    return false;
   }
 
   return true;

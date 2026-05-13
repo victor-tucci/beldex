@@ -36,33 +36,6 @@
 using namespace crypto;
 using namespace std;
 
-// ── X generator (asset ID blinding base, HF21+) ──────────────────────────
-// X = 8 * hash_to_curve("beldex_asset_id_blinding_generator")
-// Computed once at first use; same construction as ge_p3_H.
-static ge_p3 s_ge_p3_X;
-static std::once_flag s_ge_p3_X_flag;
-
-static void init_ge_p3_X() {
-    static const char domain[] = "beldex_asset_id_blinding_generator";
-    uint8_t h[32];
-    keccak(reinterpret_cast<const uint8_t*>(domain), sizeof(domain) - 1, h, 32);
-    ge_p2 p2;
-    ge_fromfe_frombytes_vartime(&p2, h);
-    // Lift to p1p1, multiply by 8 to clear cofactor, store as p3
-    ge_p1p1 p1;
-    ge_p2_dbl(&p1, &p2);  // 2*P
-    ge_p1p1_to_p2(&p2, &p1);
-    ge_p2_dbl(&p1, &p2);  // 4*P
-    ge_p1p1_to_p2(&p2, &p1);
-    ge_p2_dbl(&p1, &p2);  // 8*P
-    ge_p1p1_to_p3(&s_ge_p3_X, &p1);
-}
-
-const ge_p3& rct_get_ge_p3_X() {
-    std::call_once(s_ge_p3_X_flag, init_ge_p3_X);
-    return s_ge_p3_X;
-}
-
 #undef BELDEX_DEFAULT_LOG_CATEGORY
 #define BELDEX_DEFAULT_LOG_CATEGORY "ringct"
 
@@ -247,6 +220,32 @@ static const zero_commitment zero_commitments[] = {
 
 namespace rct {
 
+    // ── X generator (asset ID blinding base, HF21+) ──────────────────────────
+    // X = 8 * hash_to_curve("beldex_asset_id_blinding_generator")
+    // Computed once at first use; same construction as ge_p3_H.
+    static ge_p3 s_ge_p3_X;
+    static std::once_flag s_ge_p3_X_flag;
+
+    static void init_ge_p3_X() {
+        static const char domain[] = "beldex_asset_id_blinding_generator";
+        uint8_t h[32];
+        keccak(reinterpret_cast<const uint8_t*>(domain), sizeof(domain) - 1, h, 32);
+        ge_p2 p2;
+        ge_fromfe_frombytes_vartime(&p2, h);
+        // Lift to p1p1, multiply by 8 to clear cofactor, store as p3
+        ge_p1p1 p1;
+        ge_p2_dbl(&p1, &p2);  // 2*P
+        ge_p1p1_to_p2(&p2, &p1);
+        ge_p2_dbl(&p1, &p2);  // 4*P
+        ge_p1p1_to_p2(&p2, &p1);
+        ge_p2_dbl(&p1, &p2);  // 8*P
+        ge_p1p1_to_p3(&s_ge_p3_X, &p1);
+    }
+
+    const ge_p3& rct_get_ge_p3_X() {
+        std::call_once(s_ge_p3_X_flag, init_ge_p3_X);
+        return s_ge_p3_X;
+    }
     //Various key initialization functions
 
     //initializes a key matrix;

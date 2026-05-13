@@ -81,6 +81,7 @@ struct mdb_txn_cursors
   MDB_cursor *output_blacklist;
   MDB_cursor *properties;
   MDB_cursor *asset_histories;
+  MDB_cursor *asset_outputs;   // HF21: per-asset output index
 };
 
 struct mdb_rflags
@@ -109,6 +110,7 @@ struct mdb_rflags
   bool m_rf_master_node_proofs;
   bool m_rf_properties;
   bool m_rf_asset_histories;
+  bool m_rf_asset_outputs;    // HF21
 };
 
 struct mdb_threadinfo

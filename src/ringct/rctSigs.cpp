@@ -1200,6 +1200,7 @@ namespace rct {
     //RCT simple    
     //for post-rct only
     rctSig genRctSimple(const key &message, const ctkeyV & inSk, const keyV & destinations, const std::vector<xmr_amount> &inamounts, const std::vector<xmr_amount> &outamounts, xmr_amount txnFee, const ctkeyM & mixRing, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, const std::vector<unsigned int> & index, ctkeyV &outSk, const RCTConfig &rct_config, hw::device &hwdev) {
+        LOG_PRINT_L0("genRctSimple called with " << inSk.size() << " inputs, " << amount_keys.size() << " amount_keys, " << destinations.size() << " outputs, mixin " << mixRing.size() << ", index[0] " << (index.empty() ? 0 : index[0]) << ", kLRki " << (kLRki ? kLRki->size() : 0) << ", msout " << (msout ? 1 : 0));
         const bool bulletproof_or_plus = rct_config.range_proof_type > RangeProofType::Borromean;
         CHECK_AND_ASSERT_THROW_MES(inamounts.size() > 0, "Empty inamounts");
         CHECK_AND_ASSERT_THROW_MES(inamounts.size() == inSk.size(), "Different number of inamounts/inSk");
@@ -1840,7 +1841,7 @@ namespace rct {
                 ring_pks.push_back(ctk.dest);
 
             if (!verZCSig(tx_prefix_hash, zc_sig, ring_pks,
-                          rct::pk2rct(zc_sig.pseudo_out_commitment)))
+                          zc_sig.pseudo_out_commitment))
             {
                 reason = "ZC_sig verification failed for input " + std::to_string(i);
                 return false;

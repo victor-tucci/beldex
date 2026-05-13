@@ -124,6 +124,8 @@ namespace rct {
     key scalarmultH(const key & a);
     // Computes a*X where X = 8*hash_to_curve("beldex_asset_id_blinding_generator") (HF21+)
     key scalarmultX(const key& a);
+    // Returns a const reference to the X generator as a ge_p3 (for use in rctOps.cpp internals)
+    const ge_p3& rct_get_ge_p3_X();
     // Returns the X generator as a rct::key (byte-encoded point)
     key getX();
     // Commitment for a confidential asset output: C = amount*asset_id + mask*G

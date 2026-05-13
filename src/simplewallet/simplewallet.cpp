@@ -49,6 +49,7 @@
 #include <sstream>
 #include <fstream>
 #include <limits>
+#include <unordered_map>
 #include <ctype.h>
 #include <string_view>
 #include <regex>
@@ -211,6 +212,158 @@ namespace
       { error = sw::tr("owner must be a hex-encoded public key"); return false; }
     }
     return validate_asset_descriptor_for_deploy(descriptor, error);
+  }
+
+  std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true)
+  {
+    std::string s = std::to_string(amount);
+    if (s.size() < decimal_point + 1)
+      s.insert(0, decimal_point + 1 - s.size(), '0');
+
+    if (decimal_point > 0)
+      s.insert(s.size() - decimal_point, ".");
+
+    if (strip_zeros && decimal_point > 0)
+    {
+      while (!s.empty() && s.back() == '0')
+        s.pop_back();
+      if (!s.empty() && s.back() == '.')
+        s.pop_back();
+    }
+
+    return s;
+  }
+
+  struct asset_display_info
+  {
+    uint8_t decimal_point = 0;
+    std::string ticker;
+  };
+
+  std::mutex asset_display_cache_mutex;
+  std::unordered_map<crypto::public_key, std::optional<asset_display_info>> asset_display_cache;
+
+  std::optional<asset_display_info> get_asset_display_info(tools::wallet2& wallet, const crypto::public_key& asset_id)
+  {
+    {
+      std::lock_guard lock{asset_display_cache_mutex};
+      auto it = asset_display_cache.find(asset_id);
+      if (it != asset_display_cache.end())
+        return it->second;
+    }
+
+    std::optional<asset_display_info> result;
+    try
+    {
+      const std::string asset_hex = tools::type_to_hex(asset_id);
+      const auto res = wallet.json_rpc("get_asset_info", {{"asset_id", asset_hex}});
+
+      if (!res.contains("decimal_point") || !res["decimal_point"].is_number_unsigned())
+      {
+        std::lock_guard lock{asset_display_cache_mutex};
+        asset_display_cache[asset_id] = std::nullopt;
+        return std::nullopt;
+      }
+
+      asset_display_info info{};
+      info.decimal_point = static_cast<uint8_t>(res["decimal_point"].get<unsigned>());
+      if (res.contains("ticker") && res["ticker"].is_string())
+        info.ticker = res["ticker"].get<std::string>();
+      result = std::move(info);
+    }
+    catch (const std::exception&)
+    {
+      result = std::nullopt;
+    }
+
+    {
+      std::lock_guard lock{asset_display_cache_mutex};
+      asset_display_cache[asset_id] = result;
+    }
+    return result;
+  }
+
+  struct received_asset_info
+  {
+    crypto::public_key asset_id = crypto::null_pkey;
+    uint8_t decimal_point = 0;
+    std::string ticker;
+  };
+
+  std::optional<received_asset_info> find_received_asset_info(
+      tools::wallet2& wallet,
+      const crypto::hash& txid,
+      const std::optional<cryptonote::subaddress_index>& subaddr_index,
+      uint64_t amount,
+      const std::optional<uint64_t>& unlock_time)
+  {
+    for (size_t i = 0; i < wallet.get_num_transfer_details(); ++i)
+    {
+      const auto& td = wallet.get_transfer_details(i);
+      if (td.m_txid != txid) continue;
+      if (subaddr_index && td.m_subaddr_index != *subaddr_index) continue;
+      if (td.m_amount != amount) continue;
+      if (unlock_time && td.m_tx.unlock_time != *unlock_time) continue;
+      if (td.m_asset_id == crypto::null_pkey) continue;
+
+      received_asset_info result{};
+      result.asset_id = td.m_asset_id;
+      if (const auto asset_info = get_asset_display_info(wallet, td.m_asset_id))
+      {
+        result.decimal_point = asset_info->decimal_point;
+        result.ticker = asset_info->ticker;
+      }
+      return result;
+    }
+
+    return std::nullopt;
+  }
+
+  std::string format_received_amount(
+      tools::wallet2& wallet,
+      const crypto::hash& txid,
+      const std::optional<cryptonote::subaddress_index>& subaddr_index,
+      uint64_t amount,
+      const std::optional<uint64_t>& unlock_time,
+      bool include_asset_id = false)
+  {
+    if (const auto asset_info = find_received_asset_info(wallet, txid, subaddr_index, amount, unlock_time))
+    {
+      std::string result = print_asset_amount(amount, asset_info->decimal_point);
+      if (!asset_info->ticker.empty())
+        result += " " + asset_info->ticker;
+      if (include_asset_id)
+        result += " [" + tools::type_to_hex(asset_info->asset_id) + "]";
+      return result;
+    }
+
+    return print_money(amount);
+  }
+
+  std::string format_amount_with_asset_id(
+      tools::wallet2& wallet,
+      uint64_t amount,
+      const std::string& asset_id_hex,
+      bool include_asset_id = false)
+  {
+    if (asset_id_hex.empty())
+      return print_money(amount);
+
+    crypto::public_key asset_id{};
+    if (!tools::hex_to_type(asset_id_hex, asset_id))
+      return std::to_string(amount) + " [" + asset_id_hex + "]";
+
+    if (const auto asset_info = get_asset_display_info(wallet, asset_id))
+    {
+      std::string result = print_asset_amount(amount, asset_info->decimal_point);
+      if (!asset_info->ticker.empty())
+        result += " " + asset_info->ticker;
+      if (include_asset_id)
+        result += " [" + asset_id_hex + "]";
+      return result;
+    }
+
+    return std::to_string(amount) + (include_asset_id ? " [" + asset_id_hex + "]" : "");
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -4924,9 +5077,9 @@ void simple_wallet::on_money_received(uint64_t height, const crypto::hash &txid,
       m << tr("Flash, ");
     else
       m << tr("Height ") << height << ", ";
-    m << tr("txid ") << txid << ", " <<
-      print_money(amount) << ", " <<
-      tr("idx ") << subaddr_index;
+    m << tr("txid ") << txid << ", ";
+    m << format_received_amount(*m_wallet, txid, subaddr_index, amount, unlock_time, true) << ", ";
+    m << tr("idx ") << subaddr_index;
   }
 
   const uint64_t warn_height = m_wallet->nettype() == network_type::TESTNET ? 1000000 : m_wallet->nettype() == network_type::DEVNET ? 0 : 1650000;
@@ -4970,7 +5123,14 @@ void simple_wallet::on_unconfirmed_money_received(uint64_t height, const crypto:
 {
   if (m_locked)
     return;
-  // Not implemented in CLI wallet
+  message_writer(epee::console_color_green, false) << "\r" <<
+    tr("Pending, txid ") << txid << ", " <<
+    format_received_amount(*m_wallet, txid, subaddr_index, amount, std::nullopt, true) << ", " <<
+    tr("idx ") << subaddr_index;
+  if (m_auto_refresh_refreshing)
+    m_cmd_binder.print_prompt();
+  else
+    m_refresh_progress_reporter.update(height, true,m_wallet->nettype());
 }
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index)
@@ -5232,8 +5392,16 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
       success_msg_writer() << tr("Confidential asset balances:");
       for (const auto& [asset_id, amount] : asset_bals)
       {
-        success_msg_writer() << "  " << tools::type_to_hex(asset_id)
-                             << "  balance: " << amount;
+        const std::string asset_hex = tools::type_to_hex(asset_id);
+        const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+        const std::string formatted_amount = asset_info
+            ? print_asset_amount(amount, asset_info->decimal_point)
+            : std::to_string(amount);
+
+        success_msg_writer() << "  " << asset_hex
+                             << (asset_info && !asset_info->ticker.empty() ? " (" + asset_info->ticker + ")" : "")
+                             << "  balance: " << formatted_amount
+                             << (asset_info ? fmt::format(" [dp={}]", asset_info->decimal_point) : " [atomic units]");
       }
     }
   }
@@ -5383,7 +5551,7 @@ bool simple_wallet::show_incoming_transfers(const std::vector<std::string>& args
         extra_string += std::string("\n    ") + tr("Used at heights: ") + line.first + "\n    " + line.second;
       }
       message_writer(td.m_spent ? epee::console_color_magenta : epee::console_color_green, false) << boost::format("%21s%8s%12s%8s%16u%68s%8u%s") %
-                                                                                                         print_money(td.amount()) %
+                                                                                                         format_received_amount(*m_wallet, td.m_txid, td.m_subaddr_index, td.amount(), td.m_tx.unlock_time) %
                                                                                                          (td.m_spent ? tr("T") : tr("F")) %
                                                                                                          (m_wallet->frozen(td) ? tr("[frozen]") : m_wallet->is_transfer_unlocked(td) ? tr("unlocked")
                                                                                                                                                                                      : tr("locked")) %
@@ -5458,7 +5626,7 @@ bool simple_wallet::show_payments(const std::vector<std::string> &args)
           payment_id %
           pd.m_tx_hash %
           pd.m_block_height %
-          print_money(pd.m_amount) %
+          format_received_amount(*m_wallet, pd.m_tx_hash, pd.m_subaddr_index, pd.m_amount, pd.m_unlock_time) %
           pd.m_unlock_time %
           pd.m_subaddr_index.minor;
       }
@@ -7715,9 +7883,27 @@ bool simple_wallet::deploy_new_asset(const std::vector<std::string>& args_)
 
     const crypto::public_key asset_id = cryptonote::get_or_calculate_asset_id(ado);
 
+    success_msg_writer(true) << tr("New asset deployment details:\n")
+                              << tr("  Asset ID: ") << tools::type_to_hex(asset_id) << "\n"
+                              << tr("  Ticker:   ") << descriptor.ticker << "\n"
+                              << tr("  Full name:") << descriptor.full_name << "\n"
+                              << tr("  Initial supply: ") << descriptor.current_supply << "\n"
+                              << tr("  Max supply:     ") << descriptor.total_max_supply;
+
+    // Constructing destinations
+    std::vector<cryptonote::tx_destination_entry> dsts;
+    
+    cryptonote::tx_destination_entry de;
+    de.addr = m_wallet->get_subaddress({m_current_subaddress_account, 0});
+    de.amount = descriptor.current_supply;
+    de.asset_id = asset_id;
+    de.is_subaddress = (m_current_subaddress_account != 0);
+
+    dsts.push_back(de);
+
     // Use create_asset_deploy_tx which auto-pads to MIN_ASSET_EMISSION_OUTPUTS
     auto ptx_vector = m_wallet->create_asset_deploy_tx(
-        {}, asset_id, cryptonote::TX_OUTPUT_DECOYS, priority, extra,
+        dsts, asset_id, cryptonote::TX_OUTPUT_DECOYS, priority, extra,
         m_current_subaddress_account, subaddr_indices);
 
     if (ptx_vector.empty())
@@ -8755,7 +8941,7 @@ bool simple_wallet::check_tx_key(const std::vector<std::string> &args_)
 
     if (received > 0)
     {
-      success_msg_writer() << get_account_address_as_str(m_wallet->nettype(), info.is_subaddress, info.address) << " " << tr("received") << " " << print_money(received) << " " << tr("in txid") << " " << txid;
+      success_msg_writer() << get_account_address_as_str(m_wallet->nettype(), info.is_subaddress, info.address) << " " << tr("received") << " " << format_received_amount(*m_wallet, txid, std::nullopt, received, std::nullopt, true) << " " << tr("in txid") << " " << txid;
       if (in_pool)
       {
         success_msg_writer() << tr("WARNING: this transaction is not yet included in the blockchain!");
@@ -8828,7 +9014,7 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
       success_msg_writer(true) << tr("Good signature");
       if (received > 0)
       {
-        success_msg_writer() << get_account_address_as_str(m_wallet->nettype(), info.is_subaddress, info.address) << " " << tr("received") << " " << print_money(received) << " " << tr("in txid") << " " << txid;
+        success_msg_writer() << get_account_address_as_str(m_wallet->nettype(), info.is_subaddress, info.address) << " " << tr("received") << " " << format_received_amount(*m_wallet, txid, std::nullopt, received, std::nullopt, true) << " " << tr("in txid") << " " << txid;
         if (in_pool)
         {
           success_msg_writer() << tr("WARNING: this transaction is not yet included in the blockchain!");
@@ -9166,6 +9352,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
 
   for (const auto& transfer : all_transfers)
   {
+    LOG_PRINT_L2("transfer: " << transfer.hash << ", height: " << transfer.height << ", type: " << transfer.type << ", amount: " << transfer.amount << ", fee: " << transfer.fee);
 
     if (transfer.confirmed)
     {
@@ -9206,7 +9393,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
         else
           destinations += output.address;
 
-        destinations += ":" + print_money(output.amount);
+        destinations += ":" + format_amount_with_asset_id(*m_wallet, output.amount, output.asset_id);
       }
     }
 
@@ -9221,7 +9408,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
       , transfer.lock_msg
       , (transfer.checkpointed ? "checkpointed" : transfer.was_flash ? "flash" : "no")
       , tools::get_human_readable_timestamp(transfer.timestamp)
-      , print_money(transfer.amount)
+      , format_amount_with_asset_id(*m_wallet, transfer.amount, transfer.asset_id)
       , tools::type_to_hex(transfer.hash)
       , transfer.payment_id
       , print_money(transfer.fee)
@@ -9260,9 +9447,78 @@ bool simple_wallet::export_transfers(const std::vector<std::string>& args_)
   }
 
   fs::ofstream file{fs::u8path(filename_str)};
+  uint64_t running_balance = 0;
+  const char* title_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:^23s}, {:^21s}, {:>21s}, {:^64s}, {:^16s}, {:>21s}, {:^97s}, {:>21s}, {:>5s}, {:s}\n";
+  const char* data_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:>23s}, {:>21s}, {:>21s}, {:>64s}, {:^16s}, {:>21s}, {:>97s}, {:^21s}, {:^5s}, {:s}\n";
+  file << fmt::format(title_formatter, tr("block"), tr("type"), tr("lock"), tr("checkpointed"), tr("timestamp"), tr("amount"), tr("running balance"), tr("hash"), tr("payment ID"), tr("fee"), tr("destination"), tr("amount"), tr("index"), tr("note"));
 
-  const bool formatting = true;
-  file << m_wallet->transfers_to_csv(all_transfers, formatting);
+  for (const auto& transfer : all_transfers)
+  {
+    switch (transfer.pay_type)
+    {
+      case wallet::pay_type::in:
+      case wallet::pay_type::miner:
+      case wallet::pay_type::master_node:
+      case wallet::pay_type::governance:
+        if (transfer.asset_id.empty())
+          running_balance += transfer.amount;
+        break;
+      case wallet::pay_type::stake:
+      case wallet::pay_type::bns:
+        running_balance -= transfer.fee;
+        break;
+      case wallet::pay_type::out:
+        if (transfer.asset_id.empty())
+          running_balance -= transfer.amount + transfer.fee;
+        else
+          running_balance -= transfer.fee;
+        break;
+      default:
+        break;
+    }
+
+    std::string indices;
+    for (const auto& index : transfer.subaddr_indices)
+    {
+      if (!indices.empty())
+        indices += ",";
+      indices += std::to_string(index.minor);
+    }
+    if (transfer.subaddr_indices.size() > 1)
+      indices = '"' + indices + '"';
+
+    const std::string first_dest_address = transfer.destinations.size() ? transfer.destinations.front().address : "-";
+    const std::string first_dest_amount = transfer.destinations.size()
+        ? format_amount_with_asset_id(*m_wallet, transfer.destinations.front().amount, transfer.destinations.front().asset_id)
+        : "";
+
+    file << fmt::format(data_formatter,
+        (transfer.type.size() ? transfer.type : std::to_string(transfer.height)),
+        wallet::pay_type_string(transfer.pay_type),
+        transfer.lock_msg,
+        (transfer.checkpointed ? "checkpointed" : "no"),
+        tools::get_human_readable_timestamp(transfer.timestamp),
+        format_amount_with_asset_id(*m_wallet, transfer.amount, transfer.asset_id),
+        print_money(running_balance),
+        transfer.txid,
+        transfer.payment_id,
+        print_money(transfer.fee),
+        first_dest_address,
+        first_dest_amount,
+        indices,
+        transfer.note);
+
+    if (transfer.destinations.size() <= 1)
+      continue;
+
+    for (auto it = std::next(transfer.destinations.cbegin()); it != transfer.destinations.cend(); ++it)
+    {
+      file << fmt::format(data_formatter, "", "", "", "", "", "", "", "", "", "",
+          it->address,
+          format_amount_with_asset_id(*m_wallet, it->amount, it->asset_id),
+          "", "");
+    }
+  }
   file.close();
 
   success_msg_writer() << tr("CSV exported to ") << filename_str;
@@ -10675,7 +10931,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       else
         success_msg_writer() << "Height: " << pd.m_block_height;
       success_msg_writer() << "Timestamp: " << tools::get_human_readable_timestamp(pd.m_timestamp);
-      success_msg_writer() << "Amount: " << print_money(pd.m_amount);
+      success_msg_writer() << "Amount: " << format_received_amount(*m_wallet, pd.m_tx_hash, pd.m_subaddr_index, pd.m_amount, pd.m_unlock_time, true);
       success_msg_writer() << "Payment ID: " << payment_id;
       if (pd.m_unlock_time < MAX_BLOCK_NUMBER)
       {
@@ -10719,11 +10975,26 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       const tools::wallet2::confirmed_transfer_details &pd = i->second;
       uint64_t change = pd.m_change == (uint64_t)-1 ? 0 : pd.m_change; // change may not be known
       uint64_t fee = pd.m_amount_in - pd.m_amount_out;
+      std::string transfer_asset_id;
+      if (!pd.m_dests.empty())
+      {
+        transfer_asset_id = pd.m_dests.front().asset_id == crypto::null_pkey ? "" : tools::type_to_hex(pd.m_dests.front().asset_id);
+        for (const auto& d : pd.m_dests)
+        {
+          const std::string dest_asset_id = d.asset_id == crypto::null_pkey ? "" : tools::type_to_hex(d.asset_id);
+          if (dest_asset_id != transfer_asset_id)
+          {
+            transfer_asset_id.clear();
+            break;
+          }
+        }
+      }
       std::string dests;
       for (const auto &d: pd.m_dests) {
         if (!dests.empty())
           dests += ", ";
-        dests +=  d.address(m_wallet->nettype(), pd.m_payment_id) + ": " + print_money(d.amount);
+        const std::string dest_asset_id = d.asset_id == crypto::null_pkey ? "" : tools::type_to_hex(d.asset_id);
+        dests +=  d.address(m_wallet->nettype(), pd.m_payment_id) + ": " + format_amount_with_asset_id(*m_wallet, d.amount, dest_asset_id, true);
       }
       std::string payment_id = tools::type_to_hex(i->second.m_payment_id);
       if (payment_id.substr(16).find_first_not_of('0') == std::string::npos)
@@ -10732,9 +11003,9 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       success_msg_writer() << "txid: " << txid;
       success_msg_writer() << "Height: " << pd.m_block_height;
       success_msg_writer() << "Timestamp: " << tools::get_human_readable_timestamp(pd.m_timestamp);
-      success_msg_writer() << "Amount: " << print_money(pd.m_amount_in - change - fee);
+      success_msg_writer() << "Amount: " << format_amount_with_asset_id(*m_wallet, pd.m_amount_in - change - fee, transfer_asset_id, true);
       success_msg_writer() << "Payment ID: " << payment_id;
-      success_msg_writer() << "Change: " << print_money(change);
+      success_msg_writer() << "Change: " << format_amount_with_asset_id(*m_wallet, change, transfer_asset_id);
       success_msg_writer() << "Fee: " << print_money(fee);
       success_msg_writer() << "Destinations: " << dests;
       if (pd.m_unlock_time < MAX_BLOCK_NUMBER)
@@ -10773,7 +11044,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
         success_msg_writer() << "Unconfirmed incoming transaction found in the txpool";
         success_msg_writer() << "txid: " << txid;
         success_msg_writer() << "Timestamp: " << tools::get_human_readable_timestamp(pd.m_timestamp);
-        success_msg_writer() << "Amount: " << print_money(pd.m_amount);
+        success_msg_writer() << "Amount: " << format_received_amount(*m_wallet, pd.m_tx_hash, pd.m_subaddr_index, pd.m_amount, pd.m_unlock_time, true);
         success_msg_writer() << "Payment ID: " << payment_id;
         success_msg_writer() << "Address index: " << pd.m_subaddr_index.minor;
         success_msg_writer() << "Note: " << m_wallet->get_tx_note(txid);
@@ -10796,6 +11067,20 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       const tools::wallet2::unconfirmed_transfer_details &pd = i->second;
       uint64_t amount = pd.m_amount_in;
       uint64_t fee = amount - pd.m_amount_out;
+      std::string transfer_asset_id;
+      if (!pd.m_dests.empty())
+      {
+        transfer_asset_id = pd.m_dests.front().asset_id == crypto::null_pkey ? "" : tools::type_to_hex(pd.m_dests.front().asset_id);
+        for (const auto& d : pd.m_dests)
+        {
+          const std::string dest_asset_id = d.asset_id == crypto::null_pkey ? "" : tools::type_to_hex(d.asset_id);
+          if (dest_asset_id != transfer_asset_id)
+          {
+            transfer_asset_id.clear();
+            break;
+          }
+        }
+      }
       std::string payment_id = tools::type_to_hex(i->second.m_payment_id);
       if (payment_id.substr(16).find_first_not_of('0') == std::string::npos)
         payment_id = payment_id.substr(0,16);
@@ -10804,9 +11089,9 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       success_msg_writer() << (is_failed ? "Failed" : "Pending") << " outgoing transaction found";
       success_msg_writer() << "txid: " << txid;
       success_msg_writer() << "Timestamp: " << tools::get_human_readable_timestamp(pd.m_timestamp);
-      success_msg_writer() << "Amount: " << print_money(amount - pd.m_change - fee);
+      success_msg_writer() << "Amount: " << format_amount_with_asset_id(*m_wallet, amount - pd.m_change - fee, transfer_asset_id, true);
       success_msg_writer() << "Payment ID: " << payment_id;
-      success_msg_writer() << "Change: " << print_money(pd.m_change);
+      success_msg_writer() << "Change: " << format_amount_with_asset_id(*m_wallet, pd.m_change, transfer_asset_id);
       success_msg_writer() << "Fee: " << print_money(fee);
       success_msg_writer() << "Note: " << m_wallet->get_tx_note(txid);
       return true;

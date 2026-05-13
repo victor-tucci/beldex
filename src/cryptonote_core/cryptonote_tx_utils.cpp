@@ -595,6 +595,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool construct_tx_with_tx_key(const account_keys& sender_account_keys, const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses, std::vector<tx_source_entry>& sources, std::vector<tx_destination_entry>& destinations, const std::optional<tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const rct::RCTConfig &rct_config, rct::multisig_out *msout, bool shuffle_outs, beldex_construct_tx_params const &tx_params)
   {
+    LOG_PRINT_L0("Construct_tx_with_tx_key: " << sources.size() << " sources, " << destinations.size() << " destinations, extra size: " << extra.size() << ", unlock_time: " << unlock_time << ", tx_key: " << tx_key << ", additional_tx_keys: " << additional_tx_keys.size() << ", msout: " << (msout ? "true" : "false") << ", shuffle_outs: " << shuffle_outs);
     hw::device &hwdev = sender_account_keys.get_device();
 
     if (sources.empty())
@@ -824,6 +825,7 @@ namespace cryptonote
     bool found_change_already = false;
     for(const tx_destination_entry& dst_entr: destinations)
     {
+      LOG_PRINT_L0("Processing amount " << dst_entr.amount << ", is_subaddress: " << dst_entr.is_subaddress << ", asset_id: " << dst_entr.asset_id);
       crypto::public_key out_eph_public_key;
 
       bool this_dst_is_change_addr = false;
@@ -869,6 +871,7 @@ namespace cryptonote
 
       if (dst_entr.is_zarcanum() && tx_params.hf_version >= feature::CONFIDENTIAL_ASSETS)
       {
+        LOG_PRINT_L0("Constructing confidential asset output");
         // ── HF21: confidential asset output ──────────────────────────────────
         // stealth_address is already out_eph_public_key (derived above)
         tx_out_zarcanum zout;
@@ -877,6 +880,7 @@ namespace cryptonote
         // Derive blinding scalars for this output index
         crypto::key_derivation derivation{};
         hwdev.generate_key_derivation(dst_entr.addr.m_view_public_key, tx_key, derivation);
+        LOG_PRINT_L0("Key derivation for output done");
 
         // Blinded asset ID:  T = asset_id + r*X
         rct::key r = zarcanum_derivation_to_scalar(derivation, output_index, "asset_blind");
@@ -885,16 +889,19 @@ namespace cryptonote
         rct::key T;
         rct::addKeys(T, asset_id_rct, rX);
         zout.blinded_asset_id = rct::rct2pk(T);
+        LOG_PRINT_L0("Blinded asset ID done");
 
         // Amount commitment:  C = amount * asset_id + mask * G
         rct::key mask = zarcanum_derivation_to_scalar(derivation, output_index, "amount_mask");
         zout.amount_commitment = rct::rct2pk(rct::commitAsset(mask, asset_id_rct, dst_entr.amount));
+        LOG_PRINT_L0("Amount commitment done");
 
         // Encrypted amount
         rct::key enc_key = zarcanum_derivation_to_scalar(derivation, output_index, "enc_amount");
         uint64_t enc_mask_64;
         memcpy(&enc_mask_64, enc_key.bytes, sizeof(uint64_t));
         zout.encrypted_amount = dst_entr.amount ^ enc_mask_64;
+        LOG_PRINT_L0("Encrypted amount done");
 
         zout.version  = 0;
         zout.mix_attr = 0;
@@ -918,7 +925,8 @@ namespace cryptonote
 
       tx.vout.push_back(out);
       output_index++;
-      summary_outs_money += dst_entr.amount;
+      if(tx.type != txtype::deploy_new_asset)
+        summary_outs_money += dst_entr.amount;
     }
     CHECK_AND_ASSERT_MES(additional_tx_public_keys.size() == additional_tx_keys.size(), false, "Internal error creating additional public keys");
 
@@ -1058,9 +1066,11 @@ namespace cryptonote
           for (size_t i = 0; i < tx.vout.size(); ++i) {
               // tx_out_zarcanum outputs carry their own commitments and are
               // not included in the legacy RCT dest_keys / outamounts vectors.
-              if (std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target))
-                  continue;
-              dest_keys.push_back(rct::pk2rct(var::get<txout_to_key>(tx.vout[i].target).key));
+              if (std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target)){
+                dest_keys.push_back(rct::pk2rct(var::get<tx_out_zarcanum>(tx.vout[i].target).stealth_address));
+              }else{
+                dest_keys.push_back(rct::pk2rct(var::get<txout_to_key>(tx.vout[i].target).key));
+              }
               outamounts.push_back(tx.vout[i].amount);
               amount_out += tx.vout[i].amount;
           }

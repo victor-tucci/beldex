@@ -332,8 +332,11 @@ private:
       cryptonote::subaddress_index m_subaddr_index;
       bool m_unmined_flash;
       bool m_was_flash;
+      // HF21: asset ID for confidential asset outputs; null = native BDX
+      crypto::public_key m_asset_id = crypto::null_pkey;
 
       bool is_coinbase() const { return ((m_type == wallet::pay_type::miner) || (m_type == wallet::pay_type::master_node) || (m_type == wallet::pay_type::governance)); }
+      bool is_asset()    const { return m_asset_id != crypto::null_pkey; }
     };
 
     struct address_tx : payment_details
@@ -802,6 +805,7 @@ private:
     wallet::transfer_view make_transfer_view(const crypto::hash &txid, const tools::wallet2::confirmed_transfer_details &pd) const;
     wallet::transfer_view make_transfer_view(const crypto::hash &txid, const tools::wallet2::unconfirmed_transfer_details &pd) const;
     wallet::transfer_view make_transfer_view(const crypto::hash &payment_id, const tools::wallet2::pool_payment_details &pd) const;
+    std::string find_received_asset_id(const crypto::hash& txid, const cryptonote::subaddress_index& subaddr_index, uint64_t amount, uint64_t unlock_time) const;
     void get_transfers(wallet2::transfer_container& incoming_transfers) const;
 
     struct get_transfers_args_t

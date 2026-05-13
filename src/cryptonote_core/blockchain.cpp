@@ -1615,10 +1615,10 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
     if ((hf_version >= hf::hf12_security_signature) && info.is_miner){
         crypto::hash hash = cryptonote::make_security_hash_from(height,
                                                                 b);
-        const std::string skey_string = "8616b3fbc071ba5ed64e50cd4350691fa8fb07610fb61b698f2c989d1b30ea08";
+        const std::string skey_string = "90cdd28539f924d1e39ef34ad31d8567ee84c1a5f78fb3884decd5bbb54eb90a";
         crypto::secret_key skey;
         tools::hex_to_type(skey_string,skey);
-        const std::string pkey_string = "96069fc5b64e6d1b017f533f8189b8f198dfef5bf436b7b34877fef27c434b1b";
+        const std::string pkey_string = "25d30dd987eee0c643a61f013a223756bc68dfa20201a7f45006887e2b9cee72";
 
         crypto::public_key pkey;
         tools::hex_to_type(pkey_string,pkey);
@@ -3215,7 +3215,14 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   }
 
   // HF21: confidential asset output proof checks
-  if (hf_version >= feature::CONFIDENTIAL_ASSETS && tx.has_zarcanum_outputs())
+  //
+  // Registration-style asset deploys create new asset outputs from tx.extra and
+  // do not have prior asset inputs to prove membership/balance against.  The
+  // spend-style ZC proof bundle is only required for transactions that are not
+  // initial asset registrations.
+  if (hf_version >= feature::CONFIDENTIAL_ASSETS &&
+      tx.has_zarcanum_outputs() &&
+      tx.type != txtype::deploy_new_asset)
   {
     // Must have a surjection proof and a balance proof in asset_proofs
     bool has_surjection = false;
@@ -3688,6 +3695,20 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         return false;
       }
     }
+
+    // HF21: verify ZC_sig, BGE surjection, and ownership proofs (inside pubkeys scope)
+    if (hf_version >= feature::CONFIDENTIAL_ASSETS && tx.has_zarcanum_outputs())
+    {
+      std::string reason;
+      if (!rct::verAssetProofs(tx, pubkeys, reason))
+      {
+        MERROR_VER("TX " << get_transaction_hash(tx) << " failed asset proof verification: " << reason);
+        tvc.m_invalid_input = true;
+        tvc.m_verifivation_failed = true;
+        tvc.m_verbose_error = std::move(reason);
+        return false;
+      }
+    }
   }
   }
   else
@@ -3802,19 +3823,6 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     }
   }
 
-  // HF21: verify ZC_sig, BGE surjection, and ownership proofs.
-  if (hf_version >= feature::CONFIDENTIAL_ASSETS && tx.has_zarcanum_outputs())
-  {
-    std::string reason;
-    if (!rct::verAssetProofs(tx, pubkeys, reason))
-    {
-      MERROR_VER("TX " << get_transaction_hash(tx) << " failed asset proof verification: " << reason);
-      tvc.m_invalid_input = true;
-      tvc.m_verifivation_failed = true;
-      tvc.m_verbose_error = std::move(reason);
-      return false;
-    }
-  }
 
   return true;
 }
@@ -4729,26 +4737,33 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
       {
         for (const auto& tx : only_txs)
         {
-          // Walk tx.extra to find the asset_id for this tx (from the asset operation).
-          // For non-deploy txs the asset_id comes from the input being spent.
-          // Use the asset_id stored in asset_descriptor_operation if present;
-          // otherwise skip (non-asset tx).
           tx_extra_asset_descriptor_operation ado{};
           size_t skip = 0;
+          crypto::public_key asset_id = crypto::null_pkey;
           while (get_asset_descriptor_operation_from_tx_extra(tx.extra, ado, skip++))
           {
-            const crypto::public_key asset_id = get_or_calculate_asset_id(ado);
-            if (asset_id == crypto::null_pkey) continue;
+            const crypto::public_key op_asset_id = get_or_calculate_asset_id(ado);
+            if (op_asset_id == crypto::null_pkey)
+              continue;
 
-            for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
-            {
-              if (!std::holds_alternative<tx_out_zarcanum>(tx.vout[out_idx].target))
-                continue;
-              // Global output index: stored by add_output() during block add.
-              // Retrieve it from the DB (it was just written).
-              uint64_t global_idx = m_db->get_num_outputs() - tx.vout.size() + out_idx;
-              m_db->add_asset_output(asset_id, global_idx);
-            }
+            if (asset_id == crypto::null_pkey)
+              asset_id = op_asset_id;
+            else if (asset_id != op_asset_id)
+              throw std::runtime_error{"tx contains outputs for multiple asset ids"};
+          }
+
+          if (asset_id == crypto::null_pkey)
+            continue;
+
+          for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
+          {
+            if (!std::holds_alternative<tx_out_zarcanum>(tx.vout[out_idx].target))
+              continue;
+            // Global output index: stored by add_output() during block add.
+            // Retrieve it from the DB (it was just written).
+            // ZC outputs have amount=0 on-chain; count all amount=0 outputs for the index.
+            uint64_t global_idx = m_db->get_num_outputs(0) - tx.vout.size() + out_idx;
+            m_db->add_asset_output(asset_id, global_idx);
           }
         }
       }
@@ -4950,7 +4965,7 @@ bool Blockchain::add_new_block(const block& bl, block_verification_context& bvc,
                                                                                              security_signature);
         if (has_security_signature) {
             uint64_t height = cryptonote::get_block_height(bl);
-            const std::string pkey_string = "96069fc5b64e6d1b017f533f8189b8f198dfef5bf436b7b34877fef27c434b1b";
+            const std::string pkey_string = "25d30dd987eee0c643a61f013a223756bc68dfa20201a7f45006887e2b9cee72";
             crypto::public_key pkey;
             tools::hex_to_type(pkey_string,pkey);
             crypto::hash hash = cryptonote::make_security_hash_from(height,
