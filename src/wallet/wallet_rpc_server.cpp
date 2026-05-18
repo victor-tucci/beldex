@@ -1081,6 +1081,23 @@ namespace tools
       de.is_subaddress = info.is_subaddress;
       de.amount = it->amount;
       de.is_integrated = info.has_payment_id;
+      if (!it->asset_id.empty())
+      {
+        std::string parsed_asset_id;
+        try
+        {
+          parsed_asset_id = oxenc::from_hex(it->asset_id);
+        }
+        catch (const std::exception&)
+        {
+          throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Invalid destination asset_id: expected 32-byte public key hex"};
+        }
+        if (parsed_asset_id.size() != sizeof(de.asset_id))
+          throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Invalid destination asset_id: expected 32-byte public key hex"};
+        std::memcpy(&de.asset_id, parsed_asset_id.data(), sizeof(de.asset_id));
+        if (!crypto::check_key(de.asset_id))
+          throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Invalid destination asset_id: expected valid 32-byte public key hex"};
+      }
       dsts.push_back(de);
 
       if (info.has_payment_id)

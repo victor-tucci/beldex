@@ -132,6 +132,12 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
   }
 
   uint64_t tx_id = add_transaction_data(blk_hash, txp, tx_hash, tx_prunable_hash);
+  std::vector<crypto::public_key> output_asset_ids(tx.vout.size(), crypto::null_pkey);
+  {
+    tx_extra_ca_output_assets assets{};
+    if (get_field_from_tx_extra(tx.extra, assets) && assets.asset_ids.size() == tx.vout.size())
+      output_asset_ids = std::move(assets.asset_ids);
+  }
 
   std::vector<uint64_t> amount_output_indices(tx.vout.size());
 
@@ -157,12 +163,12 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
       const rct::key commitment = rct::zeroCommit(vout.amount);
       vout.amount = 0;
       amount_output_indices[i] = add_output(tx_hash, vout, i, unlock_time,
-        &commitment);
+        &commitment, output_asset_ids[i]);
     }
     else
     {
       amount_output_indices[i] = add_output(tx_hash, tx.vout[i], i, unlock_time,
-        tx.version >= cryptonote::txversion::v2_ringct ? &tx.rct_signatures.outPk[i].mask : NULL);
+        tx.version >= cryptonote::txversion::v2_ringct ? &tx.rct_signatures.outPk[i].mask : NULL, output_asset_ids[i]);
     }
   }
 

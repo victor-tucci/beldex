@@ -58,6 +58,8 @@ struct mdb_txn_cursors
 
   MDB_cursor *output_txs;
   MDB_cursor *output_amounts;
+  MDB_cursor *asset_output_txs;
+  MDB_cursor *asset_output_amounts;
 
   MDB_cursor *txs;
   MDB_cursor *txs_pruned;
@@ -81,7 +83,6 @@ struct mdb_txn_cursors
   MDB_cursor *output_blacklist;
   MDB_cursor *properties;
   MDB_cursor *asset_histories;
-  MDB_cursor *asset_outputs;   // HF21: per-asset output index
 };
 
 struct mdb_rflags
@@ -93,6 +94,8 @@ struct mdb_rflags
   bool m_rf_block_checkpoints;
   bool m_rf_output_txs;
   bool m_rf_output_amounts;
+  bool m_rf_asset_output_txs;
+  bool m_rf_asset_output_amounts;
   bool m_rf_output_blacklist;
   bool m_rf_txs;
   bool m_rf_txs_pruned;
@@ -110,7 +113,6 @@ struct mdb_rflags
   bool m_rf_master_node_proofs;
   bool m_rf_properties;
   bool m_rf_asset_histories;
-  bool m_rf_asset_outputs;    // HF21
 };
 
 struct mdb_threadinfo
@@ -266,8 +268,10 @@ public:
   std::vector<uint64_t> get_tx_block_heights(const std::vector<crypto::hash>& hlist) const override;
 
   uint64_t get_num_outputs(const uint64_t& amount) const override;
+  uint64_t get_num_outputs_for_asset(const crypto::public_key &asset_id, const uint64_t& amount) const override;
 
   output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const override;
+  output_data_t get_output_key_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const override;
   void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) const override;
 
   tx_out_index get_output_tx_and_index_from_global(const uint64_t& index) const override;
@@ -275,6 +279,7 @@ public:
       std::vector<tx_out_index> &tx_out_indices) const;
 
   tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const override;
+  tx_out_index get_output_tx_and_index_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index) const override;
   void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const override;
 
   std::vector<std::vector<uint64_t>> get_tx_amount_output_indices(const uint64_t tx_id, size_t n_txes) const override;
@@ -388,7 +393,8 @@ private:
       const tx_out& tx_output,
       const uint64_t& local_index,
       const uint64_t unlock_time,
-      const rct::key *commitment
+      const rct::key *commitment,
+      const crypto::public_key &asset_id = crypto::null_pkey
       ) override;
 
   void add_tx_amount_output_indices(const uint64_t tx_id,
@@ -482,6 +488,8 @@ private:
 
   MDB_dbi m_output_txs;
   MDB_dbi m_output_amounts;
+  MDB_dbi m_asset_output_txs;
+  MDB_dbi m_asset_output_amounts;
   MDB_dbi m_output_blacklist;
 
   MDB_dbi m_spent_keys;
@@ -497,8 +505,6 @@ private:
   MDB_dbi m_master_node_data;
   MDB_dbi m_master_node_proofs;
   MDB_dbi m_asset_histories;
-  // HF21: per-asset output index for BGE surjection ring construction
-  MDB_dbi m_asset_outputs;
 
   MDB_dbi m_properties;
 

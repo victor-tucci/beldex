@@ -256,7 +256,8 @@ namespace cryptonote::rpc {
         "amounts",       get_output_distribution.request.amounts,
         "cumulative", get_output_distribution.request.cumulative,
         "from_height",     get_output_distribution.request.from_height,
-        "to_height",     get_output_distribution.request.to_height);
+        "to_height",     get_output_distribution.request.to_height,
+        "asset_id", get_output_distribution.request.asset_id);
   }
 
   void parse_request(POP_BLOCKS& pop_blocks, rpc_input in){
@@ -361,6 +362,7 @@ namespace cryptonote::rpc {
   void parse_request(GET_OUTPUT_HISTOGRAM& get_output_histogram, rpc_input in) {
     get_values(in,
         "amounts",       get_output_histogram.request.amounts,
+        "asset_id", get_output_histogram.request.asset_id,
         "max_count",     get_output_histogram.request.max_count,
         "min_count",     get_output_histogram.request.min_count,
         "recent_cutoff", get_output_histogram.request.recent_cutoff,

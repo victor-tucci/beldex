@@ -217,8 +217,9 @@ namespace
   std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true)
   {
     std::string s = std::to_string(amount);
-    if (s.size() < decimal_point + 1)
-      s.insert(0, decimal_point + 1 - s.size(), '0');
+    const size_t decimals = decimal_point;
+    if (s.size() < decimals + 1)
+      s.insert(0, decimals + 1 - s.size(), '0');
 
     if (decimal_point > 0)
       s.insert(s.size() - decimal_point, ".");
@@ -232,6 +233,29 @@ namespace
     }
 
     return s;
+  }
+
+  bool parse_asset_prefixed_address_arg(const std::string& raw, crypto::public_key& asset_id, std::string& address)
+  {
+    asset_id = crypto::null_pkey;
+    address = raw;
+
+    const size_t sep = raw.find(':');
+    if (sep == std::string::npos)
+      return true;
+
+    const std::string asset_hex = raw.substr(0, sep);
+    std::string parsed_address = raw.substr(sep + 1);
+    if (asset_hex.size() != 64 || parsed_address.empty() || !oxenc::is_hex(asset_hex))
+      return true; // not an asset-prefix format; keep legacy behavior
+
+    crypto::public_key parsed_asset{};
+    if (!tools::hex_to_type(asset_hex, parsed_asset))
+      return false;
+
+    asset_id = parsed_asset;
+    address = std::move(parsed_address);
+    return true;
   }
 
   struct asset_display_info
@@ -5394,14 +5418,13 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
       {
         const std::string asset_hex = tools::type_to_hex(asset_id);
         const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
-        const std::string formatted_amount = asset_info
-            ? print_asset_amount(amount, asset_info->decimal_point)
-            : std::to_string(amount);
+        const uint8_t display_dp = asset_info ? asset_info->decimal_point : 12;
+        const std::string formatted_amount = print_asset_amount(amount, display_dp);
 
         success_msg_writer() << "  " << asset_hex
                              << (asset_info && !asset_info->ticker.empty() ? " (" + asset_info->ticker + ")" : "")
                              << "  balance: " << formatted_amount
-                             << (asset_info ? fmt::format(" [dp={}]", asset_info->decimal_point) : " [atomic units]");
+                             << fmt::format(" [dp={}]", display_dp);
       }
     }
   }
@@ -6249,6 +6272,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     dsts_info.emplace_back();
     cryptonote::address_parse_info& info = dsts_info.back();
     cryptonote::tx_destination_entry de;
+    de.asset_id = crypto::null_pkey;
     bool r = true;
 
     std::string addr, payment_id_uri, tx_description, recipient_name, error;
@@ -6258,10 +6282,18 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     LOG_PRINT_L0("has_uri" << has_uri);
     if (i + 1 < local_args.size())
     {
-      r = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), local_args[i]);
+      std::string parsed_address = local_args[i];
+      crypto::public_key parsed_asset_id = crypto::null_pkey;
+      if (!parse_asset_prefixed_address_arg(local_args[i], parsed_asset_id, parsed_address))
+      {
+        fail_msg_writer() << tr("Failed to parse destination asset id in: ") << local_args[i];
+        return false;
+      }
+
+      r = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), parsed_address);
       if (!r && m_wallet->is_trusted_daemon())
       {
-        std::optional<std::string> address = m_wallet->resolve_address(local_args[i]);
+        std::optional<std::string> address = m_wallet->resolve_address(parsed_address);
         if (address)
           r = cryptonote::get_account_address_from_str(info, m_wallet->nettype(), *address);
       }
@@ -6278,6 +6310,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
           ", " << tr("expected number from 0 to ") << print_money(std::numeric_limits<uint64_t>::max());
         return false;
       }
+      de.asset_id = parsed_asset_id;
       de.original = local_args[i];
       i += 2;
     }

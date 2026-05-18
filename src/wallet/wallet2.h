@@ -454,7 +454,8 @@ private:
       crypto::signature key_image_sig;
     };
 
-    typedef std::tuple<uint64_t, crypto::public_key, rct::key> get_outs_entry;
+    // global_index, output_pubkey, amount_commitment, asset_id, asset_commitment
+    typedef std::tuple<uint64_t, crypto::public_key, rct::key, crypto::public_key, rct::key> get_outs_entry;
 
     struct parsed_block
     {
@@ -743,6 +744,28 @@ private:
     uint64_t unlocked_balance_all(bool strict, uint64_t *blocks_to_unlock = NULL, uint64_t *time_to_unlock = NULL) const;
 
     // HF21: per-asset balances — maps asset_id → total amount held in unspent ZC outputs
+
+    struct asset_selection_amount
+    {
+      uint64_t needed_amount = 0;
+      uint64_t requested_amount = 0;
+      uint64_t found_amount = 0;
+    };
+
+    using assets_selection_context = std::unordered_map<crypto::public_key, asset_selection_amount>;
+    assets_selection_context get_needed_money(uint64_t fee, const std::vector<cryptonote::tx_destination_entry>& dsts, bool allow_zero_destinations) const;
+    void prepare_tx_destinations(const assets_selection_context& needed_money_map,
+        const std::vector<cryptonote::tx_destination_entry>& dsts,
+        const cryptonote::account_public_address& change_addr,
+        bool change_is_subaddress,
+        std::vector<cryptonote::tx_destination_entry>& final_destinations) const;
+    void prepare_tx_destinations(uint64_t needed_money,
+        uint64_t found_money,
+        const std::vector<cryptonote::tx_destination_entry>& dsts,
+        const crypto::public_key& asset_id,
+        const cryptonote::account_public_address& change_addr,
+        bool change_is_subaddress,
+        std::vector<cryptonote::tx_destination_entry>& final_destinations) const;
     std::unordered_map<crypto::public_key, uint64_t> asset_balances(uint32_t subaddr_index_major, bool strict) const;
     void transfer_selected_rct(std::vector<cryptonote::tx_destination_entry> dsts, const std::vector<size_t>& selected_transfers, size_t fake_outputs_count,
       std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
@@ -1482,6 +1505,8 @@ private:
 
 
     std::atomic<bool> m_long_poll_disabled;
+    // Development-only toggle: allow cross-asset decoys by forcing global/native decoy queries.
+    bool m_dev_allow_cross_asset_decoys = false;
     static std::string get_default_daemon_address();
 
     // The wallet's RPC client; public for advanced configuration purposes.
@@ -1522,6 +1547,11 @@ private:
     void pull_and_parse_next_blocks(uint64_t start_height, uint64_t &blocks_start_height, std::list<crypto::hash> &short_chain_history, const std::vector<cryptonote::block_complete_entry> &prev_blocks, const std::vector<parsed_block> &prev_parsed_blocks, std::vector<cryptonote::block_complete_entry> &blocks, std::vector<parsed_block> &parsed_blocks, bool &last, bool &error, std::exception_ptr &exception);
     void process_parsed_blocks(uint64_t start_height, const std::vector<cryptonote::block_complete_entry> &blocks, const std::vector<parsed_block> &parsed_blocks, uint64_t& blocks_added, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache = NULL);
     uint64_t select_transfers(uint64_t needed_money, std::vector<size_t> unused_transfers_indices, std::vector<size_t>& selected_transfers) const;
+    using free_amounts_cache_type = std::map<uint64_t, std::set<size_t>>;
+    using asset_free_amounts_cache_type = std::unordered_map<crypto::public_key, free_amounts_cache_type>;
+    void prepare_free_transfers_cache(uint32_t subaddr_account, const std::set<uint32_t>& subaddr_indices);
+    uint64_t select_indices_for_transfer(std::vector<size_t>& selected_indexes, free_amounts_cache_type& found_free_amounts, uint64_t needed_money) const;
+    void select_indices_for_transfer(assets_selection_context& needed_money_map, std::vector<size_t>& selected_indexes, uint32_t subaddr_account, const std::set<uint32_t>& subaddr_indices);
     bool prepare_file_names(const fs::path& file_path);
     void process_unconfirmed(const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t height);
     void process_outgoing(const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t height, uint64_t ts, uint64_t spent, uint64_t received, uint32_t subaddr_account, const std::set<uint32_t>& subaddr_indices);
@@ -1546,7 +1576,14 @@ private:
     bool is_spent(size_t idx, bool strict = true) const;
     void get_outs(std::vector<std::vector<get_outs_entry>> &outs, const std::vector<size_t> &selected_transfers, size_t fake_outputs_count, bool has_rct);
     void get_outs(std::vector<std::vector<get_outs_entry>> &outs, const std::vector<size_t> &selected_transfers, size_t fake_outputs_count, std::vector<uint64_t> &rct_offsets, bool has_rct);
-    bool tx_add_fake_output(std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs, uint64_t global_index, const crypto::public_key& tx_public_key, const rct::key& mask, uint64_t real_index, bool unlocked) const;
+    bool tx_add_fake_output(std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs, uint64_t global_index, const crypto::public_key& tx_public_key, const rct::key& mask, const crypto::public_key& asset_id, const rct::key& asset_commitment, uint64_t real_index, bool unlocked) const;
+    void build_tx_sources_with_decoys(
+        const std::vector<size_t>& selected_transfers,
+        const std::vector<std::vector<tools::wallet2::get_outs_entry>>& outs,
+        size_t fake_outputs_count,
+        const std::vector<std::unordered_set<crypto::public_key>>& ignore_sets,
+        std::vector<cryptonote::tx_source_entry>& sources,
+        std::unordered_set<rct::key>& used_L) const;
     bool should_pick_a_second_output(size_t n_transfers, const std::vector<size_t> &unused_transfers_indices, const std::vector<size_t> &unused_dust_indices) const;
     std::vector<size_t> get_only_rct(const std::vector<size_t> &unused_dust_indices, const std::vector<size_t> &unused_transfers_indices) const;
     void scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool flash);
@@ -1561,6 +1598,7 @@ private:
     bool remove_rings(const cryptonote::transaction_prefix &tx);
     bool get_ring(const crypto::chacha_key &key, const crypto::key_image &key_image, std::vector<uint64_t> &outs);
     crypto::chacha_key get_ringdb_key();
+    const crypto::public_key& get_transfer_asset_id(const transfer_details& td) const;
     void setup_keys(const epee::wipeable_string &password);
     size_t get_transfer_details(const crypto::key_image &ki) const;
 
@@ -1614,6 +1652,7 @@ private:
     crypto::hash                              m_long_poll_tx_pool_checksum = {};
 
     transfer_container m_transfers;
+    mutable asset_free_amounts_cache_type m_found_free_amounts;
     payment_container m_payments;
     std::unordered_map<crypto::key_image, size_t> m_key_images;
     std::unordered_map<crypto::public_key, size_t> m_pub_keys;
