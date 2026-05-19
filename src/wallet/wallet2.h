@@ -1506,7 +1506,6 @@ private:
 
     std::atomic<bool> m_long_poll_disabled;
     // Development-only toggle: allow cross-asset decoys by forcing global/native decoy queries.
-    bool m_dev_allow_cross_asset_decoys = false;
     static std::string get_default_daemon_address();
 
     // The wallet's RPC client; public for advanced configuration purposes.

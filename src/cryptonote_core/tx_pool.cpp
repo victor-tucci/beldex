@@ -62,6 +62,18 @@ namespace cryptonote
 {
   namespace
   {
+    const crypto::key_image* key_image_from_input(const txin_v& in)
+    {
+      if (const auto* tk = std::get_if<txin_to_key>(&in))
+        return &tk->k_image;
+      if (const auto* zc = std::get_if<txin_zc_input>(&in))
+        return &zc->k_image;
+      return nullptr;
+    }
+  }
+
+  namespace
+  {
     //TODO: constants such as these should at least be in the header,
     //      but probably somewhere more accessible to the rest of the
     //      codebase.  As it stands, it is at best nontrivial to test
@@ -867,10 +879,11 @@ namespace cryptonote
   {
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, txin, false);
-      std::unordered_set<crypto::hash>& kei_image_set = m_spent_key_images[txin.k_image];
+      const crypto::key_image* ki = key_image_from_input(in);
+      CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported tx input type while inserting key images");
+      std::unordered_set<crypto::hash>& kei_image_set = m_spent_key_images[*ki];
       CHECK_AND_ASSERT_MES(kept_by_block || kei_image_set.size() == 0, false, "internal error: kept_by_block=" << kept_by_block
-                                          << ",  kei_image_set.size()=" << kei_image_set.size() << "\ntxin.k_image=" << txin.k_image
+                                          << ",  kei_image_set.size()=" << kei_image_set.size() << "\ntxin.k_image=" << *ki
                                           << "\ntx_id=" << id );
       auto ins_res = kei_image_set.insert(id);
       CHECK_AND_ASSERT_MES(ins_res.second, false, "internal error: try to insert duplicate iterator in key_image set");
@@ -889,16 +902,17 @@ namespace cryptonote
     // ND: Speedup
     for(const txin_v& vi: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(vi, txin_to_key, txin, false);
-      auto it = m_spent_key_images.find(txin.k_image);
-      CHECK_AND_ASSERT_MES(it != m_spent_key_images.end(), false, "failed to find transaction input in key images. img=" << txin.k_image
+      const crypto::key_image* ki = key_image_from_input(vi);
+      CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported tx input type while removing key images");
+      auto it = m_spent_key_images.find(*ki);
+      CHECK_AND_ASSERT_MES(it != m_spent_key_images.end(), false, "failed to find transaction input in key images. img=" << *ki
                                     << "\ntransaction id = " << actual_hash);
       std::unordered_set<crypto::hash>& key_image_set =  it->second;
-      CHECK_AND_ASSERT_MES(key_image_set.size(), false, "empty key_image set, img=" << txin.k_image
+      CHECK_AND_ASSERT_MES(key_image_set.size(), false, "empty key_image set, img=" << *ki
         << "\ntransaction id = " << actual_hash);
 
       auto it_in_set = key_image_set.find(actual_hash);
-      CHECK_AND_ASSERT_MES(it_in_set != key_image_set.end(), false, "transaction id not found in key_image set, img=" << txin.k_image
+      CHECK_AND_ASSERT_MES(it_in_set != key_image_set.end(), false, "transaction id not found in key_image set, img=" << *ki
         << "\ntransaction id = " << actual_hash);
       key_image_set.erase(it_in_set);
       if(!key_image_set.size())
@@ -1451,8 +1465,9 @@ namespace cryptonote
     bool ret = false;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, true);//should never fail
-      auto it = m_spent_key_images.find(tokey_in.k_image);
+      const crypto::key_image* ki = key_image_from_input(in);
+      CHECK_AND_ASSERT_MES(ki != nullptr, true, "unsupported tx input type while checking spent key images");
+      auto it = m_spent_key_images.find(*ki);
       if (it != m_spent_key_images.end())
       {
         if (!conflicting)
@@ -1646,8 +1661,9 @@ end:
   {
     for(size_t i = 0; i!= tx.vin.size(); i++)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], txin_to_key, itk, false);
-      if(k_images.count(itk.k_image))
+      const crypto::key_image* ki = key_image_from_input(tx.vin[i]);
+      CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported tx input type while scanning key images");
+      if(k_images.count(*ki))
         return true;
     }
     return false;
@@ -1666,9 +1682,10 @@ end:
   {
     for(size_t i = 0; i!= tx.vin.size(); i++)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], txin_to_key, itk, false);
-      auto i_res = k_images.insert(itk.k_image);
-      CHECK_AND_ASSERT_MES(i_res.second, false, "internal error: key images pool cache - inserted duplicate image in set: " << itk.k_image);
+      const crypto::key_image* ki = key_image_from_input(tx.vin[i]);
+      CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported tx input type while appending key images");
+      auto i_res = k_images.insert(*ki);
+      CHECK_AND_ASSERT_MES(i_res.second, false, "internal error: key images pool cache - inserted duplicate image in set: " << *ki);
     }
     return true;
   }
@@ -1681,8 +1698,9 @@ end:
     LockedTXN lock(m_blockchain);
     for(size_t i = 0; i!= tx.vin.size(); i++)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], txin_to_key, itk, void());
-      const key_images_container::const_iterator it = m_spent_key_images.find(itk.k_image);
+      const crypto::key_image* ki = key_image_from_input(tx.vin[i]);
+      CHECK_AND_ASSERT_MES(ki != nullptr, void(), "unsupported tx input type while marking double spend");
+      const key_images_container::const_iterator it = m_spent_key_images.find(*ki);
       if (it != m_spent_key_images.end())
       {
         for (const crypto::hash &txid: it->second)
@@ -1696,7 +1714,7 @@ end:
           }
           if (!meta.double_spend_seen)
           {
-            MDEBUG("Marking " << txid << " as double spending " << itk.k_image);
+            MDEBUG("Marking " << txid << " as double spending " << *ki);
             meta.double_spend_seen = true;
             changed = true;
             try

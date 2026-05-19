@@ -31,6 +31,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <random>
+#include <algorithm>
 #include "epee/string_tools.h"
 #include "common/apply_permutation.h"
 #include "common/hex.h"
@@ -41,6 +42,7 @@
 #include "cryptonote_basic/tx_extra.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"  // zarcanum_derivation_to_scalar
 #include "crypto/crypto.h"
+#include "crypto/asset_proofs.h"
 #include "crypto/hash.h"
 #include "ringct/rctSigs.h"
 #include "multisig/multisig.h"
@@ -768,6 +770,10 @@ namespace cryptonote
         LOG_ERROR("CA path requested without any CA input sources");
         return false;
       }
+      // HF21 CA transfer still pays fee in native BDX, so mixed CA + native
+      // inputs are valid/expected. Legacy non-native sources are still rejected
+      // by the per-source metadata checks below.
+      (void)has_legacy_input_source;
 
       bool has_ca_outputs = false;
       for (const auto& dst : destinations)
@@ -1272,6 +1278,7 @@ namespace cryptonote
     };
     std::vector<input_generation_context_data> in_contexts;
     bool has_ca_inputs = false;
+    bool has_legacy_inputs = false;
     bool has_ca_outputs = false;
 
     //fill inputs
@@ -1366,6 +1373,7 @@ namespace cryptonote
       }
       else
       {
+        has_legacy_inputs = true;
         //put key image into tx input
         txin_to_key input_to_key;
         input_to_key.amount = src_entr.amount;
@@ -1379,6 +1387,9 @@ namespace cryptonote
         tx.vin.push_back(input_to_key);
       }
     }
+
+    // Allow mixed CA + native inputs for HF21 standard transfers so native
+    // fees can be paid while CA value conservation is proven separately.
 
     if (shuffle_outs)
     {
@@ -1436,6 +1447,7 @@ namespace cryptonote
     add_tx_extra<tx_extra_pub_key>(tx, txkey_pub);
 
     std::vector<crypto::public_key> additional_tx_public_keys;
+    std::vector<rct::key> zc_output_amount_masks;
 
     // we don't need to include additional tx keys if:
     //   - all the destinations are standard addresses
@@ -1519,6 +1531,7 @@ namespace cryptonote
         rct::key mask = zarcanum_derivation_to_scalar(derivation, output_index, "amount_mask");
         zout.amount_commitment = rct::rct2pk(rct::commitAsset(mask, asset_id_rct, dst_entr.amount));
         LOG_PRINT_L0("Amount commitment done");
+        zc_output_amount_masks.push_back(mask);
 
         // Encrypted amount
         rct::key enc_key = zarcanum_derivation_to_scalar(derivation, output_index, "enc_amount");
@@ -1691,10 +1704,19 @@ namespace cryptonote
           std::vector<uint64_t> inamounts, outamounts;
           std::vector<unsigned int> index;
           std::vector<rct::multisig_kLRki> kLRki;
+          const bool has_native_input_for_fee = std::any_of(sources.begin(), sources.end(), [](const tx_source_entry& s) {
+              return s.asset_id == crypto::null_pkey;
+          });
+          const bool native_only_ca_fee_mode = ca_transfer_path_used && has_native_input_for_fee;
+          uint64_t native_in_for_fee = 0, native_out_for_fee = 0;
           for (size_t i = 0; i < sources.size(); ++i) {
               rct::ctkey ctkey;
-              amount_in += sources[i].amount;
-              inamounts.push_back(sources[i].amount);
+              const bool native_input = sources[i].asset_id == crypto::null_pkey;
+              const uint64_t rct_input_amount = sources[i].amount;
+              if (native_input)
+                native_in_for_fee += sources[i].amount;
+              amount_in += rct_input_amount;
+              inamounts.push_back(rct_input_amount);
               index.push_back(sources[i].real_output);
               // inSk: (secret key, mask)
               ctkey.dest = rct::sk2rct(in_contexts[i].in_ephemeral.sec);
@@ -1719,7 +1741,21 @@ namespace cryptonote
               // Deploy path mints non-native outputs in this tx. Those minted
               // amounts must not be treated as native spend in RingCT fee math.
               uint64_t rct_accounted_amount = tx.vout[i].amount;
-              if (deploy_native_fee_accounting)
+              if (ca_transfer_path_used && std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target))
+              {
+                CHECK_AND_ASSERT_MES(i < destinations.size(), false, "ZC output index out of range for destinations");
+                rct_accounted_amount = destinations[i].amount;
+              }
+              if (native_only_ca_fee_mode)
+              {
+                const crypto::public_key dst_asset_id =
+                    i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
+                if (dst_asset_id != crypto::null_pkey)
+                  rct_accounted_amount = 0;
+                else
+                  native_out_for_fee += rct_accounted_amount;
+              }
+              else if (deploy_native_fee_accounting)
               {
                 const crypto::public_key dst_asset_id =
                     i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
@@ -1784,9 +1820,12 @@ namespace cryptonote
           rct::ctkeyV outSk;
           if (use_simple_rct) {
               LOG_PRINT_L2("genRctSimple");
+              const uint64_t txn_fee_for_rct = ca_transfer_path_used
+                  ? (native_only_ca_fee_mode ? (native_in_for_fee - native_out_for_fee) : 0)
+                  : (amount_in - amount_out);
               tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, inamounts,
                                                     outamounts,
-                                                    amount_in - amount_out, mixRing, amount_keys, msout ? &kLRki : NULL,
+                                                    txn_fee_for_rct, mixRing, amount_keys, msout ? &kLRki : NULL,
                                                     msout, index, outSk, rct_config, hwdev);
           }
           else {
@@ -1797,6 +1836,127 @@ namespace cryptonote
 
           }
 
+          if (ca_transfer_path_used)
+          {
+              tx.asset_proofs.clear();
+
+              // Build a unique non-native input asset ring for BGE surjection proofs.
+              std::vector<rct::key> input_asset_ring;
+              input_asset_ring.reserve(sources.size());
+              for (const auto& src : sources)
+              {
+                  if (src.asset_id == crypto::null_pkey)
+                      continue;
+                  const rct::key aid = rct::pk2rct(src.asset_id);
+                  if (std::find(input_asset_ring.begin(), input_asset_ring.end(), aid) == input_asset_ring.end())
+                      input_asset_ring.push_back(aid);
+              }
+              CHECK_AND_ASSERT_MES(!input_asset_ring.empty(), false, "CA transfer requires at least one non-native input asset for surjection proofs");
+
+              const rct::key tx_prefix_rct = rct::get_hf21_asset_proof_message(tx, mixRing, hw::get_device("default"));
+
+              // ── Per-input ZC_sig proofs ───────────────────────────────────
+              for (size_t i = 0; i < tx.vin.size(); ++i)
+              {
+                  if (!std::holds_alternative<txin_zc_input>(tx.vin[i]))
+                      continue;
+
+                  CHECK_AND_ASSERT_MES(i < mixRing.size(), false, "ZC input index out of range for mixRing");
+                  CHECK_AND_ASSERT_MES(i < index.size(), false, "ZC input index out of range for real index");
+                  CHECK_AND_ASSERT_MES(i < tx.rct_signatures.p.pseudoOuts.size(), false, "Missing pseudoOut for ZC input");
+
+                  rct::keyV ring_pubkeys;
+                  ring_pubkeys.reserve(mixRing[i].size());
+                  for (const auto& member : mixRing[i])
+                      ring_pubkeys.push_back(member.dest);
+
+                  rct::ctkey spend_sk{};
+                  spend_sk.dest = rct::sk2rct(in_contexts[i].in_ephemeral.sec);
+                  spend_sk.mask = rct::zero();
+
+                  rct::ZC_sig zc_sig = rct::genZCSig(
+                      tx_prefix_rct,
+                      ring_pubkeys,
+                      spend_sk,
+                      tx.rct_signatures.p.pseudoOuts[i],
+                      index[i],
+                      hwdev);
+                  zc_sig.key_image = std::get<txin_zc_input>(tx.vin[i]).k_image;
+                  tx.asset_proofs.emplace_back(std::move(zc_sig));
+              }
+
+              // ── One surjection wrapper containing one BGE proof per ZC output ──
+              rct::zc_asset_surjection_proof surj{};
+              size_t zc_out_idx = 0;
+              for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
+              {
+                  if (!std::holds_alternative<tx_out_zarcanum>(tx.vout[out_idx].target))
+                      continue;
+
+                  CHECK_AND_ASSERT_MES(out_idx < destinations.size(), false, "ZC output index exceeds destinations size");
+                  const auto& dst = destinations[out_idx];
+                  CHECK_AND_ASSERT_MES(dst.asset_id != crypto::null_pkey, false, "ZC output missing non-native asset_id");
+
+                  // Recompute output blinding scalar r used for T = asset + r*X.
+                  crypto::key_derivation derivation{};
+                  hwdev.generate_key_derivation(dst.addr.m_view_public_key, tx_key, derivation);
+                  const rct::key r = zarcanum_derivation_to_scalar(derivation, out_idx, "asset_blind");
+
+                  const auto& zout = std::get<tx_out_zarcanum>(tx.vout[out_idx].target);
+                  const rct::key T = rct::pk2rct(zout.blinded_asset_id);
+                  const rct::key out_asset = rct::pk2rct(dst.asset_id);
+
+                  auto it = std::find(input_asset_ring.begin(), input_asset_ring.end(), out_asset);
+                  size_t real_index = 0;
+                  if (it == input_asset_ring.end())
+                  {
+                      input_asset_ring.push_back(out_asset);
+                      real_index = input_asset_ring.size() - 1;
+                  }
+                  else
+                  {
+                      real_index = std::distance(input_asset_ring.begin(), it);
+                  }
+
+                  rct::key ctx = tx_prefix_rct;
+                  ctx.bytes[0] ^= static_cast<uint8_t>(zc_out_idx & 0xff);
+
+                  crypto::BGE_proof_s bge{};
+                  CHECK_AND_ASSERT_MES(
+                      crypto::generate_BGE_proof(ctx, input_asset_ring, T, r, real_index, bge),
+                      false,
+                      "Failed to generate BGE surjection proof");
+                  surj.bge_proofs.push_back(std::move(bge));
+                  ++zc_out_idx;
+              }
+              tx.asset_proofs.emplace_back(std::move(surj));
+
+              // ── Balance proof wrapper (HF21 asset_proofs path) ────────────
+              rct::zc_balance_proof bal{};
+              {
+                  rct::key in_mask_sum = rct::zero();
+                  for (const auto& src : sources)
+                  {
+                      if (src.asset_id == crypto::null_pkey)
+                          continue;
+                      sc_add(in_mask_sum.bytes, in_mask_sum.bytes, rct::pk2rct(src.amount_blinding_mask).bytes);
+                  }
+
+                  rct::key out_mask_sum = rct::zero();
+                  for (const auto& m : zc_output_amount_masks)
+                      sc_add(out_mask_sum.bytes, out_mask_sum.bytes, m.bytes);
+
+                  rct::key a = rct::zero();
+                  sc_sub(a.bytes, in_mask_sum.bytes, out_mask_sum.bytes);
+                  const rct::key b = rct::zero();
+                  bal.P = rct::scalarmultBase(a);
+                  CHECK_AND_ASSERT_MES(
+                      crypto::generate_linear_composition_proof(tx_prefix_rct, bal.P, a, b, bal.lcp),
+                      false,
+                      "Failed to generate ZC balance proof");
+              }
+              tx.asset_proofs.emplace_back(std::move(bal));
+          }
 
 
           memwipe(inSk.data(), inSk.size() * sizeof(rct::ctkey));
@@ -1806,14 +1966,11 @@ namespace cryptonote
           MCINFO("construct_tx",
                  "transaction_created: " << get_transaction_hash(tx) << "\n" << obj_to_json_str(tx) << "\n");
     }
+    // HF21 standard CA transfers rely on tx.asset_proofs (ZC proofs) path.
+    // Keep transaction::proofs unused/empty here until tx_proof_* integration
+    // is fully implemented end-to-end.
     if (ca_transfer_path_used)
-    {
-      if (!generate_ca_tx_proofs(tx))
-      {
-        LOG_ERROR("Failed to generate CA tx proofs");
-        return false;
-      }
-    }
+      tx.proofs.clear();
 
     tx.invalidate_hashes();
 

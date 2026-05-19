@@ -852,6 +852,70 @@ namespace rct {
       return  prehash;
     }
 
+    key get_hf21_asset_proof_message(const cryptonote::transaction& tx, const rct::ctkeyM& rings, hw::device &hwdev)
+    {
+      const key pre = get_pre_clsag_hash(tx.rct_signatures, hwdev);
+      std::vector<uint8_t> blob;
+      auto append = [&blob](const void* ptr, size_t n) {
+        const auto* p = static_cast<const uint8_t*>(ptr);
+        blob.insert(blob.end(), p, p + n);
+      };
+      auto append_u8 = [&blob](uint8_t v) { blob.push_back(v); };
+      auto append_u64 = [&append](uint64_t v) { append(&v, sizeof(v)); };
+
+      static constexpr char DOMAIN[] = "BLDX_HF21_ASSET_PROOF_MSG_V1";
+      append(DOMAIN, sizeof(DOMAIN) - 1);
+      append(&pre, sizeof(pre));
+
+      append_u64(tx.vin.size());
+      for (size_t i = 0; i < tx.vin.size(); ++i)
+      {
+        if (std::holds_alternative<cryptonote::txin_zc_input>(tx.vin[i]))
+        {
+          append_u8(1);
+          const auto& zc = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
+          append(&zc.k_image, sizeof(zc.k_image));
+          append(&zc.asset_id, sizeof(zc.asset_id));
+          append(&zc.amount_commitment, sizeof(zc.amount_commitment));
+          append(&zc.blinded_asset_id, sizeof(zc.blinded_asset_id));
+        }
+        else
+        {
+          append_u8(0);
+          const auto& tk = std::get<cryptonote::txin_to_key>(tx.vin[i]);
+          append(&tk.k_image, sizeof(tk.k_image));
+          append_u64(tk.amount);
+        }
+
+        const size_t ring_size = i < rings.size() ? rings[i].size() : 0;
+        append_u64(ring_size);
+        for (size_t j = 0; j < ring_size; ++j)
+        {
+          append(&rings[i][j].dest, sizeof(rings[i][j].dest));
+          append(&rings[i][j].mask, sizeof(rings[i][j].mask));
+        }
+      }
+
+      size_t zc_outs = 0;
+      for (const auto& out : tx.vout)
+        if (std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+          ++zc_outs;
+      append_u64(zc_outs);
+      for (const auto& out : tx.vout)
+      {
+        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+          continue;
+        const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
+        append(&zout.stealth_address, sizeof(zout.stealth_address));
+        append(&zout.amount_commitment, sizeof(zout.amount_commitment));
+        append(&zout.blinded_asset_id, sizeof(zout.blinded_asset_id));
+      }
+
+      crypto::hash h = crypto::null_hash;
+      crypto::cn_fast_hash(blob.data(), blob.size(), h);
+      return hash2rct(h);
+    }
+
     clsag proveRctCLSAGSimple(const key &message, const ctkeyV &pubs, const ctkey &inSk, const key &a, const key &Cout, const multisig_kLRki *kLRki, key *mscout, key *mspout, unsigned int index, hw::device &hwdev) {
         //setup vars
         size_t rows = 1;
@@ -1811,7 +1875,7 @@ namespace rct {
         // Count ZC inputs and match them to ZC_sig entries in asset_proofs.
         // pubkeys[i] is the ring for input i (built by check_tx_inputs).
         size_t zc_sig_idx = 0;
-        const key tx_prefix_hash = get_pre_clsag_hash(tx.rct_signatures, hw::get_device("default"));
+        const key tx_prefix_hash = get_hf21_asset_proof_message(tx, pubkeys, hw::get_device("default"));
 
         std::vector<const rct::ZC_sig*> zc_sigs;
         for (const auto& proof : tx.asset_proofs)
@@ -1822,13 +1886,9 @@ namespace rct {
         size_t zc_input_count = 0;
         for (size_t i = 0; i < tx.vin.size(); ++i)
         {
-            if (!std::holds_alternative<cryptonote::txin_to_key>(tx.vin[i]))
+            if (!std::holds_alternative<cryptonote::txin_zc_input>(tx.vin[i]))
                 continue;
-            const auto& txin = std::get<cryptonote::txin_to_key>(tx.vin[i]);
-            // Determine if this input spends a ZC output: amount == 0 and
-            // no standard RingCT CLSAG entry for it (ZC inputs have their
-            // own ZC_sig, not in rv.p.CLSAGs).  For now we identify ZC inputs
-            // by checking if a ZC_sig exists for this index.
+            const auto& txin = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
             if (zc_sig_idx >= zc_sigs.size())
                 continue;  // more inputs than ZC_sigs → not a ZC input
 
@@ -1933,6 +1993,60 @@ namespace rct {
                     reason = "asset ownership proof is zero";
                     return false;
                 }
+            }
+        }
+
+        // ── 4. Verify HF21 CA balance proof (asset conservation statement) ───
+        const rct::zc_balance_proof* bal = nullptr;
+        for (const auto& proof : tx.asset_proofs)
+        {
+            if (const auto* bp = std::get_if<rct::zc_balance_proof>(&proof))
+            {
+                if (bal != nullptr)
+                {
+                    reason = "multiple zc_balance_proof entries";
+                    return false;
+                }
+                bal = bp;
+            }
+        }
+        if (zc_input_count > 0)
+        {
+            if (bal == nullptr)
+            {
+                reason = "missing zc_balance_proof for CA spend";
+                return false;
+            }
+
+            rct::key sum_in_C = rct::zero();
+            for (size_t i = 0; i < tx.vin.size(); ++i)
+            {
+                if (!std::holds_alternative<cryptonote::txin_zc_input>(tx.vin[i]))
+                    continue;
+                const auto& zc = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
+                rct::addKeys(sum_in_C, sum_in_C, rct::pk2rct(zc.amount_commitment));
+            }
+
+            rct::key sum_out_C = rct::zero();
+            for (const auto& out : tx.vout)
+            {
+                if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+                    continue;
+                const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
+                rct::addKeys(sum_out_C, sum_out_C, rct::pk2rct(zout.amount_commitment));
+            }
+
+            rct::key expected_P = rct::zero();
+            rct::subKeys(expected_P, sum_in_C, sum_out_C);
+            if (bal->P != expected_P)
+            {
+                reason = "zc_balance_proof statement mismatch";
+                return false;
+            }
+            if (!crypto::verify_linear_composition_proof(tx_prefix_hash, bal->P, bal->lcp))
+            {
+                reason = "zc_balance_proof verification failed";
+                return false;
             }
         }
 
