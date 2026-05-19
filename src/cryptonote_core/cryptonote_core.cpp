@@ -1242,6 +1242,9 @@ namespace cryptonote
 
       if (!tx_info[n].tx.is_transfer())
         continue;
+      const bool has_zc_input = std::any_of(
+          tx_info[n].tx.vin.begin(), tx_info[n].tx.vin.end(),
+          [](const txin_v &in) { return std::holds_alternative<txin_zc_input>(in); });
       const rct::rctSig &rv = tx_info[n].tx.rct_signatures;
       switch (rv.type) {
         case rct::RCTType::Null:
@@ -1282,7 +1285,8 @@ namespace cryptonote
             tx_info[n].result = false;
             break;
           }
-          rvv.push_back(&rv); // delayed batch verification
+          if (!has_zc_input)
+            rvv.push_back(&rv); // delayed batch verification (legacy-only semantics path)
           break;
         case rct::RCTType::BulletproofPlus:
           if (!is_canonical_bulletproof_plus_layout(rv.p.bulletproofs_plus))
@@ -1293,7 +1297,8 @@ namespace cryptonote
             tx_info[n].result = false;
             break;
           }
-          rvv.push_back(&rv); // delayed batch verification
+          if (!has_zc_input)
+            rvv.push_back(&rv); // delayed batch verification (legacy-only semantics path)
           break;
         default:
           MERROR_VER("Unknown rct type: " << (int)rv.type);
@@ -1312,6 +1317,11 @@ namespace cryptonote
         if (!tx_info[n].result || tx_info[n].already_have)
           continue;
         if (tx_info[n].tx.rct_signatures.type != rct::RCTType::Bulletproof && tx_info[n].tx.rct_signatures.type != rct::RCTType::Bulletproof2 && tx_info[n].tx.rct_signatures.type != rct::RCTType::CLSAG && tx_info[n].tx.rct_signatures.type != rct::RCTType::BulletproofPlus)
+          continue;
+        const bool has_zc_input = std::any_of(
+            tx_info[n].tx.vin.begin(), tx_info[n].tx.vin.end(),
+            [](const txin_v &in) { return std::holds_alternative<txin_zc_input>(in); });
+        if (has_zc_input)
           continue;
         if (assumed_bad || !rct::verRctSemanticsSimple(tx_info[n].tx.rct_signatures))
         {
@@ -1616,11 +1626,8 @@ namespace cryptonote
       return false;
     }
 
-    if (has_zc_inputs && has_legacy_key_inputs)
-    {
-      MERROR_VER("tx contains mixed legacy and CA/ZC transfer inputs, rejected for tx id= " << get_transaction_hash(tx));
-      return false;
-    }
+    // HF21 CA transfers may include legacy native inputs to pay native fees.
+    // Mixed txin_zc_input + txin_to_key is therefore allowed for txtype::standard.
 
     if (has_zc_inputs && tx.type != txtype::standard)
     {
@@ -1681,35 +1688,11 @@ namespace cryptonote
       }
     }
 
-    if (has_zc_inputs)
+    if (has_zc_inputs && !tx.proofs.empty())
     {
-      if (tx.proofs.size() != 3)
-      {
-        MERROR_VER("CA/ZC tx must contain exactly 3 proofs, got " << tx.proofs.size()
-                   << ", rejected for tx id= " << get_transaction_hash(tx));
-        return false;
-      }
-
-      size_t surjection_count = 0, range_count = 0, balance_count = 0;
-      for (const auto& p : tx.proofs)
-      {
-        if (std::holds_alternative<tx_proof_asset_surjection>(p))
-          ++surjection_count;
-        else if (std::holds_alternative<tx_proof_range>(p))
-          ++range_count;
-        else if (std::holds_alternative<tx_proof_balance>(p))
-          ++balance_count;
-      }
-
-      if (surjection_count != 1 || range_count != 1 || balance_count != 1)
-      {
-        MERROR_VER("CA/ZC tx has invalid proof set counts: "
-                   << "surjection=" << surjection_count
-                   << ", range=" << range_count
-                   << ", balance=" << balance_count
-                   << ", rejected for tx id= " << get_transaction_hash(tx));
-        return false;
-      }
+      MERROR_VER("CA/ZC tx uses unsupported legacy tx.proofs payload; expected HF21 asset_proofs path, rejected for tx id= "
+                 << get_transaction_hash(tx));
+      return false;
     }
 
     if (tx.is_transfer())
@@ -2005,8 +1988,14 @@ namespace cryptonote
     std::unordered_set<crypto::key_image> ki;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
-      if(!ki.insert(tokey_in.k_image).second)
+      const crypto::key_image* key_image_ptr = nullptr;
+      if (const auto* tokey_in = std::get_if<txin_to_key>(&in))
+        key_image_ptr = &tokey_in->k_image;
+      else if (const auto* zc_in = std::get_if<txin_zc_input>(&in))
+        key_image_ptr = &zc_in->k_image;
+      else
+        return false;
+      if(!ki.insert(*key_image_ptr).second)
         return false;
     }
     return true;
@@ -2016,9 +2005,15 @@ namespace cryptonote
   {
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
-      for (size_t n = 1; n < tokey_in.key_offsets.size(); ++n)
-        if (tokey_in.key_offsets[n] == 0)
+      const std::vector<uint64_t>* key_offsets = nullptr;
+      if (const auto* tokey_in = std::get_if<txin_to_key>(&in))
+        key_offsets = &tokey_in->key_offsets;
+      else if (const auto* zc_in = std::get_if<txin_zc_input>(&in))
+        key_offsets = &zc_in->key_offsets;
+      else
+        return false;
+      for (size_t n = 1; n < key_offsets->size(); ++n)
+        if ((*key_offsets)[n] == 0)
           return false;
     }
 
@@ -2027,11 +2022,16 @@ namespace cryptonote
   //-----------------------------------------------------------------------------------------------
   bool core::check_tx_inputs_keyimages_domain(const transaction& tx) const
   {
-    std::unordered_set<crypto::key_image> ki;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
-      if (!(rct::scalarmultKey(rct::ki2rct(tokey_in.k_image), rct::curveOrder()) == rct::identity()))
+      const crypto::key_image* key_image_ptr = nullptr;
+      if (const auto* tokey_in = std::get_if<txin_to_key>(&in))
+        key_image_ptr = &tokey_in->k_image;
+      else if (const auto* zc_in = std::get_if<txin_zc_input>(&in))
+        key_image_ptr = &zc_in->k_image;
+      else
+        return false;
+      if (!(rct::scalarmultKey(rct::ki2rct(*key_image_ptr), rct::curveOrder()) == rct::identity()))
         return false;
     }
     return true;

@@ -105,33 +105,6 @@ DISABLE_VS_WARNINGS(4267)
 
 namespace
 {
-  bool verify_asset_surjection_proof(
-      const cryptonote::transaction& /*tx*/,
-      const cryptonote::tx_proof_asset_surjection& /*proof*/,
-      std::string* reason)
-  {
-    if (reason) *reason = "CA tx proof verification not implemented yet (asset surjection)";
-    return false;
-  }
-
-  bool verify_ca_range_proof(
-      const cryptonote::transaction& /*tx*/,
-      const cryptonote::tx_proof_range& /*proof*/,
-      std::string* reason)
-  {
-    if (reason) *reason = "CA tx proof verification not implemented yet (range)";
-    return false;
-  }
-
-  bool verify_ca_balance_proof(
-      const cryptonote::transaction& /*tx*/,
-      const cryptonote::tx_proof_balance& /*proof*/,
-      std::string* reason)
-  {
-    if (reason) *reason = "CA tx proof verification not implemented yet (balance)";
-    return false;
-  }
-
   const crypto::key_image* key_image_from_txin(const cryptonote::txin_v& in)
   {
     if (const auto* tk = std::get_if<cryptonote::txin_to_key>(&in))
@@ -155,16 +128,6 @@ namespace
     for (const auto& in : tx.vin)
     {
       if (std::holds_alternative<cryptonote::txin_zc_input>(in))
-        return true;
-    }
-    return false;
-  }
-
-  bool has_legacy_key_inputs(const cryptonote::transaction& tx)
-  {
-    for (const auto& in : tx.vin)
-    {
-      if (std::holds_alternative<cryptonote::txin_to_key>(in))
         return true;
     }
     return false;
@@ -207,12 +170,6 @@ namespace
       cryptonote::hf hf_version,
       cryptonote::tx_verification_context& tvc)
   {
-    // Temporary compatibility gate:
-    // wallet-side CA proof generation is still under active development, so
-    // strict tx.proofs verification here would reject all CA spends.
-    // Keep this disabled until tx.proofs generation/verification is fully wired.
-    static constexpr bool k_enforce_ca_tx_proofs = false;
-
     if (!has_zc_inputs(tx))
       return true;
 
@@ -223,12 +180,7 @@ namespace
       return false;
     }
 
-    if (k_enforce_ca_tx_proofs && has_legacy_key_inputs(tx))
-    {
-      MERROR_VER("CA tx has mixed legacy and zc inputs");
-      tvc.m_verifivation_failed = true;
-      return false;
-    }
+
 
     if (hf_version < cryptonote::hf::hf20_bulletproof_plus)
     {
@@ -237,14 +189,12 @@ namespace
       return false;
     }
 
-    if (!k_enforce_ca_tx_proofs)
+    // HF21 standard transfer acceptance uses tx.asset_proofs (verified in
+    // check_tx_inputs via rct::verAssetProofs). Keep tx.proofs empty until the
+    // tx_proof_* path is fully implemented and consensus-ready.
+    if (!tx.proofs.empty())
     {
-      MWARNING("TEMP: skipping strict CA tx.proofs verification (development mode)");
-      return true;
-    }
-    if (tx.proofs.empty())
-    {
-      MERROR_VER("CA tx is missing tx.proofs");
+      MERROR_VER("CA standard transfer must not include tx.proofs yet");
       tvc.m_verifivation_failed = true;
       return false;
     }
@@ -268,80 +218,7 @@ namespace
       tvc.m_verifivation_failed = true;
       return false;
     }
-    if (tx.proofs.size() != 3)
-    {
-      MERROR_VER("CA tx must contain exactly 3 proofs (surjection/range/balance), got " << tx.proofs.size());
-      tvc.m_verifivation_failed = true;
-      return false;
-    }
-
-    const cryptonote::tx_proof_asset_surjection* surjection = nullptr;
-    const cryptonote::tx_proof_range* range = nullptr;
-    const cryptonote::tx_proof_balance* balance = nullptr;
-    for (const auto& p : tx.proofs)
-    {
-      if (const auto* v = std::get_if<cryptonote::tx_proof_asset_surjection>(&p))
-      {
-        if (surjection)
-        {
-          MERROR_VER("CA tx contains duplicate surjection proofs");
-          tvc.m_verifivation_failed = true;
-          return false;
-        }
-        surjection = v;
-      }
-      else if (const auto* v = std::get_if<cryptonote::tx_proof_range>(&p))
-      {
-        if (range)
-        {
-          MERROR_VER("CA tx contains duplicate range proofs");
-          tvc.m_verifivation_failed = true;
-          return false;
-        }
-        range = v;
-      }
-      else if (const auto* v = std::get_if<cryptonote::tx_proof_balance>(&p))
-      {
-        if (balance)
-        {
-          MERROR_VER("CA tx contains duplicate balance proofs");
-          tvc.m_verifivation_failed = true;
-          return false;
-        }
-        balance = v;
-      }
-    }
-
-    if (!surjection || !range || !balance)
-    {
-      MERROR_VER("CA tx is missing required proof type(s): "
-                 << "surjection=" << (surjection != nullptr)
-                 << ", range=" << (range != nullptr)
-                 << ", balance=" << (balance != nullptr));
-      tvc.m_verifivation_failed = true;
-      return false;
-    }
-
-    std::string reason;
-    if (!verify_asset_surjection_proof(tx, *surjection, &reason))
-    {
-      MERROR_VER("CA surjection proof verification failed: " << reason);
-      tvc.m_verifivation_failed = true;
-      return false;
-    }
-    if (!verify_ca_range_proof(tx, *range, &reason))
-    {
-      MERROR_VER("CA range proof verification failed: " << reason);
-      tvc.m_verifivation_failed = true;
-      return false;
-    }
-    if (!verify_ca_balance_proof(tx, *balance, &reason))
-    {
-      MERROR_VER("CA balance proof verification failed: " << reason);
-      tvc.m_verifivation_failed = true;
-      return false;
-    }
-
+    // tx.proofs path intentionally unused for HF21 standard transfers.
     return true;
   }
 }
@@ -3553,9 +3430,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   // do not have prior asset inputs to prove membership/balance against.  The
   // spend-style ZC proof bundle is only required for transactions that are not
   // initial asset registrations.
-  static constexpr bool k_enforce_zc_output_asset_proofs = false;
-  if (k_enforce_zc_output_asset_proofs &&
-      hf_version >= feature::CONFIDENTIAL_ASSETS &&
+  if (hf_version >= feature::CONFIDENTIAL_ASSETS &&
       tx.has_zarcanum_outputs() &&
       tx.type != txtype::deploy_new_asset)
   {
@@ -3732,10 +3607,6 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
   if (tx.is_transfer())
   {
-    // Temporary CA development compatibility switch. While CA input signing and
-    // proof plumbing is incomplete, this allows end-to-end functional testing.
-    static constexpr bool k_dev_relax_ca_input_verification = true;
-
     if (!verify_ca_tx_proofs_or_set_tvc(tx, hf_version, tvc))
       return false;
 
@@ -3817,9 +3688,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
         // make sure that output being spent matches up correctly with the
         // signature spending it.
-        const bool is_zc_input = std::holds_alternative<txin_zc_input>(txin);
-        if (!(k_dev_relax_ca_input_verification && is_zc_input) &&
-            !check_tx_input(in_to_key, tx_prefix_hash, pubkeys[sig_index], pmax_used_block_height))
+        if (!check_tx_input(in_to_key, tx_prefix_hash, pubkeys[sig_index], pmax_used_block_height))
         {
           MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
           if (pmax_used_block_height) // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
@@ -3945,9 +3814,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      const bool mixed_ca_legacy_inputs = has_zc_inputs(tx) && has_legacy_key_inputs(tx);
-      if (!(k_dev_relax_ca_input_verification && mixed_ca_legacy_inputs) &&
-          !rct::verRctNonSemanticsSimple(rv))
+      if (!rct::verRctNonSemanticsSimple(rv))
       {
         MERROR_VER("Failed to check ringct signatures!");
         return false;
@@ -4072,11 +3939,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     }
 
     // HF21: verify ZC_sig, BGE surjection, and ownership proofs (inside pubkeys scope)
-    // Temporary development compatibility: wallet-side CA proof generation is
-    // still incomplete, so keep strict proof verification gated off for now.
-    static constexpr bool k_enforce_hf21_asset_proofs = false;
-    if (k_enforce_hf21_asset_proofs &&
-        hf_version >= feature::CONFIDENTIAL_ASSETS &&
+    if (hf_version >= feature::CONFIDENTIAL_ASSETS &&
         tx.has_zarcanum_outputs())
     {
       std::string reason;

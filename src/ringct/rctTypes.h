@@ -690,8 +690,9 @@ namespace rct {
 
     struct zc_balance_proof
     {
+      key P{};
       crypto::linear_composition_proof_s lcp;
-      BEGIN_SERIALIZE_OBJECT() FIELD(lcp) END_SERIALIZE()
+      BEGIN_SERIALIZE_OBJECT() FIELD(P) FIELD(lcp) END_SERIALIZE()
     };
 
     struct asset_operation_proof

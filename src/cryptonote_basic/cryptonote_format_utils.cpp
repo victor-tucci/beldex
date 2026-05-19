@@ -992,8 +992,20 @@ namespace cryptonote
     money = 0;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
-      money += tokey_in.amount;
+      if (const auto* tokey_in = std::get_if<txin_to_key>(&in))
+      {
+        money += tokey_in->amount;
+        continue;
+      }
+      if (std::holds_alternative<txin_zc_input>(in))
+      {
+        // ZC inputs are always encoded with plaintext amount=0.
+        continue;
+      }
+      CHECK_AND_ASSERT_MES(false, false, "wrong variant type: "
+        << tools::type_name(tools::variant_type(in)) << ", expected "
+        << tools::type_name<txin_to_key>() << " or " << tools::type_name<txin_zc_input>()
+        << ", in transaction id=" << get_transaction_hash(tx));
     }
     return true;
   }
@@ -1073,10 +1085,22 @@ namespace cryptonote
     uint64_t money = 0;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
-      if(money > tokey_in.amount + money)
-        return false;
-      money += tokey_in.amount;
+      if (const auto* tokey_in = std::get_if<txin_to_key>(&in))
+      {
+        if(money > tokey_in->amount + money)
+          return false;
+        money += tokey_in->amount;
+        continue;
+      }
+      if (std::holds_alternative<txin_zc_input>(in))
+      {
+        // ZC inputs do not carry plaintext amounts.
+        continue;
+      }
+      CHECK_AND_ASSERT_MES(false, false, "wrong variant type: "
+        << tools::type_name(tools::variant_type(in)) << ", expected "
+        << tools::type_name<txin_to_key>() << " or " << tools::type_name<txin_zc_input>()
+        << ", in transaction id=" << get_transaction_hash(tx));
     }
     return true;
   }

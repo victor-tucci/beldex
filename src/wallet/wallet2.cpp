@@ -326,7 +326,6 @@ struct options {
   const command_line::arg_descriptor<bool> devnet = {"devnet", tools::wallet2::tr("For devnet. Daemon must also be launched with --devnet flag"), false};
   const command_line::arg_descriptor<bool> regtest = {"regtest", tools::wallet2::tr("For regression testing. Daemon must also be launched with --regtest flag"), false};
   const command_line::arg_descriptor<bool> disable_rpc_long_poll = {"disable-rpc-long-poll", tools::wallet2::tr("Disable TX pool long polling functionality for instantaneous TX detection"), false};
-  const command_line::arg_descriptor<bool> dev_allow_cross_asset_decoys = {"dev-allow-cross-asset-decoys", tools::wallet2::tr("Development toggle: allow cross-asset decoy selection by using the global/native decoy pool"), false};
 
   const command_line::arg_descriptor<std::string, false, true, 3> shared_ringdb_dir = {
     "shared-ringdb-dir", tools::wallet2::tr("Set shared ring database path"),
@@ -480,7 +479,6 @@ std::unique_ptr<tools::wallet2> make_basic(const boost::program_options::variabl
   wallet->device_address(device_addr);
   wallet->device_derivation_path(device_derivation_path);
   wallet->m_long_poll_disabled = command_line::get_arg(vm, opts.disable_rpc_long_poll);
-  wallet->m_dev_allow_cross_asset_decoys = command_line::get_arg(vm, opts.dev_allow_cross_asset_decoys);
   wallet->m_http_client.set_https_client_cert(command_line::get_arg(vm, opts.daemon_ssl_certificate), command_line::get_arg(vm, opts.daemon_ssl_private_key));
   wallet->m_http_client.set_insecure_https(command_line::get_arg(vm, opts.daemon_ssl_allow_any_cert));
   wallet->m_http_client.set_https_cainfo(command_line::get_arg(vm, opts.daemon_ssl_ca_certificates));
@@ -1239,7 +1237,6 @@ void wallet2::init_options(boost::program_options::options_description& desc_par
   command_line::add_arg(desc_params, opts.tx_notify);
   command_line::add_arg(desc_params, opts.offline);
   command_line::add_arg(desc_params, opts.disable_rpc_long_poll);
-  command_line::add_arg(desc_params, opts.dev_allow_cross_asset_decoys);
   command_line::add_arg(desc_params, opts.extra_entropy);
 }
 
@@ -9618,13 +9615,9 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
 {
   LOG_PRINT_L2("fake_outputs_count: " << fake_outputs_count);
   outs.clear();
-  const bool allow_cross_asset_decoys = m_dev_allow_cross_asset_decoys;
-  if (allow_cross_asset_decoys)
-    MWARNING("DEV MODE ENABLED: cross-asset decoys are allowed; this is for development only");
 
   // Mixed-asset decoy requests are split per-asset so each sub-request can query the daemon
   // directly within a single asset bucket.
-  if (!allow_cross_asset_decoys)
   {
     std::map<crypto::public_key, std::vector<size_t>> selected_by_asset;
     for (size_t idx : selected_transfers)
@@ -9719,9 +9712,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     bool is_after_segregation_fork = height >= segregation_fork_height;
 
     const crypto::public_key requested_asset_id =
-        allow_cross_asset_decoys || selected_transfers.empty()
-            ? crypto::null_pkey
-            : m_transfers[selected_transfers.front()].get_asset_id();
+        selected_transfers.empty() ? crypto::null_pkey : m_transfers[selected_transfers.front()].get_asset_id();
     const bool native_asset_bucket = requested_asset_id == crypto::null_pkey;
 
     // if we have at least one rct out, get the distribution, or fall back to the previous system
@@ -10319,7 +10310,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
                   if (get_outputs[i].index == out)
                   {
                     LOG_PRINT_L2("Index " << i << "/" << fetched_outputs_count << ": idx " << get_outputs[i].index << " (real " << real_out_index << "), unlocked " << got_outs[i].unlocked << ", key " << got_outs[i].key << " (from existing ring)");
-                    if (!allow_cross_asset_decoys && required_asset_id != crypto::null_pkey && got_outs[i].asset_id != required_asset_id)
+                    if (required_asset_id != crypto::null_pkey && got_outs[i].asset_id != required_asset_id)
                       continue;
                     tx_add_fake_output(outs, get_outputs[i].index, got_outs[i].key, got_outs[i].mask, got_outs[i].asset_id, got_outs[i].asset_commitment, real_out_index, got_outs[i].unlocked);
                     found = true;
@@ -10346,20 +10337,12 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       {
         size_t i = base + order[o];
         LOG_PRINT_L2("Index " << i << "/" << fetched_outputs_count << ": idx " << get_outputs[i].index << " (real " << real_out_index << "), unlocked " << got_outs[i].unlocked << ", key " << got_outs[i].key);
-        if (!allow_cross_asset_decoys && got_outs[i].asset_id != required_asset_id)
+        if (got_outs[i].asset_id != required_asset_id)
           continue;
         tx_add_fake_output(outs, get_outputs[i].index, got_outs[i].key, got_outs[i].mask, got_outs[i].asset_id, got_outs[i].asset_commitment, real_out_index, got_outs[i].unlocked);
       }
       if (outs.back().size() < fake_outputs_count + 1)
       {
-        if (allow_cross_asset_decoys)
-        {
-          MWARNING("Cross-asset decoy mode enabled but still insufficient decoys: amount="
-              << print_money(td.is_rct() ? 0 : td.amount())
-              << ", gathered=" << outs.back().size()
-              << ", required=" << (fake_outputs_count + 1)
-              << ", required_asset=" << tools::type_to_hex(required_asset_id));
-        }
         scanty_outs[td.is_rct() ? 0 : td.amount()] = outs.back().size();
       }
       else
@@ -10508,8 +10491,14 @@ void wallet2::build_tx_sources_with_decoys(
     using tx_output_entry = cryptonote::tx_source_entry::output_entry;
     for (size_t n = 0; n < fake_outputs_count + 1; ++n)
     {
+      const crypto::public_key decoy_pubkey = std::get<1>(outs[out_index][n]);
+      const rct::key decoy_amount_commitment = std::get<2>(outs[out_index][n]);
       const crypto::public_key decoy_asset_id = std::get<3>(outs[out_index][n]);
       const rct::key decoy_asset_commitment = std::get<4>(outs[out_index][n]);
+      THROW_WALLET_EXCEPTION_IF(decoy_pubkey == crypto::null_pkey, error::wallet_internal_error,
+          "Ring member pubkey missing while building ring sources");
+      THROW_WALLET_EXCEPTION_IF(decoy_amount_commitment == rct::zero(), error::wallet_internal_error,
+          "Ring member amount commitment missing while building ring sources");
       if (src.asset_id != crypto::null_pkey)
       {
         THROW_WALLET_EXCEPTION_IF(decoy_asset_id != src.asset_id, error::wallet_internal_error,
@@ -10519,8 +10508,8 @@ void wallet2::build_tx_sources_with_decoys(
       }
       tx_output_entry oe;
       oe.first = std::get<0>(outs[out_index][n]);
-      oe.second.dest = rct::pk2rct(std::get<1>(outs[out_index][n]));
-      oe.second.mask = std::get<2>(outs[out_index][n]);
+      oe.second.dest = rct::pk2rct(decoy_pubkey);
+      oe.second.mask = decoy_amount_commitment;
       src.outputs.push_back(oe);
       src.output_asset_ids.push_back(decoy_asset_id);
       src.output_asset_commitments.push_back(decoy_asset_commitment);
@@ -10551,6 +10540,17 @@ void wallet2::build_tx_sources_with_decoys(
     src.real_output = it_to_replace - src.outputs.begin();
     src.real_output_in_tx_index = td.m_internal_output_index;
     src.mask = td.m_mask;
+    THROW_WALLET_EXCEPTION_IF(src.real_output >= src.outputs.size(), error::wallet_internal_error,
+        "real output index out of range while building ring sources");
+    THROW_WALLET_EXCEPTION_IF(src.outputs[src.real_output].second.dest == rct::zero(), error::wallet_internal_error,
+        "real output pubkey missing while building ring sources");
+    THROW_WALLET_EXCEPTION_IF(src.outputs[src.real_output].second.mask == rct::zero(), error::wallet_internal_error,
+        "real output amount commitment missing while building ring sources");
+    if (src.asset_id != crypto::null_pkey)
+    {
+      THROW_WALLET_EXCEPTION_IF(src.output_asset_commitments[src.real_output] == rct::zero(), error::wallet_internal_error,
+          "real output asset commitment missing while building ring sources");
+    }
     if (m_multisig)
     {
       auto ignore_set = ignore_sets.empty() ? std::unordered_set<crypto::public_key>() : ignore_sets.front();
@@ -10601,8 +10601,28 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
         non_native.insert(e.asset_id);
     return non_native;
   };
+  const auto destination_non_native_assets = collect_non_native_assets(dsts);
+  const bool ca_standard_transfer = tx_params.tx_type == txtype::standard && destination_non_native_assets.size() == 1;
+  const crypto::public_key required_ca_asset = ca_standard_transfer ? *destination_non_native_assets.begin() : crypto::null_pkey;
+  std::vector<size_t> effective_selected_transfers = selected_transfers;
+  if (ca_standard_transfer)
+  {
+    std::vector<size_t> filtered;
+    filtered.reserve(selected_transfers.size());
+    for (size_t idx : selected_transfers)
+    {
+      const crypto::public_key aid = m_transfers[idx].get_asset_id();
+      // Keep CA spend inputs for the transferred asset and keep native inputs
+      // to pay network fee.
+      if (aid == required_ca_asset || aid == crypto::null_pkey)
+        filtered.push_back(idx);
+    }
+    THROW_WALLET_EXCEPTION_IF(filtered.empty(), error::wallet_internal_error,
+      "CA transfer requires selected inputs");
+    effective_selected_transfers = std::move(filtered);
+  }
   LOG_PRINT_L2("transfer_selected_rct: starting with native fee bucket " << print_money(fee));
-  LOG_PRINT_L2("selected transfers: " << strjoin(selected_transfers, " "));
+  LOG_PRINT_L2("selected transfers: " << strjoin(effective_selected_transfers, " "));
   for (auto& dt : dsts)
     THROW_WALLET_EXCEPTION_IF(0 == dt.amount &&
       tx_params.tx_type != txtype::beldex_name_system &&
@@ -10670,9 +10690,9 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   uint32_t subaddr_account = 0;
   std::unordered_set<crypto::public_key> input_non_native_assets;
   bool has_rct = false;
-  for (size_t i = 0; i < selected_transfers.size(); i++)
+  for (size_t i = 0; i < effective_selected_transfers.size(); i++)
   {
-    size_t transfer_idx        = selected_transfers[i];
+    size_t transfer_idx        = effective_selected_transfers[i];
     transfer_details const &td = m_transfers[transfer_idx];
     has_rct                   |= td.is_rct();
     const crypto::public_key asset_id = td.get_asset_id();
@@ -10696,7 +10716,6 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
       error::not_enough_unlocked_money, found_amount, needed_amount, asset_id == crypto::null_pkey ? fee : 0);
   }
 
-  const auto destination_non_native_assets = collect_non_native_assets(dsts);
   THROW_WALLET_EXCEPTION_IF(destination_non_native_assets.size() > 1, error::wallet_internal_error,
     "mixed non-native destination assets in one tx are forbidden");
   if (!destination_non_native_assets.empty() && tx_params.tx_type != txtype::deploy_new_asset)
@@ -10710,13 +10729,13 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     MINFO("deploy_new_asset: destination non-native asset bucket is minted in this tx; skipping input bucket match check");
   }
   if (outs.empty())
-    get_outs(outs, selected_transfers, fake_outputs_count, has_rct); // may throw
+    get_outs(outs, effective_selected_transfers, fake_outputs_count, has_rct); // may throw
 
   //prepare inputs
   LOG_PRINT_L2("preparing outputs");
   std::vector<cryptonote::tx_source_entry> sources;
   std::unordered_set<rct::key> used_L;
-  build_tx_sources_with_decoys(selected_transfers, outs, fake_outputs_count, ignore_sets, sources, used_L);
+  build_tx_sources_with_decoys(effective_selected_transfers, outs, fake_outputs_count, ignore_sets, sources, used_L);
   LOG_PRINT_L2("outputs prepared");
 
   // we still keep a copy, since we want to keep dsts free of change for user feedback purposes
@@ -10825,48 +10844,8 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, dsts, unlock_time, m_nettype);
   THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx), error::tx_too_big, tx, upper_transaction_weight_limit);
 
-  // ── HF21: generate ZC_sig for each ZC input being spent ─────────────────
-  // The CLSAG is 1-layer (key only): ring = pubkeys from output_amounts[0],
-  // identical to a BDX ring except the real member is a stealth_address.
-  // A pseudo-output commitment is chosen with a fresh random mask so the
-  // balance proof can link input commitments to output commitments.
-  if (tx_params.hf_version >= feature::CONFIDENTIAL_ASSETS)
-  {
-    for (size_t i = 0; i < selected_transfers.size(); ++i)
-    {
-      const transfer_details& td = m_transfers[selected_transfers[i]];
-      if (!td.is_zarcanum())
-        continue;
-
-      // Build ZC_sig for this input.
-      rct::ZC_sig zc_sig{};
-
-      // Key image is already computed and stored in td.m_key_image (set in scan_output).
-      zc_sig.key_image = td.m_key_image;
-
-      // Pseudo-output commitment: C_pseudo = amount*asset_id + delta*G
-      // where delta is a fresh random mask.  Balance proof links
-      // sum(pseudo_C) - sum(output_C) = 0 via linear_composition_proof.
-      rct::key delta = rct::skGen();
-      rct::key asset_id_rct = rct::pk2rct(td.get_asset_id());
-      zc_sig.pseudo_out_commitment = rct::commitAsset(delta, asset_id_rct, td.amount());
-
-      // Ring: pubkeys from sources[i].outputs  (already built by get_outs)
-      // The ring is over raw public keys — stealth_address for ZC outputs,
-      // txout_to_key.key for BDX outputs.  Both are valid CLSAG ring members.
-      rct::ctkeyV ring;
-      ring.reserve(sources[i].outputs.size());
-      for (const auto& oe : sources[i].outputs)
-        ring.push_back(oe.second);  // {dest (pubkey), mask (commitment)}
-
-      // Key image is already computed and stored in td.m_key_image from scan_output().
-      // The clsag_sig is left default-initialised here; full CLSAG signing
-      // (Phase 7 complete path) will populate it when asset transfer is implemented.
-      zc_sig.key_image = td.m_key_image;
-
-      tx.asset_proofs.push_back(std::move(zc_sig));
-    }
-  }
+  // HF21 ZC proof payloads (ZC_sig, surjection, balance) are constructed in
+  // cryptonote::construct_tx_with_tx_key(). Do not append placeholder proofs here.
 
   // work out the permutation done on sources
   std::vector<size_t> ins_order;
@@ -10897,8 +10876,8 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
       {
         std::unordered_set<rct::key> new_used_L;
         size_t src_idx = 0;
-        THROW_WALLET_EXCEPTION_IF(selected_transfers.size() != sources.size(), error::wallet_internal_error, "mismatched selected_transfers and sources sizes");
-        for(size_t idx: selected_transfers)
+        THROW_WALLET_EXCEPTION_IF(effective_selected_transfers.size() != sources.size(), error::wallet_internal_error, "mismatched selected_transfers and sources sizes");
+        for(size_t idx: effective_selected_transfers)
         {
           cryptonote::tx_source_entry& src = sources_copy[src_idx];
           src.multisig_kLRki = get_multisig_composite_kLRki(idx, ignore_sets[ignore_index], used_L, new_used_L);
@@ -10966,7 +10945,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   ptx.dust_added_to_fee = false;
   ptx.tx = tx;
   ptx.change_dts = change_dts;
-  ptx.selected_transfers = selected_transfers;
+  ptx.selected_transfers = effective_selected_transfers;
   tools::apply_permutation(ins_order, ptx.selected_transfers);
   ptx.tx_key = tx_key;
   ptx.additional_tx_keys = additional_tx_keys;
@@ -11622,12 +11601,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_deploy_tx(
     uint32_t subaddr_account,
     std::set<uint32_t> subaddr_indices)
 {
-  size_t effective_fake_outs_count = fake_outs_count;
-  if (m_dev_allow_cross_asset_decoys && effective_fake_outs_count > 0)
-  {
-    MWARNING("DEV MODE ENABLED: deploy_new_asset using reduced ring size (1) because decoy pools may be sparse in development/testnet");
-    effective_fake_outs_count = 0;
-  }
+  const size_t effective_fake_outs_count = fake_outs_count;
 
   // Count how many ZC outputs are in the caller-supplied destinations.
   size_t zc_count = 0;
@@ -11843,6 +11817,18 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   // real transactions.
   std::swap(burn_fixed, tx_params.burn_fixed);
   std::swap(burn_percent, tx_params.burn_percent);
+  const bool is_standard_ca_transfer = tx_params.tx_type == txtype::standard &&
+      std::any_of(dsts.begin(), dsts.end(), [](const cryptonote::tx_destination_entry& d) {
+        return d.asset_id != crypto::null_pkey;
+      });
+  if (is_standard_ca_transfer)
+  {
+    // HF21 CA transfer path: do not inject legacy flash burn accounting into
+    // native fee/burn fields. Asset-proof-based CA validation handles value
+    // conservation, and forcing native burn here breaks CA-only input sets.
+    burn_fixed = 0;
+    burn_percent = 0;
+  }
   bool burning = burn_fixed || burn_percent;
   THROW_WALLET_EXCEPTION_IF(burning && tx_params.hf_version < feature::FEE_BURNING, error::wallet_internal_error, "cannot construct transaction: cannot burn amounts under the current hard fork");
   std::vector<uint8_t> extra_plus; // Copy and modified from input if modification needed
