@@ -544,6 +544,7 @@ namespace cryptonote
      * @return true
      */
     bool get_outs(const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUTPUTS_BIN::response& res) const;
+    bool get_outs_for_asset(const crypto::public_key &asset_id, const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUTPUTS_BIN::response& res) const;
 
     /**
      * @brief gets an output's key and unlocked state
@@ -567,6 +568,7 @@ namespace cryptonote
      * @param return-by-reference base how many outputs of that amount are before the stated distribution
      */
     bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
+    bool get_output_distribution_for_asset(const crypto::public_key &asset_id, uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
 
     /**
      * @brief gets global output indexes that should not be used, i.e. registration tx outputs
@@ -829,7 +831,7 @@ namespace cryptonote
      * @return a set of amount/instances
      */
     std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const;
-
+    std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram_for_asset(const crypto::public_key &asset_id, const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const;
     /**
      * @brief perform a check on all key images in the blockchain
      *

@@ -29,6 +29,7 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <unordered_set>
+#include <unordered_map>
 #include <random>
 #include "epee/string_tools.h"
 #include "common/apply_permutation.h"
@@ -592,14 +593,569 @@ namespace cryptonote
       return change_addr->addr.m_view_public_key;
     return addr.m_view_public_key;
   }
-  //---------------------------------------------------------------
-  bool construct_tx_with_tx_key(const account_keys& sender_account_keys, const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses, std::vector<tx_source_entry>& sources, std::vector<tx_destination_entry>& destinations, const std::optional<tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const rct::RCTConfig &rct_config, rct::multisig_out *msout, bool shuffle_outs, beldex_construct_tx_params const &tx_params)
+
+  static bool use_confidential_asset_path(const std::vector<tx_source_entry>& sources, const std::vector<tx_destination_entry>& destinations)
   {
-    LOG_PRINT_L0("Construct_tx_with_tx_key: " << sources.size() << " sources, " << destinations.size() << " destinations, extra size: " << extra.size() << ", unlock_time: " << unlock_time << ", tx_key: " << tx_key << ", additional_tx_keys: " << additional_tx_keys.size() << ", msout: " << (msout ? "true" : "false") << ", shuffle_outs: " << shuffle_outs);
-    hw::device &hwdev = sender_account_keys.get_device();
+    for (const auto& src : sources)
+    {
+      if (src.has_ca_metadata || src.asset_id != crypto::null_pkey)
+        return true;
+    }
+    for (const auto& dst : destinations)
+    {
+      if (dst.asset_id != crypto::null_pkey)
+        return true;
+    }
+    return false;
+  }
+
+  static constexpr bool ca_construction_capabilities_available()
+  {
+    // Phase 1 capability: tx primitives exist and constructor can enter CA-aware branching.
+    // Full CA signature/proof generation is still pending and guarded later in construction.
+    return true;
+  }
+
+  static std::string ca_construction_missing_capabilities_reason()
+  {
+    return "Confidential-asset tx construction is not available yet: missing CA tx input/output variants, "
+           "CA signature generation, and tx-wide CA proof generation/verification integration";
+  }
+
+  static const crypto::key_image* get_txin_key_image_ptr(const txin_v& in)
+  {
+    if (const auto* tk = std::get_if<txin_to_key>(&in))
+      return &tk->k_image;
+    if (const auto* zc = std::get_if<txin_zc_input>(&in))
+      return &zc->k_image;
+    return nullptr;
+  }
+
+  static bool add_amount_or_overflow(uint64_t amount, uint64_t& total)
+  {
+    if (amount > std::numeric_limits<uint64_t>::max() - total)
+      return false;
+    total += amount;
+    return true;
+  }
+
+  static bool add_amount_by_asset(
+      const crypto::public_key& asset_id,
+      uint64_t amount,
+      std::unordered_map<crypto::public_key, uint64_t>& totals)
+  {
+    auto& current = totals[asset_id];
+    return add_amount_or_overflow(amount, current);
+  }
+
+  [[maybe_unused]] static crypto::hash get_ca_domain_separated_rct_message_hash(
+      const crypto::hash& tx_prefix_hash,
+      const transaction& tx)
+  {
+    std::vector<uint8_t> blob;
+    static constexpr char DOMAIN_TAG[] = "BLDX_CA_RCT_MSG_V1";
+    blob.insert(blob.end(), DOMAIN_TAG, DOMAIN_TAG + sizeof(DOMAIN_TAG) - 1);
+    const auto append_blob = [&blob](const void* ptr, size_t n) {
+      const auto* p = static_cast<const uint8_t*>(ptr);
+      blob.insert(blob.end(), p, p + n);
+    };
+    append_blob(&tx_prefix_hash, sizeof(tx_prefix_hash));
+
+    uint64_t zc_inputs = 0;
+    for (const auto& in : tx.vin)
+    {
+      const auto* zc = std::get_if<txin_zc_input>(&in);
+      if (!zc)
+        continue;
+      ++zc_inputs;
+      append_blob(&zc->k_image, sizeof(zc->k_image));
+      append_blob(&zc->asset_id, sizeof(zc->asset_id));
+      append_blob(&zc->amount_commitment, sizeof(zc->amount_commitment));
+      append_blob(&zc->blinded_asset_id, sizeof(zc->blinded_asset_id));
+    }
+
+    append_blob(&zc_inputs, sizeof(zc_inputs));
+    crypto::hash h = crypto::null_hash;
+    crypto::cn_fast_hash(blob.data(), blob.size(), h);
+    return h;
+  }
+
+  [[maybe_unused]] static bool generate_ca_tx_proofs(transaction& tx)
+  {
+    tx.proofs.clear();
+    LOG_ERROR("CA tx proof generation is not wired yet");
+    return true;
+  }
+
+  static bool append_ca_output_assets_metadata_to_extra(
+      transaction& tx,
+      const std::vector<tx_destination_entry>& destinations)
+  {
+    if (destinations.empty())
+      return true;
+
+    tx_extra_ca_output_assets assets{};
+    assets.asset_ids.reserve(destinations.size());
+    for (const auto& dst : destinations)
+      assets.asset_ids.push_back(dst.asset_id);
+
+    if (!remove_field_from_tx_extra<tx_extra_ca_output_assets>(tx.extra))
+      return false;
+    return add_ca_output_assets_to_tx_extra(tx.extra, assets);
+  }
+
+  static bool validate_construct_tx_preflight(
+      const std::vector<tx_source_entry>& sources,
+      const std::vector<tx_destination_entry>& destinations,
+      const rct::RCTConfig& rct_config,
+      const beldex_construct_tx_params& tx_params,
+      const std::optional<tx_destination_entry>& change_addr,
+      const std::vector<crypto::secret_key>& additional_tx_keys)
+  {
+    auto collect_non_native_assets = [](const auto& entries, auto get_asset_id) {
+      std::unordered_set<crypto::public_key> non_native;
+      for (const auto& e : entries)
+      {
+        const crypto::public_key aid = get_asset_id(e);
+        if (aid != crypto::null_pkey)
+          non_native.insert(aid);
+      }
+      return non_native;
+    };
+
+    if (tx_params.burn_percent)
+    {
+      LOG_ERROR("cannot construct tx: internal error: burn percent must be converted to fixed burn amount in the wallet");
+      return false;
+    }
+
+    const bool has_any_ca_metadata = use_confidential_asset_path(sources, destinations);
+    if (has_any_ca_metadata && tx_params.hf_version < hf::hf20_bulletproof_plus)
+    {
+      LOG_ERROR("CA tx construction is not allowed before hf20_bulletproof_plus");
+      return false;
+    }
+
+    const bool ca_metadata_requested = tx_params.hf_version >= hf::hf20_bulletproof_plus && has_any_ca_metadata;
+    const bool ca_deploy_mode = ca_metadata_requested && tx_params.tx_type == txtype::deploy_new_asset;
+    const bool ca_transfer_mode = ca_metadata_requested && tx_params.tx_type == txtype::standard;
+    if (ca_metadata_requested)
+    {
+      if (!ca_construction_capabilities_available())
+      {
+        LOG_ERROR(ca_construction_missing_capabilities_reason());
+        return false;
+      }
+      if (!ca_deploy_mode && !ca_transfer_mode)
+      {
+        LOG_ERROR("CA tx construction currently supports txtype::standard and txtype::deploy_new_asset only");
+        return false;
+      }
+    }
+
+    if (ca_transfer_mode)
+    {
+      bool has_ca_input_source = false;
+      bool has_legacy_input_source = false;
+      for (size_t i = 0; i < sources.size(); ++i)
+      {
+        const bool is_ca_source = sources[i].has_ca_metadata || sources[i].asset_id != crypto::null_pkey;
+        has_ca_input_source = has_ca_input_source || is_ca_source;
+        has_legacy_input_source = has_legacy_input_source || !is_ca_source;
+      }
+      if (!has_ca_input_source)
+      {
+        LOG_ERROR("CA path requested without any CA input sources");
+        return false;
+      }
+
+      bool has_ca_outputs = false;
+      for (const auto& dst : destinations)
+        has_ca_outputs = has_ca_outputs || dst.asset_id != crypto::null_pkey;
+      if (has_ca_outputs && !has_ca_input_source)
+      {
+        LOG_ERROR("CA outputs requested without CA inputs");
+        return false;
+      }
+    }
 
     if (sources.empty())
     {
+      LOG_ERROR("Empty sources");
+      return false;
+    }
+
+    for (size_t i = 0; i < sources.size(); ++i)
+    {
+      const tx_source_entry& src = sources[i];
+      const bool source_ca_requested = src.has_ca_metadata || src.asset_id != crypto::null_pkey;
+      if (src.outputs.empty())
+      {
+        LOG_ERROR("Source #" << i << " has empty outputs ring");
+        return false;
+      }
+      if (src.real_output >= src.outputs.size())
+      {
+        LOG_ERROR("Source #" << i << " has invalid real_output index " << src.real_output
+                  << " (ring size: " << src.outputs.size() << ")");
+        return false;
+      }
+
+      uint64_t prev_abs_index = 0;
+      bool have_prev_abs_index = false;
+      for (size_t j = 0; j < src.outputs.size(); ++j)
+      {
+        const uint64_t abs_index = src.outputs[j].first;
+        if (have_prev_abs_index && abs_index <= prev_abs_index)
+        {
+          LOG_ERROR("Source #" << i << " has non-increasing ring absolute indices at position " << j
+                    << " (" << abs_index << " <= " << prev_abs_index << ")");
+          return false;
+        }
+        prev_abs_index = abs_index;
+        have_prev_abs_index = true;
+      }
+
+      // Keep output ring metadata arrays coherent for both legacy and CA paths.
+      if (src.output_asset_ids.size() != src.outputs.size() ||
+          src.output_asset_commitments.size() != src.outputs.size())
+      {
+        LOG_ERROR("Source #" << i << " has output asset metadata size mismatch: outputs=" << src.outputs.size()
+                  << ", output_asset_ids=" << src.output_asset_ids.size()
+                  << ", output_asset_commitments=" << src.output_asset_commitments.size());
+        return false;
+      }
+
+      if (source_ca_requested)
+      {
+        if (!src.has_ca_metadata)
+        {
+          LOG_ERROR("Source #" << i << " requests CA path without has_ca_metadata");
+          return false;
+        }
+        if (src.asset_id == crypto::null_pkey)
+        {
+          LOG_ERROR("Source #" << i << " CA metadata has null asset_id");
+          return false;
+        }
+        if (src.amount_commitment == crypto::null_pkey ||
+            src.asset_id_bliding_mask == crypto::null_pkey ||
+            src.blinded_asset_id == crypto::null_pkey)
+        {
+          LOG_ERROR("Source #" << i << " CA metadata is incomplete (real output commitments/masks missing)");
+          return false;
+        }
+
+        for (size_t oi = 0; oi < src.outputs.size(); ++oi)
+        {
+          if (src.output_asset_ids[oi] != src.asset_id)
+          {
+            LOG_ERROR("Source #" << i << " ring member #" << oi
+                      << " has mismatched asset_id relative to source asset_id");
+            return false;
+          }
+          if (src.output_asset_commitments[oi] == rct::zero())
+          {
+            LOG_ERROR("Source #" << i << " ring member #" << oi << " has missing CA asset commitment");
+            return false;
+          }
+        }
+
+        if (src.real_output >= src.output_asset_commitments.size())
+        {
+          LOG_ERROR("Source #" << i << " real_output index out of range for CA asset commitments");
+          return false;
+        }
+        if (src.output_asset_commitments[src.real_output] != rct::pk2rct(src.blinded_asset_id))
+        {
+          LOG_ERROR("Source #" << i << " real output asset commitment does not match blinded_asset_id");
+          return false;
+        }
+      }
+      else
+      {
+        // Legacy path must not accidentally carry CA-only metadata.
+        if (src.has_ca_metadata ||
+            src.asset_id != crypto::null_pkey ||
+            src.amount_commitment != crypto::null_pkey ||
+            src.asset_id_bliding_mask != crypto::null_pkey ||
+            src.blinded_asset_id != crypto::null_pkey)
+        {
+          LOG_ERROR("Source #" << i << " is marked legacy but contains CA metadata");
+          return false;
+        }
+      }
+    }
+
+    if (destinations.empty())
+    {
+      LOG_ERROR("Empty destinations");
+      return false;
+    }
+
+    bool has_non_zero_destination = false;
+    size_t change_addr_matches = 0;
+    for (size_t i = 0; i < destinations.size(); ++i)
+    {
+      const tx_destination_entry& dst = destinations[i];
+      if (dst.addr.m_spend_public_key == crypto::null_pkey || dst.addr.m_view_public_key == crypto::null_pkey)
+      {
+        LOG_ERROR("Destination #" << i << " has null address public key(s)");
+        return false;
+      }
+      if (dst.amount > 0)
+        has_non_zero_destination = true;
+      if (change_addr && dst == *change_addr)
+        ++change_addr_matches;
+    }
+    if (!has_non_zero_destination)
+    {
+      LOG_ERROR("All destinations have zero amount");
+      return false;
+    }
+    if (change_addr_matches > 1)
+    {
+      LOG_ERROR("Change destination appears multiple times in destinations (" << change_addr_matches << " matches)");
+      return false;
+    }
+
+    const size_t max_outputs = rct_config.range_proof_type == rct::RangeProofType::PaddedBulletproof
+                                 ? TX_BULLETPROOF_MAX_OUTPUTS
+                                 : TX_BULLETPROOF_PLUS_MAX_OUTPUTS;
+    if (destinations.size() > max_outputs)
+    {
+      LOG_ERROR("Too many outputs: " << destinations.size() << ", max allowed: " << max_outputs);
+      return false;
+    }
+
+    // Additional tx keys are required only for mixed std/subaddress multi-destination cases.
+    size_t num_stdaddresses = 0;
+    size_t num_subaddresses = 0;
+    account_public_address single_dest_subaddress{};
+    classify_addresses(destinations, change_addr, num_stdaddresses, num_subaddresses, single_dest_subaddress);
+    const bool need_additional_txkeys = num_subaddresses > 0 && (num_stdaddresses > 0 || num_subaddresses > 1);
+    if (need_additional_txkeys && destinations.size() != additional_tx_keys.size())
+    {
+      LOG_ERROR("Wrong amount of additional tx keys: " << additional_tx_keys.size()
+                << ", expected: " << destinations.size());
+      return false;
+    }
+
+    uint64_t total_input_amount = 0;
+    std::unordered_map<crypto::public_key, uint64_t> input_amounts_by_asset;
+    for (size_t i = 0; i < sources.size(); ++i)
+    {
+      const uint64_t amount = sources[i].amount;
+      if (!add_amount_or_overflow(amount, total_input_amount))
+      {
+        LOG_ERROR("Input amount overflow while summing source #" << i);
+        return false;
+      }
+      const crypto::public_key asset_id = sources[i].asset_id;
+      if (!add_amount_by_asset(asset_id, amount, input_amounts_by_asset))
+      {
+        LOG_ERROR("Input per-asset amount overflow for source #" << i);
+        return false;
+      }
+    }
+
+    uint64_t total_output_amount = 0;
+    std::unordered_map<crypto::public_key, uint64_t> output_amounts_by_asset;
+    for (size_t i = 0; i < destinations.size(); ++i)
+    {
+      const uint64_t amount = destinations[i].amount;
+      if (!add_amount_or_overflow(amount, total_output_amount))
+      {
+        LOG_ERROR("Output amount overflow while summing destination #" << i);
+        return false;
+      }
+      const crypto::public_key asset_id = destinations[i].asset_id;
+      if (!add_amount_by_asset(asset_id, amount, output_amounts_by_asset))
+      {
+        LOG_ERROR("Output per-asset amount overflow for destination #" << i);
+        return false;
+      }
+    }
+
+    const bool is_deploy_tx = tx_params.tx_type == txtype::deploy_new_asset;
+    const uint64_t native_in_amount = input_amounts_by_asset.count(crypto::null_pkey) ? input_amounts_by_asset[crypto::null_pkey] : 0;
+    const uint64_t native_out_amount = output_amounts_by_asset.count(crypto::null_pkey) ? output_amounts_by_asset[crypto::null_pkey] : 0;
+    if (is_deploy_tx)
+    {
+      if (native_out_amount > native_in_amount)
+      {
+        LOG_ERROR("Deploy tx native outputs (" << native_out_amount << ") exceed native inputs (" << native_in_amount << ")");
+        return false;
+      }
+    }
+    else if (total_output_amount > total_input_amount)
+    {
+      LOG_ERROR("Transaction outputs money (" << total_output_amount << ") exceeds inputs money (" << total_input_amount << ")");
+      return false;
+    }
+
+    // Burned amount is paid from native coin remainder (inputs - outputs), so ensure capacity here.
+    const uint64_t available_native_remainder = native_in_amount - native_out_amount;
+    if (tx_params.burn_fixed > available_native_remainder)
+    {
+      LOG_ERROR("Invalid burn amount: burn_fixed (" << tx_params.burn_fixed
+                << ") exceeds available native remainder (" << available_native_remainder << ")");
+      return false;
+    }
+
+    // Per-asset conservation:
+    // - Non-native assets (asset_id != null_pkey): inputs must match outputs exactly.
+    // - Native asset (null_pkey): inputs >= outputs; remainder is fee + optional burn.
+    for (const auto& [asset_id, out_amount] : output_amounts_by_asset)
+    {
+      const auto it = input_amounts_by_asset.find(asset_id);
+      const uint64_t in_amount = (it == input_amounts_by_asset.end()) ? 0 : it->second;
+      if (asset_id != crypto::null_pkey)
+      {
+        if (is_deploy_tx)
+          continue; // deploy mints non-native outputs; no matching non-native inputs required
+        if (in_amount != out_amount)
+        {
+          LOG_ERROR("Non-native asset conservation failed: asset=" << asset_id << ", in=" << in_amount << ", out=" << out_amount);
+          return false;
+        }
+      }
+      else if (in_amount < out_amount)
+      {
+        LOG_ERROR("Native asset conservation failed: in=" << in_amount << ", out=" << out_amount);
+        return false;
+      }
+    }
+    // Disallow silent disappearance of non-native assets (i.e. input bucket not present in outputs).
+    for (const auto& [asset_id, in_amount] : input_amounts_by_asset)
+    {
+      if (asset_id == crypto::null_pkey)
+        continue;
+      if (is_deploy_tx)
+        continue; // deploy is allowed to have no non-native input buckets
+      const auto out_it = output_amounts_by_asset.find(asset_id);
+      const uint64_t out_amount = out_it == output_amounts_by_asset.end() ? 0 : out_it->second;
+      if (out_amount != in_amount)
+      {
+        LOG_ERROR("Non-native asset conservation failed (input-only bucket): asset=" << asset_id
+                  << ", in=" << in_amount << ", out=" << out_amount);
+        return false;
+      }
+    }
+
+    // Single-destination non-native bucket rule: one tx may have at most one non-native
+    // destination asset bucket (native bucket may still exist for fee/change mechanics).
+    const auto non_native_destination_assets = collect_non_native_assets(destinations, [](const tx_destination_entry& d) { return d.asset_id; });
+    const auto non_native_source_assets = collect_non_native_assets(sources, [](const tx_source_entry& s) { return s.asset_id; });
+    if (non_native_destination_assets.size() > 1)
+    {
+      LOG_ERROR("Mixed non-native destination assets in one tx are forbidden");
+      return false;
+    }
+    if (non_native_source_assets.size() > 1)
+    {
+      LOG_ERROR("Mixed non-native source assets in one tx are forbidden");
+      return false;
+    }
+
+    // If a non-native destination bucket exists, inputs must contain that bucket
+    // for transfer txs. Deploy transactions mint this bucket and therefore do
+    // not require matching non-native inputs.
+    if (!non_native_destination_assets.empty() && tx_params.tx_type != txtype::deploy_new_asset)
+    {
+      const crypto::public_key dst_asset = *non_native_destination_assets.begin();
+      if (input_amounts_by_asset.find(dst_asset) == input_amounts_by_asset.end())
+      {
+        LOG_ERROR("Missing matching non-native input bucket for destination asset " << dst_asset);
+        return false;
+      }
+      if (!non_native_source_assets.empty() && *non_native_source_assets.begin() != dst_asset)
+      {
+        LOG_ERROR("Non-native destination asset does not match non-native source asset");
+        return false;
+      }
+    }
+    else if (!non_native_destination_assets.empty())
+    {
+      LOG_PRINT_L1("deploy_new_asset preflight: allowing minted non-native destination bucket without matching input bucket");
+    }
+
+    // Change entry (when provided) must stay native to avoid cross-asset ambiguity.
+    if (change_addr && change_addr->asset_id != crypto::null_pkey)
+    {
+      LOG_ERROR("Non-native change entry is not allowed in constructor preflight");
+      return false;
+    }
+
+    // In this constructor path every input must be ringct-capable.
+    for (size_t i = 0; i < sources.size(); ++i)
+    {
+      if (!sources[i].rct)
+      {
+        LOG_ERROR("Unsupported non-RCT source at input #" << i);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  //---------------------------------------------------------------
+  bool construct_tx_with_tx_key(const account_keys& sender_account_keys, const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses, std::vector<tx_source_entry>& sources, std::vector<tx_destination_entry>& destinations, const std::optional<tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const rct::RCTConfig &rct_config, rct::multisig_out *msout, bool shuffle_outs, beldex_construct_tx_params const &tx_params)
+  {
+    hw::device &hwdev = sender_account_keys.get_device();
+    auto log_grouped_destinations = [&](const char* stage, const char* reason) {
+      std::unordered_map<crypto::public_key, uint64_t> src_by_asset;
+      std::unordered_map<crypto::public_key, uint64_t> dst_by_asset;
+      for (const auto& s : sources)
+      {
+        uint64_t& b = src_by_asset[s.asset_id];
+        if (b <= std::numeric_limits<uint64_t>::max() - s.amount)
+          b += s.amount;
+      }
+      for (const auto& d : destinations)
+      {
+        uint64_t& b = dst_by_asset[d.asset_id];
+        if (b <= std::numeric_limits<uint64_t>::max() - d.amount)
+          b += d.amount;
+      }
+      std::ostringstream oss;
+      oss << stage << " reason=" << reason
+          << " tx_type=" << static_cast<int>(tx_params.tx_type)
+          << " hf=" << static_cast<int>(tx_params.hf_version)
+          << " src_count=" << sources.size()
+          << " dst_count=" << destinations.size()
+          << " src_by_asset:";
+      if (src_by_asset.empty()) oss << " <none>";
+      for (const auto& [aid, amt] : src_by_asset)
+        oss << " [" << (aid == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(aid))
+            << "=" << print_money(amt) << "]";
+      oss << " dst_by_asset:";
+      if (dst_by_asset.empty()) oss << " <none>";
+      for (const auto& [aid, amt] : dst_by_asset)
+        oss << " [" << (aid == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(aid))
+            << "=" << print_money(amt) << "]";
+      if (change_addr)
+      {
+        oss << " change=[" << (change_addr->asset_id == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(change_addr->asset_id))
+            << "=" << print_money(change_addr->amount) << "]";
+      }
+      else
+      {
+        oss << " change=<none>";
+      }
+      MINFO(oss.str());
+    };
+
+    if (!validate_construct_tx_preflight(sources, destinations, rct_config, tx_params, change_addr, additional_tx_keys))
+    {
+      log_grouped_destinations("construct_tx_with_tx_key", "preflight_failed");
+      return false;
+    }
+
+    if (sources.empty())
+    {
+      log_grouped_destinations("construct_tx_with_tx_key", "empty_sources");
       LOG_ERROR("Empty sources");
       return false;
     }
@@ -621,12 +1177,6 @@ namespace cryptonote
     tx.type = tx_params.tx_type;
     if (tx.version <= txversion::v2_ringct)
         tx.unlock_time = unlock_time;
-
-    if (tx_params.burn_percent)
-    {
-      LOG_ERROR("cannot construct tx: internal error: burn percent must be converted to fixed burn amount in the wallet");
-      return false;
-    }
 
     tx.extra = extra;
     crypto::public_key txkey_pub;
@@ -721,8 +1271,9 @@ namespace cryptonote
       keypair in_ephemeral;
     };
     std::vector<input_generation_context_data> in_contexts;
+    bool has_ca_inputs = false;
+    bool has_ca_outputs = false;
 
-    uint64_t summary_inputs_money = 0;
     //fill inputs
     int idx = -1;
     for(const tx_source_entry& src_entr:  sources)
@@ -730,11 +1281,10 @@ namespace cryptonote
       ++idx;
       if(src_entr.real_output >= src_entr.outputs.size())
       {
+        log_grouped_destinations("construct_tx_with_tx_key", "real_output_out_of_range");
         LOG_ERROR("real_output index (" << src_entr.real_output << ")bigger than output_keys.size()=" << src_entr.outputs.size());
         return false;
       }
-      summary_inputs_money += src_entr.amount;
-
       //key_derivation recv_derivation;
       in_contexts.push_back(input_generation_context_data());
       keypair& in_ephemeral = in_contexts.back().in_ephemeral;
@@ -742,6 +1292,7 @@ namespace cryptonote
       const auto& out_key = reinterpret_cast<const crypto::public_key&>(src_entr.outputs[src_entr.real_output].second.dest);
       if(!generate_key_image_helper(sender_account_keys, subaddresses, out_key, src_entr.real_out_tx_key, src_entr.real_out_additional_tx_keys, src_entr.real_output_in_tx_index, in_ephemeral,img, hwdev))
       {
+        log_grouped_destinations("construct_tx_with_tx_key", "key_image_generation_failed");
         LOG_ERROR("Key image generation failed!");
         return false;
       }
@@ -757,17 +1308,76 @@ namespace cryptonote
         return false;
       }
 
-      //put key image into tx input
-      txin_to_key input_to_key;
-      input_to_key.amount = src_entr.amount;
-      input_to_key.k_image = msout ? rct::rct2ki(src_entr.multisig_kLRki.ki) : img;
+      const bool is_ca_input = src_entr.has_ca_metadata || src_entr.asset_id != crypto::null_pkey;
+      if (is_ca_input)
+      {
+        if (src_entr.output_asset_ids.size() != src_entr.outputs.size() ||
+            src_entr.output_asset_commitments.size() != src_entr.outputs.size())
+        {
+          LOG_ERROR("CA input ring metadata size mismatch at source index " << idx);
+          return false;
+        }
+        if (!src_entr.has_ca_metadata)
+        {
+          LOG_ERROR("CA input requested without CA metadata at source index " << idx);
+          return false;
+        }
+        if (src_entr.asset_id == crypto::null_pkey ||
+            src_entr.asset_id_bliding_mask == crypto::null_pkey ||
+            src_entr.amount_commitment == crypto::null_pkey ||
+            src_entr.blinded_asset_id == crypto::null_pkey)
+        {
+          LOG_ERROR("CA input metadata incomplete at source index " << idx);
+          return false;
+        }
+        for (size_t oi = 0; oi < src_entr.outputs.size(); ++oi)
+        {
+          if (src_entr.output_asset_ids[oi] != src_entr.asset_id)
+          {
+            LOG_ERROR("CA ring member asset id mismatch at source index " << idx << ", ring member " << oi);
+            return false;
+          }
+          if (src_entr.output_asset_commitments[oi] == rct::zero())
+          {
+            LOG_ERROR("CA ring member asset commitment missing at source index " << idx << ", ring member " << oi);
+            return false;
+          }
+        }
+        if (src_entr.real_output >= src_entr.output_asset_commitments.size())
+        {
+          LOG_ERROR("CA real output index out of range for asset commitments at source index " << idx);
+          return false;
+        }
+        if (src_entr.output_asset_commitments[src_entr.real_output] != rct::pk2rct(src_entr.blinded_asset_id))
+        {
+          LOG_ERROR("CA real output asset commitment mismatch at source index " << idx);
+          return false;
+        }
+        has_ca_inputs = true;
+        txin_zc_input input_zc{};
+        input_zc.k_image = msout ? rct::rct2ki(src_entr.multisig_kLRki.ki) : img;
+        input_zc.asset_id = src_entr.asset_id;
+        input_zc.amount_commitment = src_entr.amount_commitment;
+        input_zc.blinded_asset_id = src_entr.blinded_asset_id;
+        for (const tx_source_entry::output_entry& out_entry : src_entr.outputs)
+          input_zc.key_offsets.push_back(out_entry.first);
+        input_zc.key_offsets = absolute_output_offsets_to_relative(input_zc.key_offsets);
+        tx.vin.push_back(input_zc);
+      }
+      else
+      {
+        //put key image into tx input
+        txin_to_key input_to_key;
+        input_to_key.amount = src_entr.amount;
+        input_to_key.k_image = msout ? rct::rct2ki(src_entr.multisig_kLRki.ki) : img;
 
-      //fill outputs array and use relative offsets
-      for(const tx_source_entry::output_entry& out_entry: src_entr.outputs)
-        input_to_key.key_offsets.push_back(out_entry.first);
+        //fill outputs array and use relative offsets
+        for(const tx_source_entry::output_entry& out_entry: src_entr.outputs)
+          input_to_key.key_offsets.push_back(out_entry.first);
 
-      input_to_key.key_offsets = absolute_output_offsets_to_relative(input_to_key.key_offsets);
-      tx.vin.push_back(input_to_key);
+        input_to_key.key_offsets = absolute_output_offsets_to_relative(input_to_key.key_offsets);
+        tx.vin.push_back(input_to_key);
+      }
     }
 
     if (shuffle_outs)
@@ -775,20 +1385,37 @@ namespace cryptonote
       std::shuffle(destinations.begin(), destinations.end(), crypto::random_device{});
     }
 
-    // sort ins by their key image
+    for (const tx_destination_entry& dst_entr : destinations)
+      has_ca_outputs = has_ca_outputs || dst_entr.asset_id != crypto::null_pkey;
+
+    // sort ins by their key image (strictly descending, consensus requirement)
     std::vector<size_t> ins_order(sources.size());
     for (size_t n = 0; n < sources.size(); ++n)
       ins_order[n] = n;
     std::sort(ins_order.begin(), ins_order.end(), [&](const size_t i0, const size_t i1) {
-      const txin_to_key &tk0 = var::get<txin_to_key>(tx.vin[i0]);
-      const txin_to_key &tk1 = var::get<txin_to_key>(tx.vin[i1]);
-      return memcmp(&tk0.k_image, &tk1.k_image, sizeof(tk0.k_image)) > 0;
+      const crypto::key_image* ki0 = get_txin_key_image_ptr(tx.vin[i0]);
+      const crypto::key_image* ki1 = get_txin_key_image_ptr(tx.vin[i1]);
+      CHECK_AND_ASSERT_MES(ki0 != nullptr && ki1 != nullptr, false, "Unsupported txin type in input sort");
+      return memcmp(ki0, ki1, sizeof(*ki0)) > 0;
     });
     tools::apply_permutation(ins_order, [&] (size_t i0, size_t i1) {
       std::swap(tx.vin[i0], tx.vin[i1]);
       std::swap(in_contexts[i0], in_contexts[i1]);
       std::swap(sources[i0], sources[i1]);
     });
+
+    // Enforce strict ordering/uniqueness locally so daemon-side "unsorted inputs"
+    // cannot happen after wallet construction.
+    for (size_t i = 1; i < tx.vin.size(); ++i)
+    {
+      const crypto::key_image* prev_ki = get_txin_key_image_ptr(tx.vin[i - 1]);
+      const crypto::key_image* curr_ki = get_txin_key_image_ptr(tx.vin[i]);
+      CHECK_AND_ASSERT_MES(prev_ki != nullptr && curr_ki != nullptr, false, "Unsupported txin type in input order validation");
+      const int cmp = memcmp(curr_ki, prev_ki, sizeof(*prev_ki));
+      CHECK_AND_ASSERT_MES(cmp < 0, false,
+          "Input key image order invalid (must be strictly descending): prev="
+          << tools::type_to_hex(*prev_ki) << ", curr=" << tools::type_to_hex(*curr_ki));
+    }
 
     // figure out if we need to make additional tx pubkeys
     size_t num_stdaddresses = 0;
@@ -814,10 +1441,7 @@ namespace cryptonote
     //   - all the destinations are standard addresses
     //   - there's only one destination which is a subaddress
     bool need_additional_txkeys = num_subaddresses > 0 && (num_stdaddresses > 0 || num_subaddresses > 1);
-    if (need_additional_txkeys)
-      CHECK_AND_ASSERT_MES(destinations.size() == additional_tx_keys.size(), false, "Wrong amount of additional tx keys");
-
-    uint64_t summary_outs_money = 0;
+    
     //fill outputs
     size_t output_index = 0;
 
@@ -925,8 +1549,6 @@ namespace cryptonote
 
       tx.vout.push_back(out);
       output_index++;
-      if(tx.type != txtype::deploy_new_asset)
-        summary_outs_money += dst_entr.amount;
     }
     CHECK_AND_ASSERT_MES(additional_tx_public_keys.size() == additional_tx_keys.size(), false, "Internal error creating additional public keys");
 
@@ -950,15 +1572,17 @@ namespace cryptonote
       add_additional_tx_pub_keys_to_extra(tx.extra, additional_tx_public_keys);
     }
 
+    if (has_ca_inputs || has_ca_outputs)
+    {
+      if (!append_ca_output_assets_metadata_to_extra(tx, destinations))
+      {
+        LOG_ERROR("Failed to append CA output assets metadata to tx extra");
+        return false;
+      }
+    }
+
     if (!sort_tx_extra(tx.extra, tx.extra))
       return false;
-
-    //check money
-    if(summary_outs_money > summary_inputs_money )
-    {
-      LOG_ERROR("Transaction inputs money ("<< summary_inputs_money << ") less than outputs money (" << summary_outs_money << ")");
-      return false;
-    }
 
     // check for watch only wallet
     bool zero_secret_key = true;
@@ -968,8 +1592,27 @@ namespace cryptonote
     {
       MDEBUG("Null secret key, skipping signatures");
     }
+    const bool ca_path_used = has_ca_inputs || has_ca_outputs;
+    const bool ca_transfer_path_used = ca_path_used && tx.type == txtype::standard;
+    if (ca_transfer_path_used)
+    {
+      if (!has_ca_inputs)
+      {
+        LOG_ERROR("CA constructor path requires at least one CA/ZC input");
+        return false;
+      }
+      tx.signatures.clear();
 
+      // CA v1 flow is unsupported. For modern tx versions, continue below into the
+      // existing RingCT construction/signing path so rct_signatures are still produced.
       if (tx.version == txversion::v1)
+      {
+        LOG_ERROR("CA constructor path with tx version v1 is unsupported");
+        return false;
+      }
+    }
+
+      if (!ca_transfer_path_used && tx.version == txversion::v1)
       {
           LOG_PRINT_L2("tx.version == txversion::v1");
           //generate ring signatures
@@ -1039,6 +1682,7 @@ namespace cryptonote
         }
 
           uint64_t amount_in = 0, amount_out = 0;
+          const bool deploy_native_fee_accounting = tx_params.tx_type == txtype::deploy_new_asset;
           rct::ctkeyV inSk;
           inSk.reserve(sources.size());
           // mixRing indexing is done the other way round for simple
@@ -1071,8 +1715,20 @@ namespace cryptonote
               }else{
                 dest_keys.push_back(rct::pk2rct(var::get<txout_to_key>(tx.vout[i].target).key));
               }
-              outamounts.push_back(tx.vout[i].amount);
-              amount_out += tx.vout[i].amount;
+
+              // Deploy path mints non-native outputs in this tx. Those minted
+              // amounts must not be treated as native spend in RingCT fee math.
+              uint64_t rct_accounted_amount = tx.vout[i].amount;
+              if (deploy_native_fee_accounting)
+              {
+                const crypto::public_key dst_asset_id =
+                    i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
+                if (dst_asset_id != crypto::null_pkey)
+                  rct_accounted_amount = 0;
+              }
+
+              outamounts.push_back(rct_accounted_amount);
+              amount_out += rct_accounted_amount;
           }
         if (use_simple_rct)
         {
@@ -1115,8 +1771,10 @@ namespace cryptonote
 
           // zero out all amounts to mask rct outputs, real amounts are now encrypted
           for (size_t i = 0; i < tx.vin.size(); ++i) {
-              if (sources[i].rct)
-                  var::get<txin_to_key>(tx.vin[i]).amount = 0;
+              if (!sources[i].rct)
+                  continue;
+              if (auto* in_to_key = std::get_if<txin_to_key>(&tx.vin[i]))
+                  in_to_key->amount = 0;
           }
           for (size_t i = 0; i < tx.vout.size(); ++i)
               tx.vout[i].amount = 0;
@@ -1148,6 +1806,15 @@ namespace cryptonote
           MCINFO("construct_tx",
                  "transaction_created: " << get_transaction_hash(tx) << "\n" << obj_to_json_str(tx) << "\n");
     }
+    if (ca_transfer_path_used)
+    {
+      if (!generate_ca_tx_proofs(tx))
+      {
+        LOG_ERROR("Failed to generate CA tx proofs");
+        return false;
+      }
+    }
+
     tx.invalidate_hashes();
 
     return true;

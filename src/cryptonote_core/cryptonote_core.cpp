@@ -64,6 +64,7 @@ extern "C" {
 #include "ringct/rctTypes.h"
 #include "blockchain_db/blockchain_db.h"
 #include "ringct/rctSigs.h"
+#include "cryptonote_basic/cryptonote_format_utils.h"
 #include "common/notify.h"
 #include "version.h"
 #include "epee/memwipe.h"
@@ -1594,6 +1595,123 @@ namespace cryptonote
   //-----------------------------------------------------------------------------------------------
   bool core::check_tx_semantic(const transaction& tx, bool keeped_by_block) const
   {
+    const auto hf_version = m_blockchain_storage.get_network_version();
+    bool has_zc_inputs = false;
+    bool has_legacy_key_inputs = false;
+    for (const auto& in : tx.vin)
+    {
+      has_zc_inputs = has_zc_inputs || std::holds_alternative<txin_zc_input>(in);
+      has_legacy_key_inputs = has_legacy_key_inputs || std::holds_alternative<txin_to_key>(in);
+    }
+
+    if (!tx.proofs.empty() && hf_version < hf::hf20_bulletproof_plus)
+    {
+      MERROR_VER("tx contains CA proofs before hf20_bulletproof_plus, rejected for tx id= " << get_transaction_hash(tx));
+      return false;
+    }
+
+    if (has_zc_inputs && hf_version < hf::hf20_bulletproof_plus)
+    {
+      MERROR_VER("tx contains CA/ZC inputs before hf20_bulletproof_plus, rejected for tx id= " << get_transaction_hash(tx));
+      return false;
+    }
+
+    if (has_zc_inputs && has_legacy_key_inputs)
+    {
+      MERROR_VER("tx contains mixed legacy and CA/ZC transfer inputs, rejected for tx id= " << get_transaction_hash(tx));
+      return false;
+    }
+
+    if (has_zc_inputs && tx.type != txtype::standard)
+    {
+      MERROR_VER("CA/ZC inputs are only supported for standard transfer tx type, rejected for tx id= " << get_transaction_hash(tx));
+      return false;
+    }
+
+    if (!has_zc_inputs && !tx.proofs.empty())
+    {
+      MERROR_VER("tx contains CA proofs without CA/ZC inputs, rejected for tx id= " << get_transaction_hash(tx));
+      return false;
+    }
+
+    if (!has_zc_inputs)
+    {
+      tx_extra_ca_output_assets ca_output_assets{};
+      if (get_ca_output_assets_from_tx_extra(tx.extra, ca_output_assets))
+      {
+        if (tx.type != txtype::deploy_new_asset)
+        {
+          MERROR_VER("non-CA tx contains tx_extra_ca_output_assets metadata outside deploy_new_asset, rejected for tx id= " << get_transaction_hash(tx));
+          return false;
+        }
+        if (ca_output_assets.version != 1)
+        {
+          MERROR_VER("deploy_new_asset tx has unsupported tx_extra_ca_output_assets version " << static_cast<int>(ca_output_assets.version)
+                     << ", rejected for tx id= " << get_transaction_hash(tx));
+          return false;
+        }
+        if (ca_output_assets.asset_ids.size() != tx.vout.size())
+        {
+          MERROR_VER("deploy_new_asset tx output asset metadata count mismatch: metadata=" << ca_output_assets.asset_ids.size()
+                     << ", outputs=" << tx.vout.size() << ", rejected for tx id= " << get_transaction_hash(tx));
+          return false;
+        }
+      }
+    }
+
+    if (has_zc_inputs)
+    {
+      tx_extra_ca_output_assets ca_output_assets{};
+      if (!get_ca_output_assets_from_tx_extra(tx.extra, ca_output_assets))
+      {
+        MERROR_VER("CA/ZC tx is missing tx_extra_ca_output_assets metadata, rejected for tx id= " << get_transaction_hash(tx));
+        return false;
+      }
+      if (ca_output_assets.version != 1)
+      {
+        MERROR_VER("CA/ZC tx has unsupported tx_extra_ca_output_assets version " << static_cast<int>(ca_output_assets.version)
+                   << ", rejected for tx id= " << get_transaction_hash(tx));
+        return false;
+      }
+      if (ca_output_assets.asset_ids.size() != tx.vout.size())
+      {
+        MERROR_VER("CA/ZC tx output asset metadata count mismatch: metadata=" << ca_output_assets.asset_ids.size()
+                   << ", outputs=" << tx.vout.size() << ", rejected for tx id= " << get_transaction_hash(tx));
+        return false;
+      }
+    }
+
+    if (has_zc_inputs)
+    {
+      if (tx.proofs.size() != 3)
+      {
+        MERROR_VER("CA/ZC tx must contain exactly 3 proofs, got " << tx.proofs.size()
+                   << ", rejected for tx id= " << get_transaction_hash(tx));
+        return false;
+      }
+
+      size_t surjection_count = 0, range_count = 0, balance_count = 0;
+      for (const auto& p : tx.proofs)
+      {
+        if (std::holds_alternative<tx_proof_asset_surjection>(p))
+          ++surjection_count;
+        else if (std::holds_alternative<tx_proof_range>(p))
+          ++range_count;
+        else if (std::holds_alternative<tx_proof_balance>(p))
+          ++balance_count;
+      }
+
+      if (surjection_count != 1 || range_count != 1 || balance_count != 1)
+      {
+        MERROR_VER("CA/ZC tx has invalid proof set counts: "
+                   << "surjection=" << surjection_count
+                   << ", range=" << range_count
+                   << ", balance=" << balance_count
+                   << ", rejected for tx id= " << get_transaction_hash(tx));
+        return false;
+      }
+    }
+
     if (tx.is_transfer())
     {
       if (tx.vin.empty())
@@ -2070,9 +2188,19 @@ namespace cryptonote
     return m_blockchain_storage.get_outs(req, res);
   }
   //-----------------------------------------------------------------------------------------------
+  bool core::get_outs_for_asset(const crypto::public_key &asset_id, const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUTPUTS_BIN::response& res) const
+  {
+    return m_blockchain_storage.get_outs_for_asset(asset_id, req, res);
+  }
+  //-----------------------------------------------------------------------------------------------
   bool core::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
   {
     return m_blockchain_storage.get_output_distribution(amount, from_height, to_height, start_height, distribution, base);
+  }
+  //-----------------------------------------------------------------------------------------------
+  bool core::get_output_distribution_for_asset(const crypto::public_key &asset_id, uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
+  {
+    return m_blockchain_storage.get_output_distribution_for_asset(asset_id, amount, from_height, to_height, start_height, distribution, base);
   }
   //-----------------------------------------------------------------------------------------------
   void core::get_output_blacklist(std::vector<uint64_t> &blacklist) const

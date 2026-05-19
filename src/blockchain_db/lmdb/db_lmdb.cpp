@@ -36,6 +36,7 @@
 #include <cstring>
 #include <type_traits>
 #include <variant>
+#include <iostream>
 
 #include "common/string_util.h"
 #include "cryptonote_basic/hardfork.h"
@@ -211,6 +212,8 @@ namespace
  *
  * output_txs        output ID    {txn hash, local index}
  * output_amounts    amount       [{amount output index, metadata}...]
+ * asset_output_txs  asset+out ID {txn hash, local index}
+ * asset_output_amounts asset+amount [{amount output index, metadata}...]
  *
  * spent_keys        input hash   -
  *
@@ -243,6 +246,8 @@ const char* const LMDB_TX_OUTPUTS = "tx_outputs";
 
 const char* const LMDB_OUTPUT_TXS = "output_txs";
 const char* const LMDB_OUTPUT_AMOUNTS = "output_amounts";
+const char* const LMDB_ASSET_OUTPUT_TXS = "asset_output_txs";
+const char* const LMDB_ASSET_OUTPUT_AMOUNTS = "asset_output_amounts";
 const char* const LMDB_OUTPUT_BLACKLIST = "output_blacklist";
 const char* const LMDB_SPENT_KEYS = "spent_keys";
 
@@ -258,11 +263,9 @@ const char* const LMDB_MASTER_NODE_LATEST = "master_node_proofs"; // contains th
 
 const char* const LMDB_PROPERTIES = "properties";
 const char* const LMDB_ASSET_HISTORIES = "asset_histories";
-// HF21: per-asset output index for BGE surjection ring construction
-// key = asset_id (32 bytes) || uint64_t seqno  →  value = uint64_t global_output_index
-const char* const LMDB_ASSET_OUTPUTS = "asset_outputs";
 
-constexpr unsigned int LMDB_DB_COUNT = 25; // Should agree with the number of db's above
+
+constexpr unsigned int LMDB_DB_COUNT = 26; // Should agree with the number of db's above
 
 const char zerokey[8] = {0};
 const MDB_val zerokval = { sizeof(zerokey), (void *)zerokey };
@@ -391,6 +394,8 @@ void setup_rcursor(const MDB_dbi& db, MDB_cursor*& cursor, MDB_txn* txn, bool* r
 #define m_cur_block_info	m_cursors->block_info
 #define m_cur_output_txs	m_cursors->output_txs
 #define m_cur_output_amounts	m_cursors->output_amounts
+#define m_cur_asset_output_txs	m_cursors->asset_output_txs
+#define m_cur_asset_output_amounts	m_cursors->asset_output_amounts
 #define m_cur_output_blacklist	m_cursors->output_blacklist
 #define m_cur_txs	m_cursors->txs
 #define m_cur_txs_pruned	m_cursors->txs_pruned
@@ -406,7 +411,6 @@ void setup_rcursor(const MDB_dbi& db, MDB_cursor*& cursor, MDB_txn* txn, bool* r
 #define m_cur_hf_versions	m_cursors->hf_versions
 #define m_cur_properties	m_cursors->properties
 #define m_cur_asset_histories	m_cursors->asset_histories
-#define m_cur_asset_outputs	m_cursors->asset_outputs
 
 namespace cryptonote
 {
@@ -469,6 +473,27 @@ typedef struct outtx {
     crypto::hash tx_hash;
     uint64_t local_index;
 } outtx;
+
+typedef struct asset_outtx_key {
+    crypto::public_key asset_id;
+    uint64_t output_id;
+} asset_outtx_key;
+
+typedef struct asset_outtx {
+    crypto::hash tx_hash;
+    uint64_t local_index;
+} asset_outtx;
+
+typedef struct asset_outkey_key {
+    crypto::public_key asset_id;
+    uint64_t amount;
+    uint64_t amount_index;
+    uint64_t output_id;
+} asset_outkey_key;
+
+typedef struct asset_outkey {
+    output_data_t data;
+} asset_outkey;
 
 std::atomic<uint64_t> mdb_txn_safe::num_active_txns{0};
 std::atomic_flag mdb_txn_safe::creation_gate = ATOMIC_FLAG_INIT;
@@ -1134,7 +1159,8 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
     const tx_out& tx_output,
     const uint64_t& local_index,
     const uint64_t unlock_time,
-    const rct::key *commitment)
+    const rct::key *commitment,
+    const crypto::public_key &asset_id)
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
@@ -1146,6 +1172,8 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
 
   CURSOR(output_txs)
   CURSOR(output_amounts)
+  CURSOR(asset_output_txs)
+  CURSOR(asset_output_amounts)
 
   // Confidential asset outputs (tx_out_zarcanum) always have amount == 0 on-chain
   // and carry their own commitment; they are stored with stealth_address as pubkey.
@@ -1209,13 +1237,46 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
       throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
 
-  // HF21: for confidential asset outputs, also record in the per-asset index
-  // so the wallet can enumerate all outputs of a specific asset for BGE ring.
-  // The plaintext asset_id is populated by append_assets_from_transactions()
-  // which runs after block acceptance and has access to tx.extra.
-  // Here we only need the global output index to be stored; asset_id is stored
-  // by the caller that knows the tx context (see blockchain.cpp add_block path).
-  // Therefore: add_asset_output() is called from blockchain.cpp, not here.
+  if (asset_id != crypto::null_pkey)
+  {
+    asset_outtx aot{tx_hash, local_index};
+    asset_outtx_key aotk{asset_id, m_num_outputs};
+    MDB_val_set(v_asset_outtx, aot);
+    MDB_val_set(v_asset_outtx_key, aotk);
+    result = mdb_cursor_put(m_cur_asset_output_txs, &v_asset_outtx_key, &v_asset_outtx, 0);
+    if (result)
+      throw0(DB_ERROR(lmdb_error("Failed to add asset output tx hash to db transaction: ", result).c_str()));
+
+    // Compute asset-local amount index for (asset_id, amount).
+    uint64_t asset_amount_index = 0;
+    {
+      MDB_val k, v;
+      asset_outkey_key prefix{asset_id, tx_output.amount, 0, 0};
+      MDB_val_set(prefix_val, prefix);
+      auto r = mdb_cursor_get(m_cur_asset_output_amounts, &prefix_val, &v, MDB_SET_RANGE);
+      while (r == MDB_SUCCESS)
+      {
+        if (prefix_val.mv_size != sizeof(asset_outkey_key))
+          break;
+        const auto *cur = reinterpret_cast<const asset_outkey_key*>(prefix_val.mv_data);
+        if (cur->asset_id != asset_id || cur->amount != tx_output.amount)
+          break;
+        ++asset_amount_index;
+        r = mdb_cursor_get(m_cur_asset_output_amounts, &prefix_val, &v, MDB_NEXT);
+      }
+    }
+
+    asset_outkey aok{};
+    aok.data = ok.data;
+
+    asset_outkey_key aak{asset_id, tx_output.amount, asset_amount_index, ok.output_id};
+    MDB_val_set(v_asset_amount_key, aak);
+    MDB_val_set(v_asset_outkey, aok);
+    result = mdb_cursor_put(m_cur_asset_output_amounts, &v_asset_amount_key, &v_asset_outkey, 0);
+    if (result)
+      throw0(DB_ERROR(lmdb_error("Failed to add asset output pubkey to db transaction: ", result).c_str()));
+
+  }
 
   return ok.amount_index;
 }
@@ -1540,6 +1601,8 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
 
   lmdb_db_open(txn, LMDB_OUTPUT_TXS, MDB_INTEGERKEY | MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, m_output_txs, "Failed to open db handle for m_output_txs");
   lmdb_db_open(txn, LMDB_OUTPUT_AMOUNTS, MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED | MDB_CREATE, m_output_amounts, "Failed to open db handle for m_output_amounts");
+  lmdb_db_open(txn, LMDB_ASSET_OUTPUT_TXS, MDB_CREATE, m_asset_output_txs, "Failed to open db handle for m_asset_output_txs");
+  lmdb_db_open(txn, LMDB_ASSET_OUTPUT_AMOUNTS, MDB_CREATE, m_asset_output_amounts, "Failed to open db handle for m_asset_output_amounts");
   lmdb_db_open(txn, LMDB_OUTPUT_BLACKLIST, MDB_INTEGERKEY | MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED | MDB_INTEGERDUP, m_output_blacklist, "Failed to open db handle for m_output_blacklist");
 
   lmdb_db_open(txn, LMDB_SPENT_KEYS, MDB_INTEGERKEY | MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, m_spent_keys, "Failed to open db handle for m_spent_keys");
@@ -1561,8 +1624,6 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
 
   lmdb_db_open(txn, LMDB_MASTER_NODE_LATEST, MDB_CREATE, m_master_node_proofs, "Failed to open db handle for m_master_node_proofs");
   lmdb_db_open(txn, LMDB_ASSET_HISTORIES, MDB_CREATE, m_asset_histories, "Failed to open db handle for m_asset_histories");
-  // HF21: per-asset output index (key = asset_id||seqno, value = global_output_index)
-  lmdb_db_open(txn, LMDB_ASSET_OUTPUTS, MDB_CREATE, m_asset_outputs, "Failed to open db handle for m_asset_outputs");
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
@@ -1738,6 +1799,10 @@ void BlockchainLMDB::reset()
     throw0(DB_ERROR(lmdb_error("Failed to drop m_output_txs: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_output_amounts, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_output_amounts: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_asset_output_txs, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_asset_output_txs: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_asset_output_amounts, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_asset_output_amounts: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_output_blacklist, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_output_blacklist: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_spent_keys, 0))
@@ -3376,6 +3441,34 @@ uint64_t BlockchainLMDB::get_num_outputs(const uint64_t& amount) const
   return num_elems;
 }
 
+uint64_t BlockchainLMDB::get_num_outputs_for_asset(const crypto::public_key &asset_id, const uint64_t& amount) const
+{
+  check_open();
+
+  TXN_PREFIX_RDONLY();
+  RCURSOR(asset_output_amounts);
+
+  uint64_t count = 0;
+  MDB_val k, v;
+  asset_outkey_key prefix{asset_id, amount, 0, 0};
+  MDB_val_set(prefix_val, prefix);
+  auto result = mdb_cursor_get(m_cur_asset_output_amounts, &prefix_val, &v, MDB_SET_RANGE);
+  while (result == MDB_SUCCESS)
+  {
+    if (prefix_val.mv_size != sizeof(asset_outkey_key))
+      break;
+    const auto *cur = reinterpret_cast<const asset_outkey_key*>(prefix_val.mv_data);
+    if (cur->asset_id != asset_id || cur->amount != amount)
+      break;
+    ++count;
+    result = mdb_cursor_get(m_cur_asset_output_amounts, &prefix_val, &v, MDB_NEXT);
+  }
+  if (result != MDB_SUCCESS && result != MDB_NOTFOUND)
+    throw0(DB_ERROR("DB error attempting to get number of outputs for asset+amount"));
+
+  return count;
+}
+
 output_data_t BlockchainLMDB::get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const
 {
   check_open();
@@ -3405,6 +3498,36 @@ output_data_t BlockchainLMDB::get_output_key(const uint64_t& amount, const uint6
     if (include_commitmemt)
       ret.commitment = rct::zeroCommit(amount);
   }
+  return ret;
+}
+
+output_data_t BlockchainLMDB::get_output_key_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const
+{
+  check_open();
+
+  TXN_PREFIX_RDONLY();
+  RCURSOR(asset_output_amounts);
+
+  asset_outkey_key lookup{asset_id, amount, index, 0};
+  MDB_val_set(k, lookup);
+  MDB_val v;
+  auto get_result = mdb_cursor_get(m_cur_asset_output_amounts, &k, &v, MDB_SET_RANGE);
+  if (get_result == MDB_NOTFOUND)
+    throw1(OUTPUT_DNE("Attempting to get asset output pubkey by index, but key does not exist"));
+  else if (get_result)
+    throw0(DB_ERROR("Error attempting to retrieve an asset output pubkey from the db"));
+
+  if (k.mv_size != sizeof(asset_outkey_key))
+    throw1(OUTPUT_DNE("Attempting to get asset output pubkey by index, but key has invalid size"));
+  const auto *cur = reinterpret_cast<const asset_outkey_key*>(k.mv_data);
+  if (cur->asset_id != asset_id || cur->amount != amount || cur->amount_index != index)
+    throw1(OUTPUT_DNE("Attempting to get asset output pubkey by index, but key does not exist"));
+  if (v.mv_size != sizeof(asset_outkey))
+    throw0(DB_ERROR("Invalid asset output value size in db"));
+
+  output_data_t ret = reinterpret_cast<const asset_outkey*>(v.mv_data)->data;
+  if (include_commitmemt && amount != 0 && ret.commitment == rct::zero())
+    ret.commitment = rct::zeroCommit(amount);
   return ret;
 }
 
@@ -3440,6 +3563,44 @@ tx_out_index BlockchainLMDB::get_output_tx_and_index(const uint64_t& amount, con
     throw1(OUTPUT_DNE("Attempting to get an output index by amount and amount index, but amount not found"));
 
   return indices[0];
+}
+
+tx_out_index BlockchainLMDB::get_output_tx_and_index_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index) const
+{
+  check_open();
+
+  TXN_PREFIX_RDONLY();
+  RCURSOR(asset_output_amounts);
+  RCURSOR(asset_output_txs);
+
+  asset_outkey_key lookup{asset_id, amount, index, 0};
+  MDB_val_set(k, lookup);
+  MDB_val v;
+  auto get_result = mdb_cursor_get(m_cur_asset_output_amounts, &k, &v, MDB_SET_RANGE);
+  if (get_result == MDB_NOTFOUND)
+    throw1(OUTPUT_DNE("Attempting to get asset output tx index by amount/index, but key does not exist"));
+  else if (get_result)
+    throw0(DB_ERROR("Error attempting to retrieve an asset output index from the db"));
+
+  if (k.mv_size != sizeof(asset_outkey_key))
+    throw1(OUTPUT_DNE("Asset output key has invalid size"));
+  const auto *cur = reinterpret_cast<const asset_outkey_key*>(k.mv_data);
+  if (cur->asset_id != asset_id || cur->amount != amount || cur->amount_index != index)
+    throw1(OUTPUT_DNE("Attempting to get an asset output index by amount and amount index, but amount not found"));
+
+  asset_outtx_key aotk{asset_id, cur->output_id};
+  MDB_val_set(k2, aotk);
+  MDB_val v2;
+  get_result = mdb_cursor_get(m_cur_asset_output_txs, &k2, &v2, MDB_SET);
+  if (get_result == MDB_NOTFOUND)
+    throw1(OUTPUT_DNE("Asset output tx mapping not found"));
+  else if (get_result)
+    throw0(DB_ERROR("DB error attempting to fetch asset output tx hash"));
+  if (v2.mv_size != sizeof(asset_outtx))
+    throw0(DB_ERROR("Invalid asset output tx mapping value size"));
+
+  const auto *ot = reinterpret_cast<const asset_outtx*>(v2.mv_data);
+  return tx_out_index(ot->tx_hash, ot->local_index);
 }
 
 std::vector<std::vector<uint64_t>> BlockchainLMDB::get_tx_amount_output_indices(uint64_t tx_id, size_t n_txes) const
@@ -5212,6 +5373,8 @@ void BlockchainLMDB::migrate_0_1()
     mdb_set_dupsort(txn, m_spent_keys, compare_hash32);
     lmdb_db_open(txn, LMDB_OUTPUT_AMOUNTS, MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED | MDB_CREATE, m_output_amounts, "Failed to open db handle for m_output_amounts");
     mdb_set_dupsort(txn, m_output_amounts, compare_uint64);
+    lmdb_db_open(txn, LMDB_ASSET_OUTPUT_TXS, MDB_CREATE, m_asset_output_txs, "Failed to open db handle for m_asset_output_txs");
+    lmdb_db_open(txn, LMDB_ASSET_OUTPUT_AMOUNTS, MDB_CREATE, m_asset_output_amounts, "Failed to open db handle for m_asset_output_amounts");
     txn.commit();
   } while(0);
 
@@ -6489,7 +6652,7 @@ std::vector<crypto::public_key> BlockchainLMDB::get_all_asset_ids() const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HF21: per-asset output index  (m_asset_outputs)
+// HF21: per-asset output index  (m_asset_output_txs)
 //
 // Key layout: asset_id (32 bytes) || seqno (8 bytes, little-endian uint64)
 // Value:      global_output_index (8 bytes, little-endian uint64)
@@ -6512,7 +6675,7 @@ void BlockchainLMDB::add_asset_output(const crypto::public_key& asset_id,
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
   mdb_txn_cursors* m_cursors = &m_wcursors;
-  CURSOR(asset_outputs)
+  CURSOR(asset_output_txs)
 
   uint64_t seqno = get_asset_output_count(asset_id);
 
@@ -6521,7 +6684,7 @@ void BlockchainLMDB::add_asset_output(const crypto::public_key& asset_id,
   MDB_val k{sizeof(key_buf), key_buf};
   MDB_val v{sizeof(uint64_t), &global_output_index};
 
-  if (auto r = mdb_cursor_put(m_cur_asset_outputs, &k, &v, 0))
+  if (auto r = mdb_cursor_put(m_cur_asset_output_txs, &k, &v, 0))
     throw0(DB_ERROR(lmdb_error("Failed to add asset output: ", r).c_str()));
 }
 
@@ -6530,7 +6693,7 @@ uint64_t BlockchainLMDB::get_asset_output_count(const crypto::public_key& asset_
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
   TXN_PREFIX_RDONLY();
-  RCURSOR(asset_outputs)
+  RCURSOR(asset_output_txs)
 
   // Seek to the first key with this asset_id prefix and count matching entries.
   uint8_t prefix[32];
@@ -6538,13 +6701,13 @@ uint64_t BlockchainLMDB::get_asset_output_count(const crypto::public_key& asset_
   MDB_val k{sizeof(prefix), prefix};
   MDB_val v;
   uint64_t count = 0;
-  int rc = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_SET_RANGE);
+  int rc = mdb_cursor_get(m_cur_asset_output_txs, &k, &v, MDB_SET_RANGE);
   while (rc == MDB_SUCCESS)
   {
     if (k.mv_size < 32 || memcmp(k.mv_data, prefix, 32) != 0)
       break;
     ++count;
-    rc = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_NEXT);
+    rc = mdb_cursor_get(m_cur_asset_output_txs, &k, &v, MDB_NEXT);
   }
 
   // auto_txn destructor releases the read transaction
@@ -6557,13 +6720,13 @@ uint64_t BlockchainLMDB::get_asset_output_global_index(const crypto::public_key&
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
   TXN_PREFIX_RDONLY();
-  RCURSOR(asset_outputs)
+  RCURSOR(asset_output_txs)
 
   uint8_t key_buf[40];
   make_asset_key(key_buf, asset_id, n);
   MDB_val k{sizeof(key_buf), key_buf};
   MDB_val v;
-  if (auto r = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_SET))
+  if (auto r = mdb_cursor_get(m_cur_asset_output_txs, &k, &v, MDB_SET))
     throw1(OUTPUT_DNE(lmdb_error("asset output not found at index: ", r).c_str()));
   if (v.mv_size != sizeof(uint64_t))
     throw0(DB_ERROR("asset output value size mismatch"));
@@ -6578,7 +6741,7 @@ void BlockchainLMDB::remove_last_asset_output(const crypto::public_key& asset_id
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
   mdb_txn_cursors* m_cursors = &m_wcursors;
-  CURSOR(asset_outputs)
+  CURSOR(asset_output_txs)
 
   uint64_t count = get_asset_output_count(asset_id);
   if (count == 0)
@@ -6588,9 +6751,9 @@ void BlockchainLMDB::remove_last_asset_output(const crypto::public_key& asset_id
   make_asset_key(key_buf, asset_id, count - 1);
   MDB_val k{sizeof(key_buf), key_buf};
   MDB_val v;
-  if (auto r = mdb_cursor_get(m_cur_asset_outputs, &k, &v, MDB_SET))
+  if (auto r = mdb_cursor_get(m_cur_asset_output_txs, &k, &v, MDB_SET))
     throw1(OUTPUT_DNE(lmdb_error("remove_last_asset_output: entry not found: ", r).c_str()));
-  if (auto r = mdb_cursor_del(m_cur_asset_outputs, 0))
+  if (auto r = mdb_cursor_del(m_cur_asset_output_txs, 0))
     throw0(DB_ERROR(lmdb_error("remove_last_asset_output: delete failed: ", r).c_str()));
 }
 

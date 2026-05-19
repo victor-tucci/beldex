@@ -115,10 +115,10 @@ static rct::key scalarmult(const rct::key& point, const rct::key& scalar)
 }
 
 // Check whether a key is the scalar zero
-static bool is_zero_scalar(const rct::key& k)
-{
-    return k == rct::zero();
-}
+// static bool is_zero_scalar(const rct::key& k)
+// {
+//     return k == rct::zero();
+// }
 
 // ---------------------------------------------------------------------------
 // BGE generators

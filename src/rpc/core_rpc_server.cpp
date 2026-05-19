@@ -557,7 +557,7 @@ namespace cryptonote::rpc {
 
     if (!context.admin && req.outputs.size() > GET_OUTPUTS_BIN::MAX_COUNT)
       res.status = "Too many outs requested";
-    else if (m_core.get_outs(req, res))
+    else if ((req.asset_id != crypto::null_pkey ? m_core.get_outs_for_asset(req.asset_id, req, res) : m_core.get_outs(req, res)))
       res.status = STATUS_OK;
     else
       res.status = "Failed";
@@ -807,6 +807,12 @@ namespace cryptonote::rpc {
         set("locked_key_images", std::move(kis));
       }
       void operator()(const tx_extra_tx_key_image_unlock& x) { set("key_image_unlock", x.key_image); }
+      void operator()(const tx_extra_ca_output_assets& x) {
+        json ca{};
+        ca["version"] = x.version;
+        ca["count"] = x.asset_ids.size();
+        set("ca_output_assets", std::move(ca));
+      }
       void _load_owner(json& parent, const std::string& key, const bns::generic_owner& owner) {
         if (!owner)
           return;
@@ -2197,18 +2203,27 @@ namespace cryptonote::rpc {
       get_output_histogram.response["status"] = "Recent cutoff is too old";
       return;
     }
+    
 
     std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> histogram;
     try
     {
       auto net = nettype();
-      histogram = m_core.get_blockchain_storage().get_output_histogram(
-        get_output_histogram.request.amounts,
-        get_output_histogram.request.unlocked,
-        get_output_histogram.request.recent_cutoff,
-        get_output_histogram.request.min_count,
-        net
-        );
+      histogram =
+        (get_output_histogram.request.asset_id != crypto::null_pkey)
+          ? m_core.get_blockchain_storage().get_output_histogram_for_asset(
+              get_output_histogram.request.asset_id,
+              get_output_histogram.request.amounts,
+              get_output_histogram.request.unlocked,
+              get_output_histogram.request.recent_cutoff,
+              get_output_histogram.request.min_count,
+              net)
+          : m_core.get_blockchain_storage().get_output_histogram(
+              get_output_histogram.request.amounts,
+              get_output_histogram.request.unlocked,
+              get_output_histogram.request.recent_cutoff,
+              get_output_histogram.request.min_count,
+              net);
   }
     catch (const std::exception &e)
     {
@@ -2604,7 +2619,11 @@ namespace cryptonote::rpc {
       for (uint64_t amount: get_output_distribution.request.amounts)
       {
         auto data = detail::get_output_distribution(
-            [this](auto&&... args) { return m_core.get_output_distribution(std::forward<decltype(args)>(args)...); },
+            [this, &get_output_distribution](auto&&... args) {
+              return get_output_distribution.request.asset_id != crypto::null_pkey
+                       ? m_core.get_output_distribution_for_asset(get_output_distribution.request.asset_id, std::forward<decltype(args)>(args)...)
+                       : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
+            },
             amount,
             get_output_distribution.request.from_height,
             req_to_height,
@@ -2651,7 +2670,11 @@ namespace cryptonote::rpc {
       for (uint64_t amount: req.amounts)
       {
         auto data = detail::get_output_distribution(
-            [this](auto&&... args) { return m_core.get_output_distribution(std::forward<decltype(args)>(args)...); },
+            [this, &req](auto&&... args) {
+              return req.asset_id != crypto::null_pkey
+                       ? m_core.get_output_distribution_for_asset(req.asset_id, std::forward<decltype(args)>(args)...)
+                       : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
+            },
             amount,
             req.from_height,
             req_to_height,

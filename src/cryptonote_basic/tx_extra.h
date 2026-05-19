@@ -64,6 +64,7 @@ constexpr uint8_t
   TX_EXTRA_TAG_BURN                       = 0x79,
   TX_EXTRA_TAG_BELDEX_NAME_SYSTEM           = 0x7A,
   TX_EXTRA_TAG_ASSET_DESCRIPTOR_OPERATION = 0x7B,
+  TX_EXTRA_TAG_CA_OUTPUT_ASSETS           = 0x7C,
   TX_EXTRA_TAG_SECURITY_SIGNATURE          = 0x88,
   TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       = 0xDE;
 
@@ -622,6 +623,20 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+  // CA output metadata scaffold:
+  // keeps per-output asset ids in tx.extra so wallet scan can recover output
+  // asset identity before full ZC txout target encoding is introduced.
+  struct tx_extra_ca_output_assets
+  {
+    uint8_t version = 1;
+    std::vector<crypto::public_key> asset_ids;
+
+    BEGIN_SERIALIZE()
+      FIELD(version)
+      FIELD(asset_ids)
+    END_SERIALIZE()
+  };
+
   struct tx_extra_beldex_name_system
   {
     uint8_t                 version = 0;
@@ -720,6 +735,7 @@ namespace cryptonote
       tx_extra_tx_key_image_unlock,
       tx_extra_burn,
       tx_extra_asset_descriptor_operation,
+      tx_extra_ca_output_assets,
       tx_extra_merge_mining_tag,
       tx_extra_mysterious_minergate,
       tx_extra_padding,
@@ -747,5 +763,6 @@ BINARY_VARIANT_TAG(cryptonote::tx_extra_tx_key_image_proofs,         cryptonote:
 BINARY_VARIANT_TAG(cryptonote::tx_extra_tx_key_image_unlock,         cryptonote::TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK);
 BINARY_VARIANT_TAG(cryptonote::tx_extra_burn,                        cryptonote::TX_EXTRA_TAG_BURN);
 BINARY_VARIANT_TAG(cryptonote::tx_extra_asset_descriptor_operation,  cryptonote::TX_EXTRA_TAG_ASSET_DESCRIPTOR_OPERATION);
+BINARY_VARIANT_TAG(cryptonote::tx_extra_ca_output_assets,            cryptonote::TX_EXTRA_TAG_CA_OUTPUT_ASSETS);
 BINARY_VARIANT_TAG(cryptonote::tx_extra_beldex_name_system,            cryptonote::TX_EXTRA_TAG_BELDEX_NAME_SYSTEM);
 BINARY_VARIANT_TAG(cryptonote::tx_extra_security_signature,            cryptonote::TX_EXTRA_TAG_SECURITY_SIGNATURE);

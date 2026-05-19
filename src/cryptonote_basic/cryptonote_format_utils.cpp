@@ -973,6 +973,19 @@ namespace cryptonote
   {
     return get_field_from_tx_extra(tx_extra, op, skip);
   }
+
+  bool add_ca_output_assets_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_ca_output_assets& assets)
+  {
+    tx_extra_field field = assets;
+    bool result = add_tx_extra_field_to_tx_extra(tx_extra, field);
+    CHECK_AND_NO_ASSERT_MES_L1(result, false, "failed to serialize tx extra CA output assets");
+    return true;
+  }
+
+  bool get_ca_output_assets_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_ca_output_assets& assets, size_t skip)
+  {
+    return get_field_from_tx_extra(tx_extra, assets, skip);
+  }
   //---------------------------------------------------------------
   bool get_inputs_money_amount(const transaction& tx, uint64_t& money)
   {
@@ -996,8 +1009,9 @@ namespace cryptonote
   {
     for(const auto& in: tx.vin)
     {
-      CHECK_AND_ASSERT_MES(std::holds_alternative<txin_to_key>(in), false, "wrong variant type: "
+      CHECK_AND_ASSERT_MES(std::holds_alternative<txin_to_key>(in) || std::holds_alternative<txin_zc_input>(in), false, "wrong variant type: "
         << tools::type_name(tools::variant_type(in)) << ", expected " << tools::type_name<txin_to_key>()
+        << " or " << tools::type_name<txin_zc_input>()
         << ", in transaction id=" << get_transaction_hash(tx));
 
     }
@@ -1428,8 +1442,13 @@ namespace cryptonote
     {
       serialization::binary_string_archiver ba;
       size_t mixin = 0;
-      if (t.vin.size() > 0 && std::holds_alternative<txin_to_key>(t.vin[0]))
-        mixin = var::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1;
+      if (!t.vin.empty())
+      {
+        if (std::holds_alternative<txin_to_key>(t.vin[0]))
+          mixin = var::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1;
+        else if (std::holds_alternative<txin_zc_input>(t.vin[0]))
+          mixin = var::get<txin_zc_input>(t.vin[0]).key_offsets.size() - 1;
+      }
       try {
         const_cast<transaction&>(t).rct_signatures.p.serialize_rctsig_prunable(
                 ba, t.rct_signatures.type, t.vin.size(), t.vout.size(), mixin);

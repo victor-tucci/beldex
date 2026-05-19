@@ -460,7 +460,7 @@ private:
    * @param commitment the rct commitment to the output amount
    * @return amount output index
    */
-  virtual uint64_t add_output(const crypto::hash& tx_hash, const tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment) = 0;
+  virtual uint64_t add_output(const crypto::hash& tx_hash, const tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment, const crypto::public_key &asset_id = crypto::null_pkey) = 0;
 
   /**
    * @brief store amount output indices for a tx's outputs
@@ -1397,7 +1397,8 @@ public:
    * @return the number of outputs of the given amount
    */
   virtual uint64_t get_num_outputs(const uint64_t& amount) const = 0;
-
+  virtual uint64_t get_num_outputs_for_asset(const crypto::public_key &asset_id, const uint64_t& amount) const = 0;
+  
   /**
    * @brief return index of the first element (should be hidden, but isn't)
    *
@@ -1422,7 +1423,8 @@ public:
    * @return the requested output data
    */
   virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt = true) const = 0;
-
+  virtual output_data_t get_output_key_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index, bool include_commitmemt = true) const = 0;
+  
   /**
    * @brief gets an output's tx hash and index
    *
@@ -1448,7 +1450,8 @@ public:
    * @return the tx hash and output index
    */
   virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const = 0;
-
+  virtual tx_out_index get_output_tx_and_index_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index) const = 0;
+  
   /**
    * @brief gets some outputs' tx hashes and indices
    *
