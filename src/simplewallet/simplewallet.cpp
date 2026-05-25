@@ -5478,22 +5478,24 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
   success_msg_writer() << tr("Balance: ") << print_money(m_wallet->balance(m_current_subaddress_account, false)) << ", "
     << tr("unlocked balance: ") << print_money(unlocked_balance) << unlock_time_message << extra;
 
-  // HF21: show per-asset balances
+  // HF21: show per-asset balances (total + unlocked)
   {
-    const auto asset_bals = m_wallet->asset_balances(m_current_subaddress_account, false);
-    if (!asset_bals.empty())
+    const auto asset_total = m_wallet->asset_balances(m_current_subaddress_account, false);
+    const auto asset_unlocked = m_wallet->asset_balances(m_current_subaddress_account, true);
+    if (!asset_total.empty())
     {
       success_msg_writer() << tr("Confidential asset balances:");
-      for (const auto& [asset_id, amount] : asset_bals)
+      for (const auto& [asset_id, total_amount] : asset_total)
       {
+        const uint64_t unlocked_amount = asset_unlocked.count(asset_id) ? asset_unlocked.at(asset_id) : 0;
         const std::string asset_hex = tools::type_to_hex(asset_id);
         const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
         const uint8_t display_dp = asset_info ? asset_info->decimal_point : 12;
-        const std::string formatted_amount = print_asset_amount(amount, display_dp);
 
         success_msg_writer() << "  " << asset_hex
                              << (asset_info && !asset_info->ticker.empty() ? " (" + asset_info->ticker + ")" : "")
-                             << "  balance: " << formatted_amount
+                             << "  balance: " << print_asset_amount(total_amount, display_dp)
+                             << ", unlocked balance: " << print_asset_amount(unlocked_amount, display_dp)
                              << fmt::format(" [dp={}]", display_dp);
       }
     }
