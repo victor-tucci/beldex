@@ -2419,6 +2419,11 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
             {
               transfer.m_mask = tx_scan_info[o].mask;
               transfer.m_rct = true;
+              if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[o].target))
+              {
+                transfer.m_asset_id = tx_scan_info[o].asset_id;
+                transfer.m_asset_mask = tx_scan_info[o].asset_mask;
+              }
             }
             else if (miner_tx && tx.version >= txversion::v2_ringct)
             {
@@ -6393,10 +6398,23 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
   result.timestamp = pd.m_timestamp;
   result.unlock_time = pd.m_unlock_time;
   result.locked = !is_transfer_unlocked(pd.m_unlock_time, pd.m_block_height, false);
+  result.asset_id = get_single_asset_id_from_dests(pd.m_dests);
   result.fee = pd.m_amount_in - pd.m_amount_out;
   uint64_t change = pd.m_change == (uint64_t)-1 ? 0 : pd.m_change; // change may not be known
   result.amount = pd.m_amount_in - change - result.fee;
-  result.asset_id = get_single_asset_id_from_dests(pd.m_dests);
+  if (!result.asset_id.empty())
+  {
+    uint64_t ca_sent = 0;
+    for (const auto& d : pd.m_dests)
+    {
+      if (asset_id_to_hex_string(d.asset_id) != result.asset_id)
+        continue;
+      THROW_WALLET_EXCEPTION_IF(ca_sent > std::numeric_limits<uint64_t>::max() - d.amount,
+        error::wallet_internal_error, "CA destination amount overflow while building transfer view");
+      ca_sent += d.amount;
+    }
+    result.amount = ca_sent;
+  }
   result.note = get_tx_note(txid);
 
   for (const auto &d: pd.m_dests) {
@@ -6430,9 +6448,22 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
     result.payment_id = result.payment_id.substr(0,16);
   result.height = 0;
   result.timestamp = pd.m_timestamp;
+  result.asset_id = get_single_asset_id_from_dests(pd.m_dests);
   result.fee = pd.m_amount_in - pd.m_amount_out;
   result.amount = pd.m_amount_in - pd.m_change - result.fee;
-  result.asset_id = get_single_asset_id_from_dests(pd.m_dests);
+  if (!result.asset_id.empty())
+  {
+    uint64_t ca_sent = 0;
+    for (const auto& d : pd.m_dests)
+    {
+      if (asset_id_to_hex_string(d.asset_id) != result.asset_id)
+        continue;
+      THROW_WALLET_EXCEPTION_IF(ca_sent > std::numeric_limits<uint64_t>::max() - d.amount,
+        error::wallet_internal_error, "CA destination amount overflow while building transfer view");
+      ca_sent += d.amount;
+    }
+    result.amount = ca_sent;
+  }
   result.unlock_time = pd.m_tx.unlock_time;
   result.locked = true;
   result.note = get_tx_note(txid);
@@ -7148,7 +7179,11 @@ void wallet2::add_unconfirmed_tx(const cryptonote::transaction& tx, uint64_t amo
   utd.m_amount_in = amount_in;
   utd.m_amount_out = 0;
   for (const auto &d: dests)
+  {
+    if (d.asset_id != null_pkey)
+      continue;
     utd.m_amount_out += d.amount;
+  }
   utd.m_amount_out += change_amount; // dests does not contain change
   utd.m_change = change_amount;
   utd.m_sent_time = time(NULL);
@@ -7260,14 +7295,21 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
   crypto::hash payment_id = crypto::null_hash;
   std::vector<cryptonote::tx_destination_entry> dests;
   uint64_t amount_in = 0;
+  uint64_t change_amount = 0;
   if (store_tx_info())
   {
     payment_id = get_payment_id(ptx);
     dests = ptx.dests;
     for(size_t idx: ptx.selected_transfers)
+    {
+      if (m_transfers[idx].m_asset_id != null_pkey)
+        continue;
       amount_in += m_transfers[idx].amount();
+    }
+    if (ptx.change_dts.asset_id == null_pkey)
+      change_amount = ptx.change_dts.amount;
   }
-  add_unconfirmed_tx(ptx.tx, amount_in, dests, payment_id, ptx.change_dts.amount, ptx.construction_data.subaddr_account, ptx.construction_data.subaddr_indices);
+  add_unconfirmed_tx(ptx.tx, amount_in, dests, payment_id, change_amount, ptx.construction_data.subaddr_account, ptx.construction_data.subaddr_indices);
   if (store_tx_info() && ptx.tx_key != crypto::null_skey)
   {
     m_tx_keys.insert(std::make_pair(txid, ptx.tx_key));
@@ -10476,8 +10518,19 @@ void wallet2::build_tx_sources_with_decoys(
     if (src.asset_id != crypto::null_pkey)
     {
       src.has_ca_metadata = true;
+      THROW_WALLET_EXCEPTION_IF(td.m_mask == rct::zero(), error::wallet_internal_error,
+          "ZC input missing decoded amount blinding mask in transfer details");
       src.amount_blinding_mask = rct::rct2pk(td.m_mask);
-      src.amount_commitment = rct::rct2pk(rct::commit(td.amount(), td.m_mask));
+      THROW_WALLET_EXCEPTION_IF(!td.is_zarcanum(), error::wallet_internal_error,
+          "CA source marked non-native but transfer is not zarcanum");
+      const auto& real_zout = var::get<cryptonote::tx_out_zarcanum>(
+          td.m_tx.vout[td.m_internal_output_index].target);
+      src.amount_commitment = real_zout.amount_commitment;
+      const rct::key expected_real_amount_commitment = rct::commitAsset(
+          td.m_mask, rct::pk2rct(src.asset_id), td.amount());
+      THROW_WALLET_EXCEPTION_IF(expected_real_amount_commitment != rct::pk2rct(real_zout.amount_commitment),
+          error::wallet_internal_error,
+          "decoded mask mismatch for real ZC input");
       const rct::key asset_blind = derive_ca_asset_id_blinding_mask(td.m_txid, td.m_internal_output_index);
       src.asset_id_bliding_mask = rct::rct2pk(asset_blind);
       rct::key T{};
@@ -10523,7 +10576,10 @@ void wallet2::build_tx_sources_with_decoys(
     tx_output_entry real_oe;
     real_oe.first = it_to_replace->first;
     real_oe.second.dest = rct::pk2rct(td.get_public_key());
-    real_oe.second.mask = rct::commit(td.amount(), td.m_mask);
+    real_oe.second.mask = td.is_zarcanum()
+        ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+              td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
+        : rct::commit(td.amount(), td.m_mask);
     *it_to_replace = real_oe;
     const size_t real_out_pos = it_to_replace - src.outputs.begin();
     THROW_WALLET_EXCEPTION_IF(real_out_pos >= src.output_asset_ids.size() || real_out_pos >= src.output_asset_commitments.size(),
@@ -10559,6 +10615,49 @@ void wallet2::build_tx_sources_with_decoys(
     else
     {
       src.multisig_kLRki = rct::multisig_kLRki({rct::zero(), rct::zero(), rct::zero(), rct::zero()});
+    }
+
+    // Offset/order invariant:
+    // Keep absolute ring indices sorted and keep companion CA metadata vectors
+    // in lockstep with the same permutation before absolute->relative encoding.
+    {
+      const auto real_entry_before_sort = src.outputs[src.real_output];
+      std::vector<size_t> order(src.outputs.size());
+      for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return src.outputs[a].first < src.outputs[b].first;
+      });
+
+      std::vector<cryptonote::tx_source_entry::output_entry> sorted_outputs;
+      std::vector<crypto::public_key> sorted_asset_ids;
+      std::vector<rct::key> sorted_asset_commitments;
+      sorted_outputs.reserve(src.outputs.size());
+      sorted_asset_ids.reserve(src.output_asset_ids.size());
+      sorted_asset_commitments.reserve(src.output_asset_commitments.size());
+      for (size_t p : order)
+      {
+        sorted_outputs.push_back(src.outputs[p]);
+        sorted_asset_ids.push_back(src.output_asset_ids[p]);
+        sorted_asset_commitments.push_back(src.output_asset_commitments[p]);
+      }
+      src.outputs = std::move(sorted_outputs);
+      src.output_asset_ids = std::move(sorted_asset_ids);
+      src.output_asset_commitments = std::move(sorted_asset_commitments);
+
+      for (size_t i = 1; i < src.outputs.size(); ++i)
+      {
+        THROW_WALLET_EXCEPTION_IF(src.outputs[i - 1].first >= src.outputs[i].first,
+          error::wallet_internal_error, "Ring absolute indices must be strictly increasing");
+      }
+
+      auto real_it = std::find_if(src.outputs.begin(), src.outputs.end(), [&](const auto& e) {
+        return e.first == real_entry_before_sort.first &&
+               e.second.dest == real_entry_before_sort.second.dest &&
+               e.second.mask == real_entry_before_sort.second.mask;
+      });
+      THROW_WALLET_EXCEPTION_IF(real_it == src.outputs.end(), error::wallet_internal_error,
+        "Failed to recover real output position after ring sort");
+      src.real_output = std::distance(src.outputs.begin(), real_it);
     }
 
     {

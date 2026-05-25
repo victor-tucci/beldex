@@ -404,6 +404,7 @@ private:
   void remove_tx_outputs(const uint64_t tx_id, const transaction& tx);
 
   void remove_output(const uint64_t amount, const uint64_t& out_index);
+  void remove_output_for_asset(const crypto::public_key& asset_id, const uint64_t amount, const uint64_t& out_index);
 
   void prune_outputs(uint64_t amount) override;
 

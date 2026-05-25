@@ -1166,7 +1166,6 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   check_open();
   mdb_txn_cursors *m_cursors = &m_wcursors;
   uint64_t m_height = height();
-  uint64_t m_num_outputs = num_outputs();
 
   int result = 0;
 
@@ -1180,67 +1179,31 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   const bool is_zarcanum = std::holds_alternative<tx_out_zarcanum>(tx_output.target);
   if (!is_zarcanum && !std::holds_alternative<txout_to_key>(tx_output.target))
     throw0(DB_ERROR("Wrong output type: expected txout_to_key or tx_out_zarcanum"));
+  if (is_zarcanum && asset_id == crypto::null_pkey)
+    throw0(DB_ERROR("Zarcanum output must carry a non-null asset id"));
   if (!is_zarcanum && tx_output.amount == 0 && !commitment)
     throw0(DB_ERROR("RCT output without commitment"));
 
-  outtx ot = {m_num_outputs, tx_hash, local_index};
-  MDB_val_set(vot, ot);
-
-  result = mdb_cursor_put(m_cur_output_txs, (MDB_val *)&zerokval, &vot, MDB_APPENDDUP);
-  if (result)
-    throw0(DB_ERROR(lmdb_error("Failed to add output tx hash to db transaction: ", result).c_str()));
-
   outkey ok;
   MDB_val data;
-  MDB_val_copy<uint64_t> val_amount(tx_output.amount);
-  result = mdb_cursor_get(m_cur_output_amounts, &val_amount, &data, MDB_SET);
-  if (!result)
-    {
-      mdb_size_t num_elems = 0;
-      result = mdb_cursor_count(m_cur_output_amounts, &num_elems);
-      if (result)
-        throw0(DB_ERROR(std::string("Failed to get number of outputs for amount: ").append(mdb_strerror(result)).c_str()));
-      ok.amount_index = num_elems;
-    }
-  else if (result != MDB_NOTFOUND)
-    throw0(DB_ERROR(lmdb_error("Failed to get output amount in db transaction: ", result).c_str()));
-  else
-    ok.amount_index = 0;
-  ok.output_id = m_num_outputs;
+
+  // Split universes by design:
+  // - tx_out_zarcanum: asset_output_* only
+  // - txout_to_key: output_* only
   if (is_zarcanum)
   {
+    const uint64_t asset_global_index = get_asset_output_count(asset_id);
+    ok.output_id = asset_global_index;
+
     // Store stealth_address as the lookup key; commitment comes from the output itself.
     const auto& zout = var::get<tx_out_zarcanum>(tx_output.target);
     ok.data.pubkey = zout.stealth_address;
     ok.data.unlock_time = unlock_time;
     ok.data.height = m_height;
     ok.data.commitment = rct::pk2rct(zout.amount_commitment);
-    data.mv_size = sizeof(ok);
-  }
-  else
-  {
-    ok.data.pubkey = var::get<txout_to_key>(tx_output.target).key;
-    ok.data.unlock_time = unlock_time;
-    ok.data.height = m_height;
-    if (tx_output.amount == 0)
-    {
-      ok.data.commitment = *commitment;
-      data.mv_size = sizeof(ok);
-    }
-    else
-    {
-      data.mv_size = sizeof(pre_rct_outkey);
-    }
-  }
-  data.mv_data = &ok;
 
-  if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
-      throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
-
-  if (asset_id != crypto::null_pkey)
-  {
     asset_outtx aot{tx_hash, local_index};
-    asset_outtx_key aotk{asset_id, m_num_outputs};
+    asset_outtx_key aotk{asset_id, asset_global_index};
     MDB_val_set(v_asset_outtx, aot);
     MDB_val_set(v_asset_outtx_key, aotk);
     result = mdb_cursor_put(m_cur_asset_output_txs, &v_asset_outtx_key, &v_asset_outtx, 0);
@@ -1266,6 +1229,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
       }
     }
 
+    ok.amount_index = asset_amount_index;
     asset_outkey aok{};
     aok.data = ok.data;
 
@@ -1276,7 +1240,48 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
     if (result)
       throw0(DB_ERROR(lmdb_error("Failed to add asset output pubkey to db transaction: ", result).c_str()));
 
+    return asset_amount_index;
   }
+
+  const uint64_t legacy_global_index = num_outputs();
+  outtx ot = {legacy_global_index, tx_hash, local_index};
+  MDB_val_set(vot, ot);
+  result = mdb_cursor_put(m_cur_output_txs, (MDB_val *)&zerokval, &vot, MDB_APPENDDUP);
+  if (result)
+    throw0(DB_ERROR(lmdb_error("Failed to add output tx hash to db transaction: ", result).c_str()));
+
+  MDB_val_copy<uint64_t> val_amount(tx_output.amount);
+  result = mdb_cursor_get(m_cur_output_amounts, &val_amount, &data, MDB_SET);
+  if (!result)
+  {
+    mdb_size_t num_elems = 0;
+    result = mdb_cursor_count(m_cur_output_amounts, &num_elems);
+    if (result)
+      throw0(DB_ERROR(std::string("Failed to get number of outputs for amount: ").append(mdb_strerror(result)).c_str()));
+    ok.amount_index = num_elems;
+  }
+  else if (result != MDB_NOTFOUND)
+    throw0(DB_ERROR(lmdb_error("Failed to get output amount in db transaction: ", result).c_str()));
+  else
+    ok.amount_index = 0;
+
+  ok.output_id = legacy_global_index;
+  ok.data.pubkey = var::get<txout_to_key>(tx_output.target).key;
+  ok.data.unlock_time = unlock_time;
+  ok.data.height = m_height;
+  if (tx_output.amount == 0)
+  {
+    ok.data.commitment = *commitment;
+    data.mv_size = sizeof(ok);
+  }
+  else
+  {
+    data.mv_size = sizeof(pre_rct_outkey);
+  }
+  data.mv_data = &ok;
+
+  if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
+    throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
 
   return ok.amount_index;
 }
@@ -1319,11 +1324,23 @@ void BlockchainLMDB::remove_tx_outputs(const uint64_t tx_id, const transaction& 
       throw0(DB_ERROR("tx has outputs, but no output indices found"));
   }
 
+  std::vector<crypto::public_key> output_asset_ids(tx.vout.size(), crypto::null_pkey);
+  if (!tx.vout.empty())
+  {
+    tx_extra_ca_output_assets assets{};
+    if (get_ca_output_assets_from_tx_extra(tx.extra, assets) && assets.asset_ids.size() == tx.vout.size())
+      output_asset_ids = std::move(assets.asset_ids);
+  }
+
   bool is_pseudo_rct = tx.version >= cryptonote::txversion::v2_ringct && tx.vin.size() == 1 && std::holds_alternative<txin_gen>(tx.vin[0]);
   for (size_t i = tx.vout.size(); i-- > 0;)
   {
     uint64_t amount = is_pseudo_rct ? 0 : tx.vout[i].amount;
-    remove_output(amount, amount_output_indices[i]);
+    const crypto::public_key& out_asset_id = i < output_asset_ids.size() ? output_asset_ids[i] : crypto::null_pkey;
+    if (out_asset_id != crypto::null_pkey)
+      remove_output_for_asset(out_asset_id, amount, amount_output_indices[i]);
+    else
+      remove_output(amount, amount_output_indices[i]);
   }
 }
 
@@ -1363,6 +1380,46 @@ void BlockchainLMDB::remove_output(const uint64_t amount, const uint64_t& out_in
   result = mdb_cursor_del(m_cur_output_amounts, 0);
   if (result)
     throw0(DB_ERROR(lmdb_error(std::string("Error deleting amount for output index ").append(std::to_string(out_index).append(": ")).c_str(), result).c_str()));
+}
+
+void BlockchainLMDB::remove_output_for_asset(const crypto::public_key& asset_id, const uint64_t amount, const uint64_t& out_index)
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  check_open();
+  mdb_txn_cursors *m_cursors = &m_wcursors;
+  CURSOR(asset_output_amounts);
+  CURSOR(asset_output_txs);
+
+  asset_outkey_key lookup{asset_id, amount, out_index, 0};
+  MDB_val_set(k, lookup);
+  MDB_val v;
+  auto result = mdb_cursor_get(m_cur_asset_output_amounts, &k, &v, MDB_SET_RANGE);
+  if (result == MDB_NOTFOUND)
+    throw1(OUTPUT_DNE("Attempting to get an asset output index by amount and amount index, but amount not found"));
+  else if (result)
+    throw0(DB_ERROR(lmdb_error("DB error attempting to get an asset output", result).c_str()));
+
+  if (k.mv_size != sizeof(asset_outkey_key))
+    throw1(OUTPUT_DNE("Asset output key has invalid size"));
+  const auto* cur = reinterpret_cast<const asset_outkey_key*>(k.mv_data);
+  if (cur->asset_id != asset_id || cur->amount != amount || cur->amount_index != out_index)
+    throw1(OUTPUT_DNE("Attempting to get an asset output index by amount and amount index, but amount not found"));
+
+  asset_outtx_key aotk{asset_id, cur->output_id};
+  MDB_val_set(k2, aotk);
+  MDB_val v2;
+  result = mdb_cursor_get(m_cur_asset_output_txs, &k2, &v2, MDB_SET);
+  if (result == MDB_NOTFOUND)
+    throw0(DB_ERROR("Unexpected: asset output index not found in m_asset_output_txs"));
+  else if (result)
+    throw1(DB_ERROR(lmdb_error("Error adding removal of asset output tx to db transaction", result).c_str()));
+  result = mdb_cursor_del(m_cur_asset_output_txs, 0);
+  if (result)
+    throw0(DB_ERROR(lmdb_error(std::string("Error deleting asset output index ").append(std::to_string(out_index).append(": ")).c_str(), result).c_str()));
+
+  result = mdb_cursor_del(m_cur_asset_output_amounts, 0);
+  if (result)
+    throw0(DB_ERROR(lmdb_error(std::string("Error deleting asset amount for output index ").append(std::to_string(out_index).append(": ")).c_str(), result).c_str()));
 }
 
 void BlockchainLMDB::prune_outputs(uint64_t amount)

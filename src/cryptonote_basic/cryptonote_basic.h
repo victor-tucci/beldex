@@ -31,6 +31,7 @@
 #pragma once
 
 #include <vector>
+#include <algorithm>
 #include <sstream>
 #include <atomic>
 #include "serialization/variant.h"
@@ -408,10 +409,13 @@ namespace cryptonote
       {
         if (!vin.empty())
         {
+          const size_t legacy_rct_inputs = std::count_if(vin.begin(), vin.end(), [](const txin_v& in) {
+            return std::holds_alternative<txin_to_key>(in);
+          });
           {
             ar.tag("rct_signatures");
             auto obj = ar.begin_object();
-            rct_signatures.serialize_rctsig_base(ar, vin.size(), vout.size());
+            rct_signatures.serialize_rctsig_base(ar, legacy_rct_inputs, vout.size());
           }
 
           if constexpr (Binary)
@@ -429,7 +433,7 @@ namespace cryptonote
               else if (std::holds_alternative<txin_zc_input>(vin[0]))
                 mixin = var::get<txin_zc_input>(vin[0]).key_offsets.size() - 1;
             }
-            rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, vin.size(), vout.size(), mixin);
+            rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, legacy_rct_inputs, vout.size(), mixin);
           }
 
           // CA transfer proofs (present for ZC-input transfer txs).
@@ -460,9 +464,12 @@ namespace cryptonote
       {
         if (!vin.empty())
         {
+          const size_t legacy_rct_inputs = std::count_if(vin.begin(), vin.end(), [](const txin_v& in) {
+            return std::holds_alternative<txin_to_key>(in);
+          });
           ar.tag("rct_signatures");
           auto obj = ar.begin_object();
-          rct_signatures.serialize_rctsig_base(ar, vin.size(), vout.size());
+          rct_signatures.serialize_rctsig_base(ar, legacy_rct_inputs, vout.size());
         }
       }
       if (Archive::is_deserializer)

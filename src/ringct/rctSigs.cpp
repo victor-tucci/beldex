@@ -32,8 +32,11 @@
 #include "common/perf_timer.h"
 #include "common/threadpool.h"
 #include "common/util.h"
+#include "crypto/hf21_transcript_domains.h"
 #include "rctSigs.h"
 #include "bulletproofs.h"
+#include "crypto/asset_proofs.h"
+#include "cryptonote_basic/asset_descriptor_operation_utils.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_config.h"
 #include "bulletproofs_plus.h"
@@ -45,6 +48,29 @@
 
 namespace
 {
+    rct::key hash_domain_separated_key(const char* domain, const rct::key& tx_prefix_hash, uint64_t index)
+    {
+        std::string blob(domain);
+        blob.append(reinterpret_cast<const char*>(tx_prefix_hash.bytes), sizeof(tx_prefix_hash.bytes));
+        blob.append(reinterpret_cast<const char*>(&index), sizeof(index));
+        return rct::hash2rct(crypto::cn_fast_hash(blob.data(), blob.size()));
+    }
+
+    bool is_valid_main_subgroup_point(const rct::key& p)
+    {
+        ge_p3 tmp{};
+        if (ge_frombytes_vartime(&tmp, p.bytes) != 0)
+            return false;
+        return rct::isInMainSubgroup(p);
+    }
+
+    bool is_valid_non_identity_point(const rct::key& p)
+    {
+        if (p == rct::identity())
+            return false;
+        return is_valid_main_subgroup_point(p);
+    }
+
     rct::Bulletproof make_dummy_bulletproof(const std::vector<uint64_t> &outamounts, rct::keyV &C, rct::keyV &masks)
     {
         const size_t n_outs = outamounts.size();
@@ -1874,54 +1900,189 @@ namespace rct {
         // ── 1. Verify ZC_sig for each ZC input ───────────────────────────────
         // Count ZC inputs and match them to ZC_sig entries in asset_proofs.
         // pubkeys[i] is the ring for input i (built by check_tx_inputs).
-        size_t zc_sig_idx = 0;
-        const key tx_prefix_hash = get_hf21_asset_proof_message(tx, pubkeys, hw::get_device("default"));
+        // Use the canonical tx prefix hash for ZC proof transcript seeding to
+        // avoid drift from non-ZC ring reconstruction details.
+        const key tx_prefix_hash = hash2rct(cryptonote::get_transaction_prefix_hash(tx));
 
+        size_t surjection_count = 0;
+        size_t balance_count = 0;
+        size_t ownership_count = 0;
+        size_t zc_sig_count = 0;
         std::vector<const rct::ZC_sig*> zc_sigs;
         for (const auto& proof : tx.asset_proofs)
-            if (const auto* zs = std::get_if<rct::ZC_sig>(&proof))
+        {
+            if (std::holds_alternative<rct::zc_asset_surjection_proof>(proof)) ++surjection_count;
+            else if (std::holds_alternative<rct::zc_balance_proof>(proof)) ++balance_count;
+            else if (std::holds_alternative<rct::asset_operation_ownership_proof>(proof)) ++ownership_count;
+            else if (const auto* zs = std::get_if<rct::ZC_sig>(&proof))
+            {
+                ++zc_sig_count;
                 zc_sigs.push_back(zs);
+            }
+        }
 
-        // Collect ring pubkeys for ZC inputs (subset of all inputs)
-        size_t zc_input_count = 0;
+        // Build explicit ZC input -> ring mapping (do not rely on mixed-input
+        // positional assumptions later in verification logic).
+        struct zc_input_ring_ref
+        {
+            size_t vin_index;
+            const cryptonote::txin_zc_input* input;
+            const rct::ctkeyV* ring;
+        };
+        std::vector<zc_input_ring_ref> zc_inputs;
+        std::set<crypto::key_image> seen_zc_kis;
         for (size_t i = 0; i < tx.vin.size(); ++i)
         {
             if (!std::holds_alternative<cryptonote::txin_zc_input>(tx.vin[i]))
                 continue;
-            const auto& txin = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
-            if (zc_sig_idx >= zc_sigs.size())
-                continue;  // more inputs than ZC_sigs → not a ZC input
+            if (i >= pubkeys.size())
+            {
+                reason = "missing pubkeys ring for ZC input " + std::to_string(i);
+                return false;
+            }
+            const auto& in = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
+            if (!seen_zc_kis.insert(in.k_image).second)
+            {
+                reason = "duplicate ZC key image in transaction";
+                return false;
+            }
+            if (pubkeys[i].size() < 2)
+            {
+                reason = "ZC ring too small for input " + std::to_string(i);
+                return false;
+            }
+            if (pubkeys[i].size() != cryptonote::TX_OUTPUT_DECOYS + 1)
+            {
+                reason = "ZC ring size invariant failed for input " + std::to_string(i);
+                return false;
+            }
+            std::vector<std::pair<rct::key, rct::key>> seen_ring_members;
+            for (size_t ri = 0; ri < pubkeys[i].size(); ++ri)
+            {
+                const auto& member = pubkeys[i][ri];
+                if (!is_valid_non_identity_point(member.dest) || !is_valid_non_identity_point(member.mask))
+                {
+                    reason = "invalid ring member point for input " + std::to_string(i);
+                    return false;
+                }
+                const bool duplicate_member = std::any_of(seen_ring_members.begin(), seen_ring_members.end(),
+                    [&](const auto& prev){
+                        return rct::equalKeys(prev.first, member.dest) && rct::equalKeys(prev.second, member.mask);
+                    });
+                if (duplicate_member)
+                {
+                    reason = "duplicate ring member in ZC ring for input " + std::to_string(i);
+                    return false;
+                }
+                seen_ring_members.emplace_back(member.dest, member.mask);
+            }
+            zc_inputs.push_back({i, &in, &pubkeys[i]});
+        }
 
-            const rct::ZC_sig& zc_sig = *zc_sigs[zc_sig_idx];
+        // Global proof-count/type invariants.
+        const size_t zc_output_count = std::count_if(tx.vout.begin(), tx.vout.end(),
+            [](const auto& out){ return std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target); });
+        const bool has_zc_inputs = !zc_inputs.empty();
+        const bool has_zc_outputs = zc_output_count > 0;
 
-            // Extract ring pubkeys for this input from pubkeys[i].
-            rct::keyV ring_pks;
-            ring_pks.reserve(pubkeys[i].size());
-            for (const auto& ctk : pubkeys[i])
-                ring_pks.push_back(ctk.dest);
+        if (zc_sig_count != zc_inputs.size())
+        {
+            reason = "ZC_sig count invariant failed: expected " + std::to_string(zc_inputs.size()) +
+                     ", got " + std::to_string(zc_sig_count);
+            return false;
+        }
+        if (has_zc_inputs && balance_count != 1)
+        {
+            reason = "zc_balance_proof count invariant failed for CA spend";
+            return false;
+        }
+        if (!has_zc_inputs && balance_count > 0)
+        {
+            reason = "unexpected zc_balance_proof without CA inputs";
+            return false;
+        }
+        if (has_zc_outputs && tx.type != cryptonote::txtype::deploy_new_asset && surjection_count != 1)
+        {
+            reason = "zc_asset_surjection_proof count invariant failed for CA transfer";
+            return false;
+        }
+        if ((!has_zc_outputs || tx.type == cryptonote::txtype::deploy_new_asset) && surjection_count > 0)
+        {
+            reason = "unexpected zc_asset_surjection_proof for tx type";
+            return false;
+        }
+        if (tx.type == cryptonote::txtype::deploy_new_asset && ownership_count == 0)
+        {
+            reason = "missing ownership proof for deploy_new_asset";
+            return false;
+        }
+        if (tx.type != cryptonote::txtype::deploy_new_asset && ownership_count > 0)
+        {
+            reason = "unexpected ownership proof for tx type";
+            return false;
+        }
+        if (ownership_count > 1)
+        {
+            reason = "multiple ownership proofs are not allowed";
+            return false;
+        }
 
-            if (!verZCSig(tx_prefix_hash, zc_sig, ring_pks,
+        // Verify ZC signatures on the explicit subset mapping above.
+        size_t zc_input_count = 0;
+        std::vector<bool> zc_sig_used(zc_sigs.size(), false);
+        for (const auto& zc_ref : zc_inputs)
+        {
+            const size_t i = zc_ref.vin_index;
+            const auto& txin = *zc_ref.input;
+            ssize_t matched_sig_idx = -1;
+            for (size_t si = 0; si < zc_sigs.size(); ++si)
+            {
+                if (zc_sig_used[si])
+                    continue;
+                if (zc_sigs[si]->key_image == txin.k_image)
+                {
+                    matched_sig_idx = static_cast<ssize_t>(si);
+                    break;
+                }
+            }
+            if (matched_sig_idx < 0)
+            {
+                reason = "Missing ZC_sig for input " + std::to_string(i) + " (key image match not found)";
+                return false;
+            }
+            zc_sig_used[matched_sig_idx] = true;
+            const rct::ZC_sig& zc_sig = *zc_sigs[matched_sig_idx];
+            MWARNING("[ZC-DBG][verify/input" << i << "] message=<" << tx_prefix_hash
+                     << "> pseudoOut/C_offset=<" << zc_sig.pseudo_out_commitment
+                     << "> ring_size=" << zc_ref.ring->size());
+            for (size_t ri = 0; ri < zc_ref.ring->size(); ++ri)
+            {
+              MWARNING("[ZC-DBG][verify/input" << i << "] ring[" << ri << "] dest=<"
+                       << (*zc_ref.ring)[ri].dest << "> mask=<" << (*zc_ref.ring)[ri].mask << ">");
+            }
+
+            if (!is_valid_non_identity_point(zc_sig.pseudo_out_commitment))
+            {
+                reason = "invalid pseudo_out_commitment point for input " + std::to_string(i);
+                return false;
+            }
+
+            const rct::key clsag_msg = hash_domain_separated_key(cryptonote::hf21::ZC_CLSAG_V1, tx_prefix_hash, i);
+            if (!verZCSig(clsag_msg, zc_sig, *zc_ref.ring,
                           zc_sig.pseudo_out_commitment))
             {
                 reason = "ZC_sig verification failed for input " + std::to_string(i);
                 return false;
             }
 
-            // Key image in ZC_sig must match txin.k_image
-            if (memcmp(&zc_sig.key_image, &txin.k_image, sizeof(crypto::key_image)) != 0)
-            {
-                reason = "ZC_sig key_image mismatch for input " + std::to_string(i);
-                return false;
-            }
-
-            ++zc_sig_idx;
             ++zc_input_count;
         }
 
-        if (zc_sig_idx != zc_sigs.size())
+        const size_t matched_zc_sigs = std::count(zc_sig_used.begin(), zc_sig_used.end(), true);
+        if (matched_zc_sigs != zc_sigs.size())
         {
             reason = "ZC_sig count mismatch: have " + std::to_string(zc_sigs.size()) +
-                     ", matched " + std::to_string(zc_sig_idx);
+                     ", matched " + std::to_string(matched_zc_sigs);
             return false;
         }
 
@@ -1937,6 +2098,27 @@ namespace rct {
                 // For now: gather ring member pubkeys as the BGE context hash input.
                 // Full BGE ring verification requires the asset IDs to be passed
                 // from the spending inputs; this is wired in the complete spend path.
+                rct::keyV input_asset_ring;
+                input_asset_ring.reserve(zc_inputs.size());
+                for (const auto& zc_ref : zc_inputs)
+                {
+                    const rct::key aid = rct::pk2rct(zc_ref.input->asset_id);
+                    if (!is_valid_non_identity_point(aid))
+                    {
+                        reason = "invalid input asset_id point for ZC input " + std::to_string(zc_ref.vin_index);
+                        return false;
+                    }
+                    const bool seen = std::any_of(input_asset_ring.begin(), input_asset_ring.end(),
+                        [&](const auto& prev){ return rct::equalKeys(prev, aid); });
+                    if (!seen)
+                        input_asset_ring.push_back(aid);
+                }
+                if (input_asset_ring.empty())
+                {
+                    reason = "missing ZC input asset ring for surjection verification";
+                    return false;
+                }
+
                 size_t out_idx = 0;
                 for (size_t k = 0; k < tx.vout.size(); ++k)
                 {
@@ -1947,23 +2129,19 @@ namespace rct {
                         reason = "surjection proof has fewer entries than ZC outputs";
                         return false;
                     }
-                    // BGE context hash = tx prefix hash XOR output index (domain-separation)
-                    rct::key ctx = tx_prefix_hash;
-                    ctx.bytes[0] ^= static_cast<uint8_t>(out_idx);
+                    const rct::key ctx = hash_domain_separated_key(cryptonote::hf21::CA_SURJECTION_V1, tx_prefix_hash, out_idx);
 
                     const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[k].target);
                     const rct::key T = rct::pk2rct(zout.blinded_asset_id);
-
-                    // BGE ring = asset IDs from all ring members of all inputs.
-                    // Here we use a simplified check: verify the proof is
-                    // structurally valid (non-empty Pk, f, y, z fields).
-                    // Full cryptographic verification requires collecting
-                    // plaintext asset IDs from the input ring outputs, which
-                    // is implemented in the complete block validation path.
                     const auto& bge = sp->bge_proofs[out_idx];
-                    if (bge.Pk.empty() || bge.f.empty())
+                    if (!is_valid_non_identity_point(T))
                     {
-                        reason = "BGE proof is empty for output " + std::to_string(k);
+                        reason = "invalid blinded_asset_id point for output " + std::to_string(k);
+                        return false;
+                    }
+                    if (!crypto::verify_BGE_proof(ctx, input_asset_ring, T, bge))
+                    {
+                        reason = "BGE proof verification failed for output " + std::to_string(k);
                         return false;
                     }
                     ++out_idx;
@@ -1978,19 +2156,52 @@ namespace rct {
         }
 
         // ── 3. Verify ownership proof for asset operations ────────────────────
-        // For deploy/emit/burn, verify the Schnorr signature against descriptor.owner.
+        // For deploy operations, verify ownership Schnorr proof against
+        // descriptor.owner with explicit domain separation.
+        cryptonote::tx_extra_asset_descriptor_operation ownership_ado{};
+        const bool has_ownership_ado = cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ownership_ado);
+        const rct::key ownership_ctx = [&]{
+            std::string blob{cryptonote::hf21::CA_OWNERSHIP_V1};
+            blob.append(reinterpret_cast<const char*>(tx_prefix_hash.bytes), sizeof(tx_prefix_hash.bytes));
+            if (has_ownership_ado)
+            {
+                const auto asset_id = cryptonote::get_or_calculate_asset_id(ownership_ado);
+                blob.append(reinterpret_cast<const char*>(&asset_id), sizeof(asset_id));
+                const uint8_t op = static_cast<uint8_t>(ownership_ado.operation_type);
+                blob.append(reinterpret_cast<const char*>(&op), sizeof(op));
+                blob.append(reinterpret_cast<const char*>(&ownership_ado.descriptor.owner), sizeof(ownership_ado.descriptor.owner));
+            }
+            return rct::hash2rct(crypto::cn_fast_hash(blob.data(), blob.size()));
+        }();
+
         for (const auto& proof : tx.asset_proofs)
         {
             if (const auto* op = std::get_if<rct::asset_operation_ownership_proof>(&proof))
             {
-                // The message signed is the tx prefix hash.
-                // The public key is retrieved from the asset descriptor in
-                // validate_tx_asset_operations_against_db (asset_history_utils).
-                // Here we check the proof is non-zero (structural check only;
-                // key-specific check is in asset_history_utils.cpp).
+                if (sc_check(op->sig.c.bytes) != 0 || sc_check(op->sig.y.bytes) != 0)
+                {
+                    reason = "asset ownership proof scalar is non-canonical";
+                    return false;
+                }
                 if (op->sig.c == rct::zero() || op->sig.y == rct::zero())
                 {
                     reason = "asset ownership proof is zero";
+                    return false;
+                }
+                if (!has_ownership_ado)
+                {
+                    reason = "missing asset descriptor operation for ownership proof";
+                    return false;
+                }
+                const rct::key owner_pk = rct::pk2rct(ownership_ado.descriptor.owner);
+                if (!is_valid_non_identity_point(owner_pk))
+                {
+                    reason = "invalid ownership public key point";
+                    return false;
+                }
+                if (!crypto::verify_schnorr_sig(ownership_ctx, owner_pk, op->sig))
+                {
+                    reason = "asset ownership Schnorr verification failed";
                     return false;
                 }
             }
@@ -2012,11 +2223,7 @@ namespace rct {
         }
         if (zc_input_count > 0)
         {
-            if (bal == nullptr)
-            {
-                reason = "missing zc_balance_proof for CA spend";
-                return false;
-            }
+            CHECK_AND_ASSERT_MES(bal != nullptr, false, "missing zc_balance_proof for CA spend");
 
             rct::key sum_in_C = rct::zero();
             for (size_t i = 0; i < tx.vin.size(); ++i)
@@ -2024,7 +2231,13 @@ namespace rct {
                 if (!std::holds_alternative<cryptonote::txin_zc_input>(tx.vin[i]))
                     continue;
                 const auto& zc = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
-                rct::addKeys(sum_in_C, sum_in_C, rct::pk2rct(zc.amount_commitment));
+                const rct::key in_c = rct::pk2rct(zc.amount_commitment);
+                if (!is_valid_non_identity_point(in_c))
+                {
+                    reason = "invalid input amount commitment point";
+                    return false;
+                }
+                rct::addKeys(sum_in_C, sum_in_C, in_c);
             }
 
             rct::key sum_out_C = rct::zero();
@@ -2033,17 +2246,29 @@ namespace rct {
                 if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
                     continue;
                 const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
-                rct::addKeys(sum_out_C, sum_out_C, rct::pk2rct(zout.amount_commitment));
+                const rct::key out_c = rct::pk2rct(zout.amount_commitment);
+                if (!is_valid_non_identity_point(out_c))
+                {
+                    reason = "invalid output amount commitment point";
+                    return false;
+                }
+                rct::addKeys(sum_out_C, sum_out_C, out_c);
             }
 
             rct::key expected_P = rct::zero();
             rct::subKeys(expected_P, sum_in_C, sum_out_C);
-            if (bal->P != expected_P)
+            if (!is_valid_non_identity_point(expected_P) || !is_valid_non_identity_point(bal->P))
+            {
+                reason = "invalid balance-proof commitment point";
+                return false;
+            }
+            if (!rct::equalKeys(bal->P, expected_P))
             {
                 reason = "zc_balance_proof statement mismatch";
                 return false;
             }
-            if (!crypto::verify_linear_composition_proof(tx_prefix_hash, bal->P, bal->lcp))
+            const rct::key bal_ctx = hash_domain_separated_key(cryptonote::hf21::CA_BALANCE_V1, tx_prefix_hash, 0);
+            if (!crypto::verify_linear_composition_proof(bal_ctx, bal->P, bal->lcp))
             {
                 reason = "zc_balance_proof verification failed";
                 return false;
@@ -2057,51 +2282,67 @@ namespace rct {
     //
     // ZC_sig uses a 1-layer CLSAG over the ring of public keys.
     // Ring members are drawn from output_amounts[0] (BDX + ZC shared pool).
-    // The commitment layer is omitted — balance is proven by zc_balance_proof.
+    // The CLSAG commitment offset relation remains active via C[i] = C_nonzero[i] - C_offset;
+    // global CA value conservation is enforced by zc_balance_proof.
 
     ZC_sig genZCSig(const key& message,
-                    const keyV& ring_pubkeys,
+                    const ctkeyV& ring,
                     const ctkey& spend_sk,
+                    const key& z,
                     const key& pseudo_out_C,
+                    const crypto::key_image& key_image,
                     unsigned int real_index,
                     hw::device& hwdev)
     {
-        CHECK_AND_ASSERT_THROW_MES(!ring_pubkeys.empty(), "Empty ring for ZC_sig");
-        CHECK_AND_ASSERT_THROW_MES(real_index < ring_pubkeys.size(), "Invalid real_index");
+        CHECK_AND_ASSERT_THROW_MES(!ring.empty(), "Empty ring for ZC_sig");
+        CHECK_AND_ASSERT_THROW_MES(real_index < ring.size(), "Invalid real_index");
+        CHECK_AND_ASSERT_THROW_MES(is_valid_non_identity_point(pseudo_out_C), "Invalid pseudo_out_C point");
+        CHECK_AND_ASSERT_THROW_MES(ki2rct(key_image) != zero(), "Invalid zero key image for ZC_sig");
+        CHECK_AND_ASSERT_THROW_MES(ring.size() == cryptonote::TX_OUTPUT_DECOYS + 1, "Invalid ZC ring size");
 
-        // Build ctkeyV with zero masks — the commitment layer is not used in
-        // the 1-layer ring.  Only the dest (pubkey) field matters for CLSAG_Gen.
-        ctkeyV ring;
-        ring.reserve(ring_pubkeys.size());
-        for (const auto& pk : ring_pubkeys)
-            ring.push_back({pk, rct::zero()});
-
-        // z = 0 because there is no commitment-layer secret in the 1-layer ring.
-        // C_offset = zero so the commitment difference is trivially zero.
         ctkey in_sk;
         in_sk.dest = spend_sk.dest;
-        in_sk.mask = rct::zero();  // no commitment blinding for 1-layer ring
+        in_sk.mask = spend_sk.mask;
+        CHECK_AND_ASSERT_THROW_MES(sc_check(in_sk.dest.bytes) == 0, "Invalid spend secret scalar");
+        CHECK_AND_ASSERT_THROW_MES(sc_check(in_sk.mask.bytes) == 0, "Invalid pseudo mask scalar");
+        CHECK_AND_ASSERT_THROW_MES(sc_check(z.bytes) == 0, "Invalid z scalar");
+        CHECK_AND_ASSERT_THROW_MES(in_sk.dest != zero(), "Invalid zero spend secret scalar");
+        CHECK_AND_ASSERT_THROW_MES(in_sk.mask != zero(), "Invalid zero pseudo mask scalar");
+        CHECK_AND_ASSERT_THROW_MES(z != zero(), "Invalid zero z scalar");
 
-        // Use CLSAG_Gen with z=0 and C_offset=zero (1-layer mode).
         keyV P, C, C_nonzero;
         P.reserve(ring.size());
         C.reserve(ring.size());
         C_nonzero.reserve(ring.size());
         for (const ctkey& k : ring)
         {
+            CHECK_AND_ASSERT_THROW_MES(is_valid_non_identity_point(k.dest), "Invalid ring dest point for ZC_sig");
+            CHECK_AND_ASSERT_THROW_MES(is_valid_non_identity_point(k.mask), "Invalid ring commitment point for ZC_sig");
             P.push_back(k.dest);
-            C_nonzero.push_back(rct::zero());
-            C.push_back(rct::zero());  // C[i] = C_nonzero[i] - C_offset = 0 - 0
+            C_nonzero.push_back(k.mask);
+            key Ci{};
+            subKeys(Ci, k.mask, pseudo_out_C); // C[i] = C_nonzero[i] - C_offset
+            C.push_back(Ci);
         }
 
-        key z = rct::zero();  // commitment blinding secret = 0 (1-layer)
-        key C_offset = rct::zero();
+        const rct::key expected_pub = rct::scalarmultBase(in_sk.dest);
+        CHECK_AND_ASSERT_THROW_MES(rct::equalKeys(expected_pub, ring[real_index].dest),
+            "Spend secret/public mismatch for ZC real ring member");
 
-        clsag sig = CLSAG_Gen(message, P, in_sk.dest, C, z, C_nonzero, C_offset,
+        // Use the canonical key-image derivation helper to avoid any drift in
+        // hash-to-point semantics between Zarcanum and other RingCT paths.
+        crypto::key_image expected_ki_raw{};
+        crypto::generate_key_image(rct::rct2pk(ring[real_index].dest), rct::rct2sk(in_sk.dest), expected_ki_raw);
+        const rct::key expected_ki = rct::ki2rct(expected_ki_raw);
+        CHECK_AND_ASSERT_THROW_MES(rct::equalKeys(expected_ki, ki2rct(key_image)),
+            "Provided key image does not match spend key");
+        CHECK_AND_ASSERT_THROW_MES(is_valid_non_identity_point(expected_ki), "Derived key image is invalid");
+
+        clsag sig = CLSAG_Gen(message, P, in_sk.dest, C, z, C_nonzero, pseudo_out_C,
                               real_index, nullptr, nullptr, nullptr, hwdev);
 
         ZC_sig result;
-        result.key_image           = rct::rct2ki(rct::identity()); // filled by caller
+        result.key_image           = key_image;
         result.clsag_sig           = sig;
         result.pseudo_out_commitment = pseudo_out_C;
         return result;
@@ -2109,19 +2350,31 @@ namespace rct {
 
     bool verZCSig(const key& message,
                   const ZC_sig& sig,
-                  const keyV& ring_pubkeys,
+                  const ctkeyV& ring,
                   const key& pseudo_out_C)
     {
-        if (ring_pubkeys.empty()) return false;
-
-        // Rebuild the ctkey ring with zero masks.
-        ctkeyV ring;
-        ring.reserve(ring_pubkeys.size());
-        for (const auto& pk : ring_pubkeys)
-            ring.push_back({pk, rct::zero()});
-
-        // 1-layer CLSAG verify: C_offset = zero
-        return verRctCLSAGSimple(message, sig.clsag_sig, ring, rct::zero());
+        if (ring.empty()) return false;
+        if (ring.size() != cryptonote::TX_OUTPUT_DECOYS + 1) return false;
+        if (sig.clsag_sig.s.empty()) return false;
+        if (sig.clsag_sig.s.size() != ring.size()) return false;
+        for (const auto& m : ring)
+          if (!is_valid_non_identity_point(m.dest) || !is_valid_non_identity_point(m.mask))
+            return false;
+        if (ki2rct(sig.key_image) == zero()) return false;
+        if (!is_valid_non_identity_point(pseudo_out_C)) return false;
+        if (sc_check(sig.clsag_sig.c1.bytes) != 0) return false;
+        if (sig.clsag_sig.c1 == zero()) return false;
+        for (const auto& s : sig.clsag_sig.s)
+          if (sc_check(s.bytes) != 0)
+            return false;
+        if (!is_valid_non_identity_point(sig.clsag_sig.D))
+          return false;
+        // clsag::I is intentionally not serialized in clsag. For ZC_sig, recover
+        // it from the serialized key_image before verification.
+        clsag clsag_sig = sig.clsag_sig;
+        clsag_sig.I = ki2rct(sig.key_image);
+        if (!is_valid_non_identity_point(clsag_sig.I)) return false;
+        return verRctCLSAGSimple(message, clsag_sig, ring, pseudo_out_C);
     }
 
 }
