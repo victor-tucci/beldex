@@ -1065,25 +1065,47 @@ EXPORT
 int WalletImpl::countBns()
 {  
     clearStatus();
-    auto w = wallet();
-
-    nlohmann::json req_params{
-        {"entries", nlohmann::json::array()}
-    };
-        
-    for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+    try
     {
-        req_params["entries"].push_back(w->get_subaddress_as_str({0, index}));
+        auto w = wallet();
+
+        nlohmann::json req_params = nlohmann::json::object();
+        auto &entries = (req_params["entries"] = nlohmann::json::array());
+
+        for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+        {
+            entries.push_back(w->get_subaddress_as_str({0, index}));
+        }
+
+        auto [success, result] = w->bns_owners_to_names(req_params);
+        if (!success)
+        {
+            LOG_PRINT_L1(__FUNCTION__ << "Connection to daemon failed when requesting BNS names");
+            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+            return 0;
+        }
+
+        if (!result.contains("entries") || !result["entries"].is_array())
+        {
+            LOG_PRINT_L1(__FUNCTION__ << "Invalid daemon response when requesting BNS names");
+            setStatusError(tr("Invalid daemon response when requesting BNS names"));
+            return 0;
+        }
+
+        return result["entries"].size();
+    }
+    catch (const std::exception &e)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Failed to build or parse BNS request: " << e.what());
+        setStatusError(std::string{tr("Failed to build or parse BNS request: ")} + e.what());
+    }
+    catch (...)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Unknown error while building or parsing BNS request");
+        setStatusError(tr("Unknown error while building or parsing BNS request"));
     }
 
-    auto [success, result] = w->bns_owners_to_names(req_params);
-    if (!success)
-    {
-        LOG_PRINT_L1(__FUNCTION__ << "Connection to daemon failed when requesting BNS names");
-        setStatusError(tr("Connection to daemon failed when requesting BNS names"));
-    }
-    
-    return result["entries"].size();
+    return 0;
 }
 
 EXPORT
@@ -2278,75 +2300,94 @@ EXPORT
 std::vector<bnsInfo>* WalletImpl::MyBns() const
 {
     std::vector<bnsInfo>* my_bns = new std::vector<bnsInfo>;
-
-    auto w = wallet();
-
-    nlohmann::json req_params{
-        {"entries", nlohmann::json::array()}
-    };
-
-    std::unordered_map<std::string, tools::wallet2::bns_detail> cache = w->get_bns_cache();
-
-    for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
+    try
     {
-        req_params["entries"].push_back(w->get_subaddress_as_str({0, index}));
-    }
+        auto w = wallet();
 
-    auto [success, result] = w->bns_owners_to_names(req_params);
-    if (!success)
-    {
-        setStatusError(tr("Connection to daemon failed when requesting BNS names"));
-    }
+        nlohmann::json req_params = nlohmann::json::object();
+        auto &entries = (req_params["entries"] = nlohmann::json::array());
 
-    auto nettype = w->nettype();
+        std::unordered_map<std::string, tools::wallet2::bns_detail> cache = w->get_bns_cache();
 
-    for (auto const &entry : result["entries"])
-    {
-        std::string_view name;
-        std::string value_bchat, value_wallet, value_belnet, value_eth;
-        if (auto got = cache.find(entry["name_hash"]); got != cache.end())
+        for (uint32_t index = 0; index < w->get_num_subaddresses(0); ++index)
         {
-            name = got->second.name;
-            auto decrypt_value = [&](std::string_view key, bns::mapping_type type, std::string& out) {
-                auto it = entry.find(key);
-                if (it != entry.end() && !it->empty())
-                {
-                    bns::mapping_value mv;
-                    const auto& hex_str = it->get_ref<const std::string&>();
-                    if (!hex_str.empty() && bns::mapping_value::validate_encrypted(type, oxenc::from_hex(hex_str), &mv) &&
-                        mv.decrypt(name, type))
-                    {
-                        out = mv.to_readable_value(nettype, type);
-                    }
-                }
-            };
-
-            decrypt_value("encrypted_bchat_value", bns::mapping_type::bchat, value_bchat);
-            decrypt_value("encrypted_wallet_value", bns::mapping_type::wallet, value_wallet);
-            decrypt_value("encrypted_belnet_value", bns::mapping_type::belnet, value_belnet);
-            decrypt_value("encrypted_eth_addr_value", bns::mapping_type::eth_addr, value_eth);
+            entries.push_back(w->get_subaddress_as_str({0, index}));
         }
 
-        auto &info = my_bns->emplace_back();
-        info.name_hash = entry["name_hash"];
-        info.name = name.empty() ? "(none)" : std::string(name);
-        info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
-        info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
-        info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
-        info.value_eth_addr = value_eth.empty() ? "(none)" : value_eth;
-        info.owner = entry["owner"];
-        if (entry.contains("backup_owner") && !entry["backup_owner"].is_null())
-            info.backup_owner =  entry["backup_owner"];
-        else
-            info.backup_owner = "(none)";
-        info.update_height = entry["update_height"];
-        info.expiration_height = entry["expiration_height"];
-    
-        info.encrypted_bchat_value = entry["encrypted_bchat_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_bchat_value"];
-        info.encrypted_wallet_value = entry["encrypted_wallet_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_wallet_value"];
-        info.encrypted_belnet_value = entry["encrypted_belnet_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_belnet_value"];
-        info.encrypted_eth_addr_value = entry["encrypted_eth_addr_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_eth_addr_value"];
+        auto [success, result] = w->bns_owners_to_names(req_params);
+        if (!success)
+        {
+            setStatusError(tr("Connection to daemon failed when requesting BNS names"));
+            return my_bns;
+        }
+
+        if (!result.contains("entries") || !result["entries"].is_array())
+        {
+            setStatusError(tr("Invalid daemon response when requesting BNS names"));
+            return my_bns;
+        }
+
+        auto nettype = w->nettype();
+
+        for (auto const &entry : result["entries"])
+        {
+            std::string_view name;
+            std::string value_bchat, value_wallet, value_belnet, value_eth;
+            if (auto got = cache.find(entry["name_hash"]); got != cache.end())
+            {
+                name = got->second.name;
+                auto decrypt_value = [&](std::string_view key, bns::mapping_type type, std::string& out) {
+                    auto it = entry.find(key);
+                    if (it != entry.end() && !it->empty())
+                    {
+                        bns::mapping_value mv;
+                        const auto& hex_str = it->get_ref<const std::string&>();
+                        if (!hex_str.empty() && bns::mapping_value::validate_encrypted(type, oxenc::from_hex(hex_str), &mv) &&
+                            mv.decrypt(name, type))
+                        {
+                            out = mv.to_readable_value(nettype, type);
+                        }
+                    }
+                };
+
+                decrypt_value("encrypted_bchat_value", bns::mapping_type::bchat, value_bchat);
+                decrypt_value("encrypted_wallet_value", bns::mapping_type::wallet, value_wallet);
+                decrypt_value("encrypted_belnet_value", bns::mapping_type::belnet, value_belnet);
+                decrypt_value("encrypted_eth_addr_value", bns::mapping_type::eth_addr, value_eth);
+            }
+
+            auto &info = my_bns->emplace_back();
+            info.name_hash = entry["name_hash"];
+            info.name = name.empty() ? "(none)" : std::string(name);
+            info.value_bchat = value_bchat.empty() ? "(none)" : value_bchat;
+            info.value_wallet = value_wallet.empty() ? "(none)" : value_wallet;
+            info.value_belnet = value_belnet.empty() ? "(none)" : value_belnet;
+            info.value_eth_addr = value_eth.empty() ? "(none)" : value_eth;
+            info.owner = entry["owner"];
+            if (entry.contains("backup_owner") && !entry["backup_owner"].is_null())
+                info.backup_owner =  entry["backup_owner"];
+            else
+                info.backup_owner = "(none)";
+            info.update_height = entry["update_height"];
+            info.expiration_height = entry["expiration_height"];
+
+            info.encrypted_bchat_value = entry["encrypted_bchat_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_bchat_value"];
+            info.encrypted_wallet_value = entry["encrypted_wallet_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_wallet_value"];
+            info.encrypted_belnet_value = entry["encrypted_belnet_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_belnet_value"];
+            info.encrypted_eth_addr_value = entry["encrypted_eth_addr_value"].get<std::string>().empty() ? "(none)" : entry["encrypted_eth_addr_value"];
+        }
     }
+    catch (const std::exception &e)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Failed to build or parse BNS request: " << e.what());
+        setStatusError(std::string{tr("Failed to build or parse BNS request: ")} + e.what());
+    }
+    catch (...)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Unknown error while building or parsing BNS request");
+        setStatusError(tr("Unknown error while building or parsing BNS request"));
+    }
+
     return my_bns;
 }
 
