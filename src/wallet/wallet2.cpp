@@ -12625,6 +12625,31 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
         goto skip_tx;
       }
 
+      if (is_asset_register_tx)
+      {
+        uint64_t selected_native_amount = 0;
+        for (const size_t selected_idx : tx.selected_transfers)
+        {
+          const auto& selected_td = m_transfers[selected_idx];
+          if (selected_td.get_asset_id() != crypto::null_pkey)
+            continue;
+          THROW_WALLET_EXCEPTION_IF(selected_native_amount > std::numeric_limits<uint64_t>::max() - selected_td.amount(),
+            error::wallet_internal_error, "native input sum overflow while funding deploy tx fee");
+          selected_native_amount += selected_td.amount();
+        }
+
+        if (selected_native_amount < needed_fee)
+        {
+          MINFO("deploy_new_asset: selected native inputs "
+                << print_money(selected_native_amount)
+                << " are below current fee target "
+                << print_money(needed_fee)
+                << "; collecting more native inputs before construct");
+          adding_fee = true;
+          goto skip_tx;
+        }
+      }
+
       LOG_PRINT_L2("Trying to create a tx now, with " << tx.dsts.size() << " outputs and " <<
         tx.selected_transfers.size() << " inputs");
       auto tx_dsts = tx.get_adjusted_dsts(needed_fee);
@@ -12716,7 +12741,10 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
           std::unordered_map<crypto::public_key, uint64_t> tx_inputs_by_asset;
           std::unordered_map<crypto::public_key, uint64_t> tx_recipient_outputs_by_asset;
 
-          for (const size_t selected_idx : tx.selected_transfers)
+          // Use finalized selected transfers from the constructed tx. This is
+          // consensus-equivalent input accounting and stays correct even if the
+          // construction path augments input selection (e.g. deploy fee top-up).
+          for (const size_t selected_idx : tx.ptx.selected_transfers)
           {
             const auto& selected_td = m_transfers[selected_idx];
             uint64_t& in_bucket = tx_inputs_by_asset[selected_td.get_asset_id()];

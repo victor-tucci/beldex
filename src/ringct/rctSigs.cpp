@@ -2052,15 +2052,6 @@ namespace rct {
             }
             zc_sig_used[matched_sig_idx] = true;
             const rct::ZC_sig& zc_sig = *zc_sigs[matched_sig_idx];
-            MWARNING("[ZC-DBG][verify/input" << i << "] message=<" << tx_prefix_hash
-                     << "> pseudoOut/C_offset=<" << zc_sig.pseudo_out_commitment
-                     << "> ring_size=" << zc_ref.ring->size());
-            for (size_t ri = 0; ri < zc_ref.ring->size(); ++ri)
-            {
-              MWARNING("[ZC-DBG][verify/input" << i << "] ring[" << ri << "] dest=<"
-                       << (*zc_ref.ring)[ri].dest << "> mask=<" << (*zc_ref.ring)[ri].mask << ">");
-            }
-
             if (!is_valid_non_identity_point(zc_sig.pseudo_out_commitment))
             {
                 reason = "invalid pseudo_out_commitment point for input " + std::to_string(i);

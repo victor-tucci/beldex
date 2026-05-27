@@ -1989,14 +1989,6 @@ namespace cryptonote
                       blob.append(reinterpret_cast<const char*>(&idx64), sizeof(idx64));
                       return rct::hash2rct(crypto::cn_fast_hash(blob.data(), blob.size()));
                   }();
-                  MWARNING("[ZC-DBG][sign/input" << i << "] message=<" << clsag_msg
-                           << "> pseudoOut/C_offset=<" << zc_pseudo_out
-                           << "> ring_size=" << mixRing[i].size());
-                  for (size_t ri = 0; ri < mixRing[i].size(); ++ri)
-                  {
-                    MWARNING("[ZC-DBG][sign/input" << i << "] ring[" << ri << "] dest=<"
-                             << mixRing[i][ri].dest << "> mask=<" << mixRing[i][ri].mask << ">");
-                  }
                   rct::ZC_sig zc_sig = rct::genZCSig(
                       clsag_msg,
                       mixRing[i],

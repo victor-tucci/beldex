@@ -2674,6 +2674,20 @@ bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, 
     for (uint64_t h = real_start_height; h <= to_height; ++h)
       heights.push_back(h);
     distribution = m_db->get_block_cumulative_rct_outputs(heights);
+#ifndef NDEBUG
+    if (!distribution.empty())
+    {
+      const uint64_t authoritative_native_amount0 = m_db->get_num_outputs(0);
+      const uint64_t dist_back = distribution.back();
+      const uint64_t dist_base = base;
+      const uint64_t dist_total = dist_base + dist_back;
+      MDEBUG("amount=0 distribution_back=" << distribution.back()
+             << " native_rct_outputs=" << authoritative_native_amount0);
+      CHECK_AND_ASSERT_MES(dist_total == authoritative_native_amount0, false,
+          "amount=0 distribution domain mismatch: distribution_total=" << dist_total
+          << ", native_lookup_count=" << authoritative_native_amount0);
+    }
+#endif
     if (start_height > 0)
     {
       base = distribution[0];

@@ -2485,6 +2485,11 @@ namespace cryptonote::rpc {
   }
 
   namespace {
+    static bool same_distribution_domain(const crypto::public_key& a, const crypto::public_key& b)
+    {
+      return a == b;
+    }
+
     output_distribution_data process_distribution(
         bool cumulative,
         std::uint64_t start_height,
@@ -2507,6 +2512,7 @@ namespace cryptonote::rpc {
       std::uint64_t cached_from = 0, cached_to = 0, cached_start_height = 0, cached_base = 0;
       crypto::hash cached_m10_hash = crypto::null_hash;
       crypto::hash cached_top_hash = crypto::null_hash;
+      crypto::public_key cached_asset_id = crypto::null_pkey;
       bool cached = false;
     } output_dist_cache;
   }
@@ -2514,6 +2520,7 @@ namespace cryptonote::rpc {
   namespace detail {
     std::optional<output_distribution_data> get_output_distribution(
         const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&)>& f,
+        const crypto::public_key& asset_id,
         uint64_t amount,
         uint64_t from_height,
         uint64_t to_height,
@@ -2524,22 +2531,45 @@ namespace cryptonote::rpc {
       auto& d = output_dist_cache;
       const std::unique_lock lock{d.mutex};
 
+#ifndef NDEBUG
+      if (d.cached && amount == 0 && !same_distribution_domain(d.cached_asset_id, asset_id))
+      {
+        MDEBUG("output_dist_cache domain mismatch: cached_asset_id=" << d.cached_asset_id
+               << ", request_asset_id=" << asset_id << " (cache miss forced)");
+      }
+#endif
+
       crypto::hash top_hash = crypto::null_hash;
       if (d.cached_to < blockchain_height)
         top_hash = get_hash(d.cached_to);
-      if (d.cached && amount == 0 && d.cached_from == from_height && d.cached_to == to_height && d.cached_top_hash == top_hash)
+      if (d.cached &&
+          amount == 0 &&
+          same_distribution_domain(d.cached_asset_id, asset_id) &&
+          d.cached_from == from_height &&
+          d.cached_to == to_height &&
+          d.cached_top_hash == top_hash)
         return process_distribution(cumulative, d.cached_start_height, d.cached_distribution, d.cached_base);
 
       std::vector<std::uint64_t> distribution;
       std::uint64_t start_height, base;
 
       // see if we can extend the cache - a common case
-      bool can_extend = d.cached && amount == 0 && d.cached_from == from_height && to_height > d.cached_to && top_hash == d.cached_top_hash;
+      bool can_extend = d.cached &&
+                        amount == 0 &&
+                        same_distribution_domain(d.cached_asset_id, asset_id) &&
+                        d.cached_from == from_height &&
+                        to_height > d.cached_to &&
+                        top_hash == d.cached_top_hash;
       if (!can_extend)
       {
         // we kept track of the hash 10 blocks below, if it exists, so if it matches,
         // we can still pop the last 10 cached slots and try again
-        if (d.cached && amount == 0 && d.cached_from == from_height && d.cached_to - d.cached_from >= 10 && to_height > d.cached_to - 10)
+        if (d.cached &&
+            amount == 0 &&
+            same_distribution_domain(d.cached_asset_id, asset_id) &&
+            d.cached_from == from_height &&
+            d.cached_to - d.cached_from >= 10 &&
+            to_height > d.cached_to - 10)
         {
           crypto::hash hash10 = get_hash(d.cached_to - 10);
           if (hash10 == d.cached_m10_hash)
@@ -2588,7 +2618,15 @@ namespace cryptonote::rpc {
         d.cached_distribution = distribution;
         d.cached_start_height = start_height;
         d.cached_base = base;
+        d.cached_asset_id = asset_id;
         d.cached = true;
+
+#ifndef NDEBUG
+        if (!distribution.empty())
+          MDEBUG("output_dist_cache store: asset_id=" << asset_id << ", amount=" << amount
+                 << ", from=" << from_height << ", to=" << to_height
+                 << ", total=" << (base + distribution.back()));
+#endif
       }
 
       return process_distribution(cumulative, start_height, std::move(distribution), base);
@@ -2624,6 +2662,7 @@ namespace cryptonote::rpc {
                        ? m_core.get_output_distribution_for_asset(get_output_distribution.request.asset_id, std::forward<decltype(args)>(args)...)
                        : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
             },
+            get_output_distribution.request.asset_id,
             amount,
             get_output_distribution.request.from_height,
             req_to_height,
@@ -2675,6 +2714,7 @@ namespace cryptonote::rpc {
                        ? m_core.get_output_distribution_for_asset(req.asset_id, std::forward<decltype(args)>(args)...)
                        : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
             },
+            req.asset_id,
             amount,
             req.from_height,
             req_to_height,

@@ -213,7 +213,19 @@ uint64_t BlockchainDB::add_block( const std::pair<block, blobdata>& blck
   uint64_t num_rct_outs = 0;
   add_transaction(blk_hash, std::make_pair(blk.miner_tx, tx_to_blob(blk.miner_tx)));
   if (blk.miner_tx.version >= cryptonote::txversion::v2_ringct)
-    num_rct_outs += blk.miner_tx.vout.size();
+  {
+    for (const auto& vout : blk.miner_tx.vout)
+    {
+      // Miner RingCT outputs are rewritten to amount=0 inside add_transaction()
+      // before add_output() insertion. Therefore for miner tx we must count
+      // txout_to_key outputs regardless of plaintext amount to stay in lockstep
+      // with the native amount=0 lookup domain.
+      if (std::holds_alternative<txout_to_key>(vout.target))
+      {
+        ++num_rct_outs;
+      }
+    }
+  }
 
   int tx_i = 0;
   crypto::hash tx_hash = crypto::null_hash;
@@ -223,8 +235,11 @@ uint64_t BlockchainDB::add_block( const std::pair<block, blobdata>& blck
     add_transaction(blk_hash, tx, &tx_hash);
     for (const auto &vout: tx.first.vout)
     {
-      if (vout.amount == 0)
+      // Keep bi_cum_rct in lockstep with native amount=0 lookup domain only.
+      if (vout.amount == 0 && std::holds_alternative<txout_to_key>(vout.target))
+      {
         ++num_rct_outs;
+      }
     }
     ++tx_i;
   }
