@@ -883,7 +883,7 @@ namespace cryptonote
       CHECK_AND_ASSERT_MES(r, false, "failed to load master node key from " + keypath.u8string());
       CHECK_AND_ASSERT_MES(keystr.size() == sizeof(privkey), false, "master node key file " + keypath.u8string() + " has an invalid size");
       
-      memcpy(&privkey, keystr.data(), sizeof(privkey));
+      memcpy(&unwrap(unwrap(privkey)), keystr.data(), sizeof(privkey));
 
       r = get_pubkey(privkey, pubkey);
 
