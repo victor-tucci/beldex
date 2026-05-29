@@ -460,6 +460,43 @@ namespace
     return std::to_string(amount) + (include_asset_id ? " [" + asset_id_hex + "]" : "");
   }
 
+  std::string format_amount_buckets_for_prompt(
+      tools::wallet2& wallet,
+      const std::unordered_map<crypto::public_key, uint64_t>& amounts_by_asset)
+  {
+    std::vector<std::string> parts;
+
+    if (auto it = amounts_by_asset.find(crypto::null_pkey); it != amounts_by_asset.end())
+      parts.push_back(print_money(it->second));
+
+    std::vector<std::pair<std::string, uint64_t>> asset_amounts;
+    for (const auto& [asset_id, amount] : amounts_by_asset)
+    {
+      if (asset_id == crypto::null_pkey)
+        continue;
+      asset_amounts.emplace_back(tools::type_to_hex(asset_id), amount);
+    }
+    std::sort(asset_amounts.begin(), asset_amounts.end(),
+        [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+
+    for (const auto& [asset_id_hex, amount] : asset_amounts)
+      parts.push_back(format_amount_with_asset_id(wallet, amount, asset_id_hex, true));
+
+    if (parts.empty())
+      return print_money(0);
+    if (parts.size() == 1)
+      return parts.front();
+
+    std::string result;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+      if (i > 0)
+        result += (i + 1 == parts.size()) ? " and " : ", ";
+      result += parts[i];
+    }
+    return result;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   const auto arg_wallet_file = wallet_args::arg_wallet_file();
@@ -6098,7 +6135,6 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
   // if more than one tx necessary, prompt user to confirm
   if (m_wallet->always_confirm_transfers() || ptx_vector.size() > 1)
   {
-      uint64_t total_sent = 0;
       uint64_t total_fee = 0;
       uint64_t dust_not_in_fee = 0;
       uint64_t dust_in_fee = 0;
@@ -6122,7 +6158,6 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
         else
           dust_not_in_fee += ptx_vector[n].dust;
       }
-      total_sent = sent_by_asset.count(crypto::null_pkey) ? sent_by_asset[crypto::null_pkey] : 0;
 
       std::stringstream prompt;
       std::set<uint32_t> subaddr_indices;
@@ -6137,14 +6172,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
         if (subaddr_indices.size() > 1)
           prompt << tr("WARNING: Outputs of multiple addresses are being used together, which might potentially compromise your confidentiality.\n");
       }
-      std::string total_sent_str = print_money(total_sent);
-      if (sent_by_asset.size() == 1 && !sent_by_asset.empty() &&
-          sent_by_asset.begin()->first != crypto::null_pkey)
-      {
-        const auto& [asset_id, amount] = *sent_by_asset.begin();
-        total_sent_str = format_amount_with_asset_id(
-            *m_wallet, amount, tools::type_to_hex(asset_id), true);
-      }
+      const std::string total_sent_str = format_amount_buckets_for_prompt(*m_wallet, sent_by_asset);
       prompt << boost::format(tr("Sending %s.  ")) % total_sent_str;
       if (ptx_vector.size() > 1)
       {

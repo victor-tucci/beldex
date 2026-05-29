@@ -289,14 +289,34 @@ namespace {
   size_t get_num_outputs(const std::vector<cryptonote::tx_destination_entry> &dsts, const std::vector<tools::wallet2::transfer_details> &transfers, const std::vector<size_t> &selected_transfers, const beldex_construct_tx_params& tx_params)
   {
     size_t outputs = dsts.size();
-    uint64_t needed_money = 0;
+    std::unordered_map<crypto::public_key, uint64_t> needed_money_by_asset;
     for (const auto& dt: dsts)
-      needed_money += dt.amount;
-    uint64_t found_money = 0;
+    {
+      uint64_t& needed = needed_money_by_asset[dt.asset_id];
+      THROW_WALLET_EXCEPTION_IF(needed > std::numeric_limits<uint64_t>::max() - dt.amount,
+        tools::error::wallet_internal_error, "destination amount overflow while estimating tx outputs");
+      needed += dt.amount;
+    }
+
+    std::unordered_map<crypto::public_key, uint64_t> found_money_by_asset;
     for(size_t idx: selected_transfers)
-      found_money += transfers[idx].amount();
-    if (found_money != needed_money)
-      ++outputs; // change
+    {
+      const crypto::public_key asset_id = transfers[idx].get_asset_id();
+      uint64_t& found = found_money_by_asset[asset_id];
+      THROW_WALLET_EXCEPTION_IF(found > std::numeric_limits<uint64_t>::max() - transfers[idx].amount(),
+        tools::error::wallet_internal_error, "source amount overflow while estimating tx outputs");
+      found += transfers[idx].amount();
+    }
+
+    // Change is per asset bucket.  A mixed-domain transaction can need native
+    // change and asset change independently, so a scalar found!=needed check
+    // underestimates the number of outputs.
+    for (const auto& [asset_id, found] : found_money_by_asset)
+    {
+      const uint64_t needed = needed_money_by_asset.count(asset_id) ? needed_money_by_asset[asset_id] : 0;
+      if (found > needed)
+        ++outputs;
+    }
     if (outputs < ((tx_params.tx_type == cryptonote::txtype::beldex_name_system || tx_params.tx_type == cryptonote::txtype::coin_burn) ? 1 : 2))
       ++outputs; // extra 0 dummy output
     return outputs;
@@ -10815,13 +10835,13 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
       error::not_enough_unlocked_money, found_amount, needed_amount, asset_id == crypto::null_pkey ? fee : 0);
   }
 
-  THROW_WALLET_EXCEPTION_IF(destination_non_native_assets.size() > 1, error::wallet_internal_error,
-    "mixed non-native destination assets in one tx are forbidden");
   if (!destination_non_native_assets.empty() && tx_params.tx_type != txtype::deploy_new_asset)
   {
-    const crypto::public_key only_dst_asset = *destination_non_native_assets.begin();
-    THROW_WALLET_EXCEPTION_IF(input_non_native_assets.count(only_dst_asset) == 0, error::wallet_internal_error,
-      "destination non-native asset bucket has no matching input bucket");
+    for (const crypto::public_key& dst_asset : destination_non_native_assets)
+    {
+      THROW_WALLET_EXCEPTION_IF(input_non_native_assets.count(dst_asset) == 0, error::wallet_internal_error,
+        "destination non-native asset bucket has no matching input bucket");
+    }
   }
   else if (!destination_non_native_assets.empty())
   {
@@ -10837,75 +10857,98 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   build_tx_sources_with_decoys(effective_selected_transfers, outs, fake_outputs_count, ignore_sets, sources, used_L);
   LOG_PRINT_L2("outputs prepared");
 
-  // we still keep a copy, since we want to keep dsts free of change for user feedback purposes
-  std::vector<cryptonote::tx_destination_entry> splitted_dsts = dsts;
-  cryptonote::tx_destination_entry change_dts                 = {};
-  const auto native_needed_it = needed_money_map.find(crypto::null_pkey);
-  const uint64_t native_needed = native_needed_it == needed_money_map.end() ? 0 : native_needed_it->second.needed_amount;
-  const uint64_t native_found = found_money_map.count(crypto::null_pkey) ? found_money_map[crypto::null_pkey] : 0;
+  // Keep dsts free of change for user feedback.  Final destinations are built
+  // from recipient outputs plus one independent change output per asset bucket.
+  std::vector<cryptonote::tx_destination_entry> splitted_dsts;
+  std::vector<cryptonote::tx_destination_entry> change_outputs;
+  cryptonote::tx_destination_entry change_dts = {}; // Native compatibility metadata for pending_tx/construction_data.
   change_dts.asset_id = crypto::null_pkey;
-  change_dts.amount = native_found > native_needed ? native_found - native_needed : 0;
-  bool update_splitted_dsts                                   = true;
-  if (change_dts.amount == 0)
-  {
-    if (splitted_dsts.size() == 1 || tx.type == txtype::beldex_name_system || tx.type == txtype::coin_burn)
-    {
-      // If the change is 0, send it to a random address, to avoid confusing
-      // the sender with a 0 amount output. We send a 0 amount in order to avoid
-      // letting the destination be able to work out which of the inputs is the
-      // real one in our rings
 
-      LOG_PRINT_L2("generating dummy address for 0 change");
-      cryptonote::account_base dummy;
-      dummy.generate();
-      LOG_PRINT_L2("generated dummy address for 0 change");
-      change_dts.addr = dummy.get_keys().m_account_address;
-    }
-    else
-    {
-      update_splitted_dsts = false;
-    }
+  const cryptonote::account_public_address change_addr = get_subaddress({subaddr_account, 0});
+  const bool change_is_subaddress = subaddr_account != 0;
+
+  for (const auto& [asset_id, found_amount] : found_money_map)
+  {
+    const auto needed_it = needed_money_map.find(asset_id);
+    const uint64_t needed_amount = needed_it == needed_money_map.end() ? 0 : needed_it->second.needed_amount;
+    if (found_amount <= needed_amount)
+      continue;
+
+    change_outputs.emplace_back(found_amount - needed_amount, change_addr, asset_id, change_is_subaddress);
+    if (asset_id == crypto::null_pkey)
+      change_dts = change_outputs.back();
+  }
+
+  const bool has_positive_native_change = change_dts.amount > 0;
+  if (!has_positive_native_change)
+  {
+    change_dts.addr = change_addr;
+    change_dts.is_subaddress = change_is_subaddress;
+  }
+
+  const bool need_zero_dummy_change =
+      change_outputs.empty() &&
+      (dsts.size() == 1 ||
+       tx_params.tx_type == txtype::beldex_name_system ||
+       tx_params.tx_type == txtype::coin_burn);
+  if (need_zero_dummy_change)
+  {
+    // If the change is 0, send it to a random address, to avoid confusing
+    // the sender with a 0 amount output. We send a 0 amount in order to avoid
+    // letting the destination be able to work out which of the inputs is the
+    // real one in our rings.
+    LOG_PRINT_L2("generating dummy address for 0 change");
+    cryptonote::account_base dummy;
+    dummy.generate();
+    LOG_PRINT_L2("generated dummy address for 0 change");
+    change_dts.addr = dummy.get_keys().m_account_address;
+    change_dts.is_subaddress = false;
+    change_outputs.push_back(change_dts);
+  }
+
+  // NOTE: If BNS/burn, there's already a dummy destination entry in there that
+  // we placed in for fee/parts calculation; repurpose it for the native change
+  // placeholder to preserve the legacy one-output behavior.
+  if (tx_params.tx_type == txtype::beldex_name_system || tx_params.tx_type == txtype::coin_burn)
+  {
+    splitted_dsts = dsts;
+    assert(splitted_dsts.size() == 1);
+    splitted_dsts.back() = change_dts;
+    LOG_PRINT_L2("splitted_dsts size" << splitted_dsts.size());
   }
   else
   {
-    change_dts.addr = get_subaddress({subaddr_account, 0});
-    change_dts.is_subaddress = subaddr_account != 0;
-  }
-
-  if (update_splitted_dsts)
-  {
-    // NOTE: If BNS, there's already a dummy destination entry in there that
-    // we placed in (for fake calculating the TX fees and parts) that we
-    // repurpose for change after the fact.
-    if (tx_params.tx_type == txtype::beldex_name_system || tx_params.tx_type == txtype::coin_burn)
+    splitted_dsts = dsts;
+    for (const auto& change_output : change_outputs)
     {
-      assert(splitted_dsts.size() == 1);
-      splitted_dsts.back() = change_dts;
-      LOG_PRINT_L2("splitted_dsts size" << splitted_dsts.size());
+      if (change_output.amount > 0 || need_zero_dummy_change)
+        splitted_dsts.push_back(change_output);
     }
-    else if (tx_params.tx_type == txtype::deploy_new_asset)
+    if (tx_params.tx_type == txtype::deploy_new_asset)
     {
-      // Deploy mints destination asset buckets; keep caller-provided deploy
-      // destinations intact and only append native change if needed.
-      splitted_dsts = dsts;
-      if (change_dts.amount > 0)
-        splitted_dsts.push_back(change_dts);
       MINFO("deploy_new_asset: preserving minted destinations; final output count="
             << splitted_dsts.size() << ", native_change=" << change_dts.amount);
     }
-    else
+  }
+
+  {
+    std::unordered_map<crypto::public_key, uint64_t> final_outputs_by_asset;
+    for (const auto& out : splitted_dsts)
     {
-      assets_selection_context found_and_needed = needed_money_map;
-      for (auto& [asset_id, amount_ctx] : found_and_needed)
-        amount_ctx.found_amount = found_money_map.count(asset_id) ? found_money_map[asset_id] : 0;
-      splitted_dsts.clear();
-      prepare_tx_destinations(found_and_needed, dsts, change_dts.addr, change_dts.is_subaddress, splitted_dsts);
+      uint64_t& out_bucket = final_outputs_by_asset[out.asset_id];
+      THROW_WALLET_EXCEPTION_IF(out_bucket > std::numeric_limits<uint64_t>::max() - out.amount,
+        error::wallet_internal_error, "final output amount overflow while validating change outputs");
+      out_bucket += out.amount;
+    }
+    for (const auto& [asset_id, found_amount] : found_money_map)
+    {
+      const uint64_t out_amount = final_outputs_by_asset.count(asset_id) ? final_outputs_by_asset[asset_id] : 0;
+      const uint64_t fee_component = asset_id == crypto::null_pkey ? fee : 0;
+      THROW_WALLET_EXCEPTION_IF(out_amount > found_amount || found_amount - out_amount < fee_component,
+        error::wallet_internal_error, "per-asset change outputs exceed selected inputs");
     }
   }
 
-  const auto split_non_native_assets = collect_non_native_assets(splitted_dsts);
-  THROW_WALLET_EXCEPTION_IF(split_non_native_assets.size() > 1, error::wallet_internal_error,
-    "splitted destinations contain multiple non-native asset buckets");
   THROW_WALLET_EXCEPTION_IF(change_dts.asset_id != crypto::null_pkey, error::wallet_internal_error,
     "change destination must remain native asset bucket");
 
@@ -11809,16 +11852,12 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     TX() : weight(0), needed_fee(0) {}
 
     void add(const cryptonote::tx_destination_entry &de, uint64_t amount, unsigned int original_output_index, bool merge_destinations, bool subtracting_fee) {
-      if (!dsts.empty())
-      {
-        const crypto::public_key tx_asset_bucket = dsts.front().asset_id;
-        THROW_WALLET_EXCEPTION_IF(de.asset_id != tx_asset_bucket, error::wallet_internal_error,
-          "mixed destination asset buckets in one tx are forbidden");
-      }
       if (merge_destinations)
       {
         std::vector<cryptonote::tx_destination_entry>::iterator i;
-        i = std::find_if(dsts.begin(), dsts.end(), [&](const cryptonote::tx_destination_entry &d) { return !memcmp (&d.addr, &de.addr, sizeof(de.addr)); });
+        i = std::find_if(dsts.begin(), dsts.end(), [&](const cryptonote::tx_destination_entry &d) {
+          return d.asset_id == de.asset_id && !memcmp (&d.addr, &de.addr, sizeof(de.addr));
+        });
         if (i == dsts.end())
         {
           dsts.push_back(de);
@@ -11839,6 +11878,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
           dsts_are_fee_subtractable.push_back(subtracting_fee);
         }
         THROW_WALLET_EXCEPTION_IF(memcmp(&dsts[original_output_index].addr, &de.addr, sizeof(de.addr)), error::wallet_internal_error, "Mismatched destination address");
+        THROW_WALLET_EXCEPTION_IF(dsts[original_output_index].asset_id != de.asset_id, error::wallet_internal_error, "Mismatched destination asset");
         dsts[original_output_index].amount += amount;
       }
     }
@@ -12565,8 +12605,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     else
     {
       const size_t estimated_rct_tx_weight = estimate_tx_weight(tx.selected_transfers.size(), fake_outs_count, tx.dsts.size()+1, extra.size(), clsag, bulletproof_plus);
-      const bool asset_boundary_reached = !has_active_destination_asset;
-      try_tx = !has_remaining_destinations() || asset_boundary_reached ||
+      try_tx = !has_remaining_destinations() ||
                (estimated_rct_tx_weight >= tx_weight_target(upper_transaction_weight_limit));
       THROW_WALLET_EXCEPTION_IF(try_tx && tx.dsts.empty(), error::tx_too_big, estimated_rct_tx_weight, upper_transaction_weight_limit);
     }

@@ -1051,36 +1051,33 @@ namespace cryptonote
       }
     }
 
-    // Single-destination non-native bucket rule: one tx may have at most one non-native
-    // destination asset bucket (native bucket may still exist for fee/change mechanics).
+    // Non-native buckets are validated independently.  This keeps the
+    // constructor ready for mixed-asset transactions while still requiring
+    // exact per-asset conservation above.
     const auto non_native_destination_assets = collect_non_native_assets(destinations, [](const tx_destination_entry& d) { return d.asset_id; });
     const auto non_native_source_assets = collect_non_native_assets(sources, [](const tx_source_entry& s) { return s.asset_id; });
-    if (non_native_destination_assets.size() > 1)
-    {
-      LOG_ERROR("Mixed non-native destination assets in one tx are forbidden");
-      return false;
-    }
-    if (non_native_source_assets.size() > 1)
-    {
-      LOG_ERROR("Mixed non-native source assets in one tx are forbidden");
-      return false;
-    }
 
-    // If a non-native destination bucket exists, inputs must contain that bucket
-    // for transfer txs. Deploy transactions mint this bucket and therefore do
-    // not require matching non-native inputs.
-    if (!non_native_destination_assets.empty() && tx_params.tx_type != txtype::deploy_new_asset)
+    // If non-native destination buckets exist, transfer txs must contain a
+    // matching input bucket for each asset. Deploy transactions mint their
+    // non-native bucket and therefore do not require matching non-native inputs.
+    if (tx_params.tx_type != txtype::deploy_new_asset)
     {
-      const crypto::public_key dst_asset = *non_native_destination_assets.begin();
-      if (input_amounts_by_asset.find(dst_asset) == input_amounts_by_asset.end())
+      for (const crypto::public_key& dst_asset : non_native_destination_assets)
       {
-        LOG_ERROR("Missing matching non-native input bucket for destination asset " << dst_asset);
-        return false;
+        if (input_amounts_by_asset.find(dst_asset) == input_amounts_by_asset.end())
+        {
+          LOG_ERROR("Missing matching non-native input bucket for destination asset " << dst_asset);
+          return false;
+        }
       }
-      if (!non_native_source_assets.empty() && *non_native_source_assets.begin() != dst_asset)
+
+      for (const crypto::public_key& src_asset : non_native_source_assets)
       {
-        LOG_ERROR("Non-native destination asset does not match non-native source asset");
-        return false;
+        if (output_amounts_by_asset.find(src_asset) == output_amounts_by_asset.end())
+        {
+          LOG_ERROR("Missing matching non-native output bucket for source asset " << src_asset);
+          return false;
+        }
       }
     }
     else if (!non_native_destination_assets.empty())
@@ -1615,12 +1612,17 @@ namespace cryptonote
         tk.key = out_eph_public_key;
         out.amount = dst_entr.amount;
         out.target = tk;
+        zc_output_amount_masks.push_back(rct::zero());
         zc_output_asset_blinds.push_back(rct::zero());
       }
 
       tx.vout.push_back(out);
       output_index++;
     }
+    CHECK_AND_ASSERT_MES(zc_output_amount_masks.size() == tx.vout.size(), false,
+        "ZC output amount mask metadata is not aligned with tx.vout");
+    CHECK_AND_ASSERT_MES(zc_output_asset_blinds.size() == tx.vout.size(), false,
+        "ZC output asset blind metadata is not aligned with tx.vout");
     CHECK_AND_ASSERT_MES(additional_tx_public_keys.size() == additional_tx_keys.size(), false, "Internal error creating additional public keys");
 
     if (tx.type == txtype::stake)

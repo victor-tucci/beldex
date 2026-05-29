@@ -163,24 +163,14 @@ static void init_bge_generators()
         // Map to a curve point (ge_fromfe), then multiply by 8 to clear cofactor
         ge_p2 p2;
         ge_fromfe_frombytes_vartime(&p2, buf);
-        // Convert p2 -> p1p1 via doubling trick to get p3
         ge_p1p1 p1p1;
-        ge_p2_dbl(&p1p1, &p2);
-        ge_p3 p3_tmp;
-        ge_p1p1_to_p3(&p3_tmp, &p1p1);
-        // Now multiply by 4 more (total 8 = cofactor cleared)
-        rct::key tmp;
-        ge_p3_tobytes(tmp.bytes, &p3_tmp);
-        ge_p3 p3;
-        if (ge_frombytes_vartime(&p3, tmp.bytes) != 0)
-            throw std::runtime_error("BGE generator init: frombytes failed");
-        ge_p2 p2b;
-        ge_p3_to_p2(&p2b, &p3);
-        ge_p1p1 p1p1b;
-        ge_p2_dbl(&p1p1b, &p2b);
-        ge_p3 p3b;
-        ge_p1p1_to_p3(&p3b, &p1p1b);
-        ge_p3_tobytes(s_bge_generators[i].bytes, &p3b);
+        ge_p2_dbl(&p1p1, &p2);  // 2*P
+        ge_p1p1_to_p2(&p2, &p1p1);
+        ge_p2_dbl(&p1p1, &p2);  // 4*P
+        ge_p1p1_to_p2(&p2, &p1p1);
+        ge_p2_dbl(&p1p1, &p2);  // 8*P
+        ge_p1p1_to_p2(&p2, &p1p1);
+        ge_tobytes(s_bge_generators[i].bytes, &p2);
     }
 }
 
@@ -536,11 +526,13 @@ bool generate_BGE_proof(const rct::key&  context_hash,
             }
         }
 
-        // Pk[j] += sum_i( coeffs[j,i] * ring[min(i, ring_size-1)] )
+        // Pk[j] += sum_i( coeffs[j,i] * C_i ), where
+        // C_i = T - ring[i].  For the real asset index, C_i = r_blind * X.
         for (size_t i = 0; i < N; ++i)
         {
             size_t ring_idx = (i < ring_size) ? i : (ring_size - 1);
-            rct::key contrib = scalarmult(ring[ring_idx], coeffs[j * N + i]);
+            const rct::key asset_commitment = point_sub(T, ring[ring_idx]);
+            rct::key contrib = scalarmult(asset_commitment, coeffs[j * N + i]);
             Pk_j = point_add(Pk_j, contrib);
         }
 
@@ -681,12 +673,10 @@ bool verify_BGE_proof(const rct::key&    context_hash,
 
     if (LHS != RHS) return false;
 
-    // ── Check 2: sum_i( p_i * ring[i] ) - sum_k( x^k * Pk[k] ) = z*X + ? ──
-    // Actually: sum_i(p_i * ring[i]) - sum_k(x^k * Pk8[k]) = z * T
-    // where T is the blinded_asset_id and the secret = r_blind.
-    // (ring[j] = real_asset_id, T = ring[j] + r_blind*X)
+    // ── Check 2: sum_i( p_i * C_i ) - sum_k( x^k * Pk[k] ) = z*X ──
+    // C_i = T - ring[i].  For the real asset index, C_i = r_blind*X.
     //
-    // Rewrite: sum_i(p_i * ring[i]) - sum_k(x^k * Pk8[k]) - z*T = 0
+    // Rewrite: sum_i(p_i * C_i) - sum_k(x^k * Pk8[k]) - z*X = 0
 
     // p_vec[i] = product_{j=0}^{m-1}( f[j, digit_j(i)] )
     std::vector<rct::key> p_vec(N);
@@ -704,7 +694,7 @@ bool verify_BGE_proof(const rct::key&    context_hash,
         }
     }
 
-    // Z = sum_i( p_vec[i] * ring[min(i, ring_size-1)] )
+    // Z = sum_i( p_vec[i] * C_i )
     rct::key Z = rct::zero();
     // initialise Z as identity point
     {
@@ -714,7 +704,8 @@ bool verify_BGE_proof(const rct::key&    context_hash,
     for (size_t i = 0; i < N; ++i)
     {
         size_t ring_idx = (i < ring_size) ? i : (ring_size - 1);
-        Z = point_add(Z, scalarmult(ring[ring_idx], p_vec[i]));
+        const rct::key asset_commitment = point_sub(T, ring[ring_idx]);
+        Z = point_add(Z, scalarmult(asset_commitment, p_vec[i]));
     }
 
     // subtract sum_k( x^k * Pk8[k] )
@@ -729,8 +720,8 @@ bool verify_BGE_proof(const rct::key&    context_hash,
         sc_muladd(x_power.bytes, x_power.bytes, x.bytes, rct::zero().bytes);
     }
 
-    // subtract z * T  (T is the blinded_asset_id passed in)
-    Z = point_sub(Z, scalarmult(T, sig.z));
+    // subtract z * X
+    Z = point_sub(Z, rct::scalarmultX(sig.z));
 
     // Z must be the identity (zero point)
     rct::key identity;
