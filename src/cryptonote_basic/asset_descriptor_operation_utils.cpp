@@ -5,9 +5,9 @@
 
 namespace cryptonote
 {
-  crypto::public_key get_or_calculate_asset_id(const tx_extra_asset_descriptor_operation& ado)
+  crypto::asset_id get_or_calculate_asset_id(const tx_extra_asset_descriptor_operation& ado)
   {
-    if (ado.field_is_set(asset_field_asset_id) && ado.asset_id != crypto::null_pkey)
+    if (ado.field_is_set(asset_field_asset_id) && ado.asset_id != crypto::null_aid)
       return ado.asset_id;
 
     if (!ado.field_is_set(asset_field_descriptor))
@@ -23,7 +23,7 @@ namespace cryptonote
     crypto::secret_key derived_secret{};
     tools::unwrap(epee::unwrap(derived_secret)) = scalar;
 
-    crypto::public_key derived_public = crypto::null_pkey;
+    crypto::asset_id derived_public = crypto::null_aid;
     if (!crypto::secret_key_to_public_key(derived_secret, derived_public))
       return crypto::null_pkey;
 

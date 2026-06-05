@@ -557,7 +557,7 @@ namespace cryptonote::rpc {
 
     if (!context.admin && req.outputs.size() > GET_OUTPUTS_BIN::MAX_COUNT)
       res.status = "Too many outs requested";
-    else if ((req.asset_id != crypto::null_pkey ? m_core.get_outs_for_asset(req.asset_id, req, res) : m_core.get_outs(req, res)))
+    else if (m_core.get_outs(req, res))
       res.status = STATUS_OK;
     else
       res.status = "Failed";
@@ -2209,21 +2209,13 @@ namespace cryptonote::rpc {
     try
     {
       auto net = nettype();
-      histogram =
-        (get_output_histogram.request.asset_id != crypto::null_pkey)
-          ? m_core.get_blockchain_storage().get_output_histogram_for_asset(
-              get_output_histogram.request.asset_id,
-              get_output_histogram.request.amounts,
-              get_output_histogram.request.unlocked,
-              get_output_histogram.request.recent_cutoff,
-              get_output_histogram.request.min_count,
-              net)
-          : m_core.get_blockchain_storage().get_output_histogram(
-              get_output_histogram.request.amounts,
-              get_output_histogram.request.unlocked,
-              get_output_histogram.request.recent_cutoff,
-              get_output_histogram.request.min_count,
-              net);
+      histogram = m_core.get_blockchain_storage().get_output_histogram(
+          get_output_histogram.request.amounts,
+          get_output_histogram.request.unlocked,
+          get_output_histogram.request.recent_cutoff,
+          get_output_histogram.request.min_count,
+          net,
+          get_output_histogram.request.asset_id);
   }
     catch (const std::exception &e)
     {
@@ -2512,7 +2504,7 @@ namespace cryptonote::rpc {
       std::uint64_t cached_from = 0, cached_to = 0, cached_start_height = 0, cached_base = 0;
       crypto::hash cached_m10_hash = crypto::null_hash;
       crypto::hash cached_top_hash = crypto::null_hash;
-      crypto::public_key cached_asset_id = crypto::null_pkey;
+      crypto::asset_id cached_asset_id = crypto::null_aid;
       bool cached = false;
     } output_dist_cache;
   }
@@ -2520,13 +2512,13 @@ namespace cryptonote::rpc {
   namespace detail {
     std::optional<output_distribution_data> get_output_distribution(
         const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&)>& f,
-        const crypto::public_key& asset_id,
         uint64_t amount,
         uint64_t from_height,
         uint64_t to_height,
         const std::function<crypto::hash(uint64_t)>& get_hash,
         bool cumulative,
-        uint64_t blockchain_height)
+        uint64_t blockchain_height,
+        const crypto::asset_id &asset_id)
     {
       auto& d = output_dist_cache;
       const std::unique_lock lock{d.mutex};
@@ -2658,17 +2650,15 @@ namespace cryptonote::rpc {
       {
         auto data = detail::get_output_distribution(
             [this, &get_output_distribution](auto&&... args) {
-              return get_output_distribution.request.asset_id != crypto::null_pkey
-                       ? m_core.get_output_distribution_for_asset(get_output_distribution.request.asset_id, std::forward<decltype(args)>(args)...)
-                       : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
+              return m_core.get_output_distribution(std::forward<decltype(args)>(args)..., get_output_distribution.request.asset_id);
             },
-            get_output_distribution.request.asset_id,
             amount,
             get_output_distribution.request.from_height,
             req_to_height,
             [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
             get_output_distribution.request.cumulative,
-            m_core.get_current_blockchain_height());
+            m_core.get_current_blockchain_height(),
+            get_output_distribution.request.asset_id);
         if (!data)
           throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
 
@@ -2710,17 +2700,15 @@ namespace cryptonote::rpc {
       {
         auto data = detail::get_output_distribution(
             [this, &req](auto&&... args) {
-              return req.asset_id != crypto::null_pkey
-                       ? m_core.get_output_distribution_for_asset(req.asset_id, std::forward<decltype(args)>(args)...)
-                       : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
+              return m_core.get_output_distribution(std::forward<decltype(args)>(args)..., req.asset_id);
             },
-            req.asset_id,
             amount,
             req.from_height,
             req_to_height,
             [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
             req.cumulative,
-            m_core.get_current_blockchain_height());
+            m_core.get_current_blockchain_height(),
+            req.asset_id);
         if (!data)
           throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
 
@@ -3803,7 +3791,7 @@ namespace cryptonote::rpc {
     if (req.asset_id.size() != 64 || !oxenc::is_hex(req.asset_id))
       throw rpc_error{ERROR_WRONG_PARAM, "asset_id must be a 64-character hex string"};
 
-    crypto::public_key asset_id{};
+    crypto::asset_id asset_id{};
     if (!tools::hex_to_type(req.asset_id, asset_id))
       throw rpc_error{ERROR_WRONG_PARAM, "Failed to parse asset_id"};
 

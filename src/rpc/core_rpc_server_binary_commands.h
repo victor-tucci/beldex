@@ -205,7 +205,7 @@ namespace cryptonote::rpc {
     {
       std::vector<get_outputs_out> outputs; // Array of structure `get_outputs_out`.
       bool get_txid;                        // TXID
-      crypto::public_key asset_id = crypto::null_pkey; // Optional: when non-null, query decoys only from this asset bucket.
+      crypto::asset_id asset_id = crypto::null_aid; // Optional: when non-null, query decoys only from this asset bucket.
 
       KV_MAP_SERIALIZABLE
     };
@@ -214,7 +214,7 @@ namespace cryptonote::rpc {
     {
       crypto::public_key key; // The public key of the output.
       rct::key mask;
-      crypto::public_key asset_id; // Asset identifier bucket for CA-aware decoy filtering.
+      crypto::asset_id asset_id; // Asset identifier bucket for CA-aware decoy filtering.
       rct::key asset_commitment;   // Asset-related commitment/tag payload for CA-aware decoy filtering.
       bool unlocked;          // States if output is locked (`false`) or not (`true`).
       uint64_t height;        // Block height of the output.
@@ -272,7 +272,7 @@ namespace cryptonote::rpc {
       bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
       bool binary;
       bool compress;
-      crypto::public_key asset_id = crypto::null_pkey; // Optional: when non-null, query distribution only for this asset bucket.
+      crypto::asset_id asset_id = crypto::null_aid; // Optional: when non-null, query distribution only for this asset bucket.
       
       KV_MAP_SERIALIZABLE
     };

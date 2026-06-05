@@ -643,17 +643,15 @@ namespace cryptonote
       * @copydoc Blockchain::get_outs
       *
       * @note see Blockchain::get_outs
-      */
+     */
      bool get_outs(const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUTPUTS_BIN::response& res) const;
-     bool get_outs_for_asset(const crypto::public_key &asset_id, const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUTPUTS_BIN::response& res) const;
 
      /**
       * @copydoc Blockchain::get_output_distribution
       *
       * @brief get per block distribution of outputs of a given amount
       */
-     bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
-     bool get_output_distribution_for_asset(const crypto::public_key &asset_id, uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
+     bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base, const crypto::asset_id &asset_id = crypto::null_aid) const;
      
      void get_output_blacklist(std::vector<uint64_t> &blacklist) const;
 

@@ -43,6 +43,7 @@
 #include "cryptonote_core/cryptonote_core.h"
 #include "blockchain_objects.h"
 #include "blockchain_db/blockchain_db.h"
+#include "blockchain_db/lmdb/db_lmdb.h"
 #include "wallet/ringdb.h"
 #include "version.h"
 #include "cryptonote_core/uptime_proof.h"
@@ -74,6 +75,12 @@ struct output_data
   output_data(): amount(0), offset(0) {}
   output_data(uint64_t a, uint64_t i): amount(a), offset(i) {}
   bool operator==(const output_data &other) const { return other.amount == amount && other.offset == offset; }
+};
+
+struct output_amount_key
+{
+  crypto::asset_id asset_id;
+  uint64_t amount;
 };
 
 //
@@ -975,8 +982,9 @@ static void open_db(const fs::path& filename, MDB_env** env, MDB_txn** txn, MDB_
   dbr = mdb_txn_begin(*env, NULL, MDB_RDONLY, txn);
   CHECK_AND_ASSERT_THROW_MES(!dbr, "Failed to create LMDB transaction: " + std::string(mdb_strerror(dbr)));
 
-  dbr = mdb_dbi_open(*txn, "output_amounts", MDB_CREATE | MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED, dbi);
+  dbr = mdb_dbi_open(*txn, "output_amounts", MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, dbi);
   CHECK_AND_ASSERT_THROW_MES(!dbr, "Failed to open LMDB dbi: " + std::string(mdb_strerror(dbr)));
+  mdb_set_compare(*txn, *dbi, cryptonote::BlockchainLMDB::compare_output_amount_key);
   mdb_set_dupsort(*txn, *dbi, compare_uint64);
 
   dbr = mdb_cursor_open(*txn, *dbi, cur);
@@ -993,8 +1001,8 @@ static void close_db(MDB_env *env, MDB_txn *txn, MDB_cursor *cur, MDB_dbi dbi)
 
 static void get_num_outputs(MDB_txn *txn, MDB_cursor *cur, MDB_dbi dbi, uint64_t &pre_rct, uint64_t &rct)
 {
-  uint64_t amount = 0;
-  MDB_val k = { sizeof(amount), (void*)&amount }, v;
+  output_amount_key amount_key{crypto::null_aid, 0};
+  MDB_val k = { sizeof(amount_key), (void*)&amount_key }, v;
   int dbr = mdb_cursor_get(cur, &k, &v, MDB_SET);
   if (dbr == MDB_NOTFOUND)
   {
@@ -1008,11 +1016,27 @@ static void get_num_outputs(MDB_txn *txn, MDB_cursor *cur, MDB_dbi dbi, uint64_t
     if (dbr) throw std::runtime_error("Failed to count records: " + std::string(mdb_strerror(dbr)));
     rct = count;
   }
-  MDB_stat s;
-  dbr = mdb_stat(txn, dbi, &s);
-  if (dbr) throw std::runtime_error("Failed to count records: " + std::string(mdb_strerror(dbr)));
-  if (s.ms_entries < rct) throw std::runtime_error("Inconsistent records: " + std::string(mdb_strerror(dbr)));
-  pre_rct = s.ms_entries - rct;
+  pre_rct = 0;
+  MDB_cursor_op op = MDB_FIRST;
+  while (true)
+  {
+    dbr = mdb_cursor_get(cur, &k, &v, op);
+    op = MDB_NEXT_NODUP;
+    if (dbr == MDB_NOTFOUND)
+      break;
+    if (dbr) throw std::runtime_error("Failed to enumerate output amounts: " + std::string(mdb_strerror(dbr)));
+    if (k.mv_size != sizeof(output_amount_key))
+      throw std::runtime_error("Invalid output_amounts key size");
+    const auto *key = reinterpret_cast<const output_amount_key*>(k.mv_data);
+    if (key->asset_id != crypto::null_aid)
+      break;
+    if (key->amount == 0)
+      continue;
+    mdb_size_t count = 0;
+    dbr = mdb_cursor_count(cur, &count);
+    if (dbr) throw std::runtime_error("Failed to count records: " + std::string(mdb_strerror(dbr)));
+    pre_rct += count;
+  }
 }
 
 static crypto::hash get_genesis_block_hash(const fs::path& filename)

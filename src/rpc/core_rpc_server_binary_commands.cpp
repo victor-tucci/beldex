@@ -97,7 +97,7 @@ KV_SERIALIZE_MAP_CODE_END()
 KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUTS_BIN::request)
   KV_SERIALIZE(outputs)
   KV_SERIALIZE_OPT(get_txid, true)
-  KV_SERIALIZE_VAL_POD_AS_BLOB_OPT(asset_id, crypto::null_pkey)
+  KV_SERIALIZE_VAL_POD_AS_BLOB_OPT(asset_id, crypto::null_aid)
 KV_SERIALIZE_MAP_CODE_END()
 
 
@@ -146,7 +146,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION_BIN::request)
   KV_SERIALIZE_OPT(cumulative, false)
   KV_SERIALIZE_OPT(binary, true)
   KV_SERIALIZE_OPT(compress, false)
-  KV_SERIALIZE_VAL_POD_AS_BLOB_OPT(asset_id, crypto::null_pkey)
+  KV_SERIALIZE_VAL_POD_AS_BLOB_OPT(asset_id, crypto::null_aid)
 KV_SERIALIZE_MAP_CODE_END()
 
 

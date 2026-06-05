@@ -602,12 +602,12 @@ namespace cryptonote
   {
     for (const auto& src : sources)
     {
-      if (src.has_ca_metadata || src.asset_id != crypto::null_pkey)
+      if (src.has_ca_metadata || src.asset_id != crypto::null_aid)
         return true;
     }
     for (const auto& dst : destinations)
     {
-      if (dst.asset_id != crypto::null_pkey)
+      if (dst.asset_id != crypto::null_aid)
         return true;
     }
     return false;
@@ -644,9 +644,9 @@ namespace cryptonote
   }
 
   static bool add_amount_by_asset(
-      const crypto::public_key& asset_id,
+      const crypto::asset_id &asset_id,
       uint64_t amount,
-      std::unordered_map<crypto::public_key, uint64_t>& totals)
+      std::unordered_map<crypto::asset_id, uint64_t>& totals)
   {
     auto& current = totals[asset_id];
     return add_amount_or_overflow(amount, current);
@@ -717,11 +717,11 @@ namespace cryptonote
       const std::vector<crypto::secret_key>& additional_tx_keys)
   {
     auto collect_non_native_assets = [](const auto& entries, auto get_asset_id) {
-      std::unordered_set<crypto::public_key> non_native;
+      std::unordered_set<crypto::asset_id> non_native;
       for (const auto& e : entries)
       {
-        const crypto::public_key aid = get_asset_id(e);
-        if (aid != crypto::null_pkey)
+        const crypto::asset_id aid = get_asset_id(e);
+        if (aid != crypto::null_aid)
           non_native.insert(aid);
       }
       return non_native;
@@ -763,7 +763,7 @@ namespace cryptonote
       bool has_legacy_input_source = false;
       for (size_t i = 0; i < sources.size(); ++i)
       {
-        const bool is_ca_source = sources[i].has_ca_metadata || sources[i].asset_id != crypto::null_pkey;
+        const bool is_ca_source = sources[i].has_ca_metadata || sources[i].asset_id != crypto::null_aid;
         has_ca_input_source = has_ca_input_source || is_ca_source;
         has_legacy_input_source = has_legacy_input_source || !is_ca_source;
       }
@@ -779,7 +779,7 @@ namespace cryptonote
 
       bool has_ca_outputs = false;
       for (const auto& dst : destinations)
-        has_ca_outputs = has_ca_outputs || dst.asset_id != crypto::null_pkey;
+        has_ca_outputs = has_ca_outputs || dst.asset_id != crypto::null_aid;
       if (has_ca_outputs && !has_ca_input_source)
       {
         LOG_ERROR("CA outputs requested without CA inputs");
@@ -796,7 +796,7 @@ namespace cryptonote
     for (size_t i = 0; i < sources.size(); ++i)
     {
       const tx_source_entry& src = sources[i];
-      const bool source_ca_requested = src.has_ca_metadata || src.asset_id != crypto::null_pkey;
+      const bool source_ca_requested = src.has_ca_metadata || src.asset_id != crypto::null_aid;
       if (src.outputs.empty())
       {
         LOG_ERROR("Source #" << i << " has empty outputs ring");
@@ -841,7 +841,7 @@ namespace cryptonote
           LOG_ERROR("Source #" << i << " requests CA path without has_ca_metadata");
           return false;
         }
-        if (src.asset_id == crypto::null_pkey)
+        if (src.asset_id == crypto::null_aid)
         {
           LOG_ERROR("Source #" << i << " CA metadata has null asset_id");
           return false;
@@ -884,7 +884,7 @@ namespace cryptonote
       {
         // Legacy path must not accidentally carry CA-only metadata.
         if (src.has_ca_metadata ||
-            src.asset_id != crypto::null_pkey ||
+            src.asset_id != crypto::null_aid ||
             src.amount_commitment != crypto::null_pkey ||
             src.asset_id_bliding_mask != crypto::null_pkey ||
             src.blinded_asset_id != crypto::null_pkey)
@@ -950,7 +950,7 @@ namespace cryptonote
     }
 
     uint64_t total_input_amount = 0;
-    std::unordered_map<crypto::public_key, uint64_t> input_amounts_by_asset;
+    std::unordered_map<crypto::asset_id, uint64_t> input_amounts_by_asset;
     for (size_t i = 0; i < sources.size(); ++i)
     {
       const uint64_t amount = sources[i].amount;
@@ -959,7 +959,7 @@ namespace cryptonote
         LOG_ERROR("Input amount overflow while summing source #" << i);
         return false;
       }
-      const crypto::public_key asset_id = sources[i].asset_id;
+      const crypto::asset_id asset_id = sources[i].asset_id;
       if (!add_amount_by_asset(asset_id, amount, input_amounts_by_asset))
       {
         LOG_ERROR("Input per-asset amount overflow for source #" << i);
@@ -968,7 +968,7 @@ namespace cryptonote
     }
 
     uint64_t total_output_amount = 0;
-    std::unordered_map<crypto::public_key, uint64_t> output_amounts_by_asset;
+    std::unordered_map<crypto::asset_id, uint64_t> output_amounts_by_asset;
     for (size_t i = 0; i < destinations.size(); ++i)
     {
       const uint64_t amount = destinations[i].amount;
@@ -977,7 +977,7 @@ namespace cryptonote
         LOG_ERROR("Output amount overflow while summing destination #" << i);
         return false;
       }
-      const crypto::public_key asset_id = destinations[i].asset_id;
+      const crypto::asset_id asset_id = destinations[i].asset_id;
       if (!add_amount_by_asset(asset_id, amount, output_amounts_by_asset))
       {
         LOG_ERROR("Output per-asset amount overflow for destination #" << i);
@@ -986,8 +986,8 @@ namespace cryptonote
     }
 
     const bool is_deploy_tx = tx_params.tx_type == txtype::deploy_new_asset;
-    const uint64_t native_in_amount = input_amounts_by_asset.count(crypto::null_pkey) ? input_amounts_by_asset[crypto::null_pkey] : 0;
-    const uint64_t native_out_amount = output_amounts_by_asset.count(crypto::null_pkey) ? output_amounts_by_asset[crypto::null_pkey] : 0;
+    const uint64_t native_in_amount = input_amounts_by_asset.count(crypto::null_aid) ? input_amounts_by_asset[crypto::null_aid] : 0;
+    const uint64_t native_out_amount = output_amounts_by_asset.count(crypto::null_aid) ? output_amounts_by_asset[crypto::null_aid] : 0;
     if (is_deploy_tx)
     {
       if (native_out_amount > native_in_amount)
@@ -1018,7 +1018,7 @@ namespace cryptonote
     {
       const auto it = input_amounts_by_asset.find(asset_id);
       const uint64_t in_amount = (it == input_amounts_by_asset.end()) ? 0 : it->second;
-      if (asset_id != crypto::null_pkey)
+      if (asset_id != crypto::null_aid)
       {
         if (is_deploy_tx)
           continue; // deploy mints non-native outputs; no matching non-native inputs required
@@ -1037,7 +1037,7 @@ namespace cryptonote
     // Disallow silent disappearance of non-native assets (i.e. input bucket not present in outputs).
     for (const auto& [asset_id, in_amount] : input_amounts_by_asset)
     {
-      if (asset_id == crypto::null_pkey)
+      if (asset_id == crypto::null_aid)
         continue;
       if (is_deploy_tx)
         continue; // deploy is allowed to have no non-native input buckets
@@ -1062,7 +1062,7 @@ namespace cryptonote
     // non-native bucket and therefore do not require matching non-native inputs.
     if (tx_params.tx_type != txtype::deploy_new_asset)
     {
-      for (const crypto::public_key& dst_asset : non_native_destination_assets)
+      for (const crypto::asset_id& dst_asset : non_native_destination_assets)
       {
         if (input_amounts_by_asset.find(dst_asset) == input_amounts_by_asset.end())
         {
@@ -1071,7 +1071,7 @@ namespace cryptonote
         }
       }
 
-      for (const crypto::public_key& src_asset : non_native_source_assets)
+      for (const crypto::asset_id& src_asset : non_native_source_assets)
       {
         if (output_amounts_by_asset.find(src_asset) == output_amounts_by_asset.end())
         {
@@ -1086,7 +1086,7 @@ namespace cryptonote
     }
 
     // Change entry (when provided) must stay native to avoid cross-asset ambiguity.
-    if (change_addr && change_addr->asset_id != crypto::null_pkey)
+    if (change_addr && change_addr->asset_id != crypto::null_aid)
     {
       LOG_ERROR("Non-native change entry is not allowed in constructor preflight");
       return false;
@@ -1110,8 +1110,8 @@ namespace cryptonote
   {
     hw::device &hwdev = sender_account_keys.get_device();
     auto log_grouped_destinations = [&](const char* stage, const char* reason) {
-      std::unordered_map<crypto::public_key, uint64_t> src_by_asset;
-      std::unordered_map<crypto::public_key, uint64_t> dst_by_asset;
+      std::unordered_map<crypto::asset_id, uint64_t> src_by_asset;
+      std::unordered_map<crypto::asset_id, uint64_t> dst_by_asset;
       for (const auto& s : sources)
       {
         uint64_t& b = src_by_asset[s.asset_id];
@@ -1133,16 +1133,16 @@ namespace cryptonote
           << " src_by_asset:";
       if (src_by_asset.empty()) oss << " <none>";
       for (const auto& [aid, amt] : src_by_asset)
-        oss << " [" << (aid == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(aid))
+        oss << " [" << (aid == crypto::null_aid ? std::string{"native"} : tools::type_to_hex(aid))
             << "=" << print_money(amt) << "]";
       oss << " dst_by_asset:";
       if (dst_by_asset.empty()) oss << " <none>";
       for (const auto& [aid, amt] : dst_by_asset)
-        oss << " [" << (aid == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(aid))
+        oss << " [" << (aid == crypto::null_aid ? std::string{"native"} : tools::type_to_hex(aid))
             << "=" << print_money(amt) << "]";
       if (change_addr)
       {
-        oss << " change=[" << (change_addr->asset_id == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(change_addr->asset_id))
+        oss << " change=[" << (change_addr->asset_id == crypto::null_aid ? std::string{"native"} : tools::type_to_hex(change_addr->asset_id))
             << "=" << print_money(change_addr->amount) << "]";
       }
       else
@@ -1359,7 +1359,7 @@ namespace cryptonote
         return false;
       }
 
-      const bool is_ca_input = src_entr.has_ca_metadata || src_entr.asset_id != crypto::null_pkey;
+      const bool is_ca_input = src_entr.has_ca_metadata || src_entr.asset_id != crypto::null_aid;
       if (is_ca_input)
       {
         if (src_entr.output_asset_ids.size() != src_entr.outputs.size() ||
@@ -1373,7 +1373,7 @@ namespace cryptonote
           LOG_ERROR("CA input requested without CA metadata at source index " << idx);
           return false;
         }
-        if (src_entr.asset_id == crypto::null_pkey ||
+        if (src_entr.asset_id == crypto::null_aid ||
             src_entr.asset_id_bliding_mask == crypto::null_pkey ||
             src_entr.amount_commitment == crypto::null_pkey ||
             src_entr.blinded_asset_id == crypto::null_pkey)
@@ -1449,7 +1449,7 @@ namespace cryptonote
     }
 
     for (const tx_destination_entry& dst_entr : destinations)
-      has_ca_outputs = has_ca_outputs || dst_entr.asset_id != crypto::null_pkey;
+      has_ca_outputs = has_ca_outputs || dst_entr.asset_id != crypto::null_aid;
 
     // sort ins by their key image (strictly descending, consensus requirement)
     std::vector<size_t> ins_order(sources.size());
@@ -1771,13 +1771,13 @@ namespace cryptonote
           std::vector<unsigned int> index;
           std::vector<rct::multisig_kLRki> kLRki;
           const bool has_native_input_for_fee = std::any_of(sources.begin(), sources.end(), [](const tx_source_entry& s) {
-              return s.asset_id == crypto::null_pkey;
+              return s.asset_id == crypto::null_aid;
           });
           const bool native_only_ca_fee_mode = ca_transfer_path_used && has_native_input_for_fee;
           uint64_t native_in_for_fee = 0, native_out_for_fee = 0;
           for (size_t i = 0; i < sources.size(); ++i) {
               rct::ctkey ctkey;
-              const bool native_input = sources[i].asset_id == crypto::null_pkey;
+              const bool native_input = sources[i].asset_id == crypto::null_aid;
               const uint64_t rct_input_amount = sources[i].amount;
               if (native_input)
                 native_in_for_fee += sources[i].amount;
@@ -1828,18 +1828,18 @@ namespace cryptonote
               }
               if (native_only_ca_fee_mode)
               {
-                const crypto::public_key dst_asset_id =
+                const crypto::asset_id dst_asset_id =
                     i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
-                if (dst_asset_id != crypto::null_pkey)
+                if (dst_asset_id != crypto::null_aid)
                   rct_accounted_amount = 0;
                 else
                   native_out_for_fee += rct_accounted_amount;
               }
               else if (deploy_native_fee_accounting)
               {
-                const crypto::public_key dst_asset_id =
+                const crypto::asset_id dst_asset_id =
                     i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
-                if (dst_asset_id != crypto::null_pkey)
+                if (dst_asset_id != crypto::null_aid)
                   rct_accounted_amount = 0;
               }
 
@@ -1943,7 +1943,7 @@ namespace cryptonote
                   if (!std::holds_alternative<txin_zc_input>(in))
                       continue;
                   const auto& zc_in = std::get<txin_zc_input>(in);
-                  if (zc_in.asset_id == crypto::null_pkey)
+                  if (zc_in.asset_id == crypto::null_aid)
                       continue;
                   const rct::key aid = rct::pk2rct(zc_in.asset_id);
                   const bool seen = std::any_of(input_asset_ring.begin(), input_asset_ring.end(),
@@ -1956,7 +1956,7 @@ namespace cryptonote
                   if (!std::holds_alternative<txin_zc_input>(in))
                       continue;
                   const auto& zc_in = std::get<txin_zc_input>(in);
-                  CHECK_AND_ASSERT_MES(zc_in.asset_id != crypto::null_pkey, false,
+                  CHECK_AND_ASSERT_MES(zc_in.asset_id != crypto::null_aid, false,
                       "ZC input is missing asset_id while building BGE input domain");
               }
               CHECK_AND_ASSERT_MES(!input_asset_ring.empty(), false, "CA transfer requires at least one non-native input asset for surjection proofs");
@@ -2062,7 +2062,7 @@ namespace cryptonote
                   rct::key in_mask_sum = rct::zero();
                   for (const auto& src : sources)
                   {
-                      if (src.asset_id == crypto::null_pkey)
+                      if (src.asset_id == crypto::null_aid)
                           continue;
                       sc_add(in_mask_sum.bytes, in_mask_sum.bytes, rct::pk2rct(src.amount_blinding_mask).bytes);
                   }

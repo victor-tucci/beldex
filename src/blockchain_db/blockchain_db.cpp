@@ -140,7 +140,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
   }
 
   uint64_t tx_id = add_transaction_data(blk_hash, txp, tx_hash, tx_prunable_hash);
-  std::vector<crypto::public_key> output_asset_ids(tx.vout.size(), crypto::null_pkey);
+  std::vector<crypto::asset_id> output_asset_ids(tx.vout.size(), crypto::null_aid);
   {
     tx_extra_ca_output_assets assets{};
     if (get_field_from_tx_extra(tx.extra, assets) && assets.asset_ids.size() == tx.vout.size())

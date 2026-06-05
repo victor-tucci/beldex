@@ -787,8 +787,8 @@ namespace tools
       // HF21: aggregate per-asset balances using wallet2 canonical API so RPC
       // output stays aligned with wallet-cli balance reporting.
       {
-        std::unordered_map<crypto::public_key, uint64_t> asset_total;
-        std::unordered_map<crypto::public_key, uint64_t> asset_unlocked;
+        std::unordered_map<crypto::asset_id, uint64_t> asset_total;
+        std::unordered_map<crypto::asset_id, uint64_t> asset_unlocked;
 
         if (req.all_accounts)
         {
@@ -796,7 +796,7 @@ namespace tools
           for (uint32_t account_index = 0; account_index < num_accounts; ++account_index)
           {
             const auto totals = m_wallet->asset_balances(account_index, false /*strict*/);
-            const auto unlocked = m_wallet->asset_balances(account_index, true /*strict*/);
+            const auto unlocked = m_wallet->unlocked_asset_balances(account_index, false /*strict*/);
             for (const auto& [asset_id, amount] : totals)
               asset_total[asset_id] += amount;
             for (const auto& [asset_id, amount] : unlocked)
@@ -806,7 +806,7 @@ namespace tools
         else
         {
           asset_total = m_wallet->asset_balances(req.account_index, false /*strict*/);
-          asset_unlocked = m_wallet->asset_balances(req.account_index, true /*strict*/);
+          asset_unlocked = m_wallet->unlocked_asset_balances(req.account_index, false /*strict*/);
         }
 
         for (const auto& [asset_id, total] : asset_total)
@@ -1157,7 +1157,7 @@ namespace tools
       // RPC transfer amounts are interpreted as human units (CLI-like) and
       // converted to atomic units using native or per-asset decimal point.
       uint64_t scale = native_scale;
-      if (de.asset_id != crypto::null_pkey)
+      if (de.asset_id != crypto::null_aid)
       {
         auto scale_it = cached_asset_scale.find(it->asset_id);
         if (scale_it == cached_asset_scale.end())
@@ -1237,7 +1237,7 @@ namespace tools
     if (ptx.dests.empty())
       return 0;
 
-    const crypto::public_key first_asset_id = ptx.dests.front().asset_id;
+    const crypto::asset_id first_asset_id = ptx.dests.front().asset_id;
     uint64_t amount = 0;
     for (const auto &dest: ptx.dests)
     {
@@ -3958,7 +3958,7 @@ namespace {
     if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado))
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Failed to encode asset descriptor into tx extra"};
 
-    const crypto::public_key asset_id = cryptonote::get_or_calculate_asset_id(ado);
+    const crypto::asset_id asset_id = cryptonote::get_or_calculate_asset_id(ado);
 
     std::set<uint32_t> subaddr_indices;
     auto ptx_vector = m_wallet->create_asset_deploy_tx(

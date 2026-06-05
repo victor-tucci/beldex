@@ -293,9 +293,9 @@ namespace
     return true;
   }
 
-  bool parse_asset_prefixed_address_arg(const std::string& raw, crypto::public_key& asset_id, std::string& address)
+  bool parse_asset_prefixed_address_arg(const std::string& raw, crypto::asset_id &asset_id, std::string& address)
   {
-    asset_id = crypto::null_pkey;
+    asset_id = crypto::null_aid;
     address = raw;
 
     const size_t sep = raw.find(':');
@@ -329,10 +329,10 @@ namespace
   };
 
   std::mutex asset_display_cache_mutex;
-  std::unordered_map<crypto::public_key, asset_display_cache_entry> asset_display_cache;
+  std::unordered_map<crypto::asset_id, asset_display_cache_entry> asset_display_cache;
   constexpr auto asset_display_negative_cache_ttl = std::chrono::seconds{30};
 
-  std::optional<asset_display_info> get_asset_display_info(tools::wallet2& wallet, const crypto::public_key& asset_id)
+  std::optional<asset_display_info> get_asset_display_info(tools::wallet2& wallet, const crypto::asset_id &asset_id)
   {
     {
       std::lock_guard lock{asset_display_cache_mutex};
@@ -379,7 +379,7 @@ namespace
 
   struct received_asset_info
   {
-    crypto::public_key asset_id = crypto::null_pkey;
+    crypto::asset_id asset_id = crypto::null_aid;
     uint8_t decimal_point = 0;
     std::string ticker;
   };
@@ -398,7 +398,7 @@ namespace
       if (subaddr_index && td.m_subaddr_index != *subaddr_index) continue;
       if (td.m_amount != amount) continue;
       if (unlock_time && td.m_tx.unlock_time != *unlock_time) continue;
-      if (td.m_asset_id == crypto::null_pkey) continue;
+      if (td.m_asset_id == crypto::null_aid) continue;
 
       received_asset_info result{};
       result.asset_id = td.m_asset_id;
@@ -443,7 +443,7 @@ namespace
     if (asset_id_hex.empty())
       return print_money(amount);
 
-    crypto::public_key asset_id{};
+    crypto::asset_id asset_id{};
     if (!tools::hex_to_type(asset_id_hex, asset_id))
       return std::to_string(amount) + " [" + asset_id_hex + "]";
 
@@ -462,17 +462,17 @@ namespace
 
   std::string format_amount_buckets_for_prompt(
       tools::wallet2& wallet,
-      const std::unordered_map<crypto::public_key, uint64_t>& amounts_by_asset)
+      const std::unordered_map<crypto::asset_id, uint64_t>& amounts_by_asset)
   {
     std::vector<std::string> parts;
 
-    if (auto it = amounts_by_asset.find(crypto::null_pkey); it != amounts_by_asset.end())
+    if (auto it = amounts_by_asset.find(crypto::null_aid); it != amounts_by_asset.end())
       parts.push_back(print_money(it->second));
 
     std::vector<std::pair<std::string, uint64_t>> asset_amounts;
     for (const auto& [asset_id, amount] : amounts_by_asset)
     {
-      if (asset_id == crypto::null_pkey)
+      if (asset_id == crypto::null_aid)
         continue;
       asset_amounts.emplace_back(tools::type_to_hex(asset_id), amount);
     }
@@ -3122,9 +3122,8 @@ simple_wallet::simple_wallet()
    Set the wallet's refresh behaviour.
  priority <0|1|2|3|4|5>
  priority <default|unimportant|normal|elevated|priority|flash>
-   Set the default transaction priority to the given numeric or string value.  Note that
-   for ordinary transactions, all values other than 1/"unimportant" will result in flash
-   transactions.
+   Set the default transaction priority to the given numeric or string value.  Use "flash"
+   explicitly to request a flash transaction.
  ask-password <0|1|2>
  ask-password <never|action|decrypt>
    action: ask the password before many actions such as transfer, etc
@@ -5518,7 +5517,7 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
   // HF21: show per-asset balances (total + unlocked)
   {
     const auto asset_total = m_wallet->asset_balances(m_current_subaddress_account, false);
-    const auto asset_unlocked = m_wallet->asset_balances(m_current_subaddress_account, true);
+    const auto asset_unlocked = m_wallet->unlocked_asset_balances(m_current_subaddress_account, false);
     if (!asset_total.empty())
     {
       success_msg_writer() << tr("Confidential asset balances:");
@@ -6139,7 +6138,7 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
       uint64_t dust_not_in_fee = 0;
       uint64_t dust_in_fee = 0;
       uint64_t change = 0;
-      std::unordered_map<crypto::public_key, uint64_t> sent_by_asset;
+      std::unordered_map<crypto::asset_id, uint64_t> sent_by_asset;
       for (size_t n = 0; n < ptx_vector.size(); ++n)
       {
         total_fee += ptx_vector[n].fee;
@@ -6321,7 +6320,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
   {
     priority = m_wallet->get_default_priority();
     if (priority == 0)
-      priority = transfer_type == Transfer::Locked ? tools::tx_priority_unimportant : tools::tx_priority_flash;
+      priority = tools::tx_priority_unimportant;
   }
 
   const size_t min_args = (transfer_type == Transfer::Locked) ? 2 : 1;
@@ -6387,7 +6386,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     dsts_info.emplace_back();
     cryptonote::address_parse_info& info = dsts_info.back();
     cryptonote::tx_destination_entry de;
-    de.asset_id = crypto::null_pkey;
+    de.asset_id = crypto::null_aid;
     bool r = true;
 
     std::string addr, payment_id_uri, tx_description, recipient_name, error;
@@ -6398,7 +6397,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
     if (i + 1 < local_args.size())
     {
       std::string parsed_address = local_args[i];
-      crypto::public_key parsed_asset_id = crypto::null_pkey;
+      crypto::asset_id parsed_asset_id = crypto::null_aid;
       if (!parse_asset_prefixed_address_arg(local_args[i], parsed_asset_id, parsed_address))
       {
         fail_msg_writer() << tr("Failed to parse destination asset id in: ") << local_args[i];
@@ -6419,7 +6418,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
       }
 
       bool ok = false;
-      if (parsed_asset_id == crypto::null_pkey)
+      if (parsed_asset_id == crypto::null_aid)
       {
         ok = cryptonote::parse_amount(de.amount, local_args[i + 1]);
       }
@@ -8040,7 +8039,7 @@ bool simple_wallet::deploy_new_asset(const std::vector<std::string>& args_)
       return false;
     }
 
-    const crypto::public_key asset_id = cryptonote::get_or_calculate_asset_id(ado);
+    const crypto::asset_id asset_id = cryptonote::get_or_calculate_asset_id(ado);
 
     // Deployment tx mints this asset, but daemon won't know its metadata until the
     // tx is mined. Prime local display cache so transfer confirmation/printing
@@ -11150,10 +11149,10 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       std::string transfer_asset_id;
       if (!pd.m_dests.empty())
       {
-        transfer_asset_id = pd.m_dests.front().asset_id == crypto::null_pkey ? "" : tools::type_to_hex(pd.m_dests.front().asset_id);
+        transfer_asset_id = pd.m_dests.front().asset_id == crypto::null_aid ? "" : tools::type_to_hex(pd.m_dests.front().asset_id);
         for (const auto& d : pd.m_dests)
         {
-          const std::string dest_asset_id = d.asset_id == crypto::null_pkey ? "" : tools::type_to_hex(d.asset_id);
+          const std::string dest_asset_id = d.asset_id == crypto::null_aid ? "" : tools::type_to_hex(d.asset_id);
           if (dest_asset_id != transfer_asset_id)
           {
             transfer_asset_id.clear();
@@ -11165,7 +11164,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       for (const auto &d: pd.m_dests) {
         if (!dests.empty())
           dests += ", ";
-        const std::string dest_asset_id = d.asset_id == crypto::null_pkey ? "" : tools::type_to_hex(d.asset_id);
+        const std::string dest_asset_id = d.asset_id == crypto::null_aid ? "" : tools::type_to_hex(d.asset_id);
         dests +=  d.address(m_wallet->nettype(), pd.m_payment_id) + ": " + format_amount_with_asset_id(*m_wallet, d.amount, dest_asset_id, true);
       }
       std::string payment_id = tools::type_to_hex(i->second.m_payment_id);
@@ -11242,10 +11241,10 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       std::string transfer_asset_id;
       if (!pd.m_dests.empty())
       {
-        transfer_asset_id = pd.m_dests.front().asset_id == crypto::null_pkey ? "" : tools::type_to_hex(pd.m_dests.front().asset_id);
+        transfer_asset_id = pd.m_dests.front().asset_id == crypto::null_aid ? "" : tools::type_to_hex(pd.m_dests.front().asset_id);
         for (const auto& d : pd.m_dests)
         {
-          const std::string dest_asset_id = d.asset_id == crypto::null_pkey ? "" : tools::type_to_hex(d.asset_id);
+          const std::string dest_asset_id = d.asset_id == crypto::null_aid ? "" : tools::type_to_hex(d.asset_id);
           if (dest_asset_id != transfer_asset_id)
           {
             transfer_asset_id.clear();

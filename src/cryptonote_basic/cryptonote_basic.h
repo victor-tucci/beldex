@@ -177,7 +177,7 @@ namespace cryptonote
   {
     std::vector<uint64_t> key_offsets;
     crypto::key_image k_image;
-    crypto::public_key asset_id = crypto::null_pkey;
+    crypto::asset_id asset_id = crypto::null_aid;
     crypto::public_key amount_commitment = crypto::null_pkey;
     crypto::public_key blinded_asset_id = crypto::null_pkey;
 

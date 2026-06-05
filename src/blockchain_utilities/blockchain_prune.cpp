@@ -146,7 +146,7 @@ static bool resize_point(size_t nrecords, MDB_env *env, MDB_txn **txn, size_t &b
   return true;
 }
 
-static void copy_table(MDB_env *env0, MDB_env *env1, const char *table, unsigned int flags, unsigned int putflags, int (*cmp)(const MDB_val*, const MDB_val*)=0)
+static void copy_table(MDB_env *env0, MDB_env *env1, const char *table, unsigned int flags, unsigned int putflags, int (*cmp)(const MDB_val*, const MDB_val*)=0, int (*key_cmp)(const MDB_val*, const MDB_val*)=0)
 {
   MDB_dbi dbi0, dbi1;
   MDB_txn *txn0, *txn1;
@@ -170,11 +170,15 @@ static void copy_table(MDB_env *env0, MDB_env *env1, const char *table, unsigned
 
   dbr = mdb_dbi_open(txn0, table, flags, &dbi0);
   if (dbr) throw std::runtime_error("Failed to open LMDB dbi: " + std::string(mdb_strerror(dbr)));
+  if (key_cmp)
+    mdb_set_compare(txn0, dbi0, key_cmp);
   if (cmp)
     ((flags & MDB_DUPSORT) ? mdb_set_dupsort : mdb_set_compare)(txn0, dbi0, cmp);
 
   dbr = mdb_dbi_open(txn1, table, flags, &dbi1);
   if (dbr) throw std::runtime_error("Failed to open LMDB dbi: " + std::string(mdb_strerror(dbr)));
+  if (key_cmp)
+    mdb_set_compare(txn1, dbi1, key_cmp);
   if (cmp)
     ((flags & MDB_DUPSORT) ? mdb_set_dupsort : mdb_set_compare)(txn1, dbi1, cmp);
 
@@ -606,7 +610,7 @@ int main(int argc, char* argv[])
   copy_table(env0, env1, "tx_indices", MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED, 0, BlockchainLMDB::compare_hash32);
   copy_table(env0, env1, "tx_outputs", MDB_INTEGERKEY, MDB_APPEND);
   copy_table(env0, env1, "output_txs", MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED, MDB_APPENDDUP, BlockchainLMDB::compare_uint64);
-  copy_table(env0, env1, "output_amounts", MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED, MDB_APPENDDUP, BlockchainLMDB::compare_uint64);
+  copy_table(env0, env1, "output_amounts", MDB_DUPSORT | MDB_DUPFIXED, MDB_APPENDDUP, BlockchainLMDB::compare_uint64, BlockchainLMDB::compare_output_amount_key);
   copy_table(env0, env1, "spent_keys", MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED, MDB_NODUPDATA, BlockchainLMDB::compare_hash32);
   copy_table(env0, env1, "txpool_meta", 0, MDB_NODUPDATA, BlockchainLMDB::compare_hash32);
   copy_table(env0, env1, "txpool_blob", 0, MDB_NODUPDATA, BlockchainLMDB::compare_hash32);
