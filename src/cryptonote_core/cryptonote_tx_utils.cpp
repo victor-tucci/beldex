@@ -40,9 +40,11 @@
 #include "blockchain.h"
 #include "cryptonote_basic/miner.h"
 #include "cryptonote_basic/tx_extra.h"
+#include "cryptonote_basic/asset_descriptor_operation_utils.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"  // zarcanum_derivation_to_scalar
 #include "crypto/crypto.h"
 #include "crypto/asset_proofs.h"
+#include "crypto/hf21_transcript_domains.h"
 #include "crypto/hash.h"
 #include "ringct/rctSigs.h"
 #include "multisig/multisig.h"
@@ -600,12 +602,12 @@ namespace cryptonote
   {
     for (const auto& src : sources)
     {
-      if (src.has_ca_metadata || src.asset_id != crypto::null_pkey)
+      if (src.has_ca_metadata || src.asset_id != crypto::null_aid)
         return true;
     }
     for (const auto& dst : destinations)
     {
-      if (dst.asset_id != crypto::null_pkey)
+      if (dst.asset_id != crypto::null_aid)
         return true;
     }
     return false;
@@ -642,9 +644,9 @@ namespace cryptonote
   }
 
   static bool add_amount_by_asset(
-      const crypto::public_key& asset_id,
+      const crypto::asset_id &asset_id,
       uint64_t amount,
-      std::unordered_map<crypto::public_key, uint64_t>& totals)
+      std::unordered_map<crypto::asset_id, uint64_t>& totals)
   {
     auto& current = totals[asset_id];
     return add_amount_or_overflow(amount, current);
@@ -715,11 +717,11 @@ namespace cryptonote
       const std::vector<crypto::secret_key>& additional_tx_keys)
   {
     auto collect_non_native_assets = [](const auto& entries, auto get_asset_id) {
-      std::unordered_set<crypto::public_key> non_native;
+      std::unordered_set<crypto::asset_id> non_native;
       for (const auto& e : entries)
       {
-        const crypto::public_key aid = get_asset_id(e);
-        if (aid != crypto::null_pkey)
+        const crypto::asset_id aid = get_asset_id(e);
+        if (aid != crypto::null_aid)
           non_native.insert(aid);
       }
       return non_native;
@@ -761,7 +763,7 @@ namespace cryptonote
       bool has_legacy_input_source = false;
       for (size_t i = 0; i < sources.size(); ++i)
       {
-        const bool is_ca_source = sources[i].has_ca_metadata || sources[i].asset_id != crypto::null_pkey;
+        const bool is_ca_source = sources[i].has_ca_metadata || sources[i].asset_id != crypto::null_aid;
         has_ca_input_source = has_ca_input_source || is_ca_source;
         has_legacy_input_source = has_legacy_input_source || !is_ca_source;
       }
@@ -777,7 +779,7 @@ namespace cryptonote
 
       bool has_ca_outputs = false;
       for (const auto& dst : destinations)
-        has_ca_outputs = has_ca_outputs || dst.asset_id != crypto::null_pkey;
+        has_ca_outputs = has_ca_outputs || dst.asset_id != crypto::null_aid;
       if (has_ca_outputs && !has_ca_input_source)
       {
         LOG_ERROR("CA outputs requested without CA inputs");
@@ -794,7 +796,7 @@ namespace cryptonote
     for (size_t i = 0; i < sources.size(); ++i)
     {
       const tx_source_entry& src = sources[i];
-      const bool source_ca_requested = src.has_ca_metadata || src.asset_id != crypto::null_pkey;
+      const bool source_ca_requested = src.has_ca_metadata || src.asset_id != crypto::null_aid;
       if (src.outputs.empty())
       {
         LOG_ERROR("Source #" << i << " has empty outputs ring");
@@ -839,7 +841,7 @@ namespace cryptonote
           LOG_ERROR("Source #" << i << " requests CA path without has_ca_metadata");
           return false;
         }
-        if (src.asset_id == crypto::null_pkey)
+        if (src.asset_id == crypto::null_aid)
         {
           LOG_ERROR("Source #" << i << " CA metadata has null asset_id");
           return false;
@@ -882,7 +884,7 @@ namespace cryptonote
       {
         // Legacy path must not accidentally carry CA-only metadata.
         if (src.has_ca_metadata ||
-            src.asset_id != crypto::null_pkey ||
+            src.asset_id != crypto::null_aid ||
             src.amount_commitment != crypto::null_pkey ||
             src.asset_id_bliding_mask != crypto::null_pkey ||
             src.blinded_asset_id != crypto::null_pkey)
@@ -948,7 +950,7 @@ namespace cryptonote
     }
 
     uint64_t total_input_amount = 0;
-    std::unordered_map<crypto::public_key, uint64_t> input_amounts_by_asset;
+    std::unordered_map<crypto::asset_id, uint64_t> input_amounts_by_asset;
     for (size_t i = 0; i < sources.size(); ++i)
     {
       const uint64_t amount = sources[i].amount;
@@ -957,7 +959,7 @@ namespace cryptonote
         LOG_ERROR("Input amount overflow while summing source #" << i);
         return false;
       }
-      const crypto::public_key asset_id = sources[i].asset_id;
+      const crypto::asset_id asset_id = sources[i].asset_id;
       if (!add_amount_by_asset(asset_id, amount, input_amounts_by_asset))
       {
         LOG_ERROR("Input per-asset amount overflow for source #" << i);
@@ -966,7 +968,7 @@ namespace cryptonote
     }
 
     uint64_t total_output_amount = 0;
-    std::unordered_map<crypto::public_key, uint64_t> output_amounts_by_asset;
+    std::unordered_map<crypto::asset_id, uint64_t> output_amounts_by_asset;
     for (size_t i = 0; i < destinations.size(); ++i)
     {
       const uint64_t amount = destinations[i].amount;
@@ -975,7 +977,7 @@ namespace cryptonote
         LOG_ERROR("Output amount overflow while summing destination #" << i);
         return false;
       }
-      const crypto::public_key asset_id = destinations[i].asset_id;
+      const crypto::asset_id asset_id = destinations[i].asset_id;
       if (!add_amount_by_asset(asset_id, amount, output_amounts_by_asset))
       {
         LOG_ERROR("Output per-asset amount overflow for destination #" << i);
@@ -984,8 +986,8 @@ namespace cryptonote
     }
 
     const bool is_deploy_tx = tx_params.tx_type == txtype::deploy_new_asset;
-    const uint64_t native_in_amount = input_amounts_by_asset.count(crypto::null_pkey) ? input_amounts_by_asset[crypto::null_pkey] : 0;
-    const uint64_t native_out_amount = output_amounts_by_asset.count(crypto::null_pkey) ? output_amounts_by_asset[crypto::null_pkey] : 0;
+    const uint64_t native_in_amount = input_amounts_by_asset.count(crypto::null_aid) ? input_amounts_by_asset[crypto::null_aid] : 0;
+    const uint64_t native_out_amount = output_amounts_by_asset.count(crypto::null_aid) ? output_amounts_by_asset[crypto::null_aid] : 0;
     if (is_deploy_tx)
     {
       if (native_out_amount > native_in_amount)
@@ -1016,7 +1018,7 @@ namespace cryptonote
     {
       const auto it = input_amounts_by_asset.find(asset_id);
       const uint64_t in_amount = (it == input_amounts_by_asset.end()) ? 0 : it->second;
-      if (asset_id != crypto::null_pkey)
+      if (asset_id != crypto::null_aid)
       {
         if (is_deploy_tx)
           continue; // deploy mints non-native outputs; no matching non-native inputs required
@@ -1035,7 +1037,7 @@ namespace cryptonote
     // Disallow silent disappearance of non-native assets (i.e. input bucket not present in outputs).
     for (const auto& [asset_id, in_amount] : input_amounts_by_asset)
     {
-      if (asset_id == crypto::null_pkey)
+      if (asset_id == crypto::null_aid)
         continue;
       if (is_deploy_tx)
         continue; // deploy is allowed to have no non-native input buckets
@@ -1049,36 +1051,33 @@ namespace cryptonote
       }
     }
 
-    // Single-destination non-native bucket rule: one tx may have at most one non-native
-    // destination asset bucket (native bucket may still exist for fee/change mechanics).
+    // Non-native buckets are validated independently.  This keeps the
+    // constructor ready for mixed-asset transactions while still requiring
+    // exact per-asset conservation above.
     const auto non_native_destination_assets = collect_non_native_assets(destinations, [](const tx_destination_entry& d) { return d.asset_id; });
     const auto non_native_source_assets = collect_non_native_assets(sources, [](const tx_source_entry& s) { return s.asset_id; });
-    if (non_native_destination_assets.size() > 1)
-    {
-      LOG_ERROR("Mixed non-native destination assets in one tx are forbidden");
-      return false;
-    }
-    if (non_native_source_assets.size() > 1)
-    {
-      LOG_ERROR("Mixed non-native source assets in one tx are forbidden");
-      return false;
-    }
 
-    // If a non-native destination bucket exists, inputs must contain that bucket
-    // for transfer txs. Deploy transactions mint this bucket and therefore do
-    // not require matching non-native inputs.
-    if (!non_native_destination_assets.empty() && tx_params.tx_type != txtype::deploy_new_asset)
+    // If non-native destination buckets exist, transfer txs must contain a
+    // matching input bucket for each asset. Deploy transactions mint their
+    // non-native bucket and therefore do not require matching non-native inputs.
+    if (tx_params.tx_type != txtype::deploy_new_asset)
     {
-      const crypto::public_key dst_asset = *non_native_destination_assets.begin();
-      if (input_amounts_by_asset.find(dst_asset) == input_amounts_by_asset.end())
+      for (const crypto::asset_id& dst_asset : non_native_destination_assets)
       {
-        LOG_ERROR("Missing matching non-native input bucket for destination asset " << dst_asset);
-        return false;
+        if (input_amounts_by_asset.find(dst_asset) == input_amounts_by_asset.end())
+        {
+          LOG_ERROR("Missing matching non-native input bucket for destination asset " << dst_asset);
+          return false;
+        }
       }
-      if (!non_native_source_assets.empty() && *non_native_source_assets.begin() != dst_asset)
+
+      for (const crypto::asset_id& src_asset : non_native_source_assets)
       {
-        LOG_ERROR("Non-native destination asset does not match non-native source asset");
-        return false;
+        if (output_amounts_by_asset.find(src_asset) == output_amounts_by_asset.end())
+        {
+          LOG_ERROR("Missing matching non-native output bucket for source asset " << src_asset);
+          return false;
+        }
       }
     }
     else if (!non_native_destination_assets.empty())
@@ -1087,7 +1086,7 @@ namespace cryptonote
     }
 
     // Change entry (when provided) must stay native to avoid cross-asset ambiguity.
-    if (change_addr && change_addr->asset_id != crypto::null_pkey)
+    if (change_addr && change_addr->asset_id != crypto::null_aid)
     {
       LOG_ERROR("Non-native change entry is not allowed in constructor preflight");
       return false;
@@ -1111,8 +1110,8 @@ namespace cryptonote
   {
     hw::device &hwdev = sender_account_keys.get_device();
     auto log_grouped_destinations = [&](const char* stage, const char* reason) {
-      std::unordered_map<crypto::public_key, uint64_t> src_by_asset;
-      std::unordered_map<crypto::public_key, uint64_t> dst_by_asset;
+      std::unordered_map<crypto::asset_id, uint64_t> src_by_asset;
+      std::unordered_map<crypto::asset_id, uint64_t> dst_by_asset;
       for (const auto& s : sources)
       {
         uint64_t& b = src_by_asset[s.asset_id];
@@ -1134,16 +1133,16 @@ namespace cryptonote
           << " src_by_asset:";
       if (src_by_asset.empty()) oss << " <none>";
       for (const auto& [aid, amt] : src_by_asset)
-        oss << " [" << (aid == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(aid))
+        oss << " [" << (aid == crypto::null_aid ? std::string{"native"} : tools::type_to_hex(aid))
             << "=" << print_money(amt) << "]";
       oss << " dst_by_asset:";
       if (dst_by_asset.empty()) oss << " <none>";
       for (const auto& [aid, amt] : dst_by_asset)
-        oss << " [" << (aid == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(aid))
+        oss << " [" << (aid == crypto::null_aid ? std::string{"native"} : tools::type_to_hex(aid))
             << "=" << print_money(amt) << "]";
       if (change_addr)
       {
-        oss << " change=[" << (change_addr->asset_id == crypto::null_pkey ? std::string{"native"} : tools::type_to_hex(change_addr->asset_id))
+        oss << " change=[" << (change_addr->asset_id == crypto::null_aid ? std::string{"native"} : tools::type_to_hex(change_addr->asset_id))
             << "=" << print_money(change_addr->amount) << "]";
       }
       else
@@ -1282,6 +1281,51 @@ namespace cryptonote
     bool has_ca_outputs = false;
 
     //fill inputs
+    auto extract_vin_offsets = [](const std::vector<txin_v>& vin) {
+      std::vector<std::vector<uint64_t>> all;
+      all.reserve(vin.size());
+      for (const auto& in : vin)
+      {
+        if (const auto* tk = std::get_if<txin_to_key>(&in))
+          all.push_back(tk->key_offsets);
+        else if (const auto* zc = std::get_if<txin_zc_input>(&in))
+          all.push_back(zc->key_offsets);
+        else
+          all.emplace_back();
+      }
+      return all;
+    };
+    auto extract_vin_key_images = [](const std::vector<txin_v>& vin) {
+      std::vector<crypto::key_image> all;
+      all.reserve(vin.size());
+      for (const auto& in : vin)
+      {
+        if (const auto* tk = std::get_if<txin_to_key>(&in))
+          all.push_back(tk->k_image);
+        else if (const auto* zc = std::get_if<txin_zc_input>(&in))
+          all.push_back(zc->k_image);
+        else
+          all.push_back(crypto::key_image{});
+      }
+      return all;
+    };
+    auto mixring_fingerprint = [](const rct::ctkeyM& ring) {
+      std::vector<uint8_t> blob;
+      for (const auto& row : ring)
+      {
+        for (const auto& member : row)
+        {
+          const auto* d = reinterpret_cast<const uint8_t*>(&member.dest);
+          const auto* m = reinterpret_cast<const uint8_t*>(&member.mask);
+          blob.insert(blob.end(), d, d + sizeof(member.dest));
+          blob.insert(blob.end(), m, m + sizeof(member.mask));
+        }
+      }
+      crypto::hash h = crypto::null_hash;
+      crypto::cn_fast_hash(blob.data(), blob.size(), h);
+      return h;
+    };
+
     int idx = -1;
     for(const tx_source_entry& src_entr:  sources)
     {
@@ -1315,7 +1359,7 @@ namespace cryptonote
         return false;
       }
 
-      const bool is_ca_input = src_entr.has_ca_metadata || src_entr.asset_id != crypto::null_pkey;
+      const bool is_ca_input = src_entr.has_ca_metadata || src_entr.asset_id != crypto::null_aid;
       if (is_ca_input)
       {
         if (src_entr.output_asset_ids.size() != src_entr.outputs.size() ||
@@ -1329,7 +1373,7 @@ namespace cryptonote
           LOG_ERROR("CA input requested without CA metadata at source index " << idx);
           return false;
         }
-        if (src_entr.asset_id == crypto::null_pkey ||
+        if (src_entr.asset_id == crypto::null_aid ||
             src_entr.asset_id_bliding_mask == crypto::null_pkey ||
             src_entr.amount_commitment == crypto::null_pkey ||
             src_entr.blinded_asset_id == crypto::null_pkey)
@@ -1368,6 +1412,10 @@ namespace cryptonote
         input_zc.blinded_asset_id = src_entr.blinded_asset_id;
         for (const tx_source_entry::output_entry& out_entry : src_entr.outputs)
           input_zc.key_offsets.push_back(out_entry.first);
+        CHECK_AND_ASSERT_MES(std::is_sorted(input_zc.key_offsets.begin(), input_zc.key_offsets.end()), false,
+                             "ZC input absolute ring offsets must be sorted before relative encoding");
+        CHECK_AND_ASSERT_MES(std::adjacent_find(input_zc.key_offsets.begin(), input_zc.key_offsets.end()) == input_zc.key_offsets.end(),
+                             false, "ZC input absolute ring offsets must be strictly increasing");
         input_zc.key_offsets = absolute_output_offsets_to_relative(input_zc.key_offsets);
         tx.vin.push_back(input_zc);
       }
@@ -1382,6 +1430,10 @@ namespace cryptonote
         //fill outputs array and use relative offsets
         for(const tx_source_entry::output_entry& out_entry: src_entr.outputs)
           input_to_key.key_offsets.push_back(out_entry.first);
+        CHECK_AND_ASSERT_MES(std::is_sorted(input_to_key.key_offsets.begin(), input_to_key.key_offsets.end()), false,
+                             "Legacy input absolute ring offsets must be sorted before relative encoding");
+        CHECK_AND_ASSERT_MES(std::adjacent_find(input_to_key.key_offsets.begin(), input_to_key.key_offsets.end()) == input_to_key.key_offsets.end(),
+                             false, "Legacy input absolute ring offsets must be strictly increasing");
 
         input_to_key.key_offsets = absolute_output_offsets_to_relative(input_to_key.key_offsets);
         tx.vin.push_back(input_to_key);
@@ -1397,7 +1449,7 @@ namespace cryptonote
     }
 
     for (const tx_destination_entry& dst_entr : destinations)
-      has_ca_outputs = has_ca_outputs || dst_entr.asset_id != crypto::null_pkey;
+      has_ca_outputs = has_ca_outputs || dst_entr.asset_id != crypto::null_aid;
 
     // sort ins by their key image (strictly descending, consensus requirement)
     std::vector<size_t> ins_order(sources.size());
@@ -1448,6 +1500,7 @@ namespace cryptonote
 
     std::vector<crypto::public_key> additional_tx_public_keys;
     std::vector<rct::key> zc_output_amount_masks;
+    std::vector<rct::key> zc_output_asset_blinds;
 
     // we don't need to include additional tx keys if:
     //   - all the destinations are standard addresses
@@ -1532,6 +1585,7 @@ namespace cryptonote
         zout.amount_commitment = rct::rct2pk(rct::commitAsset(mask, asset_id_rct, dst_entr.amount));
         LOG_PRINT_L0("Amount commitment done");
         zc_output_amount_masks.push_back(mask);
+        zc_output_asset_blinds.push_back(r);
 
         // Encrypted amount
         rct::key enc_key = zarcanum_derivation_to_scalar(derivation, output_index, "enc_amount");
@@ -1558,11 +1612,17 @@ namespace cryptonote
         tk.key = out_eph_public_key;
         out.amount = dst_entr.amount;
         out.target = tk;
+        zc_output_amount_masks.push_back(rct::zero());
+        zc_output_asset_blinds.push_back(rct::zero());
       }
 
       tx.vout.push_back(out);
       output_index++;
     }
+    CHECK_AND_ASSERT_MES(zc_output_amount_masks.size() == tx.vout.size(), false,
+        "ZC output amount mask metadata is not aligned with tx.vout");
+    CHECK_AND_ASSERT_MES(zc_output_asset_blinds.size() == tx.vout.size(), false,
+        "ZC output asset blind metadata is not aligned with tx.vout");
     CHECK_AND_ASSERT_MES(additional_tx_public_keys.size() == additional_tx_keys.size(), false, "Internal error creating additional public keys");
 
     if (tx.type == txtype::stake)
@@ -1698,6 +1758,12 @@ namespace cryptonote
           const bool deploy_native_fee_accounting = tx_params.tx_type == txtype::deploy_new_asset;
           rct::ctkeyV inSk;
           inSk.reserve(sources.size());
+          rct::ctkeyV legacy_inSk;
+          std::vector<uint64_t> legacy_inamounts;
+          std::vector<unsigned int> legacy_index;
+          rct::ctkeyM legacy_mixRing;
+          std::vector<rct::multisig_kLRki> legacy_kLRki;
+          std::unordered_map<size_t, size_t> vin_to_legacy_sig_index;
           // mixRing indexing is done the other way round for simple
           rct::ctkeyM mixRing(use_simple_rct ? sources.size() : n_total_outs);
           rct::keyV dest_keys;
@@ -1705,13 +1771,13 @@ namespace cryptonote
           std::vector<unsigned int> index;
           std::vector<rct::multisig_kLRki> kLRki;
           const bool has_native_input_for_fee = std::any_of(sources.begin(), sources.end(), [](const tx_source_entry& s) {
-              return s.asset_id == crypto::null_pkey;
+              return s.asset_id == crypto::null_aid;
           });
           const bool native_only_ca_fee_mode = ca_transfer_path_used && has_native_input_for_fee;
           uint64_t native_in_for_fee = 0, native_out_for_fee = 0;
           for (size_t i = 0; i < sources.size(); ++i) {
               rct::ctkey ctkey;
-              const bool native_input = sources[i].asset_id == crypto::null_pkey;
+              const bool native_input = sources[i].asset_id == crypto::null_aid;
               const uint64_t rct_input_amount = sources[i].amount;
               if (native_input)
                 native_in_for_fee += sources[i].amount;
@@ -1722,6 +1788,20 @@ namespace cryptonote
               ctkey.dest = rct::sk2rct(in_contexts[i].in_ephemeral.sec);
               ctkey.mask = sources[i].mask;
               inSk.push_back(ctkey);
+              if (std::holds_alternative<txin_to_key>(tx.vin[i]))
+              {
+                vin_to_legacy_sig_index[i] = legacy_inSk.size();
+                legacy_inSk.push_back(ctkey);
+                legacy_inamounts.push_back(rct_input_amount);
+                legacy_index.push_back(sources[i].real_output);
+                if (msout)
+                  legacy_kLRki.push_back(sources[i].multisig_kLRki);
+              }
+              else if (std::holds_alternative<txin_zc_input>(tx.vin[i]))
+              {
+                CHECK_AND_ASSERT_MES(sources[i].amount_commitment != crypto::null_pkey,
+                  false, "ZC input is missing real amount commitment");
+              }
               memwipe(&ctkey, sizeof(rct::ctkey));
               // inPk: (public key, commitment)
               // will be done when filling in mixRing
@@ -1748,18 +1828,18 @@ namespace cryptonote
               }
               if (native_only_ca_fee_mode)
               {
-                const crypto::public_key dst_asset_id =
+                const crypto::asset_id dst_asset_id =
                     i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
-                if (dst_asset_id != crypto::null_pkey)
+                if (dst_asset_id != crypto::null_aid)
                   rct_accounted_amount = 0;
                 else
                   native_out_for_fee += rct_accounted_amount;
               }
               else if (deploy_native_fee_accounting)
               {
-                const crypto::public_key dst_asset_id =
+                const crypto::asset_id dst_asset_id =
                     i < destinations.size() ? destinations[i].asset_id : crypto::null_pkey;
-                if (dst_asset_id != crypto::null_pkey)
+                if (dst_asset_id != crypto::null_aid)
                   rct_accounted_amount = 0;
               }
 
@@ -1777,6 +1857,13 @@ namespace cryptonote
                     mixRing[i][n] = sources[i].outputs[n].second;
                 }
             }
+            legacy_mixRing.resize(legacy_inSk.size());
+            for (const auto& [vin_idx, legacy_idx] : vin_to_legacy_sig_index)
+            {
+              legacy_mixRing[legacy_idx].resize(sources[vin_idx].outputs.size());
+              for (size_t n = 0; n < sources[vin_idx].outputs.size(); ++n)
+                legacy_mixRing[legacy_idx][n] = sources[vin_idx].outputs[n].second;
+            }
         }
         else {
             for (size_t i = 0; i < sources.size(); ++i) {
@@ -1785,6 +1872,7 @@ namespace cryptonote
                     mixRing[i][n] = sources[i].outputs[n].second;
                 }
             }
+            legacy_mixRing = mixRing;
         }
         // fee
         if (!use_simple_rct && amount_in > amount_out)
@@ -1815,18 +1903,20 @@ namespace cryptonote
           for (size_t i = 0; i < tx.vout.size(); ++i)
               tx.vout[i].amount = 0;
 
-          crypto::hash tx_prefix_hash;
-          get_transaction_prefix_hash(tx, tx_prefix_hash, hwdev);
+          const crypto::hash tx_prefix_hash = get_transaction_prefix_hash(tx);
           rct::ctkeyV outSk;
           if (use_simple_rct) {
               LOG_PRINT_L2("genRctSimple");
+              CHECK_AND_ASSERT_MES(legacy_inSk.size() == legacy_inamounts.size(), false, "legacy signer vector size mismatch");
+              CHECK_AND_ASSERT_MES(legacy_inSk.size() == legacy_index.size(), false, "legacy index vector size mismatch");
+              CHECK_AND_ASSERT_MES(legacy_inSk.size() == legacy_mixRing.size(), false, "legacy mixRing vector size mismatch");
               const uint64_t txn_fee_for_rct = ca_transfer_path_used
                   ? (native_only_ca_fee_mode ? (native_in_for_fee - native_out_for_fee) : 0)
                   : (amount_in - amount_out);
-              tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, inamounts,
+              tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), legacy_inSk, dest_keys, legacy_inamounts,
                                                     outamounts,
-                                                    txn_fee_for_rct, mixRing, amount_keys, msout ? &kLRki : NULL,
-                                                    msout, index, outSk, rct_config, hwdev);
+                                                    txn_fee_for_rct, legacy_mixRing, amount_keys, msout ? &legacy_kLRki : NULL,
+                                                    msout, legacy_index, outSk, rct_config, hwdev);
           }
           else {
               LOG_PRINT_L2("genRct");
@@ -1836,24 +1926,43 @@ namespace cryptonote
 
           }
 
+          const auto vin_offsets_pre_sign = extract_vin_offsets(tx.vin);
+          const auto vin_key_images_pre_sign = extract_vin_key_images(tx.vin);
+          const crypto::hash mixring_fp_pre_sign = mixring_fingerprint(mixRing);
+
           if (ca_transfer_path_used)
           {
               tx.asset_proofs.clear();
 
               // Build a unique non-native input asset ring for BGE surjection proofs.
+              // Mirror verifier semantics exactly: derive from tx.vin ZC inputs in vin order.
               std::vector<rct::key> input_asset_ring;
-              input_asset_ring.reserve(sources.size());
-              for (const auto& src : sources)
+              input_asset_ring.reserve(tx.vin.size());
+              for (const auto& in : tx.vin)
               {
-                  if (src.asset_id == crypto::null_pkey)
+                  if (!std::holds_alternative<txin_zc_input>(in))
                       continue;
-                  const rct::key aid = rct::pk2rct(src.asset_id);
-                  if (std::find(input_asset_ring.begin(), input_asset_ring.end(), aid) == input_asset_ring.end())
+                  const auto& zc_in = std::get<txin_zc_input>(in);
+                  if (zc_in.asset_id == crypto::null_aid)
+                      continue;
+                  const rct::key aid = rct::pk2rct(zc_in.asset_id);
+                  const bool seen = std::any_of(input_asset_ring.begin(), input_asset_ring.end(),
+                      [&](const auto& prev){ return rct::equalKeys(prev, aid); });
+                  if (!seen)
                       input_asset_ring.push_back(aid);
+              }
+              for (const auto& in : tx.vin)
+              {
+                  if (!std::holds_alternative<txin_zc_input>(in))
+                      continue;
+                  const auto& zc_in = std::get<txin_zc_input>(in);
+                  CHECK_AND_ASSERT_MES(zc_in.asset_id != crypto::null_aid, false,
+                      "ZC input is missing asset_id while building BGE input domain");
               }
               CHECK_AND_ASSERT_MES(!input_asset_ring.empty(), false, "CA transfer requires at least one non-native input asset for surjection proofs");
 
-              const rct::key tx_prefix_rct = rct::get_hf21_asset_proof_message(tx, mixRing, hw::get_device("default"));
+              // Use canonical tx prefix hash for ZC proof transcript seeding.
+              const rct::key tx_prefix_rct = rct::hash2rct(tx_prefix_hash);
 
               // ── Per-input ZC_sig proofs ───────────────────────────────────
               for (size_t i = 0; i < tx.vin.size(); ++i)
@@ -1861,27 +1970,38 @@ namespace cryptonote
                   if (!std::holds_alternative<txin_zc_input>(tx.vin[i]))
                       continue;
 
-                  CHECK_AND_ASSERT_MES(i < mixRing.size(), false, "ZC input index out of range for mixRing");
+                  CHECK_AND_ASSERT_MES(i < mixRing.size(), false, "ZC input index out of range for full mixRing");
                   CHECK_AND_ASSERT_MES(i < index.size(), false, "ZC input index out of range for real index");
-                  CHECK_AND_ASSERT_MES(i < tx.rct_signatures.p.pseudoOuts.size(), false, "Missing pseudoOut for ZC input");
-
-                  rct::keyV ring_pubkeys;
-                  ring_pubkeys.reserve(mixRing[i].size());
-                  for (const auto& member : mixRing[i])
-                      ring_pubkeys.push_back(member.dest);
 
                   rct::ctkey spend_sk{};
                   spend_sk.dest = rct::sk2rct(in_contexts[i].in_ephemeral.sec);
-                  spend_sk.mask = rct::zero();
-
+                  const rct::key input_mask = rct::pk2rct(sources[i].amount_blinding_mask);
+                  const rct::key input_commitment = rct::pk2rct(sources[i].amount_commitment);
+                  const rct::key pseudo_mask = rct::skGen();
+                  spend_sk.mask = pseudo_mask;
+                  rct::key z = rct::zero();
+                  sc_sub(z.bytes, input_mask.bytes, pseudo_mask.bytes); // z = input_mask - pseudo_mask
+                  rct::key zG = rct::scalarmultBase(z);
+                  rct::key zc_pseudo_out = rct::zero();
+                  rct::subKeys(zc_pseudo_out, input_commitment, zG); // C_offset = C_in - z*G
+                  const rct::key clsag_msg = [&]{
+                      std::string blob{cryptonote::hf21::ZC_CLSAG_V1};
+                      blob.append(reinterpret_cast<const char*>(tx_prefix_rct.bytes), sizeof(tx_prefix_rct.bytes));
+                      const uint64_t idx64 = i;
+                      blob.append(reinterpret_cast<const char*>(&idx64), sizeof(idx64));
+                      return rct::hash2rct(crypto::cn_fast_hash(blob.data(), blob.size()));
+                  }();
                   rct::ZC_sig zc_sig = rct::genZCSig(
-                      tx_prefix_rct,
-                      ring_pubkeys,
+                      clsag_msg,
+                      mixRing[i],
                       spend_sk,
-                      tx.rct_signatures.p.pseudoOuts[i],
+                      z,
+                      zc_pseudo_out,
+                      std::get<txin_zc_input>(tx.vin[i]).k_image,
                       index[i],
                       hwdev);
-                  zc_sig.key_image = std::get<txin_zc_input>(tx.vin[i]).k_image;
+                  CHECK_AND_ASSERT_MES(rct::verZCSig(clsag_msg, zc_sig, mixRing[i], zc_sig.pseudo_out_commitment),
+                    false, "local ZC_sig self-verification failed");
                   tx.asset_proofs.emplace_back(std::move(zc_sig));
               }
 
@@ -1893,39 +2013,44 @@ namespace cryptonote
                   if (!std::holds_alternative<tx_out_zarcanum>(tx.vout[out_idx].target))
                       continue;
 
-                  CHECK_AND_ASSERT_MES(out_idx < destinations.size(), false, "ZC output index exceeds destinations size");
-                  const auto& dst = destinations[out_idx];
-                  CHECK_AND_ASSERT_MES(dst.asset_id != crypto::null_pkey, false, "ZC output missing non-native asset_id");
-
-                  // Recompute output blinding scalar r used for T = asset + r*X.
-                  crypto::key_derivation derivation{};
-                  hwdev.generate_key_derivation(dst.addr.m_view_public_key, tx_key, derivation);
-                  const rct::key r = zarcanum_derivation_to_scalar(derivation, out_idx, "asset_blind");
+                  CHECK_AND_ASSERT_MES(out_idx < zc_output_asset_blinds.size(), false, "ZC output index out of range for stored asset blinds");
+                  const rct::key r = zc_output_asset_blinds[out_idx];
+                  CHECK_AND_ASSERT_MES(r != rct::zero(), false, "Missing stored asset blind for ZC output");
 
                   const auto& zout = std::get<tx_out_zarcanum>(tx.vout[out_idx].target);
                   const rct::key T = rct::pk2rct(zout.blinded_asset_id);
-                  const rct::key out_asset = rct::pk2rct(dst.asset_id);
+                  rct::key out_asset = rct::zero();
+                  rct::subKeys(out_asset, T, rct::scalarmultX(r));
 
-                  auto it = std::find(input_asset_ring.begin(), input_asset_ring.end(), out_asset);
                   size_t real_index = 0;
-                  if (it == input_asset_ring.end())
+                  auto it = input_asset_ring.end();
+                  for (auto jt = input_asset_ring.begin(); jt != input_asset_ring.end(); ++jt)
                   {
-                      input_asset_ring.push_back(out_asset);
-                      real_index = input_asset_ring.size() - 1;
+                      if (rct::equalKeys(*jt, out_asset))
+                      {
+                          it = jt;
+                          break;
+                      }
                   }
-                  else
-                  {
-                      real_index = std::distance(input_asset_ring.begin(), it);
-                  }
+                  CHECK_AND_ASSERT_MES(it != input_asset_ring.end(), false,
+                      "CA output asset is not present in input asset domain while constructing BGE proof");
+                  real_index = std::distance(input_asset_ring.begin(), it);
 
-                  rct::key ctx = tx_prefix_rct;
-                  ctx.bytes[0] ^= static_cast<uint8_t>(zc_out_idx & 0xff);
+                  std::string bge_ctx_blob{cryptonote::hf21::CA_SURJECTION_V1};
+                  bge_ctx_blob.append(reinterpret_cast<const char*>(tx_prefix_rct.bytes), sizeof(tx_prefix_rct.bytes));
+                  const uint64_t bge_out_index = zc_out_idx;
+                  bge_ctx_blob.append(reinterpret_cast<const char*>(&bge_out_index), sizeof(bge_out_index));
+                  const rct::key ctx = rct::hash2rct(crypto::cn_fast_hash(bge_ctx_blob.data(), bge_ctx_blob.size()));
 
                   crypto::BGE_proof_s bge{};
                   CHECK_AND_ASSERT_MES(
                       crypto::generate_BGE_proof(ctx, input_asset_ring, T, r, real_index, bge),
                       false,
                       "Failed to generate BGE surjection proof");
+                  CHECK_AND_ASSERT_MES(
+                      crypto::verify_BGE_proof(ctx, input_asset_ring, T, bge),
+                      false,
+                      "Local BGE self-verification failed");
                   surj.bge_proofs.push_back(std::move(bge));
                   ++zc_out_idx;
               }
@@ -1937,7 +2062,7 @@ namespace cryptonote
                   rct::key in_mask_sum = rct::zero();
                   for (const auto& src : sources)
                   {
-                      if (src.asset_id == crypto::null_pkey)
+                      if (src.asset_id == crypto::null_aid)
                           continue;
                       sc_add(in_mask_sum.bytes, in_mask_sum.bytes, rct::pk2rct(src.amount_blinding_mask).bytes);
                   }
@@ -1950,13 +2075,58 @@ namespace cryptonote
                   sc_sub(a.bytes, in_mask_sum.bytes, out_mask_sum.bytes);
                   const rct::key b = rct::zero();
                   bal.P = rct::scalarmultBase(a);
+                  std::string bal_ctx_blob{cryptonote::hf21::CA_BALANCE_V1};
+                  bal_ctx_blob.append(reinterpret_cast<const char*>(tx_prefix_rct.bytes), sizeof(tx_prefix_rct.bytes));
+                  const uint64_t bal_ctx_index = 0;
+                  bal_ctx_blob.append(reinterpret_cast<const char*>(&bal_ctx_index), sizeof(bal_ctx_index));
+                  const rct::key bal_ctx = rct::hash2rct(crypto::cn_fast_hash(bal_ctx_blob.data(), bal_ctx_blob.size()));
                   CHECK_AND_ASSERT_MES(
-                      crypto::generate_linear_composition_proof(tx_prefix_rct, bal.P, a, b, bal.lcp),
+                      crypto::generate_linear_composition_proof(bal_ctx, bal.P, a, b, bal.lcp),
                       false,
                       "Failed to generate ZC balance proof");
               }
               tx.asset_proofs.emplace_back(std::move(bal));
           }
+          else if (tx.type == txtype::deploy_new_asset && has_ca_outputs)
+          {
+              // HF21 deploy path: attach ownership proof expected by verAssetProofs().
+              tx.asset_proofs.clear();
+
+              cryptonote::tx_extra_asset_descriptor_operation ownership_ado{};
+              const bool has_ownership_ado = cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ownership_ado);
+              CHECK_AND_ASSERT_MES(has_ownership_ado, false, "deploy_new_asset is missing tx_extra asset descriptor operation");
+
+              const crypto::public_key expected_owner = sender_account_keys.m_account_address.m_spend_public_key;
+              CHECK_AND_ASSERT_MES(ownership_ado.descriptor.owner == expected_owner, false,
+                                   "deploy_new_asset owner key must match wallet spend public key for ownership signing");
+
+              std::string blob{cryptonote::hf21::CA_OWNERSHIP_V1};
+              const rct::key tx_prefix_rct = rct::hash2rct(tx_prefix_hash);
+              blob.append(reinterpret_cast<const char*>(tx_prefix_rct.bytes), sizeof(tx_prefix_rct.bytes));
+              const auto asset_id = cryptonote::get_or_calculate_asset_id(ownership_ado);
+              blob.append(reinterpret_cast<const char*>(&asset_id), sizeof(asset_id));
+              const uint8_t op_type = static_cast<uint8_t>(ownership_ado.operation_type);
+              blob.append(reinterpret_cast<const char*>(&op_type), sizeof(op_type));
+              blob.append(reinterpret_cast<const char*>(&ownership_ado.descriptor.owner), sizeof(ownership_ado.descriptor.owner));
+              const rct::key ownership_ctx = rct::hash2rct(crypto::cn_fast_hash(blob.data(), blob.size()));
+
+              rct::asset_operation_ownership_proof ownership_proof{};
+              const rct::key owner_pk = rct::pk2rct(expected_owner);
+              const rct::key owner_sk = rct::sk2rct(sender_account_keys.m_spend_secret_key);
+              CHECK_AND_ASSERT_MES(crypto::generate_schnorr_sig(ownership_ctx, owner_pk, owner_sk, ownership_proof.sig),
+                                   false, "failed to generate deploy ownership proof");
+              tx.asset_proofs.emplace_back(std::move(ownership_proof));
+          }
+
+          const auto vin_offsets_post_sign = extract_vin_offsets(tx.vin);
+          const auto vin_key_images_post_sign = extract_vin_key_images(tx.vin);
+          const crypto::hash mixring_fp_post_sign = mixring_fingerprint(mixRing);
+          CHECK_AND_ASSERT_MES(vin_offsets_pre_sign == vin_offsets_post_sign, false,
+                               "vin key_offsets mutated after signing/proof generation");
+          CHECK_AND_ASSERT_MES(vin_key_images_pre_sign == vin_key_images_post_sign, false,
+                               "vin key images/order mutated after signing/proof generation");
+          CHECK_AND_ASSERT_MES(mixring_fp_pre_sign == mixring_fp_post_sign, false,
+                               "mixRing mutated after signing/proof generation");
 
 
           memwipe(inSk.data(), inSk.size() * sizeof(rct::ctkey));

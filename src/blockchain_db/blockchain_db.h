@@ -460,7 +460,7 @@ private:
    * @param commitment the rct commitment to the output amount
    * @return amount output index
    */
-  virtual uint64_t add_output(const crypto::hash& tx_hash, const tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment, const crypto::public_key &asset_id = crypto::null_pkey) = 0;
+  virtual uint64_t add_output(const crypto::hash& tx_hash, const tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment, const crypto::asset_id &asset_id = crypto::null_aid) = 0;
 
   /**
    * @brief store amount output indices for a tx's outputs
@@ -1396,8 +1396,7 @@ public:
    *
    * @return the number of outputs of the given amount
    */
-  virtual uint64_t get_num_outputs(const uint64_t& amount) const = 0;
-  virtual uint64_t get_num_outputs_for_asset(const crypto::public_key &asset_id, const uint64_t& amount) const = 0;
+  virtual uint64_t get_num_outputs(const uint64_t& amount, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
   
   /**
    * @brief return index of the first element (should be hidden, but isn't)
@@ -1422,8 +1421,7 @@ public:
    *
    * @return the requested output data
    */
-  virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt = true) const = 0;
-  virtual output_data_t get_output_key_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index, bool include_commitmemt = true) const = 0;
+  virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt = true, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
   
   /**
    * @brief gets an output's tx hash and index
@@ -1449,8 +1447,7 @@ public:
    *
    * @return the tx hash and output index
    */
-  virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const = 0;
-  virtual tx_out_index get_output_tx_and_index_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index) const = 0;
+  virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
   
   /**
    * @brief gets some outputs' tx hashes and indices
@@ -1463,7 +1460,7 @@ public:
    * @param offsets a list of amount-specific output indices
    * @param indices return-by-reference a list of tx hashes and output indices (as pairs)
    */
-  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const = 0;
+  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
 
   /**
    * @brief gets outputs' data
@@ -1476,7 +1473,7 @@ public:
    * @param offsets a list of amount-specific output indices
    * @param outputs return-by-reference a list of outputs' metadata
    */
-  virtual void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) const = 0;
+  virtual void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
   
   /*
    * FIXME: Need to check with git blame and ask what this does to
@@ -1783,9 +1780,9 @@ public:
    *
    * @return a set of amount/instances
    */
-  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const = 0;
+  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
 
-  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const = 0;
+  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base, const crypto::asset_id &asset_id = crypto::null_aid) const = 0;
 
   /**
    * @brief is BlockchainDB in read-only mode?
@@ -1826,22 +1823,11 @@ public:
   /// found, false if not found.
   virtual bool remove_master_node_proof(const crypto::public_key &pubkey) = 0;
 
-  virtual void set_asset_history(const crypto::public_key &asset_id, const std::string &data) = 0;
-  virtual bool get_asset_history(const crypto::public_key &asset_id, std::string &data) const = 0;
-  virtual bool remove_asset_history(const crypto::public_key& asset_id) = 0;
-  virtual bool asset_exists(const crypto::public_key &asset_id) const = 0;
-  virtual std::vector<crypto::public_key> get_all_asset_ids() const = 0;
-
-  // HF21: per-asset output index used to build BGE surjection ring.
-  // Maps asset_id → ordered list of global_output_indices for that asset.
-  // add_asset_output  : called when a tx_out_zarcanum is stored on-chain.
-  // get_asset_output_count : total zarcanum outputs for this asset.
-  // get_asset_output_global_index : n-th output's global_output_index (0-based).
-  // remove_last_asset_output : called on block pop / reorg.
-  virtual void     add_asset_output(const crypto::public_key& asset_id, uint64_t global_output_index) = 0;
-  virtual uint64_t get_asset_output_count(const crypto::public_key& asset_id) const = 0;
-  virtual uint64_t get_asset_output_global_index(const crypto::public_key& asset_id, uint64_t n) const = 0;
-  virtual void     remove_last_asset_output(const crypto::public_key& asset_id) = 0;
+  virtual void set_asset_history(const crypto::asset_id &asset_id, const std::string &data) = 0;
+  virtual bool get_asset_history(const crypto::asset_id &asset_id, std::string &data) const = 0;
+  virtual bool remove_asset_history(const crypto::asset_id &asset_id) = 0;
+  virtual bool asset_exists(const crypto::asset_id &asset_id) const = 0;
+  virtual std::vector<crypto::asset_id> get_all_asset_ids() const = 0;
 
   // This function accepts an empty timestamps/difficulties array to fill, or
   // a prior timestamps/difficulties array that was filled by a previous call to

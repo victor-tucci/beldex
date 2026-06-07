@@ -133,36 +133,13 @@ namespace
     return false;
   }
 
-  crypto::hash get_ca_domain_separated_rct_message_hash(
-      const crypto::hash& tx_prefix_hash,
-      const cryptonote::transaction& tx)
+  size_t count_legacy_key_inputs(const cryptonote::transaction& tx)
   {
-    std::vector<uint8_t> blob;
-    static constexpr char DOMAIN_TAG[] = "BLDX_CA_RCT_MSG_V1";
-    blob.insert(blob.end(), DOMAIN_TAG, DOMAIN_TAG + sizeof(DOMAIN_TAG) - 1);
-    const auto append_blob = [&blob](const void* ptr, size_t n) {
-      const auto* p = static_cast<const uint8_t*>(ptr);
-      blob.insert(blob.end(), p, p + n);
-    };
-    append_blob(&tx_prefix_hash, sizeof(tx_prefix_hash));
-
-    uint64_t zc_inputs = 0;
+    size_t count = 0;
     for (const auto& in : tx.vin)
-    {
-      const auto* zc = std::get_if<cryptonote::txin_zc_input>(&in);
-      if (!zc)
-        continue;
-      ++zc_inputs;
-      append_blob(&zc->k_image, sizeof(zc->k_image));
-      append_blob(&zc->asset_id, sizeof(zc->asset_id));
-      append_blob(&zc->amount_commitment, sizeof(zc->amount_commitment));
-      append_blob(&zc->blinded_asset_id, sizeof(zc->blinded_asset_id));
-    }
-    append_blob(&zc_inputs, sizeof(zc_inputs));
-
-    crypto::hash h = crypto::null_hash;
-    crypto::cn_fast_hash(blob.data(), blob.size(), h);
-    return h;
+      if (std::holds_alternative<cryptonote::txin_to_key>(in))
+        ++count;
+    return count;
   }
 
   bool verify_ca_tx_proofs_or_set_tvc(
@@ -2578,6 +2555,7 @@ bool Blockchain::get_outs(const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUT
   res.outs.reserve(req.outputs.size());
 
   std::vector<cryptonote::output_data_t> data;
+  std::vector<tx_out_index> tx_indices;
   try
   {
     std::vector<uint64_t> amounts, offsets;
@@ -2588,74 +2566,63 @@ bool Blockchain::get_outs(const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUT
       amounts.push_back(i.amount);
       offsets.push_back(i.index);
     }
-    m_db->get_output_key(epee::span<const uint64_t>(amounts.data(), amounts.size()), offsets, data);
+    m_db->get_output_key(epee::span<const uint64_t>(amounts.data(), amounts.size()), offsets, data, false, req.asset_id);
     if (data.size() != req.outputs.size())
     {
       MERROR("Unexpected output data size: expected " << req.outputs.size() << ", got " << data.size());
       return false;
     }
+
+    if (req.outputs.size() == 1)
+    {
+      tx_indices.push_back(m_db->get_output_tx_and_index(req.outputs.front().amount, req.outputs.front().index, req.asset_id));
+    }
+    else
+    {
+      tx_indices.reserve(req.outputs.size());
+      for (size_t i = 0; i < req.outputs.size(); ++i)
+        tx_indices.push_back(m_db->get_output_tx_and_index(req.outputs[i].amount, req.outputs[i].index, req.asset_id));
+    }
+
     for (size_t i = 0; i < data.size(); ++i)
     {
       const auto& t = data[i];
-      const tx_out_index toi = m_db->get_output_tx_and_index(req.outputs[i].amount, req.outputs[i].index);
+      const tx_out_index toi = tx_indices[i];
 
-      crypto::public_key asset_id = crypto::null_pkey;
+      crypto::asset_id asset_id = crypto::null_aid;
+      rct::key asset_commitment = t.commitment;
       transaction tx{};
       if (m_db->get_tx(toi.first, tx))
       {
-        tx_extra_ca_output_assets ca_output_assets{};
-        if (cryptonote::get_ca_output_assets_from_tx_extra(tx.extra, ca_output_assets) &&
-            toi.second < ca_output_assets.asset_ids.size())
+        if (req.asset_id == crypto::null_aid)
         {
-          asset_id = ca_output_assets.asset_ids[toi.second];
+          tx_extra_ca_output_assets ca_output_assets{};
+          if (cryptonote::get_ca_output_assets_from_tx_extra(tx.extra, ca_output_assets) &&
+              toi.second < ca_output_assets.asset_ids.size())
+          {
+            asset_id = ca_output_assets.asset_ids[toi.second];
+          }
         }
+        else
+        {
+          asset_id = req.asset_id;
+          if (toi.second < tx.vout.size())
+          {
+            if (const auto* zout = std::get_if<tx_out_zarcanum>(&tx.vout[toi.second].target))
+              asset_commitment = rct::pk2rct(zout->blinded_asset_id);
+          }
+        }
+      }
+      else if (req.asset_id != crypto::null_aid)
+      {
+        asset_id = req.asset_id;
       }
 
       const crypto::hash txid = req.get_txid ? toi.first : crypto::null_hash;
-      res.outs.push_back({t.pubkey, t.commitment, asset_id, t.commitment, is_output_spendtime_unlocked(t.unlock_time), t.height, txid});
+      res.outs.push_back({t.pubkey, t.commitment, asset_id, asset_commitment, is_output_spendtime_unlocked(t.unlock_time), t.height, txid});
     }
   }
   catch (const std::exception &e)
-  {
-    return false;
-  }
-  return true;
-}
-
-bool Blockchain::get_outs_for_asset(const crypto::public_key &asset_id, const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUTPUTS_BIN::response& res) const
-{
-  LOG_PRINT_L3("Blockchain::" << __func__);
-  std::unique_lock lock{*this};
-
-  res.outs.clear();
-  res.outs.reserve(req.outputs.size());
-
-  try
-  {
-    for (const auto &i: req.outputs)
-    {
-      const auto t = m_db->get_output_key_for_asset(asset_id, i.amount, i.index, true);
-      const tx_out_index toi = m_db->get_output_tx_and_index_for_asset(asset_id, i.amount, i.index);
-      const crypto::hash txid = req.get_txid ? toi.first : crypto::null_hash;
-
-      // For CA decoys, wallet expects asset_commitment to carry the blinded
-      // asset id commitment/tag (T = asset_id + r*X), i.e. tx_out_zarcanum::blinded_asset_id.
-      rct::key decoy_asset_commitment = rct::zero();
-      transaction tx{};
-      if (m_db->get_tx(toi.first, tx) && toi.second < tx.vout.size())
-      {
-        if (const auto* zout = std::get_if<tx_out_zarcanum>(&tx.vout[toi.second].target))
-          decoy_asset_commitment = rct::pk2rct(zout->blinded_asset_id);
-      }
-
-      // Fallback for legacy/non-ZC cases so existing behaviour remains stable.
-      if (decoy_asset_commitment == rct::zero())
-        decoy_asset_commitment = t.commitment;
-
-      res.outs.push_back({t.pubkey, t.commitment, asset_id, decoy_asset_commitment, is_output_spendtime_unlocked(t.unlock_time), t.height, txid});
-    }
-  }
-  catch (const std::exception &)
   {
     return false;
   }
@@ -2670,7 +2637,7 @@ void Blockchain::get_output_key_mask_unlocked(const uint64_t& amount, const uint
   unlocked = is_output_spendtime_unlocked(o_data.unlock_time);
 }
 //------------------------------------------------------------------
-bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
+bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base, const crypto::asset_id &asset_id) const
 {
   // rct outputs don't exist before v4, NOTE(beldex): we started from v7 so our start is always 0
   start_height = 0;
@@ -2689,7 +2656,7 @@ bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, 
   if (start_height >= db_height || to_height >= db_height)
     return false;
 
-  if (amount == 0)
+  if (asset_id == crypto::null_aid && amount == 0)
   {
     std::vector<uint64_t> heights;
     heights.reserve(to_height + 1 - start_height);
@@ -2697,6 +2664,20 @@ bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, 
     for (uint64_t h = real_start_height; h <= to_height; ++h)
       heights.push_back(h);
     distribution = m_db->get_block_cumulative_rct_outputs(heights);
+#ifndef NDEBUG
+    if (!distribution.empty())
+    {
+      const uint64_t authoritative_native_amount0 = m_db->get_num_outputs(0);
+      const uint64_t dist_back = distribution.back();
+      const uint64_t dist_base = base;
+      const uint64_t dist_total = dist_base + dist_back;
+      MDEBUG("amount=0 distribution_back=" << distribution.back()
+             << " native_rct_outputs=" << authoritative_native_amount0);
+      CHECK_AND_ASSERT_MES(dist_total == authoritative_native_amount0, false,
+          "amount=0 distribution domain mismatch: distribution_total=" << dist_total
+          << ", native_lookup_count=" << authoritative_native_amount0);
+    }
+#endif
     if (start_height > 0)
     {
       base = distribution[0];
@@ -2704,51 +2685,8 @@ bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, 
     }
     return true;
   }
-  else
-  {
-    return m_db->get_output_distribution(amount, start_height, to_height, distribution, base);
-  }
-}
 
-bool Blockchain::get_output_distribution_for_asset(const crypto::public_key &asset_id, uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
-{
-  start_height = from_height;
-  base = 0;
-  distribution.clear();
-
-  if (to_height > 0 && to_height < from_height)
-    return false;
-  const uint64_t db_height = m_db->height();
-  if (db_height == 0 || start_height >= db_height || to_height >= db_height)
-    return false;
-
-  const uint64_t num_outs = m_db->get_num_outputs_for_asset(asset_id, amount);
-  if (num_outs == 0)
-  {
-    distribution.assign(to_height + 1 - start_height, 0);
-    return true;
-  }
-
-  const uint64_t real_start = start_height > 0 ? start_height - 1 : start_height;
-  distribution.assign(to_height + 1 - real_start, 0);
-  for (uint64_t idx = 0; idx < num_outs; ++idx)
-  {
-    const tx_out_index toi = m_db->get_output_tx_and_index_for_asset(asset_id, amount, idx);
-    const uint64_t h = m_db->get_tx_block_height(toi.first);
-    if (h < real_start || h > to_height)
-      continue;
-    ++distribution[h - real_start];
-  }
-  for (size_t i = 1; i < distribution.size(); ++i)
-    distribution[i] += distribution[i - 1];
-
-  if (start_height > 0)
-  {
-    base = distribution[0];
-    distribution.erase(distribution.begin());
-  }
-
-  return true;
+  return m_db->get_output_distribution(amount, start_height, to_height, distribution, base, asset_id);
 }
 //------------------------------------------------------------------
 void Blockchain::get_output_blacklist(std::vector<uint64_t> &blacklist) const
@@ -3478,8 +3416,9 @@ bool Blockchain::have_tx_keyimges_as_spent(const transaction &tx) const
   LOG_PRINT_L3("Blockchain::" << __func__);
   for (const txin_v& in: tx.vin)
   {
-    CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, in_to_key, true);
-    if(have_tx_keyimg_as_spent(in_to_key.k_image))
+    const crypto::key_image* ki = key_image_from_txin(in);
+    CHECK_AND_ASSERT_MES(ki != nullptr, true, "unsupported txin type while checking spent key images");
+    if (have_tx_keyimg_as_spent(*ki))
       return true;
   }
   return false;
@@ -3555,13 +3494,17 @@ bool Blockchain::expand_transaction_2(transaction &tx, const crypto::hash &tx_pr
   {
     if (!tx.pruned)
     {
-      CHECK_AND_ASSERT_MES(rv.p.CLSAGs.size() == tx.vin.size(), false, "Bad CLSAGs size");
+      const size_t expected_clsag_inputs = count_legacy_key_inputs(tx);
+      CHECK_AND_ASSERT_MES(rv.p.CLSAGs.size() == expected_clsag_inputs, false, "Bad CLSAGs size");
+      size_t legacy_idx = 0;
       for (size_t n = 0; n < tx.vin.size(); ++n)
       {
         const auto* ki = key_image_from_txin(tx.vin[n]);
         CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported txin type while building CLSAG.I");
-        rv.p.CLSAGs[n].I = rct::ki2rct(*ki);
+        if (std::holds_alternative<txin_to_key>(tx.vin[n]))
+          rv.p.CLSAGs[legacy_idx++].I = rct::ki2rct(*ki);
       }
+      CHECK_AND_ASSERT_MES(legacy_idx == rv.p.CLSAGs.size(), false, "Bad CLSAG legacy input count");
     }
   }
   else
@@ -3617,11 +3560,13 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       return false;
     }
 
+    // RingCT/CLSAG verification must use the canonical tx prefix hash exactly
+    // as used during tx construction/signing.
     crypto::hash tx_prefix_hash = get_transaction_prefix_hash(tx);
-    if (has_zc_inputs(tx))
-      tx_prefix_hash = get_ca_domain_separated_rct_message_hash(tx_prefix_hash, tx);
 
     std::vector<std::vector<rct::ctkey>> pubkeys(tx.vin.size());
+    std::vector<std::vector<rct::ctkey>> legacy_pubkeys;
+    std::vector<size_t> legacy_input_positions;
     size_t sig_index = 0;
     const crypto::key_image *last_key_image = NULL;
     for (size_t sig_index = 0; sig_index < tx.vin.size(); sig_index++)
@@ -3686,17 +3631,58 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           }
         }
 
-        // make sure that output being spent matches up correctly with the
-        // signature spending it.
-        if (!check_tx_input(in_to_key, tx_prefix_hash, pubkeys[sig_index], pmax_used_block_height))
+        if (std::holds_alternative<txin_to_key>(txin))
         {
-          MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
-          if (pmax_used_block_height) // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
+          // Legacy input path: keep existing lookup/verification flow in the
+          // legacy output namespace.
+          if (!check_tx_input(in_to_key, tx_prefix_hash, pubkeys[sig_index], pmax_used_block_height))
           {
-            MERROR_VER("  *pmax_used_block_height: " << *pmax_used_block_height);
+            MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
+            if (pmax_used_block_height) // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
+            {
+              MERROR_VER("  *pmax_used_block_height: " << *pmax_used_block_height);
+            }
+
+            return false;
           }
 
-          return false;
+          legacy_input_positions.push_back(sig_index);
+          legacy_pubkeys.push_back(pubkeys[sig_index]);
+        }
+        else
+        {
+          // ZC/CA input path: reconstruct ring members strictly from the
+          // asset-local output namespace (asset_id, amount=0, index).
+          const auto& in_zc = std::get<txin_zc_input>(txin);
+          std::vector<uint64_t> absolute_offsets = relative_output_offsets_to_absolute(in_zc.key_offsets);
+
+          pubkeys[sig_index].clear();
+          pubkeys[sig_index].reserve(absolute_offsets.size());
+
+          for (uint64_t abs_off : absolute_offsets)
+          {
+            output_data_t out{};
+            try
+            {
+              out = m_db->get_output_key(0 /* amount bucket */, abs_off, true, in_zc.asset_id);
+            }
+            catch (const std::exception&)
+            {
+              MERROR_VER("Failed to fetch asset output for txin_zc_input ring member, tx="
+                         << get_transaction_hash(tx) << ", asset_id=" << tools::type_to_hex(in_zc.asset_id)
+                         << ", abs_off=" << abs_off);
+              tvc.m_verifivation_failed = true;
+              return false;
+            }
+
+            rct::ctkey ct{};
+            ct.dest = rct::pk2rct(out.pubkey);
+            ct.mask = out.commitment;
+            pubkeys[sig_index].push_back(ct);
+
+            if (pmax_used_block_height)
+              *pmax_used_block_height = std::max(*pmax_used_block_height, out.height);
+          }
         }
       }
 
@@ -3735,7 +3721,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
   if (tx.version >= cryptonote::txversion::v2_ringct)
 	{
-    if (!expand_transaction_2(tx, tx_prefix_hash, pubkeys))
+    if (!expand_transaction_2(tx, tx_prefix_hash, legacy_pubkeys))
     {
       MERROR_VER("Failed to expand rct signatures!");
       return false;
@@ -3760,30 +3746,30 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     {
       // check all this, either reconstructed (so should really pass), or not
       {
-        if (pubkeys.size() != rv.mixRing.size())
+        if (legacy_pubkeys.size() != rv.mixRing.size())
         {
           MERROR_VER("Failed to check ringct signatures: mismatched pubkeys/mixRing size");
           return false;
         }
-        for (size_t i = 0; i < pubkeys.size(); ++i)
+        for (size_t i = 0; i < legacy_pubkeys.size(); ++i)
         {
-          if (pubkeys[i].size() != rv.mixRing[i].size())
+          if (legacy_pubkeys[i].size() != rv.mixRing[i].size())
           {
             MERROR_VER("Failed to check ringct signatures: mismatched pubkeys/mixRing size");
             return false;
           }
         }
 
-        for (size_t n = 0; n < pubkeys.size(); ++n)
+        for (size_t n = 0; n < legacy_pubkeys.size(); ++n)
         {
-          for (size_t m = 0; m < pubkeys[n].size(); ++m)
+          for (size_t m = 0; m < legacy_pubkeys[n].size(); ++m)
           {
-            if (pubkeys[n][m].dest != rct::rct2pk(rv.mixRing[n][m].dest))
+            if (legacy_pubkeys[n][m].dest != rct::rct2pk(rv.mixRing[n][m].dest))
             {
               MERROR_VER("Failed to check ringct signatures: mismatched pubkey at vin " << n << ", index " << m);
               return false;
             }
-            if (pubkeys[n][m].mask != rct::rct2pk(rv.mixRing[n][m].mask))
+            if (legacy_pubkeys[n][m].mask != rct::rct2pk(rv.mixRing[n][m].mask))
             {
               MERROR_VER("Failed to check ringct signatures: mismatched commitment at vin " << n << ", index " << m);
               return false;
@@ -3793,14 +3779,14 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       }
 
       const size_t n_sigs = rct::is_rct_clsag(rv.type) ? rv.p.CLSAGs.size() : rv.p.MGs.size();
-      if (n_sigs != tx.vin.size())
+      if (n_sigs != legacy_input_positions.size())
       {
         MERROR_VER("Failed to check ringct signatures: mismatched MGs/vin sizes");
         return false;
       }
-      for (size_t n = 0; n < tx.vin.size(); ++n)
+      for (size_t n = 0; n < legacy_input_positions.size(); ++n)
       {
-        const auto* ki = key_image_from_txin(tx.vin[n]);
+        const auto* ki = key_image_from_txin(tx.vin[legacy_input_positions[n]]);
         CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported txin type while checking RCT key image");
         bool error;
         if (rct::is_rct_clsag(rv.type))
@@ -3826,26 +3812,26 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       // check all this, either reconstructed (so should really pass), or not
       {
         bool size_matches = true;
-        for (size_t i = 0; i < pubkeys.size(); ++i)
-          size_matches &= pubkeys[i].size() == rv.mixRing.size();
+        for (size_t i = 0; i < legacy_pubkeys.size(); ++i)
+          size_matches &= legacy_pubkeys[i].size() == rv.mixRing.size();
         for (size_t i = 0; i < rv.mixRing.size(); ++i)
-          size_matches &= pubkeys.size() == rv.mixRing[i].size();
+          size_matches &= legacy_pubkeys.size() == rv.mixRing[i].size();
         if (!size_matches)
         {
           MERROR_VER("Failed to check ringct signatures: mismatched pubkeys/mixRing size");
           return false;
         }
 
-        for (size_t n = 0; n < pubkeys.size(); ++n)
+        for (size_t n = 0; n < legacy_pubkeys.size(); ++n)
         {
-          for (size_t m = 0; m < pubkeys[n].size(); ++m)
+          for (size_t m = 0; m < legacy_pubkeys[n].size(); ++m)
           {
-            if (pubkeys[n][m].dest != rct::rct2pk(rv.mixRing[m][n].dest))
+            if (legacy_pubkeys[n][m].dest != rct::rct2pk(rv.mixRing[m][n].dest))
             {
               MERROR_VER("Failed to check ringct signatures: mismatched pubkey at vin " << n << ", index " << m);
               return false;
             }
-            if (pubkeys[n][m].mask != rct::rct2pk(rv.mixRing[m][n].mask))
+            if (legacy_pubkeys[n][m].mask != rct::rct2pk(rv.mixRing[m][n].mask))
             {
               MERROR_VER("Failed to check ringct signatures: mismatched commitment at vin " << n << ", index " << m);
               return false;
@@ -3859,14 +3845,14 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         MERROR_VER("Failed to check ringct signatures: Bad MGs size");
         return false;
       }
-      if (rv.p.MGs.empty() || rv.p.MGs[0].II.size() != tx.vin.size())
+      if (rv.p.MGs.empty() || rv.p.MGs[0].II.size() != legacy_input_positions.size())
       {
         MERROR_VER("Failed to check ringct signatures: mismatched II/vin sizes");
         return false;
       }
-      for (size_t n = 0; n < tx.vin.size(); ++n)
+      for (size_t n = 0; n < legacy_input_positions.size(); ++n)
       {
-        const auto* ki = key_image_from_txin(tx.vin[n]);
+        const auto* ki = key_image_from_txin(tx.vin[legacy_input_positions[n]]);
         CHECK_AND_ASSERT_MES(ki != nullptr, false, "unsupported txin type while checking RCT full key image");
         if (memcmp(ki, &rv.p.MGs[0].II[n], 32))
         {
@@ -4670,7 +4656,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   size_t cumulative_block_weight = coinbase_weight;
 
   std::vector<std::pair<transaction, blobdata>> txs;
-  std::unordered_map<crypto::public_key, asset_consensus_state> pending_asset_states;
+  std::unordered_map<crypto::asset_id, asset_consensus_state> pending_asset_states;
   key_images_container keys;
 
   uint64_t fee_summary = 0;
@@ -4800,7 +4786,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
           return false;
         }
 
-        crypto::public_key const asset_id = cryptonote::get_or_calculate_asset_id(op);
+        crypto::asset_id const asset_id = cryptonote::get_or_calculate_asset_id(op);
 
         auto [state_it, inserted] = pending_asset_states.try_emplace(asset_id);
         if (inserted)
@@ -4967,55 +4953,6 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     MGINFO_RED("Failed to persist asset operation(s): " << e.what());
     bvc.m_verifivation_failed = true;
     return false;
-  }
-
-  // HF21: index every tx_out_zarcanum output in the per-asset LMDB table.
-  // This feeds the BGE surjection ring for future asset transfers.
-  if (get_current_blockchain_height() >= 1)
-  {
-    const hf blk_hf = get_network_version(new_height - 1);
-    if (blk_hf >= feature::CONFIDENTIAL_ASSETS)
-    {
-      try
-      {
-        for (const auto& tx : only_txs)
-        {
-          tx_extra_asset_descriptor_operation ado{};
-          size_t skip = 0;
-          crypto::public_key asset_id = crypto::null_pkey;
-          while (get_asset_descriptor_operation_from_tx_extra(tx.extra, ado, skip++))
-          {
-            const crypto::public_key op_asset_id = get_or_calculate_asset_id(ado);
-            if (op_asset_id == crypto::null_pkey)
-              continue;
-
-            if (asset_id == crypto::null_pkey)
-              asset_id = op_asset_id;
-            else if (asset_id != op_asset_id)
-              throw std::runtime_error{"tx contains outputs for multiple asset ids"};
-          }
-
-          if (asset_id == crypto::null_pkey)
-            continue;
-
-          for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
-          {
-            if (!std::holds_alternative<tx_out_zarcanum>(tx.vout[out_idx].target))
-              continue;
-            // Global output index: stored by add_output() during block add.
-            // Retrieve it from the DB (it was just written).
-            // ZC outputs have amount=0 on-chain; count all amount=0 outputs for the index.
-            uint64_t global_idx = m_db->get_num_outputs(0) - tx.vout.size() + out_idx;
-            m_db->add_asset_output(asset_id, global_idx);
-          }
-        }
-      }
-      catch (const std::exception& e)
-      {
-        MGINFO_RED("Failed to index asset outputs: " << e.what());
-        // Non-fatal: asset output index is a performance index, not consensus-critical.
-      }
-    }
   }
 
   abort_block.cancel();
@@ -5813,14 +5750,16 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
       // get all amounts from tx.vin(s)
       for (const auto &txin : tx.vin)
       {
-        const auto& in_to_key = var::get<txin_to_key>(txin);
+        const auto* in_to_key = std::get_if<txin_to_key>(&txin);
+        if (!in_to_key)
+          continue;
 
         // check for duplicate
-        auto it = its->second.find(in_to_key.k_image);
+        auto it = its->second.find(in_to_key->k_image);
         if (it != its->second.end())
           SCAN_TABLE_QUIT("Duplicate key_image found from incoming blocks.");
 
-        amounts.push_back(in_to_key.amount);
+        amounts.push_back(in_to_key->amount);
       }
 
       // sort and remove duplicate amounts from amounts list
@@ -5841,11 +5780,13 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
       // add new absolute_offsets to offset_map
       for (const auto &txin : tx.vin)
       {
-        const auto& in_to_key = var::get<txin_to_key>(txin);
+        const auto* in_to_key = std::get_if<txin_to_key>(&txin);
+        if (!in_to_key)
+          continue;
         // no need to check for duplicate here.
-        auto absolute_offsets = relative_output_offsets_to_absolute(in_to_key.key_offsets);
+        auto absolute_offsets = relative_output_offsets_to_absolute(in_to_key->key_offsets);
         for (const auto & offset : absolute_offsets)
-          offset_map[in_to_key.amount].push_back(offset);
+          offset_map[in_to_key->amount].push_back(offset);
 
       }
     }
@@ -5906,8 +5847,10 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
 
       for (const auto &txin : tx.vin)
       {
-        const txin_to_key &in_to_key = var::get<txin_to_key>(txin);
-        auto needed_offsets = relative_output_offsets_to_absolute(in_to_key.key_offsets);
+        const auto* in_to_key = std::get_if<txin_to_key>(&txin);
+        if (!in_to_key)
+          continue;
+        auto needed_offsets = relative_output_offsets_to_absolute(in_to_key->key_offsets);
 
         std::vector<output_data_t> outputs;
         for (const uint64_t & offset_needed : needed_offsets)
@@ -5915,7 +5858,7 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
           size_t pos = 0;
           bool found = false;
 
-          for (const uint64_t &offset_found : offset_map[in_to_key.amount])
+          for (const uint64_t &offset_found : offset_map[in_to_key->amount])
           {
             if (offset_needed == offset_found)
             {
@@ -5926,13 +5869,13 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
             ++pos;
           }
 
-          if (found && pos < tx_map[in_to_key.amount].size())
-            outputs.push_back(tx_map[in_to_key.amount].at(pos));
+          if (found && pos < tx_map[in_to_key->amount].size())
+            outputs.push_back(tx_map[in_to_key->amount].at(pos));
           else
             break;
         }
 
-        its->second.emplace(in_to_key.k_image, outputs);
+        its->second.emplace(in_to_key->k_image, outputs);
       }
     }
   }
@@ -6024,37 +5967,9 @@ void Blockchain::safesyncmode(const bool onoff)
   }
 }
 
-std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> Blockchain:: get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const
+std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> Blockchain:: get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype, const crypto::asset_id &asset_id) const
 {
-  return m_db->get_output_histogram(amounts, unlocked, recent_cutoff, min_count,nettype);
-}
-
-  std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> Blockchain::get_output_histogram_for_asset(const crypto::public_key &asset_id, const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count, cryptonote::network_type nettype) const
-  {
-  std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> histogram;
-
-  for (const uint64_t amount : amounts)
-  {
-    uint64_t total = 0, unlocked_count = 0, recent = 0;
-    const uint64_t n = m_db->get_num_outputs_for_asset(asset_id, amount);
-    for (uint64_t idx = 0; idx < n; ++idx)
-    {
-      const auto out = m_db->get_output_key_for_asset(asset_id, amount, idx, false);
-      ++total;
-      const bool out_unlocked = !unlocked || is_output_spendtime_unlocked(out.unlock_time);
-      if (out_unlocked)
-      {
-        ++unlocked_count;
-        if (recent_cutoff > 0 && out.height >= recent_cutoff)
-          ++recent;
-      }
-    }
-
-    if (total >= min_count)
-      histogram[amount] = std::make_tuple(total, unlocked_count, recent);
-  }
-
-  return histogram;
+  return m_db->get_output_histogram(amounts, unlocked, recent_cutoff, min_count, nettype, asset_id);
 }
 
 std::vector<std::pair<Blockchain::block_extended_info,std::vector<crypto::hash>>> Blockchain::get_alternative_chains() const

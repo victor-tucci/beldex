@@ -557,7 +557,7 @@ namespace cryptonote::rpc {
 
     if (!context.admin && req.outputs.size() > GET_OUTPUTS_BIN::MAX_COUNT)
       res.status = "Too many outs requested";
-    else if ((req.asset_id != crypto::null_pkey ? m_core.get_outs_for_asset(req.asset_id, req, res) : m_core.get_outs(req, res)))
+    else if (m_core.get_outs(req, res))
       res.status = STATUS_OK;
     else
       res.status = "Failed";
@@ -2209,21 +2209,13 @@ namespace cryptonote::rpc {
     try
     {
       auto net = nettype();
-      histogram =
-        (get_output_histogram.request.asset_id != crypto::null_pkey)
-          ? m_core.get_blockchain_storage().get_output_histogram_for_asset(
-              get_output_histogram.request.asset_id,
-              get_output_histogram.request.amounts,
-              get_output_histogram.request.unlocked,
-              get_output_histogram.request.recent_cutoff,
-              get_output_histogram.request.min_count,
-              net)
-          : m_core.get_blockchain_storage().get_output_histogram(
-              get_output_histogram.request.amounts,
-              get_output_histogram.request.unlocked,
-              get_output_histogram.request.recent_cutoff,
-              get_output_histogram.request.min_count,
-              net);
+      histogram = m_core.get_blockchain_storage().get_output_histogram(
+          get_output_histogram.request.amounts,
+          get_output_histogram.request.unlocked,
+          get_output_histogram.request.recent_cutoff,
+          get_output_histogram.request.min_count,
+          net,
+          get_output_histogram.request.asset_id);
   }
     catch (const std::exception &e)
     {
@@ -2485,6 +2477,11 @@ namespace cryptonote::rpc {
   }
 
   namespace {
+    static bool same_distribution_domain(const crypto::public_key& a, const crypto::public_key& b)
+    {
+      return a == b;
+    }
+
     output_distribution_data process_distribution(
         bool cumulative,
         std::uint64_t start_height,
@@ -2507,6 +2504,7 @@ namespace cryptonote::rpc {
       std::uint64_t cached_from = 0, cached_to = 0, cached_start_height = 0, cached_base = 0;
       crypto::hash cached_m10_hash = crypto::null_hash;
       crypto::hash cached_top_hash = crypto::null_hash;
+      crypto::asset_id cached_asset_id = crypto::null_aid;
       bool cached = false;
     } output_dist_cache;
   }
@@ -2519,27 +2517,51 @@ namespace cryptonote::rpc {
         uint64_t to_height,
         const std::function<crypto::hash(uint64_t)>& get_hash,
         bool cumulative,
-        uint64_t blockchain_height)
+        uint64_t blockchain_height,
+        const crypto::asset_id &asset_id)
     {
       auto& d = output_dist_cache;
       const std::unique_lock lock{d.mutex};
 
+#ifndef NDEBUG
+      if (d.cached && amount == 0 && !same_distribution_domain(d.cached_asset_id, asset_id))
+      {
+        MDEBUG("output_dist_cache domain mismatch: cached_asset_id=" << d.cached_asset_id
+               << ", request_asset_id=" << asset_id << " (cache miss forced)");
+      }
+#endif
+
       crypto::hash top_hash = crypto::null_hash;
       if (d.cached_to < blockchain_height)
         top_hash = get_hash(d.cached_to);
-      if (d.cached && amount == 0 && d.cached_from == from_height && d.cached_to == to_height && d.cached_top_hash == top_hash)
+      if (d.cached &&
+          amount == 0 &&
+          same_distribution_domain(d.cached_asset_id, asset_id) &&
+          d.cached_from == from_height &&
+          d.cached_to == to_height &&
+          d.cached_top_hash == top_hash)
         return process_distribution(cumulative, d.cached_start_height, d.cached_distribution, d.cached_base);
 
       std::vector<std::uint64_t> distribution;
       std::uint64_t start_height, base;
 
       // see if we can extend the cache - a common case
-      bool can_extend = d.cached && amount == 0 && d.cached_from == from_height && to_height > d.cached_to && top_hash == d.cached_top_hash;
+      bool can_extend = d.cached &&
+                        amount == 0 &&
+                        same_distribution_domain(d.cached_asset_id, asset_id) &&
+                        d.cached_from == from_height &&
+                        to_height > d.cached_to &&
+                        top_hash == d.cached_top_hash;
       if (!can_extend)
       {
         // we kept track of the hash 10 blocks below, if it exists, so if it matches,
         // we can still pop the last 10 cached slots and try again
-        if (d.cached && amount == 0 && d.cached_from == from_height && d.cached_to - d.cached_from >= 10 && to_height > d.cached_to - 10)
+        if (d.cached &&
+            amount == 0 &&
+            same_distribution_domain(d.cached_asset_id, asset_id) &&
+            d.cached_from == from_height &&
+            d.cached_to - d.cached_from >= 10 &&
+            to_height > d.cached_to - 10)
         {
           crypto::hash hash10 = get_hash(d.cached_to - 10);
           if (hash10 == d.cached_m10_hash)
@@ -2588,7 +2610,15 @@ namespace cryptonote::rpc {
         d.cached_distribution = distribution;
         d.cached_start_height = start_height;
         d.cached_base = base;
+        d.cached_asset_id = asset_id;
         d.cached = true;
+
+#ifndef NDEBUG
+        if (!distribution.empty())
+          MDEBUG("output_dist_cache store: asset_id=" << asset_id << ", amount=" << amount
+                 << ", from=" << from_height << ", to=" << to_height
+                 << ", total=" << (base + distribution.back()));
+#endif
       }
 
       return process_distribution(cumulative, start_height, std::move(distribution), base);
@@ -2620,16 +2650,15 @@ namespace cryptonote::rpc {
       {
         auto data = detail::get_output_distribution(
             [this, &get_output_distribution](auto&&... args) {
-              return get_output_distribution.request.asset_id != crypto::null_pkey
-                       ? m_core.get_output_distribution_for_asset(get_output_distribution.request.asset_id, std::forward<decltype(args)>(args)...)
-                       : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
+              return m_core.get_output_distribution(std::forward<decltype(args)>(args)..., get_output_distribution.request.asset_id);
             },
             amount,
             get_output_distribution.request.from_height,
             req_to_height,
             [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
             get_output_distribution.request.cumulative,
-            m_core.get_current_blockchain_height());
+            m_core.get_current_blockchain_height(),
+            get_output_distribution.request.asset_id);
         if (!data)
           throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
 
@@ -2671,16 +2700,15 @@ namespace cryptonote::rpc {
       {
         auto data = detail::get_output_distribution(
             [this, &req](auto&&... args) {
-              return req.asset_id != crypto::null_pkey
-                       ? m_core.get_output_distribution_for_asset(req.asset_id, std::forward<decltype(args)>(args)...)
-                       : m_core.get_output_distribution(std::forward<decltype(args)>(args)...);
+              return m_core.get_output_distribution(std::forward<decltype(args)>(args)..., req.asset_id);
             },
             amount,
             req.from_height,
             req_to_height,
             [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
             req.cumulative,
-            m_core.get_current_blockchain_height());
+            m_core.get_current_blockchain_height(),
+            req.asset_id);
         if (!data)
           throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
 
@@ -3763,7 +3791,7 @@ namespace cryptonote::rpc {
     if (req.asset_id.size() != 64 || !oxenc::is_hex(req.asset_id))
       throw rpc_error{ERROR_WRONG_PARAM, "asset_id must be a 64-character hex string"};
 
-    crypto::public_key asset_id{};
+    crypto::asset_id asset_id{};
     if (!tools::hex_to_type(req.asset_id, asset_id))
       throw rpc_error{ERROR_WRONG_PARAM, "Failed to parse asset_id"};
 

@@ -34,6 +34,7 @@
 #include <boost/algorithm/string.hpp>
 #include <cctype>
 #include <cstdint>
+#include <unordered_map>
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include <chrono>
 #include <exception>
@@ -783,26 +784,46 @@ namespace tools
       std::vector<wallet::transfer_details> transfers;
       m_wallet->get_transfers(transfers);
 
-      // HF21: aggregate per-asset balances from ZC transfer details
+      // HF21: aggregate per-asset balances using wallet2 canonical API so RPC
+      // output stays aligned with wallet-cli balance reporting.
       {
-        std::map<crypto::public_key, uint64_t> asset_total, asset_unlocked;
-        const uint64_t blockchain_height = m_wallet->get_blockchain_current_height();
-        for (const auto& td : transfers)
+        std::unordered_map<crypto::asset_id, uint64_t> asset_total;
+        std::unordered_map<crypto::asset_id, uint64_t> asset_unlocked;
+
+        if (req.all_accounts)
         {
-          if (!td.is_zarcanum() || td.m_spent) continue;
-          const uint64_t unlock_time = td.m_tx.unlock_time;
-          const bool unlocked = (unlock_time == 0) ||
-              (unlock_time < cryptonote::MAX_BLOCK_NUMBER
-                  ? blockchain_height >= unlock_time
-                  : (uint64_t)std::time(nullptr) >= unlock_time);
-          asset_total[td.m_asset_id] += td.m_amount;
-          if (unlocked) asset_unlocked[td.m_asset_id] += td.m_amount;
+          const uint32_t num_accounts = m_wallet->get_num_subaddress_accounts();
+          for (uint32_t account_index = 0; account_index < num_accounts; ++account_index)
+          {
+            const auto totals = m_wallet->asset_balances(account_index, false /*strict*/);
+            const auto unlocked = m_wallet->unlocked_asset_balances(account_index, false /*strict*/);
+            for (const auto& [asset_id, amount] : totals)
+              asset_total[asset_id] += amount;
+            for (const auto& [asset_id, amount] : unlocked)
+              asset_unlocked[asset_id] += amount;
+          }
         }
+        else
+        {
+          asset_total = m_wallet->asset_balances(req.account_index, false /*strict*/);
+          asset_unlocked = m_wallet->unlocked_asset_balances(req.account_index, false /*strict*/);
+        }
+
         for (const auto& [asset_id, total] : asset_total)
         {
+          const std::string asset_hex = tools::type_to_hex(asset_id);
           GET_BALANCE::asset_balance_entry entry{};
-          entry.asset_id         = tools::type_to_hex(asset_id);
-          entry.ticker           = "";  // populated by daemon RPC get_asset_info if needed
+          entry.asset_id         = asset_hex;
+          try
+          {
+            const auto asset_info = m_wallet->json_rpc("get_asset_info", {{"asset_id", asset_hex}});
+            if (asset_info.contains("ticker") && asset_info["ticker"].is_string())
+              entry.ticker = asset_info["ticker"].get<std::string>();
+          }
+          catch (const std::exception&)
+          {
+            entry.ticker = "";
+          }
           entry.balance          = total;
           entry.unlocked_balance = asset_unlocked.count(asset_id) ? asset_unlocked.at(asset_id) : 0;
           res.asset_balances.emplace_back(std::move(entry));
@@ -1069,6 +1090,41 @@ namespace tools
   //------------------------------------------------------------------------------------------------------------------------------
   void wallet_rpc_server::validate_transfer(const std::list<wallet::transfer_destination>& destinations, const std::string& payment_id, std::vector<cryptonote::tx_destination_entry>& dsts, std::vector<uint8_t>& extra, bool at_least_one_destination)
   {
+    auto pow10_u64 = [](uint8_t decimal_point) -> uint64_t {
+      uint64_t scale = 1;
+      for (uint8_t i = 0; i < decimal_point; ++i)
+      {
+        if (scale > std::numeric_limits<uint64_t>::max() / 10)
+          throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "decimal point is too large for amount conversion"};
+        scale *= 10;
+      }
+      return scale;
+    };
+
+    auto parse_asset_decimal_point = [&](const std::string& asset_hex) -> uint8_t {
+      try
+      {
+        const auto res = m_wallet->json_rpc("get_asset_info", {{"asset_id", asset_hex}});
+        if (!res.contains("decimal_point") || !res["decimal_point"].is_number_unsigned())
+          throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Asset info missing decimal_point"};
+        const auto dp = res["decimal_point"].get<unsigned>();
+        if (dp > std::numeric_limits<uint8_t>::max())
+          throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Asset decimal_point is out of range"};
+        return static_cast<uint8_t>(dp);
+      }
+      catch (const wallet_rpc_error&)
+      {
+        throw;
+      }
+      catch (const std::exception& e)
+      {
+        throw wallet_rpc_error{error_code::UNKNOWN_ERROR, std::string{"Failed to get asset decimal_point: "} + e.what()};
+      }
+    };
+
+    std::unordered_map<std::string, uint64_t> cached_asset_scale;
+    const uint64_t native_scale = beldex::COIN;
+
     crypto::hash8 integrated_payment_id = crypto::null_hash8;
     std::string extra_nonce;
     for (auto it = destinations.begin(); it != destinations.end(); it++)
@@ -1079,7 +1135,6 @@ namespace tools
       de.original = it->address;
       de.addr = info.address;
       de.is_subaddress = info.is_subaddress;
-      de.amount = it->amount;
       de.is_integrated = info.has_payment_id;
       if (!it->asset_id.empty())
       {
@@ -1098,6 +1153,25 @@ namespace tools
         if (!crypto::check_key(de.asset_id))
           throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Invalid destination asset_id: expected valid 32-byte public key hex"};
       }
+
+      // RPC transfer amounts are interpreted as human units (CLI-like) and
+      // converted to atomic units using native or per-asset decimal point.
+      uint64_t scale = native_scale;
+      if (de.asset_id != crypto::null_aid)
+      {
+        auto scale_it = cached_asset_scale.find(it->asset_id);
+        if (scale_it == cached_asset_scale.end())
+        {
+          const uint8_t dp = parse_asset_decimal_point(it->asset_id);
+          scale_it = cached_asset_scale.emplace(it->asset_id, pow10_u64(dp)).first;
+        }
+        scale = scale_it->second;
+      }
+
+      if (it->amount > std::numeric_limits<uint64_t>::max() / scale)
+        throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Human amount conversion overflow"};
+      de.amount = it->amount * scale;
+
       dsts.push_back(de);
 
       if (info.has_payment_id)
@@ -1160,8 +1234,19 @@ namespace tools
   //------------------------------------------------------------------------------------------------------------------------------
   static uint64_t total_amount(const wallet::pending_tx &ptx)
   {
+    if (ptx.dests.empty())
+      return 0;
+
+    const crypto::asset_id first_asset_id = ptx.dests.front().asset_id;
     uint64_t amount = 0;
-    for (const auto &dest: ptx.dests) amount += dest.amount;
+    for (const auto &dest: ptx.dests)
+    {
+      // A scalar amount is only meaningful inside one asset domain.  Mixed
+      // native/asset transfers expose per-destination amounts instead.
+      if (dest.asset_id != first_asset_id)
+        return 0;
+      amount += dest.amount;
+    }
     return amount;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -1205,13 +1290,20 @@ namespace tools
 
       // add spent key images
       tools::wallet_rpc::key_image_list key_image_list;
-      bool all_are_txin_to_key = std::all_of(ptx.tx.vin.begin(), ptx.tx.vin.end(), [&](const cryptonote::txin_v& s_e) -> bool
+      for (const cryptonote::txin_v& s_e : ptx.tx.vin)
       {
-        CHECKED_GET_SPECIFIC_VARIANT(s_e, cryptonote::txin_to_key, in, false);
-        key_image_list.key_images.push_back(tools::type_to_hex(in.k_image));
-        return true;
-      });
-      THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, error::unexpected_txin_type, ptx.tx);
+        if (const auto* in = std::get_if<cryptonote::txin_to_key>(&s_e))
+        {
+          key_image_list.key_images.push_back(tools::type_to_hex(in->k_image));
+          continue;
+        }
+        if (const auto* in_zc = std::get_if<cryptonote::txin_zc_input>(&s_e))
+        {
+          key_image_list.key_images.push_back(tools::type_to_hex(in_zc->k_image));
+          continue;
+        }
+        THROW_WALLET_EXCEPTION(error::unexpected_txin_type, ptx.tx);
+      }
       fill(spent_key_images, key_image_list);
 
     }
@@ -3866,7 +3958,7 @@ namespace {
     if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado))
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Failed to encode asset descriptor into tx extra"};
 
-    const crypto::public_key asset_id = cryptonote::get_or_calculate_asset_id(ado);
+    const crypto::asset_id asset_id = cryptonote::get_or_calculate_asset_id(ado);
 
     std::set<uint32_t> subaddr_indices;
     auto ptx_vector = m_wallet->create_asset_deploy_tx(

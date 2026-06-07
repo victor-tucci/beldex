@@ -88,16 +88,20 @@ namespace rct {
                         std::string& reason);
 
     // HF21: ZC_sig — 1-layer CLSAG for spending a tx_out_zarcanum.
-    // Ring is a mix of BDX and ZC pubkeys from output_amounts[0].
+    // Ring uses full ctkey entries (pubkey + commitment) from the
+    // asset-specific output universe.
     // message      : transaction prefix hash
-    // ring_pubkeys : pubkeys of all ring members (P[i].dest), size = ring_size
+    // ring         : ring members (dest + mask), size = ring_size
     // spend_sk     : sender's ephemeral spend key for the real output
-    // pseudo_out_C : pseudo-output commitment (amount*asset_id + delta*G)
+    // z            : input_mask - pseudo_out_mask
+    // pseudo_out_C : pseudo-output commitment (C_offset)
     // real_index   : index of the real output in ring_pubkeys
     ZC_sig genZCSig(const key& message,
-                    const keyV& ring_pubkeys,
+                    const ctkeyV& ring,
                     const ctkey& spend_sk,
+                    const key& z,
                     const key& pseudo_out_C,
+                    const crypto::key_image& key_image,
                     unsigned int real_index,
                     hw::device& hwdev);
 
@@ -107,7 +111,7 @@ namespace rct {
     // pseudo_out_C : pseudo-output commitment from ZC_sig
     bool verZCSig(const key& message,
                   const ZC_sig& sig,
-                  const keyV& ring_pubkeys,
+                  const ctkeyV& ring,
                   const key& pseudo_out_C);
 
     //proveRange and verRange

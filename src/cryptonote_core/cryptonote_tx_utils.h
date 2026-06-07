@@ -136,7 +136,7 @@ namespace cryptonote
     using output_entry = std::pair<uint64_t, rct::ctkey>;
 
     std::vector<output_entry> outputs;  //index + key + optional ringct commitment
-    std::vector<crypto::public_key> output_asset_ids;
+    std::vector<crypto::asset_id> output_asset_ids;
     std::vector<rct::key> output_asset_commitments;
     size_t real_output;                 //index in outputs vector of real output_entry
     crypto::public_key real_out_tx_key; //incoming real tx public key
@@ -148,7 +148,7 @@ namespace cryptonote
     rct::multisig_kLRki multisig_kLRki; //multisig info
 
     // Confidential asset fields (HF21+). Null values indicate a native BDX input.
-    crypto::public_key asset_id          = crypto::null_pkey; // plaintext asset ID; null = BDX
+    crypto::asset_id asset_id          = crypto::null_aid; // plaintext asset ID; null = BDX
     crypto::public_key amount_blinding_mask = crypto::null_pkey; // mask for the amount, used in range proofs
     crypto::public_key blinded_asset_id  = crypto::null_pkey; // T = asset_id + r*X from the output
     crypto::public_key amount_commitment = crypto::null_pkey; // C = amount*asset_id + mask*G
@@ -156,11 +156,11 @@ namespace cryptonote
     crypto::public_key concealing_point  = crypto::null_pkey; // Q from the output
     bool has_ca_metadata = false;
 
-    bool is_zarcanum() const { return asset_id != crypto::null_pkey; }
+    bool is_zarcanum() const { return asset_id != crypto::null_aid; }
 
     void push_output(uint64_t idx, const crypto::public_key &k, uint64_t amount) { 
       outputs.push_back(std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::zeroCommit(amount)}))); 
-      output_asset_ids.push_back(crypto::null_pkey);
+      output_asset_ids.push_back(crypto::null_aid);
       output_asset_commitments.push_back(rct::zero());
     }
 
@@ -200,16 +200,16 @@ namespace cryptonote
     account_public_address addr;        // Destination Address
     bool is_subaddress;
     bool is_integrated;
-    // Confidential asset (HF21+). null_pkey = native BDX output (txout_to_key).
-    crypto::public_key asset_id = crypto::null_pkey;
+    // Confidential asset (HF21+). null_aid = native BDX output (txout_to_key).
+    crypto::asset_id asset_id = crypto::null_aid;
 
-    tx_destination_entry() : amount(0), asset_id(crypto::null_pkey), addr{}, is_subaddress(false), is_integrated(false) { }
-    tx_destination_entry(uint64_t a, const account_public_address &ad, bool is_subaddress) : amount(a), asset_id(crypto::null_pkey), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
-    tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, bool is_subaddress) : original(o), amount(a), asset_id(crypto::null_pkey), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
-    tx_destination_entry(uint64_t a, const account_public_address &ad, const crypto::public_key &aid, bool is_subaddress) : amount(a), asset_id(aid), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
-    tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, const crypto::public_key &aid, bool is_subaddress) : original(o), amount(a), asset_id(aid), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
+    tx_destination_entry() : amount(0), asset_id(crypto::null_aid), addr{}, is_subaddress(false), is_integrated(false) { }
+    tx_destination_entry(uint64_t a, const account_public_address &ad, bool is_subaddress) : amount(a), asset_id(crypto::null_aid), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
+    tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, bool is_subaddress) : original(o), amount(a), asset_id(crypto::null_aid), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
+    tx_destination_entry(uint64_t a, const account_public_address &ad, const crypto::asset_id &aid, bool is_subaddress) : amount(a), asset_id(aid), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
+    tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, const crypto::asset_id &aid, bool is_subaddress) : original(o), amount(a), asset_id(aid), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
 
-    bool is_zarcanum() const { return asset_id != crypto::null_pkey; }
+    bool is_zarcanum() const { return asset_id != crypto::null_aid; }
 
     bool operator==(const tx_destination_entry& other) const
     {

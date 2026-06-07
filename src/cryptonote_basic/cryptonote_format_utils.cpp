@@ -61,6 +61,16 @@ using namespace crypto;
 
 namespace cryptonote
 {
+  namespace
+  {
+    size_t count_legacy_rct_inputs(const transaction& t)
+    {
+      return std::count_if(t.vin.begin(), t.vin.end(), [](const txin_v& in) {
+        return std::holds_alternative<txin_to_key>(in);
+      });
+    }
+  }
+
   static inline unsigned char *operator &(ec_point &point) {
     return &reinterpret_cast<unsigned char &>(point);
   }
@@ -1226,7 +1236,7 @@ namespace cryptonote
                                const crypto::key_derivation& derivation,
                                size_t output_index,
                                uint64_t& amount_out,
-                               crypto::public_key& asset_id_out,
+                               crypto::asset_id& asset_id_out,
                                rct::key& amount_mask_out,
                                rct::key& asset_blinding_mask_out)
   {
@@ -1475,7 +1485,7 @@ namespace cryptonote
       }
       try {
         const_cast<transaction&>(t).rct_signatures.p.serialize_rctsig_prunable(
-                ba, t.rct_signatures.type, t.vin.size(), t.vout.size(), mixin);
+                ba, t.rct_signatures.type, count_legacy_rct_inputs(t), t.vout.size(), mixin);
       } catch (const std::exception& e) {
         LOG_ERROR("Failed to serialize rct signatures (prunable): " << e.what());
         return false;
@@ -1509,7 +1519,7 @@ namespace cryptonote
     // base rct
     {
       serialization::binary_string_archiver ba;
-      const size_t inputs = t.vin.size();
+      const size_t inputs = count_legacy_rct_inputs(t);
       const size_t outputs = t.vout.size();
       tt.rct_signatures.serialize_rctsig_base(ba, inputs, outputs); // throws on error (good)
       cryptonote::get_blob_hash(ba.str(), hashes[1]);
@@ -1562,7 +1572,7 @@ namespace cryptonote
       transaction &tt = const_cast<transaction&>(t);
       serialization::binary_string_archiver ba;
       try {
-        tt.rct_signatures.serialize_rctsig_base(ba, t.vin.size(), t.vout.size());
+        tt.rct_signatures.serialize_rctsig_base(ba, count_legacy_rct_inputs(t), t.vout.size());
       } catch (const std::exception& e) {
         LOG_ERROR("Failed to serialize rct signatures base: " << e.what());
         return false;

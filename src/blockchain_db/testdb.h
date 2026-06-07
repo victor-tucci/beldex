@@ -99,23 +99,20 @@ public:
   virtual uint64_t get_tx_count() const override { return 0; }
   virtual std::vector<cryptonote::transaction> get_tx_list(const std::vector<crypto::hash>& hlist) const override { return std::vector<cryptonote::transaction>(); }
   virtual std::vector<uint64_t> get_tx_block_heights(const std::vector<crypto::hash>& h) const override { return {h.size(), 0}; }
-  virtual uint64_t get_num_outputs(const uint64_t& amount) const override { return 1; }
-  virtual uint64_t get_num_outputs_for_asset(const crypto::public_key &asset_id, const uint64_t& amount) const override { return 0; }
+  virtual uint64_t get_num_outputs(const uint64_t& amount, const crypto::asset_id &asset_id = crypto::null_aid) const override { return 1; }
   virtual uint64_t get_indexing_base() const override { return 0; }
-  virtual cryptonote::output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const override { return cryptonote::output_data_t(); }
-  virtual cryptonote::output_data_t get_output_key_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const override { return cryptonote::output_data_t(); }
+  virtual cryptonote::output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt, const crypto::asset_id &asset_id = crypto::null_aid) const override { return cryptonote::output_data_t(); }
   virtual cryptonote::tx_out_index get_output_tx_and_index_from_global(const uint64_t& index) const override { return cryptonote::tx_out_index(); }
-  virtual cryptonote::tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const override { return cryptonote::tx_out_index(); }
-  virtual cryptonote::tx_out_index get_output_tx_and_index_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index) const override { return cryptonote::tx_out_index(); }
-  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<cryptonote::tx_out_index> &indices) const override {}
-  virtual void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<cryptonote::output_data_t> &outputs, bool allow_partial = false) const override {}
+  virtual cryptonote::tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index, const crypto::asset_id &asset_id = crypto::null_aid) const override { return cryptonote::tx_out_index(); }
+  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<cryptonote::tx_out_index> &indices, const crypto::asset_id &asset_id = crypto::null_aid) const override {}
+  virtual void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<cryptonote::output_data_t> &outputs, bool allow_partial = false, const crypto::asset_id &asset_id = crypto::null_aid) const override {}
   virtual bool can_thread_bulk_indices() const override { return false; }
   virtual std::vector<std::vector<uint64_t>> get_tx_amount_output_indices(const uint64_t tx_index, size_t n_txes) const override { return std::vector<std::vector<uint64_t>>(); }
   virtual bool has_key_image(const crypto::key_image& img) const override { return false; }
   virtual void remove_block() override { }
   virtual uint64_t add_transaction_data(const crypto::hash& blk_hash, const std::pair<cryptonote::transaction, cryptonote::blobdata>& tx, const crypto::hash& tx_hash, const crypto::hash& tx_prunable_hash) override {return 0;}
   virtual void remove_transaction_data(const crypto::hash& tx_hash, const cryptonote::transaction& tx) override {}
-  virtual uint64_t add_output(const crypto::hash& tx_hash, const cryptonote::tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment, const crypto::public_key &asset_id = crypto::null_pkey) override {return 0;}
+  virtual uint64_t add_output(const crypto::hash& tx_hash, const cryptonote::tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment, const crypto::asset_id &asset_id = crypto::null_aid) override {return 0;}
   virtual void add_tx_amount_output_indices(const uint64_t tx_index, const std::vector<uint64_t>& amount_output_indices) override {}
   virtual void add_spent_key(const crypto::key_image& k_image) override {}
   virtual void remove_spent_key(const crypto::key_image& k_image) override {}
@@ -126,8 +123,8 @@ public:
   virtual bool for_all_outputs(std::function<bool(uint64_t amount, const crypto::hash &tx_hash, uint64_t height, size_t tx_idx)> f) const override { return true; }
   virtual bool for_all_outputs(uint64_t amount, const std::function<bool(uint64_t height)> &f) const override { return true; }
   virtual bool is_read_only() const override { return false; }
-  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const override { return std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>>(); }
-  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const override { return false; }
+  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype, const crypto::asset_id &asset_id = crypto::null_aid) const override { return std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>>(); }
+  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base, const crypto::asset_id &asset_id = crypto::null_aid) const override { return false; }
 
   virtual void add_txpool_tx(const crypto::hash &txid, const cryptonote::blobdata &blob, const cryptonote::txpool_tx_meta_t& details) override {}
   virtual void update_txpool_tx(const crypto::hash &txid, const cryptonote::txpool_tx_meta_t& details) override {}

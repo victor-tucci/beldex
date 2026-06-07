@@ -1506,7 +1506,7 @@ namespace cryptonote::rpc {
       uint64_t max_count;
       bool unlocked;
       uint64_t recent_cutoff;
-      crypto::public_key asset_id = crypto::null_pkey; // Optional: when non-null, query histogram only for this asset bucket.
+      crypto::asset_id asset_id = crypto::null_aid; // Optional: when non-null, query histogram only for this asset bucket.
     } request;
 
     struct entry
@@ -1769,7 +1769,7 @@ namespace cryptonote::rpc {
       uint64_t from_height;          // (optional, default is 0) starting height to check from.
       uint64_t to_height;            // (optional, default is 0) ending height to check up to.
       bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
-      crypto::public_key asset_id = crypto::null_pkey; // Optional: when non-null, query distribution only for this asset bucket.
+      crypto::asset_id asset_id = crypto::null_aid; // Optional: when non-null, query distribution only for this asset bucket.
     }request;
 
     struct distribution

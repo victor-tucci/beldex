@@ -58,8 +58,6 @@ struct mdb_txn_cursors
 
   MDB_cursor *output_txs;
   MDB_cursor *output_amounts;
-  MDB_cursor *asset_output_txs;
-  MDB_cursor *asset_output_amounts;
 
   MDB_cursor *txs;
   MDB_cursor *txs_pruned;
@@ -94,8 +92,6 @@ struct mdb_rflags
   bool m_rf_block_checkpoints;
   bool m_rf_output_txs;
   bool m_rf_output_amounts;
-  bool m_rf_asset_output_txs;
-  bool m_rf_asset_output_amounts;
   bool m_rf_output_blacklist;
   bool m_rf_txs;
   bool m_rf_txs_pruned;
@@ -267,20 +263,17 @@ public:
 
   std::vector<uint64_t> get_tx_block_heights(const std::vector<crypto::hash>& hlist) const override;
 
-  uint64_t get_num_outputs(const uint64_t& amount) const override;
-  uint64_t get_num_outputs_for_asset(const crypto::public_key &asset_id, const uint64_t& amount) const override;
+  uint64_t get_num_outputs(const uint64_t& amount, const crypto::asset_id &asset_id = crypto::null_aid) const override;
 
-  output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const override;
-  output_data_t get_output_key_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const override;
-  void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) const override;
+  output_data_t get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt, const crypto::asset_id &asset_id = crypto::null_aid) const override;
+  void get_output_key(const epee::span<const uint64_t> &amounts, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false, const crypto::asset_id &asset_id = crypto::null_aid) const override;
 
   tx_out_index get_output_tx_and_index_from_global(const uint64_t& index) const override;
   void get_output_tx_and_index_from_global(const std::vector<uint64_t> &global_indices,
       std::vector<tx_out_index> &tx_out_indices) const;
 
-  tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const override;
-  tx_out_index get_output_tx_and_index_for_asset(const crypto::public_key &asset_id, const uint64_t& amount, const uint64_t& index) const override;
-  void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const override;
+  tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index, const crypto::asset_id &asset_id = crypto::null_aid) const override;
+  void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices, const crypto::asset_id &asset_id = crypto::null_aid) const override;
 
   std::vector<std::vector<uint64_t>> get_tx_amount_output_indices(const uint64_t tx_id, size_t n_txes) const override;
 
@@ -356,15 +349,16 @@ public:
    *
    * @return a set of amount/instances
    */
-  std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const override;
+  std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype, const crypto::asset_id &asset_id = crypto::null_aid) const override;
 
-  bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const override;
+  bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base, const crypto::asset_id &asset_id = crypto::null_aid) const override;
   void get_output_blacklist(std::vector<uint64_t>       &blacklist) const override;
   void add_output_blacklist(std::vector<uint64_t> const &blacklist) override;
 
   // helper functions
   static int compare_uint64(const MDB_val *a, const MDB_val *b);
   static int compare_hash32(const MDB_val *a, const MDB_val *b);
+  static int compare_output_amount_key(const MDB_val *a, const MDB_val *b);
   static int compare_string(const MDB_val *a, const MDB_val *b);
 
 private:
@@ -394,7 +388,7 @@ private:
       const uint64_t& local_index,
       const uint64_t unlock_time,
       const rct::key *commitment,
-      const crypto::public_key &asset_id = crypto::null_pkey
+      const crypto::asset_id &asset_id = crypto::null_aid
       ) override;
 
   void add_tx_amount_output_indices(const uint64_t tx_id,
@@ -404,6 +398,7 @@ private:
   void remove_tx_outputs(const uint64_t tx_id, const transaction& tx);
 
   void remove_output(const uint64_t amount, const uint64_t& out_index);
+  void remove_output_for_asset(const crypto::asset_id &asset_id, const uint64_t amount, const uint64_t& out_index);
 
   void prune_outputs(uint64_t amount) override;
 
@@ -440,6 +435,7 @@ private:
   void migrate_5_6();
   void migrate_6_7();
   void migrate_7_8();
+  void migrate_8_9();
 
   void cleanup_batch();
 
@@ -452,17 +448,11 @@ private:
   void set_master_node_proof(const crypto::public_key& pubkey, const master_nodes::proof_info& proof) override;
   std::unordered_map<crypto::public_key, master_nodes::proof_info> get_all_master_node_proofs() const override;
   bool remove_master_node_proof(const crypto::public_key& pubkey) override;
-  void set_asset_history(const crypto::public_key &asset_id, const std::string &data) override;
-  bool get_asset_history(const crypto::public_key &asset_id, std::string &data) const override;
-  bool remove_asset_history(const crypto::public_key& asset_id) override;
-  bool asset_exists(const crypto::public_key &asset_id) const override;
-  std::vector<crypto::public_key> get_all_asset_ids() const override;
-
-  // HF21: per-asset output index (BGE ring construction)
-  void     add_asset_output(const crypto::public_key& asset_id, uint64_t global_output_index) override;
-  uint64_t get_asset_output_count(const crypto::public_key& asset_id) const override;
-  uint64_t get_asset_output_global_index(const crypto::public_key& asset_id, uint64_t n) const override;
-  void     remove_last_asset_output(const crypto::public_key& asset_id) override;
+  void set_asset_history(const crypto::asset_id &asset_id, const std::string &data) override;
+  bool get_asset_history(const crypto::asset_id &asset_id, std::string &data) const override;
+  bool remove_asset_history(const crypto::asset_id &asset_id) override;
+  bool asset_exists(const crypto::asset_id &asset_id) const override;
+  std::vector<crypto::asset_id> get_all_asset_ids() const override;
 
 private:
   template <typename T,
@@ -488,8 +478,6 @@ private:
 
   MDB_dbi m_output_txs;
   MDB_dbi m_output_amounts;
-  MDB_dbi m_asset_output_txs;
-  MDB_dbi m_asset_output_amounts;
   MDB_dbi m_output_blacklist;
 
   MDB_dbi m_spent_keys;
