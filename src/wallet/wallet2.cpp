@@ -718,8 +718,8 @@ std::pair<std::unique_ptr<tools::wallet2>, tools::password_container> generate_f
   }
   return {nullptr, tools::password_container{}};
 }
-
-std::string strjoin(const std::vector<size_t> &V, const char *sep)
+template<typename T>
+std::string strjoin(const std::vector<T> &V, const char *sep)
 {
   std::stringstream ss;
   bool first = true;
@@ -9517,6 +9517,9 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     std::vector<uint64_t> rct_offsets;
     std::vector<uint64_t> amounts;
     const bool has_rct_distribution = has_rct && get_rct_distribution(rct_start_height, rct_offsets);
+
+    MGINFO_BLUE("has_rct_distribution: " << has_rct_distribution);
+    MGINFO_BLUE("rct_offsets:" << strjoin(rct_offsets, ","));
 
     // get histogram for the amounts we need
     {

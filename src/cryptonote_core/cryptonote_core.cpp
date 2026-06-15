@@ -2070,9 +2070,9 @@ namespace cryptonote
     return m_blockchain_storage.get_outs(req, res);
   }
   //-----------------------------------------------------------------------------------------------
-  bool core::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
+  bool core::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base, bool asset_only) const
   {
-    return m_blockchain_storage.get_output_distribution(amount, from_height, to_height, start_height, distribution, base);
+    return m_blockchain_storage.get_output_distribution(amount, from_height, to_height, start_height, distribution, base, asset_only);
   }
   //-----------------------------------------------------------------------------------------------
   void core::get_output_blacklist(std::vector<uint64_t> &blacklist) const

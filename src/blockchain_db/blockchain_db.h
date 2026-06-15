@@ -121,6 +121,10 @@ struct output_data_t
   uint64_t           unlock_time;  //!< the output's unlock time (or height)
   uint64_t           height;       //!< the height of the block which created the output
   rct::key           commitment;   //!< the output's amount commitment (for spend verification)
+  // HF21 note: an output's (blinded) asset id is NOT stored here. Native/legacy
+  // outputs have none; confidential-asset outputs keep it in the
+  // LMDB_OUTPUT_ASSET_IDS side table, queried on demand via
+  // BlockchainLMDB::get_output_blinded_asset_id(output_id) by asset-aware callers.
 };
 #pragma pack(pop)
 
@@ -1782,7 +1786,7 @@ public:
    */
   virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const = 0;
 
-  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const = 0;
+  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base, bool asset_only = false) const = 0;
 
   /**
    * @brief is BlockchainDB in read-only mode?

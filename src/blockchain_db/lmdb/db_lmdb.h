@@ -81,6 +81,7 @@ struct mdb_txn_cursors
   MDB_cursor *output_blacklist;
   MDB_cursor *properties;
   MDB_cursor *asset_histories;
+  MDB_cursor *output_asset_ids;
 };
 
 struct mdb_rflags
@@ -109,6 +110,7 @@ struct mdb_rflags
   bool m_rf_master_node_proofs;
   bool m_rf_properties;
   bool m_rf_asset_histories;
+  bool m_rf_output_asset_ids;
 };
 
 struct mdb_threadinfo
@@ -351,7 +353,7 @@ public:
    */
   std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count,cryptonote::network_type nettype) const override;
 
-  bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const override;
+  bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base, bool asset_only = false) const override;
   void get_output_blacklist(std::vector<uint64_t>       &blacklist) const override;
   void add_output_blacklist(std::vector<uint64_t> const &blacklist) override;
 
@@ -432,6 +434,11 @@ private:
   void migrate_5_6();
   void migrate_6_7();
   void migrate_7_8();
+  void migrate_8_9();
+
+  // HF21: look up a confidential-asset output's (blinded) asset id by global
+  // output_id from the side table; returns null_aid for native/legacy outputs.
+  crypto::asset_id get_output_blinded_asset_id(const uint64_t& output_id) const;
 
   void cleanup_batch();
 
@@ -489,6 +496,7 @@ private:
   MDB_dbi m_master_node_data;
   MDB_dbi m_master_node_proofs;
   MDB_dbi m_asset_histories;
+  MDB_dbi m_output_asset_ids;   // HF21: output_id -> {height, blinded_asset_id} for zarcanum outputs
 
   MDB_dbi m_properties;
 

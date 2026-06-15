@@ -36,6 +36,7 @@
 #include <cstring>
 #include <type_traits>
 #include <variant>
+#include <unordered_map>
 
 #include "common/string_util.h"
 #include "cryptonote_basic/hardfork.h"
@@ -66,6 +67,7 @@ enum struct lmdb_version
     v6,     // remigrate quorum_signature struct due to alignment change
     v7,     // rebuild the checkpoint table because v6 update in-place made MDB_LAST not give us the newest checkpoint
     v8,     // add asset history table for custom asset registry state
+    v9,     // HF21: add output_asset_ids side table (output_id -> blinded asset id); output record format unchanged
     _count
 };
 
@@ -258,8 +260,13 @@ const char* const LMDB_MASTER_NODE_LATEST = "master_node_proofs"; // contains th
 
 const char* const LMDB_PROPERTIES = "properties";
 const char* const LMDB_ASSET_HISTORIES = "asset_histories";
+// HF21: side table mapping a global output_id -> its (blinded) asset id + height,
+// written only for confidential-asset (zarcanum) outputs.  Native/legacy outputs
+// are absent (implicitly null_aid), so the on-disk output record format is
+// unchanged and no rewrite of existing outputs is required.
+const char* const LMDB_OUTPUT_ASSET_IDS = "output_asset_ids";
 
-constexpr unsigned int LMDB_DB_COUNT = 24; // Should agree with the number of db's above
+constexpr unsigned int LMDB_DB_COUNT = 25; // Should agree with the number of db's above
 
 const char zerokey[8] = {0};
 const MDB_val zerokval = { sizeof(zerokey), (void *)zerokey };
@@ -403,6 +410,7 @@ void setup_rcursor(const MDB_dbi& db, MDB_cursor*& cursor, MDB_txn* txn, bool* r
 #define m_cur_hf_versions	m_cursors->hf_versions
 #define m_cur_properties	m_cursors->properties
 #define m_cur_asset_histories	m_cursors->asset_histories
+#define m_cur_output_asset_ids	m_cursors->output_asset_ids
 
 namespace cryptonote
 {
@@ -459,6 +467,12 @@ typedef struct outkey {
     uint64_t output_id;
     output_data_t data;
 } outkey;
+
+// HF21: value stored in LMDB_OUTPUT_ASSET_IDS (key = global output_id).
+typedef struct output_asset_entry {
+    uint64_t         height;            // block height that created the output
+    crypto::asset_id blinded_asset_id;  // T = asset_id + r*X
+} output_asset_entry;
 
 typedef struct outtx {
     uint64_t output_id;
@@ -1142,6 +1156,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
 
   CURSOR(output_txs)
   CURSOR(output_amounts)
+  CURSOR(output_asset_ids)
 
   // Confidential asset outputs (tx_out_zarcanum) always have amount == 0 on-chain
   // and carry their own commitment; they are stored with stealth_address as pubkey.
@@ -1175,6 +1190,8 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   else
     ok.amount_index = 0;
   ok.output_id = m_num_outputs;
+  bool store_asset_side = false;
+  crypto::asset_id side_blinded_asset_id = crypto::null_aid;
   if (is_zarcanum)
   {
     // Store stealth_address as the lookup key; commitment comes from the output itself.
@@ -1183,6 +1200,9 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
     ok.data.unlock_time = unlock_time;
     ok.data.height = m_height;
     ok.data.commitment = rct::pk2rct(zout.amount_commitment);
+    // HF21: the (blinded) asset id is kept in the side table, not in this record.
+    side_blinded_asset_id = reinterpret_cast<const crypto::asset_id&>(zout.blinded_asset_id);
+    store_asset_side = true;
     data.mv_size = sizeof(ok);
   }
   else
@@ -1204,6 +1224,20 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
 
   if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
       throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
+
+  // HF21: record the asset id of confidential-asset outputs in the side table,
+  // keyed by global output_id.  Native/legacy outputs are intentionally absent
+  // (a missing entry == null_aid), so no existing output needs a rewrite.
+  if (store_asset_side)
+  {
+    output_asset_entry entry{};
+    entry.height           = m_height;
+    entry.blinded_asset_id = side_blinded_asset_id;
+    MDB_val_set(k_oid, ok.output_id);
+    MDB_val v_entry{sizeof(entry), &entry};
+    if ((result = mdb_cursor_put(m_cur_output_asset_ids, &k_oid, &v_entry, 0)))
+      throw0(DB_ERROR(lmdb_error("Failed to add output asset id to db transaction: ", result).c_str()));
+  }
 
   // HF21: for confidential asset outputs, also record in the per-asset index
   // so the wallet can enumerate all outputs of a specific asset for BGE ring.
@@ -1269,6 +1303,7 @@ void BlockchainLMDB::remove_output(const uint64_t amount, const uint64_t& out_in
   mdb_txn_cursors *m_cursors = &m_wcursors;
   CURSOR(output_amounts);
   CURSOR(output_txs);
+  CURSOR(output_asset_ids);
 
   MDB_val_set(k, amount);
   MDB_val_set(v, out_index);
@@ -1280,6 +1315,21 @@ void BlockchainLMDB::remove_output(const uint64_t amount, const uint64_t& out_in
     throw0(DB_ERROR(lmdb_error("DB error attempting to get an output", result).c_str()));
 
   const pre_rct_outkey *ok = (const pre_rct_outkey *)v.mv_data;
+
+  // HF21: drop the side-table asset-id entry for this output, if present
+  // (native/legacy outputs have none — MDB_NOTFOUND is expected and ignored).
+  {
+    MDB_val_set(asset_k, ok->output_id);
+    MDB_val asset_v;
+    int ar = mdb_cursor_get(m_cur_output_asset_ids, &asset_k, &asset_v, MDB_SET);
+    if (ar == 0)
+    {
+      if (int dr = mdb_cursor_del(m_cur_output_asset_ids, 0))
+        throw0(DB_ERROR(lmdb_error("Error deleting output asset id: ", dr).c_str()));
+    }
+    else if (ar != MDB_NOTFOUND)
+      throw0(DB_ERROR(lmdb_error("Error locating output asset id for removal: ", ar).c_str()));
+  }
   MDB_val_set(otxk, ok->output_id);
   result = mdb_cursor_get(m_cur_output_txs, (MDB_val *)&zerokval, &otxk, MDB_GET_BOTH);
   if (result == MDB_NOTFOUND)
@@ -1557,6 +1607,7 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
 
   lmdb_db_open(txn, LMDB_MASTER_NODE_LATEST, MDB_CREATE, m_master_node_proofs, "Failed to open db handle for m_master_node_proofs");
   lmdb_db_open(txn, LMDB_ASSET_HISTORIES, MDB_CREATE, m_asset_histories, "Failed to open db handle for m_asset_histories");
+  lmdb_db_open(txn, LMDB_OUTPUT_ASSET_IDS, MDB_INTEGERKEY | MDB_CREATE, m_output_asset_ids, "Failed to open db handle for m_output_asset_ids");
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
@@ -1743,6 +1794,8 @@ void BlockchainLMDB::reset()
     throw0(DB_ERROR(lmdb_error("Failed to drop m_master_node_data: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_asset_histories, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_asset_histories: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_output_asset_ids, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_output_asset_ids: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_properties, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_properties: ", result).c_str()));
 
@@ -3370,6 +3423,23 @@ uint64_t BlockchainLMDB::get_num_outputs(const uint64_t& amount) const
   return num_elems;
 }
 
+// HF21: fetch the (blinded) asset id for a global output_id from the side table.
+// Returns null_aid for native/legacy outputs (no side-table entry).
+crypto::asset_id BlockchainLMDB::get_output_blinded_asset_id(const uint64_t& output_id) const
+{
+  TXN_PREFIX_RDONLY();
+  RCURSOR(output_asset_ids);
+
+  MDB_val_set(k, output_id);
+  MDB_val v;
+  int r = mdb_cursor_get(m_cur_output_asset_ids, &k, &v, MDB_SET);
+  if (r == MDB_NOTFOUND)
+    return crypto::null_aid;
+  if (r)
+    throw0(DB_ERROR(lmdb_error("Failed to look up output asset id: ", r).c_str()));
+  return static_cast<const output_asset_entry*>(v.mv_data)->blinded_asset_id;
+}
+
 output_data_t BlockchainLMDB::get_output_key(const uint64_t& amount, const uint64_t& index, bool include_commitmemt) const
 {
   check_open();
@@ -4442,25 +4512,56 @@ std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> BlockchainLMDB::get
   return histogram;
 }
 
-bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const
+bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base, bool asset_only) const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
 
   TXN_PREFIX_RDONLY();
-  RCURSOR(output_amounts);
 
   distribution.clear();
   const uint64_t db_height = height();
   if (from_height >= db_height)
     return false;
   distribution.resize(db_height - from_height, 0);
+  base = 0;
 
-  bool fret = true;
+  // HF21: the confidential-asset output distribution is built from the side
+  // table (which holds only asset outputs, each with its creation height).  The
+  // main output table can no longer be filtered by asset-ness (the blinded id is
+  // not stored there), and iterating the whole table per asset query would be
+  // wasteful anyway.
+  if (amount == 0 && asset_only)
+  {
+    RCURSOR(output_asset_ids);
+    MDB_val k, v;
+    for (MDB_cursor_op op = MDB_FIRST; ; op = MDB_NEXT)
+    {
+      int ret = mdb_cursor_get(m_cur_output_asset_ids, &k, &v, op);
+      if (ret == MDB_NOTFOUND)
+        break;
+      if (ret)
+        throw0(DB_ERROR("Failed to enumerate asset outputs"));
+      const uint64_t h = static_cast<const output_asset_entry*>(v.mv_data)->height;
+      if (h >= from_height)
+      {
+        if (h - from_height < distribution.size())
+          distribution[h - from_height]++;
+      }
+      else
+        base++;
+    }
+    distribution[0] += base;
+    for (size_t n = 1; n < distribution.size(); ++n)
+      distribution[n] += distribution[n - 1];
+    base = 0;
+    return true;
+  }
+
+  RCURSOR(output_amounts);
   MDB_val_set(k, amount);
   MDB_val v;
   MDB_cursor_op op = MDB_SET;
-  base = 0;
   while (1)
   {
     int ret = mdb_cursor_get(m_cur_output_amounts, &k, &v, op);
@@ -6102,6 +6203,28 @@ void BlockchainLMDB::migrate_7_8()
     throw0(DB_ERROR(lmdb_error("Failed to update version for the db: ", result).c_str()));
 }
 
+void BlockchainLMDB::migrate_8_9()
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  MGINFO_YELLOW("Migrating blockchain from DB version 8 to 9 - adding the confidential-asset output side table");
+
+  // v9 adds LMDB_OUTPUT_ASSET_IDS (output_id -> {height, blinded_asset_id}),
+  // written only for confidential-asset (zarcanum) outputs.  The on-disk output
+  // record format is UNCHANGED, so existing outputs need no rewrite.  A v8 DB
+  // predates the code that can create asset outputs, so the side table starts
+  // empty (any output added afterwards populates it via add_output).  Therefore
+  // the migration just creates the (empty) table.
+  mdb_txn_safe txn(false);
+  if (auto result = mdb_txn_begin(m_env, NULL, 0, txn))
+    throw0(DB_ERROR(lmdb_error("Failed to create a transaction for the db: ", result).c_str()));
+
+  lmdb_db_open(txn, LMDB_OUTPUT_ASSET_IDS, MDB_INTEGERKEY | MDB_CREATE, m_output_asset_ids, "Failed to open db handle for m_output_asset_ids");
+  txn.commit();
+
+  if (int result = write_db_version(m_env, m_properties, (uint32_t)lmdb_version::v9))
+    throw0(DB_ERROR(lmdb_error("Failed to update version for the db: ", result).c_str()));
+}
+
 void BlockchainLMDB::migrate(const uint32_t oldversion, cryptonote::network_type nettype)
 {
   switch(oldversion) {
@@ -6121,6 +6244,8 @@ void BlockchainLMDB::migrate(const uint32_t oldversion, cryptonote::network_type
     migrate_6_7(); /* FALLTHRU */
   case 7:
     migrate_7_8(); /* FALLTHRU */
+  case 8:
+    migrate_8_9(); /* FALLTHRU */
   default:
     break;
   }
@@ -6373,6 +6498,7 @@ void BlockchainLMDB::set_asset_history(const crypto::asset_id& asset_id, const s
   TXN_BLOCK_PREFIX(0);
   mdb_txn_cursors *m_cursors = &m_wcursors;
   setup_cursor(m_asset_histories, m_cur_asset_histories, *txn_ptr);
+  // setup_cursor(m_output_asset_ids, m_cur_output_asset_ids, *txn_ptr);
 
   MDB_val key{sizeof(asset_id), (void*)&asset_id};
   MDB_val_sized(blob, data);
@@ -6418,6 +6544,7 @@ bool BlockchainLMDB::remove_asset_history(const crypto::asset_id& asset_id)
   TXN_BLOCK_PREFIX(0);
   mdb_txn_cursors *m_cursors = &m_wcursors;
   setup_cursor(m_asset_histories, m_cur_asset_histories, *txn_ptr);
+  // setup_cursor(m_output_asset_ids, m_cur_output_asset_ids, *txn_ptr);
 
   MDB_val key{sizeof(asset_id), (void*)&asset_id};
   int result = mdb_cursor_get(m_cur_asset_histories, &key, nullptr, MDB_SET_KEY);

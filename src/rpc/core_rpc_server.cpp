@@ -2486,27 +2486,34 @@ namespace cryptonote::rpc {
       return {std::move(distribution), start_height, base};
     }
 
-    static struct {
+    // HF21: two independent cache slots so the native and confidential-asset
+    // distributions never cross-contaminate.  Index 0 = native pool, 1 = asset
+    // pool.  (This is the cached_distribution / cached_asset_distribution split,
+    // realized as an array so the incremental extend/pop-10 logic below is
+    // reused per-pool instead of duplicated.)
+    static struct output_dist_cache_t {
       std::mutex mutex;
       std::vector<std::uint64_t> cached_distribution;
       std::uint64_t cached_from = 0, cached_to = 0, cached_start_height = 0, cached_base = 0;
       crypto::hash cached_m10_hash = crypto::null_hash;
       crypto::hash cached_top_hash = crypto::null_hash;
       bool cached = false;
-    } output_dist_cache;
+    } output_dist_cache[2];
   }
 
   namespace detail {
     std::optional<output_distribution_data> get_output_distribution(
-        const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&)>& f,
+        const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&, bool)>& f,
         uint64_t amount,
         uint64_t from_height,
         uint64_t to_height,
         const std::function<crypto::hash(uint64_t)>& get_hash,
         bool cumulative,
-        uint64_t blockchain_height)
+        uint64_t blockchain_height,
+        bool asset_only)
     {
-      auto& d = output_dist_cache;
+      MGINFO_GREEN("get_output_distribution: amount " << amount << ", from_height " << from_height << ", to_height " << to_height << ", cumulative " << cumulative << ", blockchain_height " << blockchain_height << ", asset_only " << asset_only);
+      auto& d = output_dist_cache[asset_only ? 1 : 0];
       const std::unique_lock lock{d.mutex};
 
       crypto::hash top_hash = crypto::null_hash;
@@ -2542,7 +2549,7 @@ namespace cryptonote::rpc {
       if (can_extend)
       {
         std::vector<std::uint64_t> new_distribution;
-        if (!f(amount, d.cached_to + 1, to_height, start_height, new_distribution, base))
+        if (!f(amount, d.cached_to + 1, to_height, start_height, new_distribution, base, asset_only))
           return std::nullopt;
         distribution = d.cached_distribution;
         distribution.reserve(distribution.size() + new_distribution.size());
@@ -2553,7 +2560,7 @@ namespace cryptonote::rpc {
       }
       else
       {
-        if (!f(amount, from_height, to_height, start_height, distribution, base))
+        if (!f(amount, from_height, to_height, start_height, distribution, base, asset_only))
           return std::nullopt;
       }
 
@@ -2610,7 +2617,8 @@ namespace cryptonote::rpc {
             req_to_height,
             [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
             get_output_distribution.request.cumulative,
-            m_core.get_current_blockchain_height());
+            m_core.get_current_blockchain_height(),
+            get_output_distribution.request.asset_only);
         if (!data)
           throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
 
@@ -2657,7 +2665,8 @@ namespace cryptonote::rpc {
             req_to_height,
             [this](uint64_t height) { return m_core.get_blockchain_storage().get_db().get_block_hash_from_height(height); },
             req.cumulative,
-            m_core.get_current_blockchain_height());
+            m_core.get_current_blockchain_height(),
+            req.asset_only);
         if (!data)
           throw rpc_error{ERROR_INTERNAL, "Failed to get output distribution"};
 

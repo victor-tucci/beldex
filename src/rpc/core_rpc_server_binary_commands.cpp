@@ -143,6 +143,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_OUTPUT_DISTRIBUTION_BIN::request)
   KV_SERIALIZE_OPT(cumulative, false)
   KV_SERIALIZE_OPT(binary, true)
   KV_SERIALIZE_OPT(compress, false)
+  KV_SERIALIZE_OPT(asset_only, false)
 KV_SERIALIZE_MAP_CODE_END()
 
 

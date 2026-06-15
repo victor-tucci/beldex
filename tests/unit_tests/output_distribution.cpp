@@ -79,7 +79,7 @@ public:
 
 }
 
-bool get_output_distribution(uint64_t amount, uint64_t from, uint64_t to, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base)
+bool get_output_distribution(uint64_t amount, uint64_t from, uint64_t to, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base, bool asset_only = false)
 {
   blockchain_objects_t bc = {};
   struct get_test_options {
@@ -90,7 +90,7 @@ bool get_output_distribution(uint64_t amount, uint64_t from, uint64_t to, uint64
   } opts;
   cryptonote::Blockchain *blockchain = &bc.m_blockchain;
   bool r = blockchain->init(new TestDB(test_distribution_size), nullptr /*bns_db*/, cryptonote::FAKECHAIN, true, &opts.test_options, 0, NULL);
-  return r && blockchain->get_output_distribution(amount, from, to, start_height, distribution, base);
+  return r && blockchain->get_output_distribution(amount, from, to, start_height, distribution, base, asset_only);
 }
 
 crypto::hash get_block_hash(uint64_t height)

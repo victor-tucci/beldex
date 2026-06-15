@@ -2501,7 +2501,7 @@ void Blockchain::get_output_key_mask_unlocked(const uint64_t& amount, const uint
   unlocked = is_output_spendtime_unlocked(o_data.unlock_time);
 }
 //------------------------------------------------------------------
-bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
+bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base, bool asset_only) const
 {
   // rct outputs don't exist before v4, NOTE(beldex): we started from v7 so our start is always 0
   start_height = 0;
@@ -2522,6 +2522,14 @@ bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, 
 
   if (amount == 0)
   {
+    // HF21: the confidential-asset (zarcanum) outputs live in the amount==0 pool
+    // alongside native rct outputs.  The fast per-block cumulative counter mixes
+    // both and cannot be split, so for an asset-only distribution we fall back to
+    // the per-output scan (filtered on blinded_asset_id).  Native keeps the fast
+    // cumulative path (its historical behaviour: the combined rct pool).
+    if (asset_only)
+      return m_db->get_output_distribution(amount, start_height, to_height, distribution, base, /*asset_only=*/true);
+
     std::vector<uint64_t> heights;
     heights.reserve(to_height + 1 - start_height);
     const uint64_t real_start_height = start_height > 0 ? start_height-1 : start_height;
@@ -2537,7 +2545,7 @@ bool Blockchain::get_output_distribution(uint64_t amount, uint64_t from_height, 
   }
   else
   {
-    return m_db->get_output_distribution(amount, start_height, to_height, distribution, base);
+    return m_db->get_output_distribution(amount, start_height, to_height, distribution, base, asset_only);
   }
 }
 //------------------------------------------------------------------

@@ -269,6 +269,7 @@ namespace cryptonote::rpc {
       bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
       bool binary;
       bool compress;
+      bool asset_only;               // (optional, default is false) HF21: if true, return the confidential-asset output distribution; if false, the native pool.
 
       KV_MAP_SERIALIZABLE
     };

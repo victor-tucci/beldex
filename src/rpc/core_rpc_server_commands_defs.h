@@ -1768,6 +1768,7 @@ namespace cryptonote::rpc {
       uint64_t from_height;          // (optional, default is 0) starting height to check from.
       uint64_t to_height;            // (optional, default is 0) ending height to check up to.
       bool cumulative;               // (optional, default is false) States if the result should be cumulative (true) or not (false).
+      bool asset_only;               // (optional, default is false) HF21: if true, return the confidential-asset output distribution; if false, the native pool.
     }request;
 
     struct distribution

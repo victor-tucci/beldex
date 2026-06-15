@@ -201,6 +201,8 @@ uint64_t BlockchainDB::add_block( const std::pair<block, blobdata>& blck
   if (blk.miner_tx.version >= cryptonote::txversion::v2_ringct)
     num_rct_outs += blk.miner_tx.vout.size();
 
+  MGINFO_BLUE("Adding block with " << txs.size() << " transactions, block weight " << block_weight << ", long term block weight " << long_term_block_weight << ", cumulative difficulty " << cumulative_difficulty << ", coins generated " << coins_generated);
+
   int tx_i = 0;
   crypto::hash tx_hash = crypto::null_hash;
   for (const std::pair<transaction, blobdata>& tx : txs)
@@ -215,7 +217,8 @@ uint64_t BlockchainDB::add_block( const std::pair<block, blobdata>& blck
     ++tx_i;
   }
   time_add_transaction += std::chrono::steady_clock::now() - started;
-
+  
+  MGINFO_BLUE("num_rct_outs in block: " << num_rct_outs);
   // call out to subclass implementation to add the block & metadata
   started = std::chrono::steady_clock::now();
   add_block(blk, block_weight, long_term_block_weight, cumulative_difficulty, coins_generated, num_rct_outs, blk_hash);

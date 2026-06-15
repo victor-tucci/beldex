@@ -254,6 +254,7 @@ namespace cryptonote::rpc {
   void parse_request(GET_OUTPUT_DISTRIBUTION& get_output_distribution, rpc_input in) {
     get_values(in,
         "amounts",       get_output_distribution.request.amounts,
+        "asset_only",    get_output_distribution.request.asset_only,
         "cumulative", get_output_distribution.request.cumulative,
         "from_height",     get_output_distribution.request.from_height,
         "to_height",     get_output_distribution.request.to_height);
