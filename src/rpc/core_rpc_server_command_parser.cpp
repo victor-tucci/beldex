@@ -331,6 +331,11 @@ namespace cryptonote::rpc {
   }
 
   void parse_request(RELAY_TX& relay_tx, rpc_input in){
+    // Backwards compat for older/local callers sending a single txid field.
+    if (auto* json_in = std::get_if<json>(&in))
+      if (auto it = json_in->find("txid"); it != json_in->end())
+        (*json_in)["txids"] = json::array({std::move(*it)});
+
     get_values(in,
        "txids", relay_tx.request.txids);
   }
