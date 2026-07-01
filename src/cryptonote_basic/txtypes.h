@@ -21,8 +21,8 @@ enum class txversion : uint16_t {
     coin_burn,
     deploy_new_asset,
     emit_asset,
-    burn_asset,
     update_asset,
+    burn_asset,
     _count
   };
 
