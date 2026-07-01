@@ -2146,6 +2146,21 @@ namespace rct {
 
             rct::key expected_P = rct::zero();
             rct::subKeys(expected_P, sum_in_C, sum_out_C);
+            if (tx.type == cryptonote::txtype::burn_asset)
+            {
+                cryptonote::tx_extra_asset_descriptor_operation ado{};
+                if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
+                {
+                    reason = "burn tx is missing its asset_descriptor_operation in tx.extra";
+                    return false;
+                }
+                if (!ado.field_is_set(cryptonote::asset_field_amount_commitment))
+                {
+                    reason = "burn tx asset_descriptor_operation is missing amount_commitment";
+                    return false;
+                }
+                rct::subKeys(expected_P, expected_P, rct::pk2rct(ado.amount_commitment));
+            }
             if (bal->P != expected_P)
             {
                 reason = "zc_balance_proof statement mismatch";

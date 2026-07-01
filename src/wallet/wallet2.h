@@ -148,7 +148,7 @@ private:
     virtual void on_new_block(uint64_t height, const cryptonote::block& block) {}
     virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index, uint64_t unlock_time, bool flash) {}
     virtual void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index) {}
-    virtual void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index) {}
+    virtual void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const crypto::asset_id& asset_id, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index) {}
     virtual void on_skip_transaction(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx) {}
     virtual std::optional<epee::wipeable_string> on_get_password(const char *reason) { return std::nullopt; }
     // Light wallet callbacks
@@ -794,6 +794,14 @@ private:
         std::set<uint32_t> subaddr_indices);
     std::vector<pending_tx> create_asset_update_tx(
         const crypto::asset_id& asset_id,
+        const size_t fake_outs_count,
+        uint32_t priority,
+        const std::vector<uint8_t>& extra,
+        uint32_t subaddr_account,
+        std::set<uint32_t> subaddr_indices);
+    std::vector<pending_tx> create_asset_burn_tx(
+        const crypto::asset_id& asset_id,
+        uint64_t amount,
         const size_t fake_outs_count,
         uint32_t priority,
         const std::vector<uint8_t>& extra,

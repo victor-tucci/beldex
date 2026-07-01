@@ -712,7 +712,7 @@ namespace cryptonote::rpc {
           case asset_descriptor_operation_type::register_asset: return "register";
           case asset_descriptor_operation_type::emit_asset: return "emit";
           case asset_descriptor_operation_type::update_asset: return "update";
-          case asset_descriptor_operation_type::public_burn: return "public_burn";
+          case asset_descriptor_operation_type::burn_asset: return "burn_asset";
           case asset_descriptor_operation_type::undefined:
           case asset_descriptor_operation_type::_count: return "undefined";
         }
