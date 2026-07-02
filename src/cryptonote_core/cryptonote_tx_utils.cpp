@@ -608,35 +608,37 @@ namespace cryptonote
       return false;
     }
 
-    // HF21: a single tx may only transfer one confidential asset at a time.
-    // The zc_balance_proof's soundness depends on the residual commitment
-    // (sum_in_C - sum_out_C) collapsing to a pure mask*G term once amounts
-    // balance -- that only happens if every zc source/destination shares the
-    // same asset_id (otherwise the differing asset_id terms wouldn't cancel
-    // even for a legitimately-balanced transfer).
+    // HF21: multiple distinct confidential assets (plus native BDX) are allowed
+    // in one tx. The zc_balance_proof stays sound because the residual commitment
+    // P = sum_in_C - sum_out_C expands to
+    //   Σ_asset asset_id_a*(Σin_a - Σout_a)  +  secret_x*X  +  (mask delta)*G,
+    // the mask delta is forced to zero by the input-mask fixup below, and the
+    // per-asset asset_id terms vanish only if EACH asset independently conserves
+    // (asset_id_a, X, G are linearly independent hash-derived points, so the
+    // double-Schnorr that proves P == secret_x*X can't verify otherwise). The
+    // surjection (per-output BGE) and outputs range proof already tag each output
+    // by its OWN blinded_asset_id, and verAssetProofs explicitly permits mixed
+    // asset ids -- so no single-asset restriction is needed here.
+    //
+    // Sanity check only: every confidential-asset destination must be backed by a
+    // spent source of the SAME asset (mints add their outputs via deploy/emit,
+    // which take a different path and carry no zc sources here). Without a
+    // matching source the per-output surjection would fail downstream anyway;
+    // catching it here gives a clearer error.
+    if (tx_params.tx_type != txtype::deploy_new_asset && tx_params.tx_type != txtype::emit_asset)
     {
-      crypto::asset_id tx_zc_asset_id = crypto::null_aid;
+      std::set<crypto::asset_id> source_asset_ids;
       for (const auto& s : sources)
-      {
-        if (!s.is_zarcanum())
-          continue;
-        if (tx_zc_asset_id == crypto::null_aid)
-          tx_zc_asset_id = s.asset_id;
-        else if (s.asset_id != tx_zc_asset_id)
-        {
-          LOG_ERROR("Cannot construct tx: sources spend more than one confidential asset in a single transaction");
-          return false;
-        }
-      }
+        if (s.is_zarcanum())
+          source_asset_ids.insert(s.asset_id);
       for (const auto& d : destinations)
       {
         if (!d.is_zarcanum())
           continue;
-        if (tx_zc_asset_id == crypto::null_aid)
-          tx_zc_asset_id = d.asset_id;
-        else if (d.asset_id != tx_zc_asset_id)
+        if (source_asset_ids.find(d.asset_id) == source_asset_ids.end())
         {
-          LOG_ERROR("Cannot construct tx: destinations target more than one confidential asset in a single transaction");
+          LOG_ERROR("Cannot construct tx: destination targets confidential asset "
+                    << d.asset_id << " but no spent source provides it");
           return false;
         }
       }
@@ -774,6 +776,7 @@ namespace cryptonote
       rct::key pseudo_out_blinded_asset_id;
       rct::key pseudo_asset_r;    // mask used to build pseudo_out_blinded_asset_id (for surjection-proof ring matching)
       rct::key pseudo_amount_mask; // mask used in pseudo_out_amount_commitment (for balance-proof Δmask)
+      rct::key real_r;            // real spent output's own asset-id blinding scalar (for balance-proof X-term)
       unsigned int real_index;
     };
     std::vector<std::optional<zc_sig_pending_data>> zc_pending(sources.size());
@@ -818,44 +821,36 @@ namespace cryptonote
 
       if (src_entr.is_zarcanum())
       {
-        // Re-derive this output's asset-id blinding secret r (T = asset_id + r*X).
-        // The amount commitment mask is the source's normal RingCT mask
-        // (transfer_details::m_mask); asset_mask is the asset-id blinding
-        // scalar (transfer_details::m_asset_mask).
-        // Mirrors construct_tx_with_tx_key's own zarcanum output construction
-        // (Diffie-Hellman is symmetric: view_secret*tx_pub == tx_secret*view_pub).
-        crypto::key_derivation derivation{};
-        if (!hwdev.generate_key_derivation(src_entr.real_out_tx_key, sender_account_keys.m_view_secret_key, derivation))
-        {
-          LOG_ERROR("Failed to generate key derivation for zarcanum input");
-          return false;
-        }
-        std::vector<crypto::key_derivation> additional_derivations;
-        additional_derivations.reserve(src_entr.real_out_additional_tx_keys.size());
-        for (const crypto::public_key& additional_tx_key : src_entr.real_out_additional_tx_keys)
-        {
-          crypto::key_derivation additional_derivation{};
-          if (hwdev.generate_key_derivation(additional_tx_key, sender_account_keys.m_view_secret_key, additional_derivation))
-            additional_derivations.push_back(additional_derivation);
-        }
-        const auto recv_info = is_out_to_acc_precomp(subaddresses, out_key, derivation, additional_derivations,
-                                                     src_entr.real_output_in_tx_index, hwdev);
-        if (!recv_info)
-        {
-          LOG_ERROR("Failed to recover receive derivation for zarcanum input");
-          return false;
-        }
-        rct::key real_r = zarcanum_derivation_to_scalar(recv_info->derivation, src_entr.real_output_in_tx_index, "asset_blind");
+        // This output's asset-id blinding secret r (T = asset_id + r*X) was
+        // already derived once at receive/scan time (decode_zarcanum_output,
+        // using the same zarcanum_derivation_to_scalar(derivation, output_index,
+        // "asset_blind") computation) and cached in transfer_details::m_asset_mask,
+        // carried here via tx_source_entry::asset_mask. Reuse it instead of
+        // re-deriving, mirroring Zano's cache-at-scan-time design.
+        rct::key real_r = src_entr.asset_mask;
 
         const rct::key asset_id_pt = rct::aid2rct(src_entr.asset_id);
+        // T_real = asset_id + real_r*X -- the EXACT blinded asset id already
+        // public on the real spent output. The pseudo-output's amount
+        // commitment must be built on this same T_real (not a fresh blinding),
+        // so that for the real ring index, A[real] - pseudo_A collapses to a
+        // pure G-multiple (mask_diff*G) with no leftover X-component scaled
+        // by the secret amount. Mirrors Zano's currency_format_utils.cpp:2490
+        // (pseudo_out_amount_commitment = se.amount*source_blinded_asset_id + ...).
+        // pseudo_T below is built as an offset from T_real (not raw asset_id),
+        // matching Zano's T^p_i = T_i + r'_i*X (currency_format_utils.cpp:2484):
+        // pseudo_T = T_real + pseudo_asset_r*X = asset_id + (real_r+pseudo_asset_r)*X.
+        // That makes the layer-2/X ring-opening secret just -pseudo_asset_r,
+        // since T_real - pseudo_T = -pseudo_asset_r*X (real_r cancels).
+        rct::key T_real = rct::blindAssetId(asset_id_pt, real_r);
         rct::key pseudo_amount_mask = rct::skGen();
         rct::key pseudo_asset_r     = rct::skGen();
-        rct::key pseudo_A = rct::commitAsset(pseudo_amount_mask, asset_id_pt, src_entr.amount);
-        rct::key pseudo_T = rct::blindAssetId(asset_id_pt, pseudo_asset_r);
+        rct::key pseudo_A = rct::commitAsset(pseudo_amount_mask, T_real, src_entr.amount);
+        rct::key pseudo_T = rct::blindAssetId(T_real, pseudo_asset_r);
 
         rct::key f, t;
         sc_sub(f.bytes, src_entr.mask.bytes, pseudo_amount_mask.bytes);
-        sc_sub(t.bytes, real_r.bytes, pseudo_asset_r.bytes);
+        sc_sub(t.bytes, rct::zero().bytes, pseudo_asset_r.bytes);
 
         zc_sig_pending_data pending{};
         pending.ring_P.reserve(src_entr.outputs.size());
@@ -875,18 +870,13 @@ namespace cryptonote
         pending.pseudo_out_blinded_asset_id  = pseudo_T;
         pending.pseudo_asset_r     = pseudo_asset_r;
         pending.pseudo_amount_mask = pseudo_amount_mask;
+        pending.real_r      = real_r;
         pending.real_index = static_cast<unsigned int>(src_entr.real_output);
         zc_pending[idx] = std::move(pending);
 
         txin_zc_input input_zc;
         input_zc.k_image = msout ? rct::rct2ki(src_entr.multisig_kLRki.ki) : img;
-        // Plaintext asset_id is openly declared (only the amount is hidden,
-        // not which asset). Needed publicly so verifiers can check the
-        // zc_outs_range_proof's binding to the real (asset_id-based) output
-        // commitments -- see rct::verAssetProofs.
-        input_zc.asset_id = reinterpret_cast<const crypto::public_key&>(src_entr.asset_id);
-        input_zc.amount_commitment = rct::rct2pk(pseudo_A);
-        input_zc.blinded_asset_id  = rct::rct2pk(pseudo_T);
+        
         for (const tx_source_entry::output_entry& out_entry : src_entr.outputs)
           input_zc.key_offsets.push_back(out_entry.first);
         input_zc.key_offsets = absolute_output_offsets_to_relative(input_zc.key_offsets);
@@ -987,7 +977,7 @@ namespace cryptonote
       rct::key blind_r;            // s_j such that T = asset_id_rct + blind_r*X
       rct::key T;                  // blinded_asset_id of this output
       rct::key amount_mask;        // mask used in this output's amount commitment (for balance proof)
-      rct::key amount_commitment;  // C = amount*asset_id_rct + amount_mask*G
+      rct::key amount_commitment;  // C = amount*T + amount_mask*G
     };
     std::vector<std::optional<zc_out_pending_data>> zc_out_pending(destinations.size());
 
@@ -1061,9 +1051,15 @@ namespace cryptonote
         zout.blinded_asset_id = rct::rct2aid(T);
         LOG_PRINT_L0("Blinded asset ID done");
 
-        // Amount commitment:  C = amount * asset_id + mask * G
+        // Amount commitment:  C = amount * T + mask * G
+        // Uses this output's OWN blinded asset id T (not the plaintext
+        // asset_id) as the base -- see rct::commitAsset for why: pseudo-output
+        // construction on the spending side reconstructs this exact T from
+        // the recovered blinding scalar, so the CLSAG_GGX layer-1 (mask)
+        // relation cancels cleanly. Mirrors Zano's
+        // currency_format_utils.cpp:2456 (source_amount_commitment formula).
         rct::key mask = zarcanum_derivation_to_scalar(derivation, output_index, "amount_mask");
-        rct::key amount_commitment = rct::commitAsset(mask, asset_id_rct, dst_entr.amount);
+        rct::key amount_commitment = rct::commitAsset(mask, T, dst_entr.amount);
         zout.amount_commitment = rct::rct2pk(amount_commitment);
         LOG_PRINT_L0("Amount commitment done");
 
@@ -1123,17 +1119,23 @@ namespace cryptonote
 
     // ── HF21: asset amount-commitment binding (deploy + emit) ────────────────
     // Bind the publicly-declared asset amount to a Pedersen commitment carried
-    // in the ADO:  C = amount * asset_id + mask * G  (UNSCALED, matching the
-    // output amount_commitment convention).  The matching g_proof (generated
-    // below over the tx prefix hash) proves C - amount·asset_id = mask·G, i.e.
-    // the commitment encodes exactly the declared amount with the asset_id as
-    // base.  The on-chain verifier additionally checks that the zarcanum output
-    // commitments sum to C, which forces sum(output amounts) == declared amount.
-    // Without this an emitter could declare amount=1 while minting outputs worth
-    // far more (inflation).  Ported/adapted from Zano construct_tx_handle_ado +
-    // validate_asset_operation_amount_commitment.
+    // in the ADO. C is set to literally equal the sum of the actual minted
+    // zarcanum outputs' real commitments (each built as amount*T_j + mask*G,
+    // T_j = asset_id + r_j*X -- see rct::commitAsset), so the on-chain
+    // "outputs sum to C" check is trivially satisfied by construction.  The
+    // matching composition_proof (generated below over the tx prefix hash)
+    // proves C - declared_amount*asset_id opens to (sum_masks, secret_x_mint),
+    // i.e. the commitment encodes exactly the declared amount with asset_id
+    // as the G,X-independent base, plus the X-component that the per-output
+    // blinded asset ids introduce (secret_x_mint = Σ(r_j*amount_j) over the
+    // minted outputs). Together this forces sum(output amounts) ==
+    // declared_amount, so an emitter can't declare amount=1 while minting
+    // outputs worth more (inflation). Ported/adapted from Zano
+    // construct_tx_handle_ado + validate_asset_operation_amount_commitment.
     bool     aop_required = false;
     rct::key aop_mask     = rct::zero();
+    rct::key aop_secret_x = rct::zero();
+    crypto::asset_id aop_asset_id = crypto::null_aid; // mint asset id, used as the surjection ring member
     if (tx.type == txtype::deploy_new_asset || tx.type == txtype::emit_asset)
     {
       tx_extra_asset_descriptor_operation ado{};
@@ -1156,42 +1158,38 @@ namespace cryptonote
         asset_id        = ado.asset_id;
       }
 
-      // The commitment mask is the SUM of the per-output amount masks of the
-      // minted zarcanum outputs (re-derived exactly as construct_tx_out_zarcanum
-      // does).  This makes C == sum(output amount_commitments), so the on-chain
-      // balance check (sum of zarcanum output commitments == ADO commitment)
-      // forces sum(output amounts) == declared_amount → no inflation.
-      rct::key sum_masks = rct::zero();
+      // C = sum of the actual minted zarcanum outputs' real commitments
+      // (already constructed above with their own T_j), plus tracking of
+      // the (mask, secret_x) opening of C - declared_amount*asset_id for
+      // the composition_proof below.
+      rct::key sum_masks       = rct::zero();
+      rct::key secret_x_mint   = rct::zero();
+      rct::key commitment_full = rct::identity();
       {
         size_t out_idx = 0;
         for (const auto& d : destinations)
         {
-          if (d.is_zarcanum())
+          if (d.is_zarcanum() && zc_out_pending[out_idx])
           {
-            crypto::key_derivation derivation{};
-            if (!hwdev.generate_key_derivation(d.addr.m_view_public_key, tx_key, derivation))
-            {
-              LOG_ERROR("Failed to generate key derivation for asset amount commitment");
-              return false;
-            }
-            rct::key mask = cryptonote::zarcanum_derivation_to_scalar(derivation, out_idx, "amount_mask");
-            sc_add(sum_masks.bytes, sum_masks.bytes, mask.bytes);
+            const auto& op = *zc_out_pending[out_idx];
+            sc_add(sum_masks.bytes, sum_masks.bytes, op.amount_mask.bytes);
+            rct::key r_amount;
+            sc_mul(r_amount.bytes, op.blind_r.bytes, rct::d2h(d.amount).bytes);
+            sc_add(secret_x_mint.bytes, secret_x_mint.bytes, r_amount.bytes);
+            rct::addKeys(commitment_full, commitment_full, op.amount_commitment);
           }
           ++out_idx;
         }
       }
-      aop_mask = sum_masks;
-
-      // C = declared_amount * asset_id + sum_masks * G   (UNSCALED, matching the
-      // unscaled output commitment convention used throughout Beldex).
-      const rct::key& asset_pt = rct::aid2rct(asset_id);
-      rct::key commitment_full = rct::commitAsset(aop_mask, asset_pt, declared_amount);
+      aop_mask     = sum_masks;
+      aop_secret_x = secret_x_mint;
+      aop_asset_id = asset_id;
 
       ado.amount_commitment = rct::rct2pk(commitment_full);
       ado.fields = static_cast<uint8_t>(ado.fields | asset_field_amount_commitment);
 
       // Re-serialize the ADO (now carrying the commitment) so it becomes part of
-      // the prefix hash that the g_proof signs below.
+      // the prefix hash that the composition_proof signs below.
       remove_field_from_tx_extra<tx_extra_asset_descriptor_operation>(tx.extra);
       if (!add_asset_descriptor_operation_to_tx_extra(tx.extra, ado))
       {
@@ -1314,6 +1312,7 @@ namespace cryptonote
           // mixRing indexing is done the other way round for simple
           rct::ctkeyM mixRing(use_simple_rct ? native_source_indices.size() : n_total_outs);
           rct::keyV dest_keys;
+          rct::keyV native_amount_keys;
           std::vector<uint64_t> inamounts, outamounts;
           std::vector<unsigned int> index;
           std::vector<rct::multisig_kLRki> kLRki;
@@ -1336,11 +1335,14 @@ namespace cryptonote
           for (size_t i = 0; i < tx.vout.size(); ++i) {
               // tx_out_zarcanum outputs carry their own commitments and are
               // not included in the legacy RCT dest_keys / outamounts vectors.
-              if (std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target)){
-                dest_keys.push_back(rct::pk2rct(var::get<tx_out_zarcanum>(tx.vout[i].target).stealth_address));
-              }else{
-                dest_keys.push_back(rct::pk2rct(var::get<txout_to_key>(tx.vout[i].target).key));
-              }
+              if (std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target))
+                continue;
+              CHECK_AND_ASSERT_MES(std::holds_alternative<txout_to_key>(tx.vout[i].target), false,
+                  "Unsupported output type for native RingCT");
+              CHECK_AND_ASSERT_MES(i < amount_keys.size(), false,
+                  "Missing amount key for native RingCT output");
+              dest_keys.push_back(rct::pk2rct(var::get<txout_to_key>(tx.vout[i].target).key));
+              native_amount_keys.push_back(amount_keys[i]);
               outamounts.push_back(tx.vout[i].amount);
               amount_out += tx.vout[i].amount;
           }
@@ -1410,15 +1412,74 @@ namespace cryptonote
               LOG_PRINT_L2("genRctSimple");
               tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, inamounts,
                                                     outamounts,
-                                                    amount_in - amount_out, mixRing, amount_keys, msout ? &kLRki : NULL,
-                                                    msout, index, outSk, rct_config, hwdev, tx_params.hf_version >= feature::CONFIDENTIAL_ASSETS);
+                                                    amount_in - amount_out, mixRing, native_amount_keys, msout ? &kLRki : NULL,
+                                                    msout, index, outSk, rct_config, hwdev,
+                                                    tx_params.hf_version >= feature::CONFIDENTIAL_ASSETS);
           }
           else {
               LOG_PRINT_L2("genRct");
               tx.rct_signatures = rct::genRct(rct::hash2rct(tx_prefix_hash), inSk, dest_keys, outamounts, mixRing,
-                                              amount_keys, msout ? &kLRki[0] : NULL, msout, sources[0].real_output,
+                                              native_amount_keys, msout ? &kLRki[0] : NULL, msout, sources[0].real_output,
                                               outSk, rct_config, hwdev); // same index assumption
 
+          }
+
+          // ── HF21: force the input-side mask delta to zero ───────────────────
+          // Pick one zarcanum input (if any) and recompute its pseudo-output
+          // mask deterministically so that
+          //   sum(pseudo_out masks) == sum(new zarcanum output masks)
+          // exactly, with no free/random residual left over. Output masks
+          // can't be adjusted this way (they're derivation-bound so the
+          // recipient can independently recompute them while scanning), so
+          // this must happen on the pseudo-output side, which has no such
+          // constraint. Mirrors Zano's generate_ZC_sig
+          // (currency_format_utils.cpp:2461-2472): forcing this G-component
+          // to zero lets the balance proof below be a plain two-leg Schnorr
+          // (secret_x over X, tx_key.sec over G) instead of a more complex
+          // joint (mask, secret_x) representation proof.
+          {
+            size_t balancing_idx = SIZE_MAX;
+            for (size_t i = 0; i < zc_pending.size(); ++i)
+              if (zc_pending[i]) { balancing_idx = i; break; }
+
+            if (balancing_idx != SIZE_MAX)
+            {
+              rct::key sum_out_masks = rct::zero();
+              for (const auto& op : zc_out_pending)
+                if (op)
+                  sc_add(sum_out_masks.bytes, sum_out_masks.bytes, op->amount_mask.bytes);
+
+              rct::key sum_other_in_masks = rct::zero();
+              for (size_t i = 0; i < zc_pending.size(); ++i)
+              {
+                if (!zc_pending[i] || i == balancing_idx)
+                  continue;
+                sc_add(sum_other_in_masks.bytes, sum_other_in_masks.bytes, zc_pending[i]->pseudo_amount_mask.bytes);
+              }
+
+              rct::key new_pseudo_mask;
+              sc_sub(new_pseudo_mask.bytes, sum_out_masks.bytes, sum_other_in_masks.bytes);
+
+              auto& bp = *zc_pending[balancing_idx];
+              // real_mask = old_pseudo_mask + old_f  (since f = real_mask - pseudo_mask)
+              rct::key real_mask;
+              sc_add(real_mask.bytes, bp.pseudo_amount_mask.bytes, bp.amount_mask_diff.bytes);
+
+              rct::key new_f;
+              sc_sub(new_f.bytes, real_mask.bytes, new_pseudo_mask.bytes);
+
+              const rct::key asset_id_pt = rct::aid2rct(sources[balancing_idx].asset_id);
+              rct::key T_real = rct::blindAssetId(asset_id_pt, bp.real_r);
+              rct::key new_pseudo_A = rct::commitAsset(new_pseudo_mask, T_real, sources[balancing_idx].amount);
+
+              bp.pseudo_amount_mask = new_pseudo_mask;
+              bp.amount_mask_diff = new_f;
+              bp.pseudo_out_amount_commitment = new_pseudo_A;
+
+              // The recomputed pseudo-out commitment is carried solely in the
+              // ZC_sig, built below from this updated zc_pending entry -- there
+              // is no on-chain input field left to keep in sync.
+            }
           }
 
           // HF21: shared binding message for ZC_sig and asset surjection
@@ -1456,20 +1517,24 @@ namespace cryptonote
 
           // ── HF21: asset surjection proof (BGE) for zarcanum outputs ─────────
           // Proves each zarcanum output's blinded_asset_id is a valid blinding
-          // of one of the spent inputs' asset ids, without revealing which one
-          // -- this is what stops a spend from "minting" a different asset.
+          // of one of the tx's legitimate asset sources, without revealing which
+          // one -- this is what stops a tx from "minting" an arbitrary asset.
+          //
+          // Ring members (one BGE proof per zc output, hidden real index):
+          //   - every spent zc input's pseudo-blinded asset id (T^p_i), and
+          //   - for deploy_new_asset/emit_asset, the asset-descriptor-operation's
+          //     own asset id H_ado as a single extra ring member (mirrors Zano's
+          //     generate_asset_surjection_proof_hf6 "asset emission" ring member,
+          //     ogc.ao_asset_id_pt). Without this, a multi-output mint could bind
+          //     output#1 to a DIFFERENT existing asset B and output#2 to a garbage
+          //     asset chosen so the weighted sum still equals declared*H_ado --
+          //     the composition_proof only constrains that weighted sum, not each
+          //     output's hidden asset id, so this would inflate asset B. The
+          //     per-output surjection closes that hole.
           //
           // Native coin (txin_to_key/txout_to_key) never carries an asset id
-          // (tx_source_entry::is_zarcanum() / tx_destination_entry::is_zarcanum()
-          // are both `asset_id != null_aid`), so native fee/change inputs never
-          // need a ring slot here -- the ring is simply every zc input's
-          // pseudo-blinded asset id, regardless of whether native inputs are
-          // also present in the same tx for fees/change.
-          //
-          // Still out of scope: deploy_new_asset/emit_asset txs that mint a
-          // zarcanum output without spending any existing zc input of that
-          // asset (no ring member exists for the asset-descriptor-operation
-          // case yet).
+          // (is_zarcanum() is `asset_id != null_aid`), so native fee/change
+          // inputs never need a ring slot here.
           {
             bool any_zc_outputs = false;
             for (const auto& op : zc_out_pending)
@@ -1487,6 +1552,18 @@ namespace cryptonote
               ring.push_back(zc_pending[i]->pseudo_out_blinded_asset_id);
             }
 
+            // Asset-emission ring member: H_ado (the plain mint asset id point,
+            // no X offset). Appended last so verAssetProofs can reconstruct it
+            // at the same index (it likewise appends H_ado after the zc-input
+            // pseudo-outs). For a pure mint with no zc input this is the only
+            // ring member.
+            size_t mint_ring_index = SIZE_MAX;
+            if (aop_required && aop_asset_id != crypto::null_aid)
+            {
+              mint_ring_index = ring.size();
+              ring.push_back(rct::aid2rct(aop_asset_id));
+            }
+
             if (!ring.empty() && any_zc_outputs)
             {
               rct::zc_asset_surjection_proof asp{};
@@ -1496,7 +1573,8 @@ namespace cryptonote
                   continue;
                 const auto& out_p = zc_out_pending[j].value();
 
-                // Find which spent zc input's asset id matches this output's asset id.
+                // Find which legitimate asset source matches this output's asset
+                // id: first the spent zc inputs, then the asset-emission member.
                 size_t real_index = SIZE_MAX;
                 rct::key r;
                 for (size_t i = 0; i < sources.size(); ++i)
@@ -1506,15 +1584,26 @@ namespace cryptonote
                   if (rct::aid2rct(sources[i].asset_id) == out_p.asset_id_rct)
                   {
                     real_index = source_to_ring_index[i];
-                    // r = s_j - pseudo_r_i, so that ring[real_index] + r*X == T_j
-                    // when the underlying asset ids match (T_j == asset_id +
-                    // s_j*X, ring[real_index] == pseudo_T_i == asset_id + pseudo_r_i*X).
-                    sc_sub(r.bytes, out_p.blind_r.bytes, zc_pending[i]->pseudo_asset_r.bytes);
+                    // r = s_j - real_r_i - pseudo_r_i, so that ring[real_index] + r*X == T_j
+                    // when the underlying asset ids match (T_j == asset_id + s_j*X,
+                    // ring[real_index] == pseudo_T_i == asset_id + (real_r_i+pseudo_r_i)*X,
+                    // since pseudo_T_i is now built as an offset from T_real, not raw asset_id).
+                    rct::key real_plus_pseudo_r;
+                    sc_add(real_plus_pseudo_r.bytes, zc_pending[i]->real_r.bytes, zc_pending[i]->pseudo_asset_r.bytes);
+                    sc_sub(r.bytes, out_p.blind_r.bytes, real_plus_pseudo_r.bytes);
                     break;
                   }
                 }
+                if (real_index == SIZE_MAX && mint_ring_index != SIZE_MAX &&
+                    rct::aid2rct(aop_asset_id) == out_p.asset_id_rct)
+                {
+                  real_index = mint_ring_index;
+                  // ring[mint_ring_index] == H_ado (no X offset), T_j == H_ado + s_j*X,
+                  // so ring[mint_ring_index] + r*X == T_j with r == s_j == blind_r.
+                  r = out_p.blind_r;
+                }
                 CHECK_AND_ASSERT_MES(real_index != SIZE_MAX, false,
-                  "surjection proof: output #" << j << "'s asset id is not among the spent zc inputs' asset ids");
+                  "surjection proof: output #" << j << "'s asset id is neither among the spent zc inputs nor the minted asset");
 
                 crypto::BGE_proof_s bge{};
                 if (!crypto::generate_BGE_proof(asset_proof_message, ring, out_p.T, r, real_index, bge))
@@ -1540,15 +1629,20 @@ namespace cryptonote
           // Proves sum(input amount commitments) - sum(output amount
           // commitments) opens to a zero amount, i.e. nothing was minted or
           // destroyed by this spend. Required by verAssetProofs whenever the
-          // tx has any zc input. Since every zc source/destination in a tx
-          // shares one asset_id (enforced above) and commitments are built as
-          // C = amount*asset_id + mask*G, a balanced transfer (Δamount == 0)
-          // makes the asset_id term vanish entirely, leaving a pure
-          // Δmask*G residual. A double Schnorr proof binds knowledge of that
-          // residual mask *and* knowledge of tx_key.sec (against tx_pub_key)
-          // under one challenge, so the proof can't be detached from this
-          // specific transaction (tx_has_zarcanum_content above guarantees
-          // tx_pub_key == tx_key.sec*G here, never the R=s*D compressed form).
+          // tx has any zc input. Commitments are built as C = amount*T + mask*G
+          // with T a per-input/per-output blinded asset id (T = asset_id +
+          // r*X, see rct::commitAsset). The balancing-mask fixup above already
+          // forced the mask/G-component of this residual to exactly zero, so
+          // what's left is purely the X-component:
+          //   secret_x = Σ_inputs(real_r_i * amount_i) - Σ_outputs(r_j * amount_j)
+          // (each input's real_r_i is the SAME blinding scalar used to build
+          // its pseudo_out_amount_commitment -- see T_real in the zc input
+          // loop above; each output's r_j is its own asset-id blinding scalar).
+          // generate_double_schnorr_sig binds knowledge of secret_x (over X)
+          // *and* knowledge of tx_key.sec (against tx_pub_key, over G) under
+          // one challenge, so the proof can't be detached from this specific
+          // transaction (tx_has_zarcanum_content above guarantees tx_pub_key
+          // == tx_key.sec*G here, never the R=s*D compressed form).
           {
             bool has_zc_inputs = false;
             for (const auto& p : zc_pending)
@@ -1557,34 +1651,40 @@ namespace cryptonote
             if (has_zc_inputs)
             {
               rct::key sum_in_C = rct::zero();
-              rct::key sum_in_mask = rct::zero();
-              for (const auto& p : zc_pending)
+              rct::key secret_x_in = rct::zero();
+              for (size_t i = 0; i < zc_pending.size(); ++i)
               {
+                const auto& p = zc_pending[i];
                 if (!p)
                   continue;
                 rct::addKeys(sum_in_C, sum_in_C, p->pseudo_out_amount_commitment);
-                sc_add(sum_in_mask.bytes, sum_in_mask.bytes, p->pseudo_amount_mask.bytes);
+                rct::key r_amount;
+                sc_mul(r_amount.bytes, p->real_r.bytes, rct::d2h(sources[i].amount).bytes);
+                sc_add(secret_x_in.bytes, secret_x_in.bytes, r_amount.bytes);
               }
 
               rct::key sum_out_C = rct::zero();
-              rct::key sum_out_mask = rct::zero();
-              for (const auto& op : zc_out_pending)
+              rct::key secret_x_out = rct::zero();
+              for (size_t j = 0; j < zc_out_pending.size(); ++j)
               {
+                const auto& op = zc_out_pending[j];
                 if (!op)
                   continue;
                 rct::addKeys(sum_out_C, sum_out_C, op->amount_commitment);
-                sc_add(sum_out_mask.bytes, sum_out_mask.bytes, op->amount_mask.bytes);
+                rct::key r_amount;
+                sc_mul(r_amount.bytes, op->blind_r.bytes, rct::d2h(destinations[j].amount).bytes);
+                sc_add(secret_x_out.bytes, secret_x_out.bytes, r_amount.bytes);
               }
 
               rct::key P;
               rct::subKeys(P, sum_in_C, sum_out_C);
 
-              rct::key delta_mask;
-              sc_sub(delta_mask.bytes, sum_in_mask.bytes, sum_out_mask.bytes);
+              rct::key secret_x;
+              sc_sub(secret_x.bytes, secret_x_in.bytes, secret_x_out.bytes);
 
               rct::zc_balance_proof bal{};
               bal.P = P;
-              if (!crypto::generate_double_schnorr_sig(asset_proof_message, P, delta_mask,
+              if (!crypto::generate_double_schnorr_sig(asset_proof_message, P, secret_x,
                                                         rct::pk2rct(txkey_pub), rct::sk2rct(tx_key), bal.dss))
               {
                 LOG_ERROR("Failed to generate zc_balance_proof");
@@ -1611,7 +1711,12 @@ namespace cryptonote
               real_masks.push_back(out_p.amount_mask);
               aux_masks.push_back(rct::skGen());
               real_commitments.push_back(out_p.amount_commitment);
-              tags.push_back(out_p.asset_id_rct);
+              // tags[j] must be this output's own T (not the plaintext
+              // asset_id) -- it's the base real_commitments[j] was actually
+              // built on (see rct::commitAsset / the output-construction loop
+              // above), and the aggregation proof checks real_commitments[j]
+              // against "tags[j] + w*H" directly.
+              tags.push_back(out_p.T);
             }
 
             if (!amounts.empty())
@@ -1638,17 +1743,18 @@ namespace cryptonote
 
           // ── HF21: asset amount-commitment proof (deploy + emit) ─────────────
           // Proves the ADO's amount_commitment encodes exactly the declared
-          // amount with the asset_id as base:  A = C·8 - amount·asset_id = mask·G.
+          // amount with the asset_id as the G,X-independent base:
+          //   A = C - declared_amount*asset_id = sum_masks*G + secret_x_mint*X
           if (aop_required)
           {
-            rct::key A = rct::scalarmultBase(aop_mask); // A = mask * G
+            rct::key A = rct::addKeys(rct::scalarmultBase(aop_mask), rct::scalarmultX(aop_secret_x)); // A = sum_masks*G + secret_x_mint*X
             rct::asset_operation_proof aop{};
-            if (!crypto::generate_schnorr_sig(rct::hash2rct(tx_prefix_hash), A, aop_mask, aop.g_proof))
+            if (!crypto::generate_linear_composition_proof(rct::hash2rct(tx_prefix_hash), A, aop_mask, aop_secret_x, aop.composition_proof))
             {
-              LOG_ERROR("Failed to generate asset amount-commitment g_proof");
+              LOG_ERROR("Failed to generate asset amount-commitment composition_proof");
               return false;
             }
-            aop.flags = 2; // g_proof present
+            aop.flags = 1; // composition_proof present
             tx.asset_proofs.push_back(std::move(aop));
             MINFO("Attached asset amount-commitment proof for "
                   << (tx.type == txtype::deploy_new_asset ? "deploy" : "emit") << " tx");
@@ -1676,7 +1782,16 @@ namespace cryptonote
 
           memwipe(inSk.data(), inSk.size() * sizeof(rct::ctkey));
 
-          CHECK_AND_ASSERT_MES(tx.vout.size() == outSk.size(), false, "outSk size does not match vout");
+          // outSk only covers the native (non-zarcanum) RingCT outputs:
+          // tx_out_zarcanum outputs carry their own commitments/masks and are
+          // skipped when building dest_keys/outamounts above, so they never
+          // enter outSk. Compare against the native output count, not the full
+          // tx.vout size (which also includes confidential-asset outputs).
+          size_t native_out_count = 0;
+          for (const auto& o : tx.vout)
+            if (!std::holds_alternative<tx_out_zarcanum>(o.target))
+              ++native_out_count;
+          CHECK_AND_ASSERT_MES(native_out_count == outSk.size(), false, "outSk size does not match native (non-zarcanum) vout count");
 
           MCINFO("construct_tx",
                  "transaction_created: " << get_transaction_hash(tx) << "\n" << obj_to_json_str(tx) << "\n");

@@ -559,7 +559,6 @@ namespace cryptonote
     std::string full_name;
     std::string meta_info;
     crypto::public_key owner = crypto::null_pkey;
-    bool hidden_supply = false;
 
     BEGIN_SERIALIZE()
       FIELD(version)
@@ -570,7 +569,6 @@ namespace cryptonote
       FIELD(full_name)
       FIELD(meta_info)
       FIELD(owner)
-      FIELD(hidden_supply)
     END_SERIALIZE()
   };
 

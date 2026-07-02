@@ -150,27 +150,26 @@ static void init_bge_generators()
         for (size_t b = 0; b < 8; ++b)
             buf[24 + b] ^= static_cast<uint8_t>((i >> (b * 8)) & 0xFF);
 
-        // Map to a curve point (ge_fromfe), then multiply by 8 to clear cofactor
-        ge_p2 p2;
-        ge_fromfe_frombytes_vartime(&p2, buf);
-        // Convert p2 -> p1p1 via doubling trick to get p3
+        // Map to a curve point (Elligator), then multiply by the cofactor
+        // (8 = THREE doublings) to land in the prime-order subgroup. This MUST
+        // be a full *8: BGE A/B are stored *1/8 and verified *8 (which clears
+        // torsion on the verifier's LHS), while the verifier reconstructs the
+        // RHS from these generators UNSCALED. A generator with any residual
+        // torsion makes LHS != RHS and Check 1 fails. (The previous code
+        // doubled only twice = *4, leaving an order-2 component.)
+        ge_p2   p2;
         ge_p1p1 p1p1;
-        ge_p2_dbl(&p1p1, &p2);
-        ge_p3 p3_tmp;
-        ge_p1p1_to_p3(&p3_tmp, &p1p1);
-        // Now multiply by 4 more (total 8 = cofactor cleared)
-        rct::key tmp;
-        ge_p3_tobytes(tmp.bytes, &p3_tmp);
-        ge_p3 p3;
-        if (ge_frombytes_vartime(&p3, tmp.bytes) != 0)
-            throw std::runtime_error("BGE generator init: frombytes failed");
-        ge_p2 p2b;
-        ge_p3_to_p2(&p2b, &p3);
-        ge_p1p1 p1p1b;
-        ge_p2_dbl(&p1p1b, &p2b);
-        ge_p3 p3b;
-        ge_p1p1_to_p3(&p3b, &p1p1b);
-        ge_p3_tobytes(s_bge_generators[i].bytes, &p3b);
+        ge_p3   p3;
+        ge_fromfe_frombytes_vartime(&p2, buf);
+        ge_p2_dbl(&p1p1, &p2);                 // *2
+        ge_p1p1_to_p3(&p3, &p1p1);
+        ge_p3_to_p2(&p2, &p3);
+        ge_p2_dbl(&p1p1, &p2);                 // *4
+        ge_p1p1_to_p3(&p3, &p1p1);
+        ge_p3_to_p2(&p2, &p3);
+        ge_p2_dbl(&p1p1, &p2);                 // *8  (cofactor fully cleared)
+        ge_p1p1_to_p3(&p3, &p1p1);
+        ge_p3_tobytes(s_bge_generators[i].bytes, &p3);
     }
 }
 
@@ -316,7 +315,7 @@ bool verify_linear_composition_proof(const rct::key&                   msg,
 }
 
 // ---------------------------------------------------------------------------
-// 2b. Double Schnorr proof  P0 = s0*G, P1 = s1*G  (one shared challenge)
+// 2b. Double Schnorr proof, X-then-G  P0 = s0*X, P1 = s1*G  (one shared challenge)
 // ---------------------------------------------------------------------------
 
 bool generate_double_schnorr_sig(const rct::key&        msg,
@@ -326,10 +325,10 @@ bool generate_double_schnorr_sig(const rct::key&        msg,
                                  const rct::key&        s1,
                                  double_schnorr_sig_s&  out)
 {
-    // r0, r1 random; R0 = r0*G, R1 = r1*G
+    // r0, r1 random; R0 = r0*X, R1 = r1*G
     rct::key r0 = rct::skGen();
     rct::key r1 = rct::skGen();
-    rct::key R0 = rct::scalarmultBase(r0);
+    rct::key R0 = rct::scalarmultX(r0);
     rct::key R1 = rct::scalarmultBase(r1);
 
     // c = H(msg || P0 || P1 || R0 || R1)
@@ -346,11 +345,11 @@ bool verify_double_schnorr_sig(const rct::key&              msg,
                                const rct::key&              P1,
                                const double_schnorr_sig_s&  sig)
 {
-    // R0' = y0*G + c*P0,  R1' = y1*G + c*P1
-    rct::key y0G = rct::scalarmultBase(sig.y0);
+    // R0' = y0*X + c*P0,  R1' = y1*G + c*P1
+    rct::key y0X = rct::scalarmultX(sig.y0);
     rct::key cP0 = scalarmult(P0, sig.c);
     rct::key R0_prime;
-    rct::addKeys(R0_prime, y0G, cP0);
+    rct::addKeys(R0_prime, y0X, cP0);
 
     rct::key y1G = rct::scalarmultBase(sig.y1);
     rct::key cP1 = scalarmult(P1, sig.c);
@@ -414,25 +413,6 @@ bool generate_BGE_proof(const rct::key&  context_hash,
     if (ring_size == 0 || real_index >= ring_size)
         return false;
 
-    // Degenerate one-member ring: no index needs hiding.  Prove directly that
-    // T - ring[0] = r_blind*X with a Schnorr proof over X, stored compactly in
-    // the BGE container as A=c, B=y and empty vector fields.
-    if (ring_size == 1)
-    {
-        if (real_index != 0)
-            return false;
-
-        out = {};
-        const rct::key P = point_sub(T, ring[0]);
-        const rct::key msg = hash_to_scalar_varargs({&context_hash, &ring[0], &T});
-        schnorr_sig_s sig{};
-        if (!generate_schnorr_sig_X(msg, P, r_blind, sig))
-            return false;
-
-        out.A = sig.c;
-        out.B = sig.y;
-        return verify_BGE_proof(context_hash, ring, T, out);
-    }
 
     // Verify debug invariant: T = ring[real_index] + r_blind*X
 #ifndef NDEBUG
@@ -674,21 +654,6 @@ bool verify_BGE_proof(const rct::key&    context_hash,
 
     const size_t ring_size = ring.size();
     if (ring_size == 0) return false;
-
-    // Single-member rings use the compact Schnorr-over-X encoding produced by
-    // generate_BGE_proof above: A=c, B=y, proving T - ring[0] = r*X.
-    if (ring_size == 1)
-    {
-        if (!sig.Pk.empty() || !sig.f.empty() || sig.y != rct::zero() || sig.z != rct::zero())
-            return false;
-
-        const rct::key P = point_sub(T, ring[0]);
-        const rct::key msg = hash_to_scalar_varargs({&context_hash, &ring[0], &T});
-        schnorr_sig_s schnorr{};
-        schnorr.c = sig.A;
-        schnorr.y = sig.B;
-        return verify_schnorr_sig_X(msg, P, schnorr);
-    }
 
     const size_t m = ceil_log_n(ring_size, n);
     const size_t N = pow_n(n, m);

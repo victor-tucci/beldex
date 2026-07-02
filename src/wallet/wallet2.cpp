@@ -1734,10 +1734,19 @@ void wallet2::check_acc_out_precomp_once(const tx_out &o, const crypto::key_deri
     already_seen = true;
 }
 //----------------------------------------------------------------------------------------------------
-static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &derivation, unsigned int i, rct::key & mask, hw::device &hwdev)
+// HF21: in a mixed tx (native + tx_out_zarcanum outputs), the native rct
+// ecdhInfo/outPk arrays are COMPACTED to non-zarcanum outputs, so a native
+// output's slot in those arrays (rct_index) differs from its position in
+// tx.vout (vout_index). The amount-encryption key, however, is derived by the
+// sender from the VOUT index (generate_output_ephemeral_keys / amount_keys are
+// keyed by output_index == vout_index). So we must derive the key from
+// key_index (the vout index) while indexing the rct arrays by rct_index (the
+// compacted index). For a pure-native tx the two are equal, matching legacy
+// behaviour.
+static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &derivation, unsigned int key_index, unsigned int rct_index, rct::key & mask, hw::device &hwdev)
 {
   crypto::secret_key scalar1;
-  hwdev.derivation_to_scalar(derivation, i, scalar1);
+  hwdev.derivation_to_scalar(derivation, key_index, scalar1);
   try
   {
     switch (rv.type)
@@ -1747,9 +1756,9 @@ static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &
     case rct::RCTType::Bulletproof2:
     case rct::RCTType::CLSAG:
     case rct::RCTType::BulletproofPlus:
-      return rct::decodeRctSimple(rv, rct::sk2rct(scalar1), i, mask, hwdev);
+      return rct::decodeRctSimple(rv, rct::sk2rct(scalar1), rct_index, mask, hwdev);
     case rct::RCTType::Full:
-      return rct::decodeRct(rv, rct::sk2rct(scalar1), i, mask, hwdev);
+      return rct::decodeRct(rv, rct::sk2rct(scalar1), rct_index, mask, hwdev);
     default:
       LOG_ERROR(__func__ << ": Unsupported rct type: " << (int)rv.type);
       return 0;
@@ -1757,7 +1766,7 @@ static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &
   }
   catch (const std::exception &e)
   {
-    LOG_ERROR("Failed to decode input " << i);
+    LOG_ERROR("Failed to decode input " << rct_index);
     return 0;
   }
 }
@@ -1866,7 +1875,14 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
   THROW_WALLET_EXCEPTION_IF(std::find(outs.begin(), outs.end(), vout_index) != outs.end(), error::wallet_internal_error, "Same output cannot be added twice");
   if (tx_scan_info.money_transfered == 0 && !miner_tx)
   {
-    tx_scan_info.money_transfered = tools::decodeRct(tx.rct_signatures, tx_scan_info.received->derivation, vout_index, tx_scan_info.mask, m_account.get_device());
+    // HF21: native rct ecdhInfo/outPk are compacted to non-zarcanum outputs
+    // (tx_out_zarcanum carry their own commitment), so decodeRct must be
+    // indexed by the native-output position, not the vout index.
+    size_t rct_index = 0;
+    for (size_t k = 0; k < vout_index; ++k)
+      if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
+        ++rct_index;
+    tx_scan_info.money_transfered = tools::decodeRct(tx.rct_signatures, tx_scan_info.received->derivation, vout_index, rct_index, tx_scan_info.mask, m_account.get_device());
   }
 
   if (tx_scan_info.money_transfered == 0)
@@ -10004,10 +10020,6 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
           [](const auto& a, const auto& b) { return a.index < b.index; });
     }
 
-    std::cout << "Requesting outputs for " << get_outputs.size() << " outputs" << std::endl;
-    for (const auto &o: get_outputs)
-      std::cout << "  " << print_money(o.amount) << " " << o.index << std::endl;
-    std::cout << std::endl;
 
     if (ELPP->vRegistry()->allowed(el::Level::Debug, BELDEX_DEFAULT_LOG_CATEGORY))
     {
@@ -10065,8 +10077,9 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       outs.push_back(std::vector<get_outs_entry>());
       outs.back().reserve(fake_outputs_count + 1);
 
-      // HF21: For ZC outputs the commitment is C = amount*asset_id + mask*G,
-      // stored directly in amount_commitment. For BDX use the standard formula.
+      // HF21: For ZC outputs the commitment is C = amount*T + mask*G
+      // (T = blinded_asset_id), stored directly in amount_commitment. For BDX
+      // use the standard formula.
       const rct::key mask = td.is_zarcanum()
           ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
                 td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
@@ -13541,6 +13554,11 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
 {
   received = 0;
 
+  // HF21: tx_out_zarcanum outputs are not present in the native rct
+  // ecdhInfo/outPk arrays (they carry their own commitment). Those arrays are
+  // compacted to native (txout_to_key) outputs, so index them by the
+  // native-output position, not the vout position n. (mirrors expand_transaction_1)
+  size_t rct_output_index = 0;
   for (size_t n = 0; n < tx.vout.size(); ++n)
   {
     const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[n].target));
@@ -13571,9 +13589,9 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
       {
         crypto::secret_key scalar1;
         crypto::derivation_to_scalar(found_derivation, n, scalar1);
-        rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[n];
+        rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[rct_output_index];
         rct::ecdhDecode(ecdh_info, rct::sk2rct(scalar1), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
-        const rct::key C = tx.rct_signatures.outPk[n].mask;
+        const rct::key C = tx.rct_signatures.outPk[rct_output_index].mask;
         rct::key Ctmp;
         THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.mask.bytes) != 0, error::wallet_internal_error, "Bad ECDH input mask");
         THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.amount.bytes) != 0, error::wallet_internal_error, "Bad ECDH input amount");
@@ -13585,6 +13603,7 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
       }
       received += amount;
     }
+    ++rct_output_index;
   }
 }
 
@@ -14145,7 +14164,13 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       // decode rct
       crypto::secret_key shared_secret;
       crypto::derivation_to_scalar(derivation, proof.index_in_tx, shared_secret);
-      rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[proof.index_in_tx];
+      // HF21: native rct ecdhInfo is compacted to non-zarcanum outputs; index
+      // it by the native-output position, not the vout index.
+      size_t rct_index = 0;
+      for (size_t k = 0; k < proof.index_in_tx; ++k)
+        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
+          ++rct_index;
+      rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[rct_index];
       rct::ecdhDecode(ecdh_info, rct::sk2rct(shared_secret), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
       amount = rct::h2d(ecdh_info.amount);
     }
@@ -14815,6 +14840,9 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
         THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key derivation");
       }
       size_t output_index = 0;
+      // HF21: native rct arrays are compacted to non-zarcanum outputs; track a
+      // separate index for decodeRct (advances only for native outputs).
+      size_t rct_index = 0;
       bool miner_tx = cryptonote::is_coinbase(spent_tx);
       for (const cryptonote::tx_out& out : spent_tx.vout)
       {
@@ -14826,12 +14854,14 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
           if (tx_scan_info.money_transfered == 0 && !miner_tx)
           {
             rct::key mask;
-            tx_scan_info.money_transfered = tools::decodeRct(spent_tx.rct_signatures, tx_scan_info.received->derivation, output_index, mask, hwdev);
+            tx_scan_info.money_transfered = tools::decodeRct(spent_tx.rct_signatures, tx_scan_info.received->derivation, output_index, rct_index, mask, hwdev);
           }
           THROW_WALLET_EXCEPTION_IF(tx_money_got_in_outs >= std::numeric_limits<uint64_t>::max() - tx_scan_info.money_transfered,
               error::wallet_internal_error, "Overflow in received amounts");
           tx_money_got_in_outs += tx_scan_info.money_transfered;
         }
+        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+          ++rct_index;
         ++output_index;
       }
 

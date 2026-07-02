@@ -202,8 +202,7 @@ namespace
         !assign_uint64("current_supply",   descriptor.current_supply)  ||
         !assign_uint8("decimal_point",     descriptor.decimal_point)   ||
         !assign_string("ticker",           descriptor.ticker)          ||
-        !assign_string("full_name",        descriptor.full_name)       ||
-        !assign_bool("hidden_supply",      descriptor.hidden_supply))
+        !assign_string("full_name",        descriptor.full_name))
       return false;
 
     if (json.HasMember("meta_info")) {
@@ -3524,7 +3523,7 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
   m_cmd_binder.set_handler("deploy_new_asset",
                            [this](const auto& x) { return deploy_new_asset(x); },
                            tr(USAGE_DEPLOY_NEW_ASSET),
-                           tr("Deploy a new confidential asset. Provide a JSON file with: ticker, full_name, total_max_supply, current_supply, decimal_point, hidden_supply, meta_info."));
+                           tr("Deploy a new confidential asset. Provide a JSON file with: ticker, full_name, total_max_supply, current_supply, decimal_point, meta_info."));
 
   m_cmd_binder.set_handler("assets_by_owner",
                            [this](const auto& x) { return assets_by_owner(x); },
@@ -6173,9 +6172,9 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
           prompt << tr("WARNING: Outputs of multiple addresses are being used together, which might potentially compromise your confidentiality.\n");
       }
       for (const auto& [aid, amount] : asset_sent)
-        prompt << boost::format(tr("Sending %s.  ")) % format_amount_with_asset_id(*m_wallet, amount, tools::type_to_hex(aid));
+        prompt << boost::format(tr("Sending %s  ")) % format_amount_with_asset_id(*m_wallet, amount, tools::type_to_hex(aid));
       if (total_sent > 0 || asset_sent.empty())
-        prompt << boost::format(tr("Sending %s.  ")) % print_money(total_sent);
+        prompt << boost::format(tr("Sending %s  ")) % print_money(total_sent);
       if (ptx_vector.size() > 1)
       {
         prompt << boost::format(tr("Your transaction needs to be split into %llu transactions.  "
@@ -8213,8 +8212,17 @@ bool simple_wallet::emit_asset(const std::vector<std::string>& args_)
     return false;
   }
 
+  // Parse the human-entered amount as a DISPLAY amount and scale it by the
+  // asset's decimal_point (same convention as `transfer`), e.g. for dp=12
+  // "100" means 100 whole tokens == 100 * 10^12 atomic units. Previously this
+  // used get_xtype_from_string, which treated "100" as 100 atomic units and
+  // silently minted a millionth-of-a-millionth of the intended amount.
+  uint8_t decimal_point = 0;
+  if (info_res.contains("decimal_point") && info_res["decimal_point"].is_number_unsigned())
+    decimal_point = static_cast<uint8_t>(info_res["decimal_point"].get<unsigned>());
+
   uint64_t amount;
-  if (!epee::string_tools::get_xtype_from_string(amount, args[1]))
+  if (!parse_asset_amount(amount, args[1], decimal_point))
   {
     fail_msg_writer() << tr("Invalid amount: ") << args[1];
     return false;
@@ -8266,7 +8274,7 @@ bool simple_wallet::emit_asset(const std::vector<std::string>& args_)
     success_msg_writer(true)
         << "Asset emission submitted\n"
         << "  Asset ID: " << tools::type_to_hex(asset_id) << "\n"
-        << "  Amount:   " << cryptonote::print_money(amount) << " (atomic units)\n"
+        << "  Amount:   " << print_asset_amount(amount, decimal_point) << " (" << amount << " atomic units)\n"
         << "  To:       " << m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0});
   }
   catch (const std::exception& e)
@@ -8329,14 +8337,26 @@ bool simple_wallet::update_asset(const std::vector<std::string>& args_)
   adb.full_name = info_res.value("full_name", "");
   adb.meta_info = info_res.value("meta_info", "");
   tools::hex_to_type(info_res.value("owner", ""), adb.owner);
-  adb.hidden_supply = info_res.value("hidden_supply", false);
 
+  // update_asset may only change meta_info (consensus rejects changes to
+  // supply/ticker/full_name/decimal_point). `adb` holds the live on-chain
+  // descriptor; load the file into a copy and adopt ONLY its meta_info,
+  // preserving every other field from the chain. Otherwise the file's
+  // current_supply drifts from the on-chain supply after emit_asset and the
+  // tx is rejected.
+  cryptonote::asset_descriptor_base file_adb = adb;
   std::string error;
-  if (!load_asset_descriptor_from_json_file(fs::u8path(args[1]), adb, error))
+  if (!load_asset_descriptor_from_json_file(fs::u8path(args[1]), file_adb, error))
   {
     fail_msg_writer() << error << ": " << args[1];
     return false;
   }
+  if (file_adb.meta_info == adb.meta_info)
+  {
+    fail_msg_writer() << tr("update_asset: meta_info is unchanged, nothing to update");
+    return false;
+  }
+  adb.meta_info = file_adb.meta_info;
 
   SCOPED_WALLET_UNLOCK();
 

@@ -210,8 +210,7 @@ namespace
         !assign_uint64("current_supply", descriptor.current_supply) ||
         !assign_uint8("decimal_point", descriptor.decimal_point) ||
         !assign_string("ticker", descriptor.ticker) ||
-        !assign_string("full_name", descriptor.full_name) ||
-        !assign_bool("hidden_supply", descriptor.hidden_supply))
+        !assign_string("full_name", descriptor.full_name))
       return false;
 
     if (json.HasMember("meta_info")) {
@@ -864,6 +863,19 @@ namespace tools
           entry.ticker           = asset_tickers[asset_id];
           entry.balance          = total;
           entry.unlocked_balance = asset_unlocked.count(asset_id) ? asset_unlocked.at(asset_id) : 0;
+          // Resolve the human-readable ticker from the daemon's asset descriptor
+          // (the wallet doesn't cache it). Best-effort: if the daemon is
+          // unreachable or the asset isn't found, leave it empty rather than
+          // failing the whole balance query.
+          entry.ticker = "";
+          try {
+            nlohmann::json info_req = nlohmann::json::object();
+            info_req["asset_id"] = entry.asset_id;
+            nlohmann::json info_res = m_wallet->json_rpc("get_asset_info", info_req);
+            entry.ticker = info_res.value("ticker", "");
+          } catch (const std::exception&) {
+            // leave ticker empty on lookup failure
+          }
           res.asset_balances.emplace_back(std::move(entry));
         }
       }
@@ -1170,10 +1182,20 @@ namespace tools
       de.is_subaddress = info.is_subaddress;
       de.amount = it->amount;
       de.is_integrated = info.has_payment_id;
-      if (!it->asset_id.empty()) {
-        if (!tools::hex_to_type(it->asset_id, de.asset_id))
-          throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
+
+      // HF21: confidential-asset transfer. An empty asset_id means native BDX
+      // (txout_to_key); otherwise this destination receives the named asset as
+      // a tx_out_zarcanum output. de.amount is the asset's atomic-unit amount.
+      // Mirrors the CLI's `transfer <assetid>:<address> <amount>` form
+      // (simplewallet.cpp parse_asset_prefixed_address_arg -> de.asset_id).
+      if (!it->asset_id.empty())
+      {
+        crypto::asset_id aid;
+        if (!tools::hex_to_type(it->asset_id, aid))
+          throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id in destination: " + it->asset_id};
+        de.asset_id = aid;
       }
+
       dsts.push_back(de);
 
       if (info.has_payment_id)
@@ -1236,8 +1258,16 @@ namespace tools
   //------------------------------------------------------------------------------------------------------------------------------
   static uint64_t total_amount(const wallet::pending_tx &ptx)
   {
+    // HF21: only sum NATIVE (BDX) destinations. A tx may carry destinations of
+    // different kinds (BDX and/or one confidential asset), whose atomic units
+    // are NOT comparable, so summing them into one number is meaningless (e.g.
+    // 10 asset-atoms + 10 BDX-atoms != 10000000010 of anything). Per-destination
+    // amounts -- including asset destinations -- are still reported in
+    // amounts_by_dest, and the caller knows which asset each is from its request.
     uint64_t amount = 0;
-    for (const auto &dest: ptx.dests) amount += dest.amount;
+    for (const auto &dest: ptx.dests)
+      if (!dest.is_zarcanum())
+        amount += dest.amount;
     return amount;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -1279,9 +1309,12 @@ namespace tools
         abd.amounts.push_back(dst.amount);
       fill(amounts_by_dest, abd);
 
-      // add spent key images
+      // add spent key images. HF21: a confidential-asset transfer spends both
+      // native txin_to_key inputs (fee/change) and txin_zc_input inputs (the
+      // asset), so accept either -- both carry a k_image. Mirrors wallet2.cpp's
+      // all_known_txin_type collection.
       tools::wallet_rpc::key_image_list key_image_list;
-      bool all_are_txin_to_key = std::all_of(ptx.tx.vin.begin(), ptx.tx.vin.end(), [&](const cryptonote::txin_v& s_e) -> bool
+      bool all_known_txin_type = std::all_of(ptx.tx.vin.begin(), ptx.tx.vin.end(), [&](const cryptonote::txin_v& s_e) -> bool
       {
         if (std::holds_alternative<cryptonote::txin_to_key>(s_e))
         {
@@ -1295,7 +1328,7 @@ namespace tools
         }
         return false;
       });
-      THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, error::unexpected_txin_type, ptx.tx);
+      THROW_WALLET_EXCEPTION_IF(!all_known_txin_type, error::unexpected_txin_type, ptx.tx);
       fill(spent_key_images, key_image_list);
 
     }
@@ -4168,26 +4201,22 @@ namespace {
     adb.full_name = info_res.value("full_name", "");
     adb.meta_info = info_res.value("meta_info", "");
     tools::hex_to_type(info_res.value("owner", ""), adb.owner);
-    adb.hidden_supply = info_res.value("hidden_supply", false);
 
+    // update_asset may only change meta_info (consensus rejects changes to
+    // supply/ticker/full_name/decimal_point). `adb` already holds the LIVE
+    // on-chain descriptor; load the JSON file into a copy and adopt ONLY its
+    // meta_info, preserving every other field from the chain. This avoids a
+    // spurious rejection when the file's current_supply has drifted from the
+    // on-chain supply after emit_asset operations -- the caller's file need only
+    // carry the new meta_info, the rest is taken from the current descriptor.
+    cryptonote::asset_descriptor_base file_adb = adb;
     std::string error;
-    if (!load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), adb, error))
+    if (!load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), file_adb, error))
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + ": " + req.json_filename};
 
-    // Client-side validation: ensure only meta_info was changed
-    crypto::public_key old_owner;
-    tools::hex_to_type(info_res.value("owner", ""), old_owner);
-    
-    if (adb.total_max_supply != info_res.value("total_max_supply", (uint64_t)0) ||
-        adb.current_supply != info_res.value("current_supply", (uint64_t)0) ||
-        adb.ticker != info_res.value("ticker", "") ||
-        adb.full_name != info_res.value("full_name", "") ||
-        adb.owner != old_owner ||
-        adb.decimal_point != info_res.value("decimal_point", 0) ||
-        adb.hidden_supply != info_res.value("hidden_supply", false))
-    {
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Only 'meta_info' can be updated in an update_asset transaction."};
-    }
+    if (file_adb.meta_info == adb.meta_info)
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "update_asset: meta_info is unchanged, nothing to update"};
+    adb.meta_info = file_adb.meta_info;
 
     cryptonote::tx_extra_asset_descriptor_operation ado{};
     ado.operation_type = cryptonote::asset_descriptor_operation_type::update_asset;

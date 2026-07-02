@@ -438,11 +438,19 @@ namespace rct {
     }
 
     // Pedersen commitment for a custom asset output:
-    //   C = amount * asset_id + mask * G
-    // where asset_id is the plaintext asset pubkey (used as the H-equivalent)
-    key commitAsset(const key& mask, const key& asset_id, xmr_amount amount) {
+    //   C = amount * T + mask * G
+    // where T is the blinded asset id (T = asset_id + r*X) -- for an output,
+    // its OWN T; for a pseudo-output (spend-side), T_real = asset_id + real_r*X
+    // reconstructed from the real spent output's own blinding scalar (NOT a
+    // fresh/independent blinding). This is required for CLSAG_GGX's layer-1
+    // (mask) relation to collapse cleanly for the real ring index: since both
+    // sides use the identical T, the amount term cancels and only the mask
+    // differs -- passing the plaintext asset_id here instead would make the
+    // proof unconstructible for genuine spends. Mirrors Zano's
+    // currency_format_utils.cpp:2456/2490.
+    key commitAsset(const key& mask, const key& blinded_asset_id, xmr_amount amount) {
         key am = d2h(amount);
-        key amAsset = scalarmultKey(asset_id, am);  // amount * asset_id
+        key amAsset = scalarmultKey(blinded_asset_id, am);  // amount * T
         key maskG = scalarmultBase(mask);            // mask * G
         key C;
         addKeys(C, amAsset, maskG);

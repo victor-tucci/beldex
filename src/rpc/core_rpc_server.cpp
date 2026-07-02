@@ -742,8 +742,7 @@ namespace cryptonote::rpc {
             {"owner", tools::type_to_hex(x.descriptor.owner)},
             {"total_max_supply", x.descriptor.total_max_supply},
             {"current_supply", x.descriptor.current_supply},
-            {"decimal_point", x.descriptor.decimal_point},
-            {"hidden_supply", x.descriptor.hidden_supply}
+            {"decimal_point", x.descriptor.decimal_point}
           };
         }
         set("asset", std::move(ado));
@@ -3770,7 +3769,6 @@ namespace cryptonote::rpc {
     resp["current_supply"]   = state.current_supply;
     resp["total_max_supply"] = state.total_max_supply;
     resp["decimal_point"]    = state.descriptor.decimal_point;
-    resp["hidden_supply"]    = state.descriptor.hidden_supply;
     resp["meta_info"]        = state.descriptor.meta_info;
     resp["status"]           = STATUS_OK;
   }
