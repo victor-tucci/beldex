@@ -130,20 +130,13 @@ namespace
     return true;
   }
 
-  bool load_asset_descriptor_from_json_file(
-      const fs::path& filename,
+  bool load_asset_descriptor_from_json(
+      std::string_view data,
       cryptonote::asset_descriptor_base& descriptor,
       std::string& error)
   {
-    std::string data;
-    if (!tools::slurp_file(filename, data))
-    {
-      error = "Failed to read asset specification file";
-      return false;
-    }
-
     rapidjson::Document json;
-    if (json.Parse(data.c_str()).HasParseError())
+    if (json.Parse(data.data(), data.size()).HasParseError())
     {
       error = "Asset specification is not valid JSON";
       return false;
@@ -266,6 +259,21 @@ namespace
     }
 
     return validate_asset_descriptor_for_deploy(descriptor, error);
+  }
+
+  bool load_asset_descriptor_from_json_file(
+      const fs::path& filename,
+      cryptonote::asset_descriptor_base& descriptor,
+      std::string& error)
+  {
+    std::string data;
+    if (!tools::slurp_file(filename, data))
+    {
+      error = "Failed to read asset specification file";
+      return false;
+    }
+
+    return load_asset_descriptor_from_json(data, descriptor, error);
   }
 
   std::optional<tools::password_container> password_prompter(const char *prompt, bool verify)
@@ -3923,14 +3931,14 @@ namespace {
     DEPLOY_NEW_ASSET::response res{};
 
     // 1. Validate request
-    if (req.json_filename.empty())
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_filename is required"};
+    if (req.json_string.empty())
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_string is required"};
 
-    // 2. Load descriptor from JSON file
+    // 2. Load descriptor from inline JSON
     cryptonote::asset_descriptor_base descriptor{};
     std::string error;
-    if (!load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), descriptor, error))
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + ": " + req.json_filename};
+    if (!load_asset_descriptor_from_json(req.json_string, descriptor, error))
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error};
 
     // 3. Validate descriptor
     if (!validate_asset_descriptor_for_deploy(descriptor, error))

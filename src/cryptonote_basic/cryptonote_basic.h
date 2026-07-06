@@ -610,7 +610,7 @@ namespace cryptonote
   constexpr txtype transaction_prefix::get_max_type_for_hf(hf hf_version)
   {
     txtype result = txtype::standard;
-    if      (hf_version >= feature::CONFIDENTIAL_ASSETS) result = txtype::update_asset;
+    if      (hf_version >= feature::CONFIDENTIAL_ASSETS) result = txtype::burn_asset;
     else if (hf_version >= hf::hf18_bns)              result = txtype::coin_burn;
     else if (hf_version >= hf::hf16)                  result = txtype::beldex_name_system;
     else if (hf_version >= hf::hf15_flash)            result = txtype::stake;

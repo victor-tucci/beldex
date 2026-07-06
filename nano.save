@@ -1,0 +1,11 @@
+Accept inline JSON string for deploy_new_asset RPC
+
+Replace the json_filename parameter with json_string in the
+deploy_new_asset RPC.
+- Update the RPC request definition to accept an inline JSON string.
+- Update request serialization/deserialization to use json_string.
+- Parse asset metadata directly from the request body instead of reading
+  it from a file.
+- Fix the deploy_new_asset response serializer to return tx_key,
+  tx_hex, full_name, and tx_fee.
+- Simplify RPC usage by removing the dependency on a local JSON file.

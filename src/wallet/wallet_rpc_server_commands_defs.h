@@ -2606,12 +2606,12 @@ This command is only required if the open wallet is one of the owners of a BNS r
   {
     static constexpr auto names() { return NAMES("deploy_new_asset"); }
     static constexpr const char* description =
-        "Deploy a new confidential asset. Pass the path to a JSON descriptor file containing: "
+        "Deploy a new confidential asset. Pass the asset JSON descriptor inline containing: "
         "ticker, full_name, total_max_supply, current_supply, decimal_point, hidden_supply, meta_info.";
 
     struct request
     {
-      std::string json_filename;              // Path to the asset JSON descriptor file
+      std::string json_string;                // Inline asset JSON descriptor
       uint32_t account_index = 0;             // Account to use for fees
       uint32_t priority = 0;                  // Transaction priority
       std::set<uint32_t> subaddr_indices;     // (Optional) Subaddresses to use for fees
