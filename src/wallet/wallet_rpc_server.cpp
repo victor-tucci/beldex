@@ -130,20 +130,13 @@ namespace
     return true;
   }
 
-  bool load_asset_descriptor_from_json_file(
-      const fs::path& filename,
+  bool load_asset_descriptor_from_json(
+      std::string_view data,
       cryptonote::asset_descriptor_base& descriptor,
       std::string& error)
   {
-    std::string data;
-    if (!tools::slurp_file(filename, data))
-    {
-      error = "Failed to read asset specification file";
-      return false;
-    }
-
     rapidjson::Document json;
-    if (json.Parse(data.c_str()).HasParseError())
+    if (json.Parse(data.data(), data.size()).HasParseError())
     {
       error = "Asset specification is not valid JSON";
       return false;
@@ -266,6 +259,21 @@ namespace
     }
 
     return validate_asset_descriptor_for_deploy(descriptor, error);
+  }
+
+  bool load_asset_descriptor_from_json_file(
+      const fs::path& filename,
+      cryptonote::asset_descriptor_base& descriptor,
+      std::string& error)
+  {
+    std::string data;
+    if (!tools::slurp_file(filename, data))
+    {
+      error = "Failed to read asset specification file";
+      return false;
+    }
+
+    return load_asset_descriptor_from_json(data, descriptor, error);
   }
 
   std::optional<tools::password_container> password_prompter(const char *prompt, bool verify)
@@ -3923,14 +3931,14 @@ namespace {
     DEPLOY_NEW_ASSET::response res{};
 
     // 1. Validate request
-    if (req.json_filename.empty())
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_filename is required"};
+    if (req.json_string.empty())
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_string is required"};
 
-    // 2. Load descriptor from JSON file
+    // 2. Load descriptor from inline JSON
     cryptonote::asset_descriptor_base descriptor{};
     std::string error;
-    if (!load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), descriptor, error))
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + ": " + req.json_filename};
+    if (!load_asset_descriptor_from_json(req.json_string, descriptor, error))
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error};
 
     // 3. Validate descriptor
     if (!validate_asset_descriptor_for_deploy(descriptor, error))
@@ -4115,6 +4123,55 @@ namespace {
       throw wallet_rpc_error{error_code::TX_TOO_LARGE, "Transaction would be too large."};
     if (!req.do_not_relay)
       m_wallet->commit_tx(ptx_vector.front());
+    res.tx_hash = tools::type_to_hex(cryptonote::get_transaction_hash(ptx_vector.front().tx));
+    if (req.get_tx_key)
+      res.tx_key = tools::type_to_hex(ptx_vector.front().tx_key);
+    if (req.get_tx_hex)
+      res.tx_blob = oxenc::to_hex(cryptonote::tx_to_blob(ptx_vector.front().tx));
+    if (req.get_tx_metadata)
+    {
+      std::string metadata = m_wallet->dump_tx_to_str(ptx_vector);
+      res.tx_metadata = oxenc::to_hex(metadata);
+    }
+    res.fee = ptx_vector.front().fee;
+    return res;
+  }
+
+  // HF21: Burn supply from an existing confidential asset
+  BURN_ASSET::response wallet_rpc_server::invoke(BURN_ASSET::request&& req)
+  {
+    require_open();
+    BURN_ASSET::response res{};
+
+    crypto::asset_id asset_id;
+    if (!tools::hex_to_type(req.asset_id, asset_id) || asset_id == crypto::null_aid)
+      throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
+    if (req.amount == 0)
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Amount must be greater than 0"};
+
+    std::vector<uint8_t> extra;
+    cryptonote::tx_extra_asset_descriptor_operation ado{};
+    ado.operation_type = cryptonote::asset_descriptor_operation_type::burn_asset;
+    ado.fields         = static_cast<uint8_t>(cryptonote::asset_field_asset_id |
+                                              cryptonote::asset_field_amount);
+    ado.asset_id       = asset_id;
+    ado.amount         = req.amount;
+
+    if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado))
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Failed to encode asset burn operation into tx extra"};
+
+    auto ptx_vector = m_wallet->create_asset_burn_tx(
+        asset_id, req.amount, cryptonote::TX_OUTPUT_DECOYS, req.priority, extra,
+        req.account_index, req.subaddr_indices);
+
+    if (ptx_vector.empty())
+      throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "No outputs found or daemon not ready"};
+    if (ptx_vector.size() != 1)
+      throw wallet_rpc_error{error_code::TX_TOO_LARGE, "Transaction would be too large."};
+
+    if (!req.do_not_relay)
+      m_wallet->commit_tx(ptx_vector.front());
+
     res.tx_hash = tools::type_to_hex(cryptonote::get_transaction_hash(ptx_vector.front().tx));
     if (req.get_tx_key)
       res.tx_key = tools::type_to_hex(ptx_vector.front().tx_key);

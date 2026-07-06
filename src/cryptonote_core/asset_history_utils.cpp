@@ -78,11 +78,19 @@ bool verify_asset_amount_commitment(const transaction& tx,
     return false;
   }
 
-  // Tie the ADO commitment to the actual minted outputs: the sum of the
-  // zarcanum output commitments must equal the ADO amount_commitment.
-  // Combined with the g_proof above (which fixes C = declared_amount·asset_id +
-  // mask·G), this forces sum(output amounts) == declared_amount, so an issuer
-  // cannot declare a small supply while minting outputs worth more.
+  // For deploy/emit, tie the ADO commitment to the actual minted outputs: the
+  // sum of the zarcanum output commitments must equal the ADO
+  // amount_commitment. Combined with the g_proof above (which fixes
+  // C = declared_amount·asset_id + mask·G), this forces
+  // sum(output amounts) == declared_amount, so an issuer cannot declare a
+  // small supply while minting outputs worth more.
+  //
+  // Burns intentionally destroy the declared amount rather than materializing
+  // it as outputs, so their ADO commitment is consumed by the zc_balance_proof
+  // instead of being matched against sum(outputs).
+  if (op.operation_type == asset_descriptor_operation_type::burn_asset)
+    return true;
+
   rct::key sum_out = rct::identity();
   bool saw_zc_out = false;
   for (const auto& o : tx.vout)
@@ -228,7 +236,7 @@ bool validate_asset_descriptor_operation(const tx_extra_asset_descriptor_operati
       break;
 
     case asset_descriptor_operation_type::emit_asset:
-    case asset_descriptor_operation_type::public_burn:
+    case asset_descriptor_operation_type::burn_asset:
       if (!op.field_is_set(asset_field_amount) || op.amount == 0)
       {
         reason = "asset emit/burn operation requires non-zero amount";
@@ -317,14 +325,14 @@ bool apply_asset_operation_to_state(
       return true;
     }
 
-    case asset_descriptor_operation_type::public_burn:
+    case asset_descriptor_operation_type::burn_asset:
     {
       if (!state.exists)
-        return reject("public_burn for unknown asset");
+        return reject("burn_asset for unknown asset");
       if (!op.field_is_set(asset_field_amount))
-        return reject("public_burn missing amount");
+        return reject("burn_asset missing amount");
       if (state.current_supply < op.amount)
-        return reject("public_burn exceeds current supply");
+        return reject("burn_asset exceeds current supply");
       state.current_supply -= op.amount;
       state.descriptor.current_supply = state.current_supply;
       return true;
@@ -415,9 +423,10 @@ bool validate_tx_asset_operations_against_db(
   {
     saw_asset_op = true;
 
-    if (tx.type != txtype::deploy_new_asset && tx.type != txtype::emit_asset && tx.type != txtype::update_asset)
+    if (tx.type != txtype::deploy_new_asset && tx.type != txtype::emit_asset &&
+        tx.type != txtype::update_asset && tx.type != txtype::burn_asset)
     {
-      reason = "asset descriptor operation is only allowed in deploy_new_asset, emit_asset or update_asset transactions";
+      reason = "asset descriptor operation is only allowed in deploy_new_asset, emit_asset, update_asset or burn_asset transactions";
       return false;
     }
 
@@ -465,12 +474,13 @@ bool validate_tx_asset_operations_against_db(
     if (inserted && !load_asset_state_from_history(db, asset_id, it->second, reason))
       return false;
 
-    // ── HF21: amount-commitment binding (register + emit) ────────────────────
+    // ── HF21: amount-commitment binding (register + emit + burn) ─────────────
     // Cryptographically ties the publicly-declared amount to the commitment in
-    // the ADO, preventing an issuer from declaring a small supply while minting
-    // outputs worth more (asset inflation).
+    // the ADO. For register/emit this prevents hidden inflation; for burn it
+    // provides the commitment consumed by the CA balance proof's burn equation.
     if (op.operation_type == asset_descriptor_operation_type::register_asset ||
-        op.operation_type == asset_descriptor_operation_type::emit_asset)
+        op.operation_type == asset_descriptor_operation_type::emit_asset ||
+        op.operation_type == asset_descriptor_operation_type::burn_asset)
     {
       const uint64_t declared_amount =
           (op.operation_type == asset_descriptor_operation_type::register_asset)

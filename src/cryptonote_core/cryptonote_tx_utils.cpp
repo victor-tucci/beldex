@@ -1121,20 +1121,25 @@ namespace cryptonote
 
     remove_field_from_tx_extra<tx_extra_additional_pub_keys>(tx.extra);
 
-    // ── HF21: asset amount-commitment binding (deploy + emit) ────────────────
+    // ── HF21: asset amount-commitment binding (deploy + emit + burn) ─────────
     // Bind the publicly-declared asset amount to a Pedersen commitment carried
     // in the ADO:  C = amount * asset_id + mask * G  (UNSCALED, matching the
     // output amount_commitment convention).  The matching g_proof (generated
     // below over the tx prefix hash) proves C - amount·asset_id = mask·G, i.e.
     // the commitment encodes exactly the declared amount with the asset_id as
-    // base.  The on-chain verifier additionally checks that the zarcanum output
-    // commitments sum to C, which forces sum(output amounts) == declared amount.
-    // Without this an emitter could declare amount=1 while minting outputs worth
-    // far more (inflation).  Ported/adapted from Zano construct_tx_handle_ado +
-    // validate_asset_operation_amount_commitment.
-    bool     aop_required = false;
-    rct::key aop_mask     = rct::zero();
-    if (tx.type == txtype::deploy_new_asset || tx.type == txtype::emit_asset)
+    // base.
+    //
+    // For deploy/emit, the on-chain verifier additionally checks that the
+    // zarcanum output commitments sum to C, forcing sum(output amounts) ==
+    // declared amount and preventing hidden inflation.
+    //
+    // For burn_asset, the zc_balance_proof subtracts this same commitment from
+    // the spend-side balance equation, so C represents the publicly-declared
+    // amount intentionally destroyed rather than emitted to outputs.
+    bool     aop_required   = false;
+    rct::key aop_mask       = rct::zero();
+    rct::key aop_commitment = rct::zero();
+    if (tx.type == txtype::deploy_new_asset || tx.type == txtype::emit_asset || tx.type == txtype::burn_asset)
     {
       tx_extra_asset_descriptor_operation ado{};
       if (!get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
@@ -1156,36 +1161,46 @@ namespace cryptonote
         asset_id        = ado.asset_id;
       }
 
-      // The commitment mask is the SUM of the per-output amount masks of the
-      // minted zarcanum outputs (re-derived exactly as construct_tx_out_zarcanum
-      // does).  This makes C == sum(output amount_commitments), so the on-chain
-      // balance check (sum of zarcanum output commitments == ADO commitment)
-      // forces sum(output amounts) == declared_amount → no inflation.
-      rct::key sum_masks = rct::zero();
+      if (tx.type == txtype::burn_asset)
       {
-        size_t out_idx = 0;
-        for (const auto& d : destinations)
-        {
-          if (d.is_zarcanum())
-          {
-            crypto::key_derivation derivation{};
-            if (!hwdev.generate_key_derivation(d.addr.m_view_public_key, tx_key, derivation))
-            {
-              LOG_ERROR("Failed to generate key derivation for asset amount commitment");
-              return false;
-            }
-            rct::key mask = cryptonote::zarcanum_derivation_to_scalar(derivation, out_idx, "amount_mask");
-            sc_add(sum_masks.bytes, sum_masks.bytes, mask.bytes);
-          }
-          ++out_idx;
-        }
+        // Burns do not emit the declared amount to outputs; instead the balance
+        // proof later subtracts this commitment from the spend equation.
+        aop_mask = rct::skGen();
       }
-      aop_mask = sum_masks;
+      else
+      {
+        // The commitment mask is the SUM of the per-output amount masks of the
+        // minted zarcanum outputs (re-derived exactly as construct_tx_out_zarcanum
+        // does).  This makes C == sum(output amount_commitments), so the on-chain
+        // balance check (sum of zarcanum output commitments == ADO commitment)
+        // forces sum(output amounts) == declared_amount → no inflation.
+        rct::key sum_masks = rct::zero();
+        {
+          size_t out_idx = 0;
+          for (const auto& d : destinations)
+          {
+            if (d.is_zarcanum())
+            {
+              crypto::key_derivation derivation{};
+              if (!hwdev.generate_key_derivation(d.addr.m_view_public_key, tx_key, derivation))
+              {
+                LOG_ERROR("Failed to generate key derivation for asset amount commitment");
+                return false;
+              }
+              rct::key mask = cryptonote::zarcanum_derivation_to_scalar(derivation, out_idx, "amount_mask");
+              sc_add(sum_masks.bytes, sum_masks.bytes, mask.bytes);
+            }
+            ++out_idx;
+          }
+        }
+        aop_mask = sum_masks;
+      }
 
       // C = declared_amount * asset_id + sum_masks * G   (UNSCALED, matching the
       // unscaled output commitment convention used throughout Beldex).
       const rct::key& asset_pt = rct::aid2rct(asset_id);
       rct::key commitment_full = rct::commitAsset(aop_mask, asset_pt, declared_amount);
+      aop_commitment = commitment_full;
 
       ado.amount_commitment = rct::rct2pk(commitment_full);
       ado.fields = static_cast<uint8_t>(ado.fields | asset_field_amount_commitment);
@@ -1536,15 +1551,17 @@ namespace cryptonote
             }
           }
 
-          // ── HF21: asset balance proof (conservation statement) ──────────────
+          // ── HF21: asset balance proof (conservation/burn statement) ─────────
           // Proves sum(input amount commitments) - sum(output amount
           // commitments) opens to a zero amount, i.e. nothing was minted or
-          // destroyed by this spend. Required by verAssetProofs whenever the
-          // tx has any zc input. Since every zc source/destination in a tx
+          // destroyed by this spend. For burn_asset, the proof instead subtracts
+          // the ADO burn commitment, proving that the missing amount equals the
+          // publicly-declared burned amount. Required by verAssetProofs whenever
+          // the tx has any zc input. Since every zc source/destination in a tx
           // shares one asset_id (enforced above) and commitments are built as
-          // C = amount*asset_id + mask*G, a balanced transfer (Δamount == 0)
-          // makes the asset_id term vanish entirely, leaving a pure
-          // Δmask*G residual. A double Schnorr proof binds knowledge of that
+          // C = amount*asset_id + mask*G, the asset_id terms vanish once the
+          // output side plus any burn commitment matches the inputs, leaving a
+          // pure Δmask*G residual. A double Schnorr proof binds knowledge of that
           // residual mask *and* knowledge of tx_key.sec (against tx_pub_key)
           // under one challenge, so the proof can't be detached from this
           // specific transaction (tx_has_zarcanum_content above guarantees
@@ -1581,6 +1598,12 @@ namespace cryptonote
 
               rct::key delta_mask;
               sc_sub(delta_mask.bytes, sum_in_mask.bytes, sum_out_mask.bytes);
+
+              if (tx_params.tx_type == txtype::burn_asset)
+              {
+                rct::subKeys(P, P, aop_commitment);
+                sc_sub(delta_mask.bytes, delta_mask.bytes, aop_mask.bytes);
+              }
 
               rct::zc_balance_proof bal{};
               bal.P = P;
@@ -1636,7 +1659,7 @@ namespace cryptonote
             }
           }
 
-          // ── HF21: asset amount-commitment proof (deploy + emit) ─────────────
+          // ── HF21: asset amount-commitment proof (deploy + emit + burn) ──────
           // Proves the ADO's amount_commitment encodes exactly the declared
           // amount with the asset_id as base:  A = C·8 - amount·asset_id = mask·G.
           if (aop_required)
@@ -1651,7 +1674,9 @@ namespace cryptonote
             aop.flags = 2; // g_proof present
             tx.asset_proofs.push_back(std::move(aop));
             MINFO("Attached asset amount-commitment proof for "
-                  << (tx.type == txtype::deploy_new_asset ? "deploy" : "emit") << " tx");
+                  << (tx.type == txtype::deploy_new_asset ? "deploy"
+                      : tx.type == txtype::emit_asset ? "emit" : "burn")
+                  << " tx");
           }
 
           // ── HF21: asset ownership proof for emit_asset ──────────────────────

@@ -187,6 +187,7 @@ struct Wallet2CallbackImpl : public tools::i_wallet2_callback
                         const crypto::hash &txid,
                         const cryptonote::transaction &in_tx,
                         uint64_t amount,
+                        const crypto::asset_id &asset_id,
                         const cryptonote::transaction &spend_tx,
                         const cryptonote::subaddress_index &subaddr_index) override
     {
@@ -194,7 +195,7 @@ struct Wallet2CallbackImpl : public tools::i_wallet2_callback
         std::string tx_hash = tools::type_to_hex(txid);
         LOG_PRINT_L3(__FUNCTION__ << ": money spent. height:  " << height
                      << ", tx: " << tx_hash
-                     << ", amount: " << print_money(amount)
+                     << ", amount: " << (asset_id == crypto::null_aid ? print_money(amount) : std::to_string(amount))
                      << ", idx: " << subaddr_index);
         // do not signal on sent tx if wallet is not syncronized completely
         if (m_listener && m_wallet->synchronized()) {

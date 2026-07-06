@@ -1689,10 +1689,10 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
     if ((hf_version >= hf::hf12_security_signature) && info.is_miner){
         crypto::hash hash = cryptonote::make_security_hash_from(height,
                                                                 b);
-        const std::string skey_string = "90cdd28539f924d1e39ef34ad31d8567ee84c1a5f78fb3884decd5bbb54eb90a";
+        const std::string skey_string = "1720bda28f39942427bee804dc626cf54ba80f23d82bf173c474785652ac5d0f";
         crypto::secret_key skey;
         tools::hex_to_type(skey_string,skey);
-        const std::string pkey_string = "25d30dd987eee0c643a61f013a223756bc68dfa20201a7f45006887e2b9cee72";
+        const std::string pkey_string = "7e709e81ac9c04d2b1704db8dd331db037b570f5e901f6dbc1fe3a98bf2fa9e1";
 
         crypto::public_key pkey;
         tools::hex_to_type(pkey_string,pkey);
@@ -3278,7 +3278,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   // spend-style ZC proof bundle is only required for transactions that are not
   // initial asset registrations.
   if (hf_version >= feature::CONFIDENTIAL_ASSETS &&
-      tx.has_zarcanum_outputs())
+      (tx.has_zarcanum_outputs() || tx.type == txtype::burn_asset))
   {
     if (tx.type == txtype::emit_asset)
     {
@@ -3327,6 +3327,21 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       if (!has_amount_commitment)
       {
         MERROR_VER("Asset registration tx missing amount-commitment proof");
+        tvc.m_invalid_input = true;
+        return false;
+      }
+    }
+
+    if (tx.type == txtype::burn_asset)
+    {
+      bool has_amount_commitment = false;
+      for (const auto& proof : tx.asset_proofs)
+      {
+        if (std::holds_alternative<rct::asset_operation_proof>(proof)) { has_amount_commitment = true; }
+      }
+      if (!has_amount_commitment)
+      {
+        MERROR_VER("Asset burn tx missing amount-commitment proof");
         tvc.m_invalid_input = true;
         return false;
       }
@@ -4790,9 +4805,9 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
           return false;
         }
 
-        if (tx.type != txtype::deploy_new_asset && tx.type != txtype::emit_asset && tx.type != txtype::update_asset)
+        if (tx.type != txtype::deploy_new_asset && tx.type != txtype::emit_asset && tx.type != txtype::update_asset && tx.type != txtype::burn_asset)
         {
-          MERROR_VER("Asset operation found in tx type " << tx.type << " but only deploy_new_asset, emit_asset, and update_asset are allowed");
+          MERROR_VER("Asset operation found in tx type " << tx.type << " but only deploy_new_asset, emit_asset, update_asset, burn_asset are allowed");
           bvc.m_verifivation_failed = true;
           return_tx_to_pool(txs);
           return false;
@@ -5210,7 +5225,7 @@ bool Blockchain::add_new_block(const block& bl, block_verification_context& bvc,
                                                                                              security_signature);
         if (has_security_signature) {
             uint64_t height = cryptonote::get_block_height(bl);
-            const std::string pkey_string = "25d30dd987eee0c643a61f013a223756bc68dfa20201a7f45006887e2b9cee72";
+            const std::string pkey_string = "7e709e81ac9c04d2b1704db8dd331db037b570f5e901f6dbc1fe3a98bf2fa9e1";
             crypto::public_key pkey;
             tools::hex_to_type(pkey_string,pkey);
             crypto::hash hash = cryptonote::make_security_hash_from(height,

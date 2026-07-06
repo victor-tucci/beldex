@@ -580,7 +580,7 @@ namespace cryptonote
     register_asset = 1,
     emit_asset = 2,
     update_asset = 3,
-    public_burn = 4,
+    burn_asset = 4,
     _count
   };
 
