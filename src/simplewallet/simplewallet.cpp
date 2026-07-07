@@ -9856,9 +9856,21 @@ bool simple_wallet::check_reserve_proof(const std::vector<std::string> &args)
   try
   {
     uint64_t total, spent;
-    if (m_wallet->check_reserve_proof(info.address, args.size() == 3 ? args[2] : "", sig_str, total, spent))
+    std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> asset_totals;
+    if (m_wallet->check_reserve_proof(info.address, args.size() == 3 ? args[2] : "", sig_str, total, spent, asset_totals))
     {
       success_msg_writer(true) << fmt::format(tr("Good signature -- total: {}, spent: {}, unspent: {}\n"), print_money(total), print_money(spent), print_money(total - spent));
+      for (const auto& [asset_id, amounts] : asset_totals)
+      {
+        uint64_t a_total = amounts.first;
+        uint64_t a_spent = amounts.second;
+        const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+        const std::string f_total = asset_info ? print_asset_amount(a_total, asset_info->decimal_point) : std::to_string(a_total);
+        const std::string f_spent = asset_info ? print_asset_amount(a_spent, asset_info->decimal_point) : std::to_string(a_spent);
+        const std::string f_unspent = asset_info ? print_asset_amount(a_total - a_spent, asset_info->decimal_point) : std::to_string(a_total - a_spent);
+        std::string ticker = asset_info && !asset_info->ticker.empty() ? " (" + asset_info->ticker + ")" : "";
+        success_msg_writer(true) << fmt::format(tr("Asset {}{} -- total: {}, spent: {}, unspent: {}\n"), tools::type_to_hex(asset_id), ticker, f_total, f_spent, f_unspent);
+      }
     }
     else
     {
@@ -10727,6 +10739,8 @@ void simple_wallet::print_accounts(const std::string& tag)
   }
   success_msg_writer() << fmt::format(tr(" {:>15} {:>21} {:>21} {:>21}"), "Address", "Balance", "Unlocked balance", "Label");
   uint64_t total_balance = 0, total_unlocked_balance = 0;
+  std::map<crypto::asset_id, uint64_t> asset_total_balance;
+  std::map<crypto::asset_id, uint64_t> asset_total_unlocked_balance;
 
   for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index)
   {
@@ -10740,11 +10754,58 @@ void simple_wallet::print_accounts(const std::string& tag)
       % print_money(m_wallet->balance(account_index, false))
       % print_money(m_wallet->unlocked_balance(account_index, false,NULL,NULL))
       % m_wallet->get_subaddress_label({account_index, 0});
+
+    const auto asset_bals = m_wallet->asset_balances(account_index, false);
+    const auto asset_unlocked_bals = m_wallet->asset_balances(account_index, true);
+    if (!asset_bals.empty()) {
+      size_t num_assets = asset_bals.size();
+      size_t count = 0;
+      for (const auto& [asset_id, amount] : asset_bals) {
+        ++count;
+        uint64_t unlocked_amount = 0;
+        auto unlocked_it = asset_unlocked_bals.find(asset_id);
+        if (unlocked_it != asset_unlocked_bals.end())
+          unlocked_amount = unlocked_it->second;
+
+        asset_total_balance[asset_id] += amount;
+        asset_total_unlocked_balance[asset_id] += unlocked_amount;
+
+        const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+        const std::string formatted_amount = asset_info ? print_asset_amount(amount, asset_info->decimal_point, false) : std::to_string(amount);
+        const std::string formatted_unlocked = asset_info ? print_asset_amount(unlocked_amount, asset_info->decimal_point, false) : std::to_string(unlocked_amount);
+
+        std::string asset_label = tools::type_to_hex(asset_id).substr(0, 6);
+        if (asset_info && !asset_info->ticker.empty())
+            asset_label = asset_info->ticker;
+
+        success_msg_writer() << fmt::format("        {} {:<6s} {:>21s} {:>21s}", 
+            count == num_assets ? "\x1B[90m\xE2\x94\x94\xE2\x94\x80\x1B[0m" : "\x1B[90m\xE2\x94\x9C\xE2\x94\x80\x1B[0m",
+            asset_label,
+            formatted_amount,
+            formatted_unlocked);
+      }
+    }
+
     total_balance += m_wallet->balance(account_index, false);
     total_unlocked_balance += m_wallet->unlocked_balance(account_index, false,NULL,NULL);
   }
   success_msg_writer() << tr("----------------------------------------------------------------------------------");
-  success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total", print_money(total_balance), print_money(total_unlocked_balance));
+  success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total BDX", print_money(total_balance), print_money(total_unlocked_balance));
+  
+  if (!asset_total_balance.empty()) {
+    for (const auto& [asset_id, amount] : asset_total_balance) {
+      uint64_t unlocked_amount = asset_total_unlocked_balance[asset_id];
+      const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+      const std::string formatted_amount = asset_info ? print_asset_amount(amount, asset_info->decimal_point, false) : std::to_string(amount);
+      const std::string formatted_unlocked = asset_info ? print_asset_amount(unlocked_amount, asset_info->decimal_point, false) : std::to_string(unlocked_amount);
+
+      std::string asset_label = tools::type_to_hex(asset_id).substr(0, 6);
+      if (asset_info && !asset_info->ticker.empty())
+          asset_label = asset_info->ticker;
+
+      success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total " + asset_label, formatted_amount, formatted_unlocked);
+    }
+  }
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::print_address(const std::vector<std::string> &args/* = std::vector<std::string>()*/)

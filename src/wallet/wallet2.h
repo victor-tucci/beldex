@@ -1115,7 +1115,7 @@ private:
      * \param  spent                    [OUT] the sum of spent funds included in the signature
      * \return                          true if the signature verifies correctly
      */
-    bool check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent);
+    bool check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent, std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> &asset_totals);
 
    /*!
     * \brief GUI Address book get/store

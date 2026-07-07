@@ -10038,11 +10038,6 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
           [](const auto& a, const auto& b) { return a.index < b.index; });
     }
 
-    std::cout << "Requesting outputs for " << get_outputs.size() << " outputs" << std::endl;
-    for (const auto &o: get_outputs)
-      std::cout << "  " << print_money(o.amount) << " " << o.index << std::endl;
-    std::cout << std::endl;
-
     if (ELPP->vRegistry()->allowed(el::Level::Debug, BELDEX_DEFAULT_LOG_CATEGORY))
     {
       std::map<uint64_t, std::set<uint64_t>> outs;
@@ -10546,7 +10541,6 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   rct::multisig_out msout;
   LOG_PRINT_L2("constructing tx for " << sources.size() << " sources and " << splitted_dsts.size() << " destinations");
   auto sources_copy = sources;
-  std::cout<<"construct_tx_and_get_tx_key"<<std::endl;
   bool r = cryptonote::construct_tx_and_get_tx_key(
       m_account.get_keys(),
       m_subaddresses,
@@ -12397,7 +12391,6 @@ skip_tx:
     const auto tx_dsts = tx.get_adjusted_dsts(tx.needed_fee);
     cryptonote::transaction test_tx;
     pending_tx test_ptx;
-    std::cout<<"transfer_selected_rct"<<std::endl;
     // 3rd time
     transfer_selected_rct(  tx_dsts,                    /* NOMOD std::vector<cryptonote::tx_destination_entry> dsts,*/
                             tx.selected_transfers,      /* const std::list<size_t> selected_transfers */
@@ -14002,7 +13995,7 @@ std::string wallet2::get_reserve_proof(const std::optional<std::pair<uint32_t, u
   for (size_t i = 0; i < m_transfers.size(); ++i)
   {
     const transfer_details &td = m_transfers[i];
-    if (!is_spent(td, true) && !td.m_frozen && (!account_minreserve || account_minreserve->first == td.m_subaddr_index.major))
+    if (!is_spent(td, true) && !td.m_frozen && (!account_minreserve || (account_minreserve->first == td.m_subaddr_index.major && td.m_asset_id == crypto::null_aid)))
       selected_transfers.push_back(i);
   }
 
@@ -14109,13 +14102,14 @@ std::string wallet2::get_reserve_proof(const std::optional<std::pair<uint32_t, u
   return result;
 }
 
-bool wallet2::check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent)
+bool wallet2::check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent, std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> &asset_totals)
 {
+  asset_totals.clear();
   rpc::version_t rpc_version;
   THROW_WALLET_EXCEPTION_IF(!check_connection(&rpc_version), error::wallet_internal_error, "Failed to connect to daemon: " + get_daemon_address());
   THROW_WALLET_EXCEPTION_IF((rpc_version < rpc::version_t{1, 0}), error::wallet_internal_error, "Daemon RPC version is too old");
 
-  THROW_WALLET_EXCEPTION_IF(tools::starts_with(sig_str, RESERVE_PROOF_MAGIC), error::wallet_internal_error,
+  THROW_WALLET_EXCEPTION_IF(!tools::starts_with(sig_str, RESERVE_PROOF_MAGIC), error::wallet_internal_error,
     "Signature header check error");
   sig_str.remove_prefix(RESERVE_PROOF_MAGIC.size());
 
@@ -14151,7 +14145,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
 
   // fetch txes from daemon
   nlohmann::json get_transactions_params{
-    {"txs_hashes", {std::move(txids_hex)}},
+    {"txs_hashes", std::move(txids_hex)},
     {"data",true}
   };
   auto gettx_res = m_http_client.json_rpc("get_transactions", get_transactions_params);
@@ -14172,7 +14166,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
   for (size_t i = 0; i < proofs.size(); ++i)
   {
     const reserve_proof_entry& proof = proofs[i];
-    THROW_WALLET_EXCEPTION_IF(gettx_res["txs"][i]["in_pool"], error::wallet_internal_error, "Tx is unconfirmed");
+    THROW_WALLET_EXCEPTION_IF(gettx_res["txs"][i].value("in_pool", false), error::wallet_internal_error, "Tx is unconfirmed");
 
     cryptonote::transaction tx;
     crypto::hash tx_hash;
@@ -14183,8 +14177,13 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
 
     THROW_WALLET_EXCEPTION_IF(proof.index_in_tx >= tx.vout.size(), error::wallet_internal_error, "index_in_tx is out of bound");
 
-    const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[proof.index_in_tx].target));
-    THROW_WALLET_EXCEPTION_IF(!out_key, error::wallet_internal_error, "Output key wasn't found");
+    crypto::public_key out_key_pub = crypto::null_pkey;
+    if (const cryptonote::txout_to_key* ok = std::get_if<cryptonote::txout_to_key>(&tx.vout[proof.index_in_tx].target))
+      out_key_pub = ok->key;
+    else if (const cryptonote::tx_out_zarcanum* zc = std::get_if<cryptonote::tx_out_zarcanum>(&tx.vout[proof.index_in_tx].target))
+      out_key_pub = zc->stealth_address;
+    
+    THROW_WALLET_EXCEPTION_IF(out_key_pub == crypto::null_pkey, error::wallet_internal_error, "Output key wasn't found");
 
     // TODO(beldex): We should make a catch-all function that gets all the public
     // keys out into an array and iterate through all insteaad of multiple code
@@ -14231,7 +14230,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       return false;
 
     // check signature for key image
-    ok = crypto::check_key_image_signature(proof.key_image, out_key->key, proof.key_image_sig);
+    ok = crypto::check_key_image_signature(proof.key_image, out_key_pub, proof.key_image_sig);
     if (!ok)
       return false;
 
@@ -14239,13 +14238,14 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
     crypto::key_derivation derivation;
     THROW_WALLET_EXCEPTION_IF(!crypto::generate_key_derivation(proof.shared_secret, rct::rct2sk(rct::I), derivation), error::wallet_internal_error, "Failed to generate key derivation");
     crypto::public_key subaddr_spendkey;
-    crypto::derive_subaddress_public_key(out_key->key, derivation, proof.index_in_tx, subaddr_spendkey);
+    crypto::derive_subaddress_public_key(out_key_pub, derivation, proof.index_in_tx, subaddr_spendkey);
     THROW_WALLET_EXCEPTION_IF(subaddr_spendkeys.count(subaddr_spendkey) == 0, error::wallet_internal_error,
       "The address doesn't seem to have received the fund");
 
     // check amount
     uint64_t amount = tx.vout[proof.index_in_tx].amount;
-    if (amount == 0)
+    crypto::asset_id asset_id = crypto::null_aid;
+    if (amount == 0 && std::holds_alternative<cryptonote::txout_to_key>(tx.vout[proof.index_in_tx].target))
     {
       // decode rct
       crypto::secret_key shared_secret;
@@ -14254,9 +14254,33 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       rct::ecdhDecode(ecdh_info, rct::sk2rct(shared_secret), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
       amount = rct::h2d(ecdh_info.amount);
     }
-    total += amount;
-    if (kispent_res["spent_status"][i])
-      spent += amount;
+    else if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[proof.index_in_tx].target))
+    {
+      const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[proof.index_in_tx].target);
+      rct::key r = cryptonote::zarcanum_derivation_to_scalar(derivation, proof.index_in_tx, "asset_blind");
+      rct::key rX = rct::scalarmultX(r);
+      rct::key asset_id_rct;
+      rct::subKeys(asset_id_rct, rct::aid2rct(zout.blinded_asset_id), rX);
+      asset_id = reinterpret_cast<const crypto::asset_id&>(rct::rct2pk(asset_id_rct));
+
+      rct::key enc_mask = cryptonote::zarcanum_derivation_to_scalar(derivation, proof.index_in_tx, "enc_amount");
+      uint64_t enc_mask_64;
+      memcpy(&enc_mask_64, enc_mask.bytes, sizeof(uint64_t));
+      amount = zout.encrypted_amount ^ enc_mask_64;
+    }
+    
+    if (asset_id == crypto::null_aid)
+    {
+      total += amount;
+      if (kispent_res["spent_status"][i] != rpc::IS_KEY_IMAGE_SPENT::SPENT::UNSPENT)
+        spent += amount;
+    }
+    else
+    {
+      asset_totals[asset_id].first += amount;
+      if (kispent_res["spent_status"][i] != rpc::IS_KEY_IMAGE_SPENT::SPENT::UNSPENT)
+        asset_totals[asset_id].second += amount;
+    }
   }
 
   // check signatures for all subaddress spend keys
