@@ -1931,16 +1931,20 @@ namespace rct {
             }
 
             // Asset-operation proofs only belong to their originating tx kinds:
-            //   asset_operation_proof          -> deploy_new_asset / emit_asset
+            //   asset_operation_proof          -> deploy_new_asset / emit_asset / burn_asset
             //   asset_operation_ownership_proof -> emit_asset / update_asset
-            // (see construct_tx_with_tx_key.)
+            // (see construct_tx_with_tx_key.) burn_asset also carries an
+            // amount-commitment composition_proof: it binds the publicly-declared
+            // burned amount to the ADO commitment that the zc_balance_proof then
+            // subtracts from the spend equation.
             const bool aop_allowed       = tx.type == cryptonote::txtype::deploy_new_asset
-                                        || tx.type == cryptonote::txtype::emit_asset;
+                                        || tx.type == cryptonote::txtype::emit_asset
+                                        || tx.type == cryptonote::txtype::burn_asset;
             const bool ownership_allowed = tx.type == cryptonote::txtype::emit_asset
                                         || tx.type == cryptonote::txtype::update_asset;
             if (n_asset_op  != 0 && !aop_allowed)
             {
-                reason = "asset_operation_proof present on a non-deploy/emit tx";
+                reason = "asset_operation_proof present on a tx that is not deploy/emit/burn";
                 return false;
             }
             if (n_ownership != 0 && !ownership_allowed)
@@ -2200,6 +2204,21 @@ namespace rct {
 
             rct::key expected_P = rct::zero();
             rct::subKeys(expected_P, sum_in_C, sum_out_C);
+            if (tx.type == cryptonote::txtype::burn_asset)
+            {
+                cryptonote::tx_extra_asset_descriptor_operation ado{};
+                if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
+                {
+                    reason = "burn tx is missing its asset_descriptor_operation in tx.extra";
+                    return false;
+                }
+                if (!ado.field_is_set(cryptonote::asset_field_amount_commitment))
+                {
+                    reason = "burn tx asset_descriptor_operation is missing amount_commitment";
+                    return false;
+                }
+                rct::subKeys(expected_P, expected_P, rct::pk2rct(ado.amount_commitment));
+            }
             if (bal->P != expected_P)
             {
                 reason = "zc_balance_proof statement mismatch";

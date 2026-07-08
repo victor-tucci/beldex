@@ -236,6 +236,10 @@ namespace cryptonote
     // allow these amounts to be burned).
     uint64_t burn_fixed   = 0; // atomic units
     uint64_t burn_percent = 0; // 123 = 1.23x base fee.
+    // Asset burn metadata. These fields are only meaningful for txtype::burn_asset;
+    // native BDX burn amounts continue to use burn_fixed/burn_percent above.
+    crypto::asset_id burn_asset_id = crypto::null_aid;
+    uint64_t burn_asset_amount = 0;
   };
 
   //---------------------------------------------------------------
