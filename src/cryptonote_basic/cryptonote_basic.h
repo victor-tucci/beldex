@@ -98,8 +98,7 @@ namespace cryptonote
   struct tx_out_zarcanum
   {
     crypto::public_key stealth_address   = crypto::null_pkey; // one-time stealth address
-    crypto::public_key concealing_point  = crypto::null_pkey; // Q = q*G; receiver uses for key recovery
-    crypto::public_key amount_commitment = crypto::null_pkey; // C = amount*asset_id + mask*G
+    crypto::public_key amount_commitment = crypto::null_pkey; // C = amount*T + mask*G (T = blinded_asset_id)
     crypto::asset_id   blinded_asset_id  = crypto::null_aid; // T = asset_id + r*X
     uint64_t           encrypted_amount  = 0;                 // amount XOR H_s("enc"||derivation||idx)
     uint8_t            mix_attr          = 0;
@@ -107,7 +106,6 @@ namespace cryptonote
 
     BEGIN_SERIALIZE_OBJECT()
       FIELD(stealth_address)
-      FIELD(concealing_point)
       FIELD(amount_commitment)
       FIELD(blinded_asset_id)
       VARINT_FIELD(encrypted_amount)
@@ -176,16 +174,10 @@ namespace cryptonote
   {
     std::vector<uint64_t> key_offsets;
     crypto::key_image k_image;
-    crypto::public_key asset_id = crypto::null_pkey;
-    crypto::public_key amount_commitment = crypto::null_pkey;
-    crypto::public_key blinded_asset_id = crypto::null_pkey;
 
     BEGIN_SERIALIZE_OBJECT()
       FIELD(key_offsets)
       FIELD(k_image)
-      FIELD(asset_id)
-      FIELD(amount_commitment)
-      FIELD(blinded_asset_id)
     END_SERIALIZE()
   };
 
@@ -375,10 +367,18 @@ namespace cryptonote
       {
         if (!vin.empty())
         {
+          // HF21: zarcanum (tx_out_zarcanum) outputs carry their own
+          // commitments/range proofs in asset_proofs, not in the native rct
+          // ecdhInfo/outPk/bulletproof arrays -- those are sized to the
+          // non-zarcanum output count (mirrors expand_transaction_1).
+          size_t native_outputs = 0;
+          for (const auto& o : vout)
+            if (!std::holds_alternative<tx_out_zarcanum>(o.target))
+              ++native_outputs;
           {
             ar.tag("rct_signatures");
             auto obj = ar.begin_object();
-            rct_signatures.serialize_rctsig_base(ar, vin.size(), vout.size());
+            rct_signatures.serialize_rctsig_base(ar, vin.size(), native_outputs);
           }
 
           if constexpr (Binary)
@@ -403,7 +403,7 @@ namespace cryptonote
             for (const auto& in : vin)
               if (std::holds_alternative<txin_to_key>(in))
                 ++native_inputs;
-            rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, native_inputs, vout.size(), mixin);
+            rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, native_inputs, native_outputs, mixin);
           }
 
           // HF21: confidential asset proofs (present only when has_zarcanum_outputs() or for update_asset txs)
@@ -427,9 +427,15 @@ namespace cryptonote
       {
         if (!vin.empty())
         {
+          // HF21: native rct arrays are sized to non-zarcanum outputs only
+          // (see note in the main serializer above).
+          size_t native_outputs = 0;
+          for (const auto& o : vout)
+            if (!std::holds_alternative<tx_out_zarcanum>(o.target))
+              ++native_outputs;
           ar.tag("rct_signatures");
           auto obj = ar.begin_object();
-          rct_signatures.serialize_rctsig_base(ar, vin.size(), vout.size());
+          rct_signatures.serialize_rctsig_base(ar, vin.size(), native_outputs);
         }
       }
       if (Archive::is_deserializer)

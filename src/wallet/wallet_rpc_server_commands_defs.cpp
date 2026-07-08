@@ -74,6 +74,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(GET_BALANCE::response)
   KV_SERIALIZE(per_subaddress)
   KV_SERIALIZE(blocks_to_unlock)
   KV_SERIALIZE(time_to_unlock)
+  KV_SERIALIZE(asset_balances)
 KV_SERIALIZE_MAP_CODE_END()
 
 

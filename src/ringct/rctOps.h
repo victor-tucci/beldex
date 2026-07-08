@@ -128,8 +128,12 @@ namespace rct {
     const ge_p3& rct_get_ge_p3_X();
     // Returns the X generator as a rct::key (byte-encoded point)
     key getX();
-    // Commitment for a confidential asset output: C = amount*asset_id + mask*G
-    key commitAsset(const key& mask, const key& asset_id, xmr_amount amount);
+    // Commitment for a confidential asset output: C = amount*T + mask*G
+    // where T is the blinded asset id. For an output, T is its own
+    // asset_id + r*X; for a pseudo-output, T must be T_real (reconstructed
+    // from the real spent output's blinding scalar), not a fresh blinding --
+    // see rctOps.cpp for why.
+    key commitAsset(const key& mask, const key& blinded_asset_id, xmr_amount amount);
     // Blind an asset ID: T = asset_id + r*X
     key blindAssetId(const key& asset_id, const key& r);
     // multiplies a point by 8

@@ -23,10 +23,14 @@ namespace
 {
 // ── HF21: verify the asset amount-commitment binding proof ──────────────────
 // Confirms the ADO's amount_commitment encodes exactly `declared_amount` with
-// the asset_id as base, i.e.  A = C - declared_amount·asset_id = mask·G (C is
-// UNSCALED), proven by the asset_operation_proof g_proof (a Schnorr sig over the
-// tx prefix hash), and that the zarcanum output commitments sum to C.
-// Adapted from Zano validate_asset_operation_amount_commitment.
+// the asset_id as the G,X-independent base, i.e.
+//   A = C - declared_amount·asset_id = sum_masks·G + secret_x_mint·X
+// (C is UNSCALED), proven by the asset_operation_proof's composition_proof
+// (a 2-generator Schnorr over the tx prefix hash -- the X-component arises
+// because the minted outputs' real commitments are built on their own
+// blinded asset ids T_j = asset_id + r_j*X, see rct::commitAsset), and that
+// the zarcanum output commitments sum to C. Adapted from Zano
+// validate_asset_operation_amount_commitment.
 bool verify_asset_amount_commitment(const transaction& tx,
                                     const tx_extra_asset_descriptor_operation& op,
                                     const crypto::asset_id& asset_id,
@@ -39,7 +43,7 @@ bool verify_asset_amount_commitment(const transaction& tx,
     return false;
   }
 
-  // Locate the single asset_operation_proof carrying the g_proof.
+  // Locate the single asset_operation_proof carrying the composition_proof.
   const rct::asset_operation_proof* aop = nullptr;
   for (const auto& proof : tx.asset_proofs)
   {
@@ -58,13 +62,13 @@ bool verify_asset_amount_commitment(const transaction& tx,
     reason = "missing asset_operation_proof";
     return false;
   }
-  if (!aop->has_g_proof())
+  if (!aop->has_composition_proof())
   {
-    reason = "asset_operation_proof missing g_proof";
+    reason = "asset_operation_proof missing composition_proof";
     return false;
   }
 
-  // A = C - declared_amount·asset_id   (must equal mask·G; C is stored UNSCALED)
+  // A = C - declared_amount·asset_id   (must equal sum_masks·G + secret_x_mint·X; C is stored UNSCALED)
   const rct::key C        = rct::pk2rct(op.amount_commitment);
   rct::key amt_asset      = rct::scalarmultKey(rct::aid2rct(asset_id), rct::d2h(declared_amount));
   rct::key A;
@@ -72,16 +76,16 @@ bool verify_asset_amount_commitment(const transaction& tx,
 
   crypto::hash prefix_hash;
   get_transaction_prefix_hash(tx, prefix_hash);
-  if (!crypto::verify_schnorr_sig(rct::hash2rct(prefix_hash), A, aop->g_proof))
+  if (!crypto::verify_linear_composition_proof(rct::hash2rct(prefix_hash), A, aop->composition_proof))
   {
-    reason = "asset amount-commitment g_proof verification failed";
+    reason = "asset amount-commitment composition_proof verification failed";
     return false;
   }
 
   // For deploy/emit, tie the ADO commitment to the actual minted outputs: the
   // sum of the zarcanum output commitments must equal the ADO
-  // amount_commitment. Combined with the g_proof above (which fixes
-  // C = declared_amount·asset_id + mask·G), this forces
+  // amount_commitment. Combined with the composition_proof above (which fixes
+  // C = declared_amount·asset_id + sum_masks·G + secret_x·X), this forces
   // sum(output amounts) == declared_amount, so an issuer cannot declare a
   // small supply while minting outputs worth more.
   //
@@ -359,8 +363,6 @@ bool apply_asset_operation_to_state(
         return reject("update_asset cannot modify full_name");
       if (d.decimal_point != state.descriptor.decimal_point)
         return reject("update_asset cannot modify decimal_point");
-      if (d.hidden_supply != state.descriptor.hidden_supply)
-        return reject("update_asset cannot modify hidden_supply");
 
       state.descriptor = d;
       return true;

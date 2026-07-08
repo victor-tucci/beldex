@@ -742,8 +742,7 @@ namespace cryptonote::rpc {
             {"owner", tools::type_to_hex(x.descriptor.owner)},
             {"total_max_supply", x.descriptor.total_max_supply},
             {"current_supply", x.descriptor.current_supply},
-            {"decimal_point", x.descriptor.decimal_point},
-            {"hidden_supply", x.descriptor.hidden_supply}
+            {"decimal_point", x.descriptor.decimal_point}
           };
         }
         set("asset", std::move(ado));
@@ -2402,6 +2401,7 @@ namespace cryptonote::rpc {
     PERF_TIMER(on_relay_tx);
 
     std::string status = "";
+    std::vector<std::pair<crypto::hash, cryptonote::blobdata>> relayed_txs;
     for (const auto &str: relay_tx.request.txids)
     {
       crypto::hash txid;
@@ -2414,10 +2414,12 @@ namespace cryptonote::rpc {
       cryptonote::blobdata txblob;
       if (m_core.get_pool().get_transaction(txid, txblob))
       {
+        m_core.get_pool().set_relayable({txid});
         cryptonote_connection_context fake_context{};
         NOTIFY_NEW_TRANSACTIONS::request r{};
         r.txs.push_back(txblob);
         m_core.get_protocol()->relay_transactions(r, fake_context);
+        relayed_txs.emplace_back(txid, std::move(txblob));
         //TODO: make sure that tx has reached other nodes here, probably wait to receive reflections from other nodes
       }
       else
@@ -2427,6 +2429,9 @@ namespace cryptonote::rpc {
         continue;
       }
     }
+
+    if (!relayed_txs.empty())
+      m_core.get_pool().set_relayed(relayed_txs);
 
     if (status.empty())
       status = STATUS_OK;
@@ -3764,7 +3769,6 @@ namespace cryptonote::rpc {
     resp["current_supply"]   = state.current_supply;
     resp["total_max_supply"] = state.total_max_supply;
     resp["decimal_point"]    = state.descriptor.decimal_point;
-    resp["hidden_supply"]    = state.descriptor.hidden_supply;
     resp["meta_info"]        = state.descriptor.meta_info;
     resp["status"]           = STATUS_OK;
   }

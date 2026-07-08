@@ -29,6 +29,7 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
+#include <algorithm>
 #include <atomic>
 #include <boost/algorithm/string.hpp>
 #include <limits>
@@ -134,12 +135,16 @@ namespace cryptonote
       rct::rctSig &rv = tx.rct_signatures;
       if (rv.type == rct::RCTType::Null)
         return true;
-      if (rv.outPk.size() != tx.vout.size())
+      const size_t native_outputs = std::count_if(tx.vout.begin(), tx.vout.end(), [](const tx_out& out) {
+        return !std::holds_alternative<tx_out_zarcanum>(out.target);
+      });
+      if (rv.outPk.size() != native_outputs)
       {
         LOG_PRINT_L1("Failed to parse transaction from blob, bad outPk size in tx " << get_transaction_hash(tx));
         return false;
       }
-      for (size_t n = 0; n < tx.rct_signatures.outPk.size(); ++n)
+      size_t rct_output_index = 0;
+      for (size_t n = 0; n < tx.vout.size(); ++n)
       {
         // tx_out_zarcanum outputs carry their own amount commitment; they do not
         // contribute to the legacy outPk vector, so skip them here.
@@ -150,7 +155,7 @@ namespace cryptonote
           LOG_PRINT_L1("Unsupported output type in tx " << get_transaction_hash(tx));
           return false;
         }
-        rv.outPk[n].dest = rct::pk2rct(var::get<txout_to_key>(tx.vout[n].target).key);
+        rv.outPk[rct_output_index++].dest = rct::pk2rct(var::get<txout_to_key>(tx.vout[n].target).key);
       }
 
       if (!base_only)
@@ -171,12 +176,12 @@ namespace cryptonote
             return false;
           }
           const size_t max_outputs = rct::n_bulletproof_plus_max_amounts(rv.p.bulletproofs_plus[0]);
-          if (max_outputs < tx.vout.size())
+          if (max_outputs < native_outputs)
           {
             LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs_plus max outputs in tx " << get_transaction_hash(tx));
             return false;
           }
-          const size_t n_amounts = tx.vout.size();
+          const size_t n_amounts = native_outputs;
           CHECK_AND_ASSERT_MES(n_amounts == rv.outPk.size(), false, "Internal error filling out V");
           rv.p.bulletproofs_plus[0].V.resize(n_amounts);
           for (size_t i = 0; i < n_amounts; ++i)
@@ -195,12 +200,12 @@ namespace cryptonote
             return false;
           }
           const size_t max_outputs = 1 << (rv.p.bulletproofs[0].L.size() - 6);
-          if (max_outputs < tx.vout.size())
+          if (max_outputs < native_outputs)
           {
             LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs max outputs in tx " << get_transaction_hash(tx));
             return false;
           }
-          const size_t n_amounts = tx.vout.size();
+          const size_t n_amounts = native_outputs;
           CHECK_AND_ASSERT_MES(n_amounts == rv.outPk.size(), false, "Internal error filling out V");
           rv.p.bulletproofs[0].V.resize(n_amounts);
           for (size_t i = 0; i < n_amounts; ++i)
@@ -1043,6 +1048,12 @@ namespace cryptonote
           "invalid blinded_asset_id in tx_out_zarcanum, tx id=" << get_transaction_hash(tx));
         CHECK_AND_ASSERT_MES(check_key(zout.amount_commitment), false,
           "invalid amount_commitment in tx_out_zarcanum, tx id=" << get_transaction_hash(tx));
+        CHECK_AND_ASSERT_MES(rct::isInMainSubgroup(rct::pk2rct(zout.stealth_address)), false,
+          "stealth_address not in main subgroup in tx_out_zarcanum, tx id=" << get_transaction_hash(tx));
+        CHECK_AND_ASSERT_MES(rct::isInMainSubgroup(rct::aid2rct(zout.blinded_asset_id)), false,
+          "blinded_asset_id not in main subgroup in tx_out_zarcanum, tx id=" << get_transaction_hash(tx));
+        CHECK_AND_ASSERT_MES(rct::isInMainSubgroup(rct::pk2rct(zout.amount_commitment)), false,
+          "amount_commitment not in main subgroup in tx_out_zarcanum, tx id=" << get_transaction_hash(tx));
         // Plaintext amount must be 0 — the real amount is hidden in the commitment.
         CHECK_AND_ASSERT_MES(out.amount == 0, false,
           "non-zero plaintext amount in tx_out_zarcanum, tx id=" << get_transaction_hash(tx));
@@ -1221,11 +1232,11 @@ namespace cryptonote
     rct::key rX = rct::scalarmultX(r);
     rct::key asset_id_rct;
     rct::subKeys(asset_id_rct, rct::aid2rct(zout.blinded_asset_id), rX);
-    asset_id_out = reinterpret_cast<const crypto::asset_id&>(rct::rct2pk(asset_id_rct));
+    asset_id_out = rct::rct2aid(asset_id_rct);
     asset_blinding_mask_out = r;
 
     // 3. Recover amount mask and decrypt amount
-    //    C = amount*asset_id + mask*G  (we verify this below)
+    //    C = amount*T + mask*G  (we verify this below)
     amount_mask_out = zarcanum_derivation_to_scalar(derivation, output_index, "amount_mask");
 
     // 4. Decrypt amount: enc_amount XOR le64(enc_mask)
@@ -1234,8 +1245,11 @@ namespace cryptonote
     memcpy(&enc_mask_64, enc_mask.bytes, sizeof(uint64_t));
     amount_out = zout.encrypted_amount ^ enc_mask_64;
 
-    // 5. Verify: recompute amount commitment and compare
-    rct::key expected_C = rct::commitAsset(amount_mask_out, asset_id_rct, amount_out);
+    // 5. Verify: recompute amount commitment and compare.
+    //    C = amount*T + mask*G -- the commitment is built on this output's
+    //    OWN blinded asset id T (zout.blinded_asset_id), not the recovered
+    //    plaintext asset_id -- see rct::commitAsset.
+    rct::key expected_C = rct::commitAsset(amount_mask_out, rct::aid2rct(zout.blinded_asset_id), amount_out);
     if (expected_C != rct::pk2rct(zout.amount_commitment))
     {
       MWARNING("zarcanum output commitment mismatch — output corrupted or not ours");
@@ -1442,12 +1456,42 @@ namespace cryptonote
     else
     {
       serialization::binary_string_archiver ba;
+      // HF21: the native rct CLSAGs/pseudoOuts arrays are sized to the
+      // non-zarcanum input count and bulletproofs to the non-zarcanum output
+      // count -- zarcanum in/outs are proven via asset_proofs, not the native
+      // rct arrays. These counts must match transaction::serialize_value
+      // (cryptonote_basic.h) exactly, or the prunable hash won't reproduce the
+      // serialized form. Ring size (mixin) is shared across all inputs, so vin[0]
+      // works whether it's a native or a zarcanum input.
       size_t mixin = 0;
-      if (t.vin.size() > 0 && std::holds_alternative<txin_to_key>(t.vin[0]))
-        mixin = var::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1;
+      if (!t.vin.empty())
+      {
+        if (std::holds_alternative<txin_to_key>(t.vin[0]))
+          mixin = var::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1;
+        else if (std::holds_alternative<txin_zc_input>(t.vin[0]))
+          mixin = var::get<txin_zc_input>(t.vin[0]).key_offsets.size() - 1;
+      }
+      size_t native_inputs = 0;
+      for (const auto& in : t.vin)
+        if (std::holds_alternative<txin_to_key>(in))
+          ++native_inputs;
+      size_t native_outputs = 0;
+      for (const auto& o : t.vout)
+        if (!std::holds_alternative<tx_out_zarcanum>(o.target))
+          ++native_outputs;
       try {
         const_cast<transaction&>(t).rct_signatures.p.serialize_rctsig_prunable(
-                ba, t.rct_signatures.type, t.vin.size(), t.vout.size(), mixin);
+                ba, t.rct_signatures.type, native_inputs, native_outputs, mixin);
+        // HF21: asset_proofs are serialized right after rctsig_prunable in
+        // transaction::serialize_value, and both sit after unprunable_size --
+        // i.e. asset_proofs are part of the PRUNABLE region. The blob-slice path
+        // above hashes them (blob.substr(unprunable_size) covers them), so this
+        // re-serialize path must emit them too, in the same order and under the
+        // same presence condition, or the prunable hash won't match for CA txs
+        // (zc inputs/outputs and update_asset carry their proofs here, not in the
+        // native CLSAG/bulletproof arrays).
+        if (!t.asset_proofs.empty() || t.has_zarcanum_outputs() || t.type == txtype::update_asset)
+          serialization::value(ba, const_cast<transaction&>(t).asset_proofs);
       } catch (const std::exception& e) {
         LOG_ERROR("Failed to serialize rct signatures (prunable): " << e.what());
         return false;

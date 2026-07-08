@@ -2606,8 +2606,8 @@ This command is only required if the open wallet is one of the owners of a BNS r
   {
     static constexpr auto names() { return NAMES("deploy_new_asset"); }
     static constexpr const char* description =
-        "Deploy a new confidential asset. Pass the asset JSON descriptor inline containing: "
-        "ticker, full_name, total_max_supply, current_supply, decimal_point, hidden_supply, meta_info.";
+        "Deploy a new confidential asset. Pass the path to a JSON descriptor file containing: "
+        "ticker, full_name, total_max_supply, current_supply, decimal_point, meta_info.";
 
     struct request
     {
