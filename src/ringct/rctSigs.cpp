@@ -895,9 +895,6 @@ namespace rct {
           append_u8(1);
           const auto& zc = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
           append(&zc.k_image, sizeof(zc.k_image));
-          append(&zc.asset_id, sizeof(zc.asset_id));
-          append(&zc.amount_commitment, sizeof(zc.amount_commitment));
-          append(&zc.blinded_asset_id, sizeof(zc.blinded_asset_id));
         }
         else
         {
@@ -1892,6 +1889,71 @@ namespace rct {
                         const std::vector<rct::keyV>& asset_id_rings,
                         std::string& reason)
     {
+        // ── 0. Prevalidate the proof set is well-formed ──────────────────────
+        // asset_proofs is a self-describing serialized vector, so serialization
+        // constrains neither WHICH proofs appear nor how many. Reject duplicates
+        // of singleton proofs, an unknown proof type, and any proof that doesn't
+        // belong to this tx kind -- otherwise a peer could pad asset_proofs with
+        // extra/duplicate entries, and since asset_proofs are part of the
+        // prunable hash that yields a verifying-but-bloated variant tx. Mirrors
+        // Zano's per-type count_type_in_variant_container prevalidation.
+        {
+            size_t n_surjection = 0, n_balance = 0, n_range = 0,
+                   n_asset_op = 0, n_ownership = 0, n_zc_sig = 0;
+            for (const auto& proof : tx.asset_proofs)
+            {
+                if      (std::holds_alternative<rct::zc_asset_surjection_proof>(proof))       ++n_surjection;
+                else if (std::holds_alternative<rct::zc_balance_proof>(proof))                ++n_balance;
+                else if (std::holds_alternative<rct::zc_outs_range_proof>(proof))             ++n_range;
+                else if (std::holds_alternative<rct::asset_operation_proof>(proof))           ++n_asset_op;
+                else if (std::holds_alternative<rct::asset_operation_ownership_proof>(proof)) ++n_ownership;
+                else if (std::holds_alternative<rct::ZC_sig>(proof))                          ++n_zc_sig;
+                else { reason = "unknown asset proof type"; return false; }
+            }
+
+            // Singleton proofs: at most one of each.
+            if (n_surjection > 1) { reason = "multiple zc_asset_surjection_proof entries"; return false; }
+            if (n_balance    > 1) { reason = "multiple zc_balance_proof entries"; return false; }
+            if (n_range      > 1) { reason = "multiple zc_outs_range_proof entries"; return false; }
+            if (n_asset_op   > 1) { reason = "multiple asset_operation_proof entries"; return false; }
+            if (n_ownership  > 1) { reason = "multiple asset_operation_ownership_proof entries"; return false; }
+
+            // ZC_sig: exactly one per confidential (zarcanum) input.
+            size_t zc_input_count = 0;
+            for (const auto& in : tx.vin)
+                if (std::holds_alternative<cryptonote::txin_zc_input>(in))
+                    ++zc_input_count;
+            if (n_zc_sig != zc_input_count)
+            {
+                reason = "ZC_sig count (" + std::to_string(n_zc_sig)
+                       + ") != confidential input count (" + std::to_string(zc_input_count) + ")";
+                return false;
+            }
+
+            // Asset-operation proofs only belong to their originating tx kinds:
+            //   asset_operation_proof          -> deploy_new_asset / emit_asset / burn_asset
+            //   asset_operation_ownership_proof -> emit_asset / update_asset
+            // (see construct_tx_with_tx_key.) burn_asset also carries an
+            // amount-commitment composition_proof: it binds the publicly-declared
+            // burned amount to the ADO commitment that the zc_balance_proof then
+            // subtracts from the spend equation.
+            const bool aop_allowed       = tx.type == cryptonote::txtype::deploy_new_asset
+                                        || tx.type == cryptonote::txtype::emit_asset
+                                        || tx.type == cryptonote::txtype::burn_asset;
+            const bool ownership_allowed = tx.type == cryptonote::txtype::emit_asset
+                                        || tx.type == cryptonote::txtype::update_asset;
+            if (n_asset_op  != 0 && !aop_allowed)
+            {
+                reason = "asset_operation_proof present on a tx that is not deploy/emit/burn";
+                return false;
+            }
+            if (n_ownership != 0 && !ownership_allowed)
+            {
+                reason = "asset_operation_ownership_proof present on a tx that is not emit/update";
+                return false;
+            }
+        }
+
         // ── 1. Verify ZC_sig for each ZC input ───────────────────────────────
         // Count ZC inputs and match them to ZC_sig entries in asset_proofs.
         // pubkeys[i] / asset_id_rings[i] is the ring for input i (built by
@@ -1936,19 +1998,26 @@ namespace rct {
                 return false;
             }
 
-            // The publicly-declared pseudo-out fields on the input itself --
-            // which is what the balance proof and surjection proof actually
-            // sum/ring over -- must be the *same* values the signature below
-            // proves knowledge of. Without this, the signature would only
-            // attest to some self-consistent (sig, sig.pseudo_out_*) pair,
-            // completely decoupled from what txin.amount_commitment /
-            // txin.blinded_asset_id publicly declare, letting a prover spend
-            // a genuinely-owned input while declaring an arbitrary amount
-            // for balance-proof purposes.
-            if (!(zc_sig.pseudo_out_amount_commitment == rct::pk2rct(txin.amount_commitment)) ||
-                !(zc_sig.pseudo_out_blinded_asset_id == rct::pk2rct(txin.blinded_asset_id)))
+            // The ZC_sig is now the single source of truth for this input's
+            // pseudo-out amount commitment and blinded asset id -- the balance
+            // proof and surjection proof both read the same zc_sig.pseudo_out_*
+            // values verified here, so there is no separate txin declaration to
+            // cross-check against (and thus no decoupling risk to guard).
+
+            // Torsion safety: unlike Zano, Beldex keeps these points UNSCALED
+            // (no 1/8 storage + ×8-on-verify cofactor clearing), so every
+            // attacker-controllable point that later enters the *unscaled* proof
+            // arithmetic must be explicitly forced into the prime-order subgroup
+            // here. Both pseudo-outs are freshly chosen by the prover in THIS tx
+            // and are reused raw by the BGE surjection ring (verify_BGE_proof)
+            // and the zc_balance_proof sum -- a small-order component there could
+            // grant the prover extra Z_8 freedom those proofs can't otherwise
+            // catch. (Chain-resolved ring members are already subgroup-checked at
+            // output-creation time in check_tx_outputs, so they need no recheck.)
+            if (!rct::isInMainSubgroup(zc_sig.pseudo_out_amount_commitment) ||
+                !rct::isInMainSubgroup(zc_sig.pseudo_out_blinded_asset_id))
             {
-                reason = "ZC_sig pseudo-out commitment mismatch with txin declaration for input " + std::to_string(i);
+                reason = "ZC_sig pseudo-out point not in main subgroup for input " + std::to_string(i);
                 return false;
             }
 
@@ -1979,22 +2048,50 @@ namespace rct {
 
         // ── 2. Verify asset surjection proof (BGE) ────────────────────────────
         // For each tx_out_zarcanum output, verify its blinded_asset_id is a
-        // valid blinding of one of the spent zc inputs' asset ids, without
-        // revealing which one.
+        // valid blinding of one of the tx's legitimate asset sources, without
+        // revealing which one. Ring members (must match construct_tx_with_tx_key's
+        // surjection block bit-for-bit, in the same order):
+        //   - every spent zc input's pseudo-blinded asset id (zc_sigs, step 1), and
+        //   - for deploy_new_asset/emit_asset, the asset-descriptor-operation's
+        //     own asset id H_ado, appended LAST (mirrors Zano's "asset emission"
+        //     ring member, generate_asset_surjection_proof_hf6). This is what
+        //     binds EACH mint output to the declared asset: the ADO
+        //     composition_proof only constrains the weighted sum
+        //     Σ amount_j·H_j == declared·H_ado, not each output's hidden H_j, so
+        //     without a per-output surjection a multi-output mint could set
+        //     output#1 to a large amount of a DIFFERENT existing asset B and
+        //     output#2 to a compensating garbage asset -- inflating asset B.
         //
         // Native coin never carries an asset id (is_zarcanum() == asset_id !=
-        // null_aid), so native fee/change inputs in the same tx never need a
-        // ring slot here -- the ring is just every zc input's pseudo-blinded
-        // asset id (zc_sigs, collected in step 1 above), regardless of
-        // whether native inputs are also present.
-        //
-        // Still out of scope: deploy_new_asset/emit_asset txs that mint a
-        // zarcanum output without spending any existing zc input of that
-        // asset (no ring member exists for the asset-descriptor-operation
-        // case yet) -- those fall back to a structural-only check below.
+        // null_aid), so native fee/change inputs never need a ring slot here.
         bool any_zc_outputs = false;
         for (const auto& out : tx.vout)
             if (std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target)) { any_zc_outputs = true; break; }
+
+        // Build the surjection ring shared by every output's BGE proof.
+        rct::keyV surjection_ring;
+        surjection_ring.reserve(zc_sigs.size() + 1);
+        for (const auto* zs : zc_sigs)
+            surjection_ring.push_back(zs->pseudo_out_blinded_asset_id);
+
+        if (tx.type == cryptonote::txtype::deploy_new_asset || tx.type == cryptonote::txtype::emit_asset)
+        {
+            cryptonote::tx_extra_asset_descriptor_operation ado{};
+            if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
+            {
+                reason = "mint tx is missing its asset_descriptor_operation in tx.extra";
+                return false;
+            }
+            const crypto::asset_id asset_id = (tx.type == cryptonote::txtype::deploy_new_asset)
+                ? cryptonote::get_or_calculate_asset_id(ado)
+                : ado.asset_id;
+            if (asset_id == crypto::null_aid)
+            {
+                reason = "mint tx asset_descriptor_operation has no resolvable asset_id";
+                return false;
+            }
+            surjection_ring.push_back(rct::aid2rct(asset_id));
+        }
 
         bool found_surjection_proof = false;
         for (const auto& proof : tx.asset_proofs)
@@ -2002,69 +2099,32 @@ namespace rct {
             if (const auto* sp = std::get_if<rct::zc_asset_surjection_proof>(&proof))
             {
                 found_surjection_proof = true;
-                size_t out_idx = 0;
-
-                if (!zc_sigs.empty())
+                if (surjection_ring.empty())
                 {
-                    // Real ring: each zc input's public pseudo-blinded asset id,
-                    // exactly as built by the wallet (see construct_tx_with_tx_key's
-                    // BGE generation block).
-                    rct::keyV ring;
-                    ring.reserve(zc_sigs.size());
-                    for (const auto* zs : zc_sigs)
-                        ring.push_back(zs->pseudo_out_blinded_asset_id);
-
-                    for (size_t k = 0; k < tx.vout.size(); ++k)
-                    {
-                        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
-                            continue;
-                        if (out_idx >= sp->bge_proofs.size())
-                        {
-                            reason = "surjection proof has fewer entries than ZC outputs";
-                            return false;
-                        }
-
-                        const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[k].target);
-                        const rct::key T = rct::aid2rct(zout.blinded_asset_id);
-
-                        if (!crypto::verify_BGE_proof(tx_prefix_hash, ring, T, sp->bge_proofs[out_idx]))
-                        {
-                            MWARNING("BGE_Ver FAILED: output=" << k << " message=" << tx_prefix_hash
-                                     << " ring_size=" << ring.size()
-                                     << " ring0=" << ring.front()
-                                     << " T=" << T
-                                     << " A=" << sp->bge_proofs[out_idx].A
-                                     << " B=" << sp->bge_proofs[out_idx].B
-                                     << " Pk0=" << (sp->bge_proofs[out_idx].Pk.empty() ? rct::zero() : sp->bge_proofs[out_idx].Pk.front()));
-                            reason = "BGE surjection proof verification failed for output " + std::to_string(k);
-                            return false;
-                        }
-                        ++out_idx;
-                    }
+                    reason = "surjection proof present but tx has no asset source (no zc inputs and not a mint)";
+                    return false;
                 }
-                else
+
+                size_t out_idx = 0;
+                for (size_t k = 0; k < tx.vout.size(); ++k)
                 {
-                    // No zc inputs at all (e.g. deploy/emit minting): only a
-                    // structural check until the asset-descriptor-operation
-                    // ring member is designed; not a substitute for real
-                    // verification.
-                    for (size_t k = 0; k < tx.vout.size(); ++k)
+                    if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
+                        continue;
+                    if (out_idx >= sp->bge_proofs.size())
                     {
-                        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
-                            continue;
-                        if (out_idx >= sp->bge_proofs.size())
-                        {
-                            reason = "surjection proof has fewer entries than ZC outputs";
-                            return false;
-                        }
-                        const auto& bge = sp->bge_proofs[out_idx];
-                        if (bge.Pk.empty() || bge.f.empty())
-                        {
-                            reason = "BGE proof is empty for output " + std::to_string(k);
-                            return false;
-                        }
-                        ++out_idx;
+                        reason = "surjection proof has fewer entries than ZC outputs";
+                        return false;
                     }
+
+                    const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[k].target);
+                    const rct::key T = rct::aid2rct(zout.blinded_asset_id);
+
+                    if (!crypto::verify_BGE_proof(tx_prefix_hash, surjection_ring, T, sp->bge_proofs[out_idx]))
+                    {
+                        reason = "BGE surjection proof verification failed for output " + std::to_string(k);
+                        return false;
+                    }
+                    ++out_idx;
                 }
 
                 if (out_idx != sp->bge_proofs.size())
@@ -2076,10 +2136,11 @@ namespace rct {
             }
         }
 
-        // A tx that spends zc inputs and mints zarcanum outputs must carry a
-        // surjection proof -- otherwise it could claim any asset
-        // id for its outputs without proving it was actually spent.
-        if (!zc_sigs.empty() && any_zc_outputs && !found_surjection_proof)
+        // Any tx that produces zarcanum outputs must carry a surjection proof
+        // binding each output's asset id to a legitimate source (a spent zc
+        // input, or -- for deploy/emit -- the mint ADO). This covers both spends
+        // and mints; without it a tx could claim any asset id for its outputs.
+        if (any_zc_outputs && !found_surjection_proof)
         {
             reason = "zarcanum outputs present without an asset surjection proof";
             return false;
@@ -2126,14 +2187,11 @@ namespace rct {
                 return false;
             }
 
+            // Pseudo-out amount commitments live in the ZC_sigs (one per zc
+            // input, collected in input order in step 1), not on the inputs.
             rct::key sum_in_C = rct::zero();
-            for (size_t i = 0; i < tx.vin.size(); ++i)
-            {
-                if (!std::holds_alternative<cryptonote::txin_zc_input>(tx.vin[i]))
-                    continue;
-                const auto& zc = std::get<cryptonote::txin_zc_input>(tx.vin[i]);
-                rct::addKeys(sum_in_C, sum_in_C, rct::pk2rct(zc.amount_commitment));
-            }
+            for (const auto* zs : zc_sigs)
+                rct::addKeys(sum_in_C, sum_in_C, zs->pseudo_out_amount_commitment);
 
             rct::key sum_out_C = rct::zero();
             for (const auto& out : tx.vout)
@@ -2201,54 +2259,24 @@ namespace rct {
                     return false;
                 }
 
-                // The plaintext asset_id tag comes from whichever side of the
-                // tx actually declares it. Spends (zc_input_count > 0) get it
-                // from the spent zc inputs, same as the surjection proof.
-                // Mints (deploy_new_asset/emit_asset) have no zc input at all
-                // -- their zarcanum outputs are backed by the asset
-                // descriptor operation instead (whose amount_commitment
-                // binding is independently verified in
-                // validate_tx_asset_operations_against_db), so the tag there
-                // comes from the ADO's own (plaintext, public) asset_id.
-                rct::key tag = rct::zero();
-                bool tag_set = false;
-                if (zc_input_count > 0)
-                {
-                    // Every zc input must declare the same plaintext asset_id (the
-                    // wallet enforces one asset per tx; consensus re-checks it here
-                    // since a malformed tx could otherwise claim differing ids).
-                    //
-                    // Note: txin.asset_id itself is never directly checked against
-                    // the real asset hidden in the input's blinded_asset_id (that
-                    // would require revealing it). It doesn't need to be: lying
-                    // here only matters if it's later used as the range-proof tag
-                    // below, and that tag has to match the real asset basis the
-                    // surjection-proof-verified outputs actually use (verify_BGE_proof
-                    // ties each output's blinded id back to a real spent input's, and
-                    // the aggregation proof below ties each output's real commitment
-                    // to this same tag) -- both require finding a discrete-log
-                    // relation between two independently hash-derived asset points,
-                    // which is assumed infeasible. So a mismatched declaration just
-                    // makes one of those two proofs fail, never an exploit.
-                    for (const auto& in : tx.vin)
-                    {
-                        const auto* zc = std::get_if<cryptonote::txin_zc_input>(&in);
-                        if (!zc)
-                            continue;
-                        rct::key this_tag = rct::pk2rct(zc->asset_id);
-                        if (!tag_set)
-                        {
-                            tag = this_tag;
-                            tag_set = true;
-                        }
-                        else if (tag != this_tag)
-                        {
-                            reason = "zc inputs declare differing asset ids";
-                            return false;
-                        }
-                    }
-                }
-                else if (tx.type == cryptonote::txtype::deploy_new_asset || tx.type == cryptonote::txtype::emit_asset)
+                // Zarcanum outputs need *some* source pinning their asset id to
+                // exist at all: either spent zc inputs (whose hidden asset ids
+                // need not agree -- multiple distinct confidential assets are
+                // allowed in one tx, see construct_tx_with_tx_key) or, for mints
+                // with no zc input (deploy_new_asset/emit_asset), the asset
+                // descriptor operation's own (plaintext, public) asset_id.
+                //
+                // Note: zc inputs no longer declare any plaintext asset id (it
+                // stays hidden behind the ZC_sig's pseudo_out_blinded_asset_id).
+                // It doesn't need to be revealed: each output's real asset basis
+                // is independently pinned down by verify_BGE_proof (ties the
+                // output's blinded id back to a real spent input's) and the
+                // aggregation proof below (ties the output's real commitment to
+                // its own blinded id as tag) -- both require finding a discrete-
+                // log relation between two independently hash-derived asset
+                // points, which is assumed infeasible.
+                bool tag_set = zc_input_count > 0;
+                if (!tag_set && (tx.type == cryptonote::txtype::deploy_new_asset || tx.type == cryptonote::txtype::emit_asset))
                 {
                     cryptonote::tx_extra_asset_descriptor_operation ado{};
                     if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
@@ -2264,7 +2292,6 @@ namespace rct {
                         reason = "mint tx asset_descriptor_operation has no resolvable asset_id";
                         return false;
                     }
-                    tag = rct::aid2rct(asset_id);
                     tag_set = true;
                 }
 
@@ -2281,7 +2308,12 @@ namespace rct {
                         continue;
                     const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
                     real_commitments.push_back(rct::pk2rct(zout.amount_commitment));
-                    tags.push_back(tag);
+                    // tags[j] must be this output's OWN blinded asset id T_j
+                    // (not the shared plaintext-derived `tag`) -- it's the
+                    // base zout.amount_commitment was actually built on (see
+                    // rct::commitAsset), and the aggregation proof checks
+                    // real_commitments[j] against "tags[j] + w*H" directly.
+                    tags.push_back(rct::aid2rct(zout.blinded_asset_id));
                 }
 
                 if (!crypto::verify_vector_ug_aggregation_proof(tx_prefix_hash, real_commitments, tags, rp->aggregation_proof))

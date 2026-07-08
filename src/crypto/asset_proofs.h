@@ -106,16 +106,24 @@ bool verify_linear_composition_proof(const rct::key&                    msg,
                                      const linear_composition_proof_s&  sig);
 
 
-// ── 2b. Double Schnorr proof ─────────────────────────────────────────────────
+// ── 2b. Double Schnorr proof, X-then-G ──────────────────────────────────────
 //
 // Proves knowledge of TWO independent scalars (s0, s1) such that
-// P0 = s0*G  and  P1 = s1*G, under one shared Fiat-Shamir challenge.
+// P0 = s0*X  and  P1 = s1*G, under one shared Fiat-Shamir challenge.
 //
-// Used to bind the confidential-asset balance proof (P0 = the balance
-// residual, s0 = its mask) to the transaction's own keypair (P1 = tx_pub_key,
-// s1 = tx_key.sec) -- so a balance proof can't be detached from / replayed
-// against a transaction it wasn't actually generated for. Mirrors Zano's
-// generate_double_schnorr_sig<gt_G, gt_G>.
+// Used to bind the confidential-asset transfer balance proof (P0 = the
+// balance residual, s0 = secret_x) to the transaction's own keypair
+// (P1 = tx_pub_key, s1 = tx_key.sec) -- so a balance proof can't be detached
+// from / replayed against a transaction it wasn't actually generated for.
+//
+// P0 is provable as a pure X-multiple (no G-component) because amount
+// commitments are built on a per-input/per-output blinded asset id
+// T = asset_id + r*X (see rct::commitAsset): summing several such
+// commitments for a balanced transfer leaves a residual secret_x*X, where
+// secret_x = Σ(real_r_i*amount_i) - Σ(r_j*amount_j) -- PROVIDED the
+// G-component (mask delta) is forced to exactly zero by deterministic
+// construction of one pseudo-output's mask (see cryptonote_tx_utils.cpp's
+// balancing-mask fixup). Mirrors Zano's generate_double_schnorr_sig<gt_X, gt_G>.
 struct double_schnorr_sig_s
 {
     rct::key y0;  // response for P0: y0 = r0 - c*s0
@@ -153,8 +161,6 @@ bool verify_double_schnorr_sig(const rct::key&              msg,
 // The ring is the set of plaintext asset IDs from the transaction inputs.
 //
 // Proof size: O(log4(ring_size)) group elements and scalars.
-// For ring_size == 1 this stores a compact Schnorr-over-X proof instead:
-// A=c, B=y, with Pk/f empty and y/z zero.
 struct BGE_proof_s
 {
     rct::key A;            // commitment A (premultiplied by 1/8 on-chain)

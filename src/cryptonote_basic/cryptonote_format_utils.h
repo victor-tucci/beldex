@@ -179,7 +179,7 @@ namespace cryptonote
   // HF21: domain-separated scalar derivation for zarcanum output fields.
   // Produces a deterministic scalar from a shared key_derivation + output_index + domain tag.
   // domain: "asset_blind" → asset ID blinding scalar r (T = asset_id + r*X)
-  //         "amount_mask" → Pedersen mask          (C = amount*asset_id + mask*G)
+  //         "amount_mask" → Pedersen mask          (C = amount*T + mask*G, T = blinded_asset_id)
   //         "enc_amount"  → amount encryption mask (enc = amount XOR le64(mask))
   rct::key zarcanum_derivation_to_scalar(const crypto::key_derivation& derivation,
                                           size_t output_index,

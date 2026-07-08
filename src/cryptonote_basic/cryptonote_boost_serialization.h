@@ -119,7 +119,6 @@ namespace boost
   inline void serialize(Archive &a, cryptonote::tx_out_zarcanum &x, const boost::serialization::version_type ver)
   {
     a & x.stealth_address;
-    a & x.concealing_point;
     a & x.amount_commitment;
     a & x.blinded_asset_id;
     a & x.encrypted_amount;
@@ -163,9 +162,6 @@ namespace boost
   {
     a & x.key_offsets;
     a & x.k_image;
-    a & x.asset_id;
-    a & x.amount_commitment;
-    a & x.blinded_asset_id;
   }
 
   template <class Archive>

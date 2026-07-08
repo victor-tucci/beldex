@@ -716,24 +716,30 @@ namespace rct {
     struct zc_balance_proof
     {
       key P{};
-      crypto::double_schnorr_sig_s dss; // binds P to mask*G AND tx_pub_key to tx_key.sec*G
+      // Proves P = secret_x*X (the mask/G-component is forced to exactly
+      // zero by construction -- see cryptonote_tx_utils.cpp's balancing-mask
+      // fixup), AND binds P to tx_pub_key = tx_key.sec*G under one shared
+      // challenge.
+      crypto::double_schnorr_sig_s dss;
       BEGIN_SERIALIZE_OBJECT() FIELD(P) FIELD(dss) END_SERIALIZE()
     };
 
     struct asset_operation_proof
     {
-      // flags: bit 0 = composition_proof present, bit 1 = g_proof present
+      // flags: bit 0 = composition_proof present
       uint8_t flags = 0;
+      // Proves A = sum_masks*G + secret_x_mint*X, where A = C - declared_amount*asset_id
+      // and C is the ADO's amount_commitment (see asset_history_utils.cpp).
+      // C is built on minted outputs' blinded asset ids T_j = asset_id + r_j*X
+      // (see rct::commitAsset), hence the X-component secret_x_mint =
+      // Σ(r_j*amount_j) over the minted outputs alongside the usual mask sum.
       crypto::linear_composition_proof_s composition_proof{};
-      crypto::schnorr_sig_s              g_proof{};
 
       bool has_composition_proof() const { return flags & 1; }
-      bool has_g_proof()           const { return flags & 2; }
 
       BEGIN_SERIALIZE_OBJECT()
         FIELD(flags)
         if (has_composition_proof()) FIELD(composition_proof)
-        if (has_g_proof())           FIELD(g_proof)
       END_SERIALIZE()
     };
 

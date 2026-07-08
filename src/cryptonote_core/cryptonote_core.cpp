@@ -880,13 +880,14 @@ namespace cryptonote
     {
       std::string keystr;
       bool r = tools::slurp_file(keypath, keystr);
-      memcpy(&unwrap(unwrap(privkey)), keystr.data(), sizeof(privkey));
-      memwipe(&keystr[0], keystr.size());
       CHECK_AND_ASSERT_MES(r, false, "failed to load master node key from " + keypath.u8string());
-      CHECK_AND_ASSERT_MES(keystr.size() == sizeof(privkey), false,
-          "master node key file " + keypath.u8string() + " has an invalid size");
+      CHECK_AND_ASSERT_MES(keystr.size() == sizeof(privkey), false, "master node key file " + keypath.u8string() + " has an invalid size");
+      
+      memcpy(&unwrap(unwrap(privkey)), keystr.data(), sizeof(privkey));
 
       r = get_pubkey(privkey, pubkey);
+
+      memwipe(&keystr[0], keystr.size());
       CHECK_AND_ASSERT_MES(r, false, "failed to generate pubkey from secret key");
     }
     else
@@ -1625,7 +1626,10 @@ namespace cryptonote
 
     if (tx.version >= txversion::v2_ringct)
     {
-      if (tx.rct_signatures.outPk.size() != tx.vout.size())
+      const size_t native_outputs = std::count_if(tx.vout.begin(), tx.vout.end(), [](const tx_out& out) {
+        return !std::holds_alternative<tx_out_zarcanum>(out.target);
+      });
+      if (tx.rct_signatures.outPk.size() != native_outputs)
       {
         MERROR_VER("tx with mismatched vout/outPk count, rejected for tx id= " << get_transaction_hash(tx));
         return false;
