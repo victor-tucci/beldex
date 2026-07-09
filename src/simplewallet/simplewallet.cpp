@@ -251,68 +251,6 @@ namespace
     return validate_asset_descriptor_for_deploy(descriptor, error);
   }
 
-  std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true)
-  {
-    std::string s = std::to_string(amount);
-    if (s.size() < static_cast<size_t>(decimal_point) + 1)
-      s.insert(0, static_cast<size_t>(decimal_point) + 1 - s.size(), '0');
-
-    if (decimal_point > 0)
-      s.insert(s.size() - decimal_point, ".");
-
-    if (strip_zeros && decimal_point > 0)
-    {
-      while (!s.empty() && s.back() == '0')
-        s.pop_back();
-      if (!s.empty() && s.back() == '.')
-        s.pop_back();
-    }
-
-    return s;
-  }
-
-  bool parse_asset_amount(uint64_t& amount, std::string_view str_amount, uint8_t decimal_point)
-  {
-    while (!str_amount.empty() && std::isspace((unsigned char)str_amount.front()))
-      str_amount.remove_prefix(1);
-    while (!str_amount.empty() && std::isspace((unsigned char)str_amount.back()))
-      str_amount.remove_suffix(1);
-
-    const size_t dot_pos = str_amount.find('.');
-    const std::string_view whole = (dot_pos == std::string_view::npos) ? str_amount : str_amount.substr(0, dot_pos);
-    const std::string_view frac  = (dot_pos == std::string_view::npos) ? std::string_view{} : str_amount.substr(dot_pos + 1);
-
-    for (char c : whole) if (!std::isdigit((unsigned char)c)) return false;
-    for (char c : frac)  if (!std::isdigit((unsigned char)c)) return false;
-    if (whole.empty() && frac.empty()) return false;
-    if (frac.size() > decimal_point) return false;
-
-    amount = 0;
-    for (char c : whole)
-    {
-      if (amount > (std::numeric_limits<uint64_t>::max() - (c - '0')) / 10) return false;
-      amount = amount * 10 + (c - '0');
-    }
-    for (size_t i = 0; i < decimal_point; i++)
-    {
-      if (amount > std::numeric_limits<uint64_t>::max() / 10) return false;
-      amount *= 10;
-    }
-    if (!frac.empty())
-    {
-      uint64_t frac_val = 0;
-      for (char c : frac) frac_val = frac_val * 10 + (c - '0');
-      for (size_t i = 0; i < decimal_point - frac.size(); i++)
-      {
-        if (frac_val > std::numeric_limits<uint64_t>::max() / 10) return false;
-        frac_val *= 10;
-      }
-      if (amount > std::numeric_limits<uint64_t>::max() - frac_val) return false;
-      amount += frac_val;
-    }
-    return true;
-  }
-
   bool parse_asset_prefixed_address_arg(const std::string& raw, crypto::asset_id& asset_id, std::string& address)
   {
     address = raw;
@@ -10120,7 +10058,14 @@ bool simple_wallet::export_transfers(const std::vector<std::string>& args_)
   fs::ofstream file{fs::u8path(filename_str)};
 
   const bool formatting = true;
-  file << m_wallet->transfers_to_csv(all_transfers, formatting);
+  auto get_asset_info = [this](const crypto::asset_id& asset_id) -> std::pair<std::string, uint8_t> {
+    auto info = get_asset_display_info(*m_wallet, asset_id);
+    if (info)
+      return {info->ticker.empty() ? tools::type_to_hex(asset_id) : info->ticker, info->decimal_point};
+    return {tools::type_to_hex(asset_id), 0};
+  };
+
+  file << m_wallet->transfers_to_csv(all_transfers, formatting, get_asset_info);
   file.close();
 
   success_msg_writer() << tr("CSV exported to ") << filename_str;

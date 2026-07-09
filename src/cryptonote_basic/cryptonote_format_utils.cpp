@@ -1316,6 +1316,71 @@ namespace cryptonote
     return value;
   }
   //---------------------------------------------------------------
+  std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros)
+  {
+    std::string s = std::to_string(amount);
+    if (s.size() < static_cast<size_t>(decimal_point) + 1)
+      s.insert(0, static_cast<size_t>(decimal_point) + 1 - s.size(), '0');
+
+    if (decimal_point > 0)
+      s.insert(s.size() - decimal_point, ".");
+
+    if (strip_zeros && decimal_point > 0)
+    {
+      while (!s.empty() && s.back() == '0')
+        s.pop_back();
+      if (!s.empty() && s.back() == '.')
+        s.pop_back();
+    }
+
+    return s;
+  }
+  //---------------------------------------------------------------
+  bool parse_asset_amount(uint64_t& amount, std::string_view str_amount, uint8_t decimal_point)
+  {
+    while (!str_amount.empty() && std::isspace((unsigned char)str_amount.front()))
+      str_amount.remove_prefix(1);
+    while (!str_amount.empty() && std::isspace((unsigned char)str_amount.back()))
+      str_amount.remove_suffix(1);
+
+    std::string str(str_amount);
+    auto point_index = str.find_first_of('.');
+    size_t fraction_size = 0;
+
+    if (point_index != std::string::npos)
+    {
+      fraction_size = str.size() - point_index - 1;
+      while (fraction_size > 0 && str.back() == '0')
+      {
+        str.pop_back();
+        --fraction_size;
+      }
+      if (fraction_size > decimal_point)
+        return false; // too many decimal places
+      str.erase(point_index, 1);
+    }
+
+    if (str.empty())
+      return false;
+
+    if (fraction_size < decimal_point)
+      str.append(decimal_point - fraction_size, '0');
+
+    for (char c : str)
+      if (!std::isdigit((unsigned char)c))
+        return false;
+
+    try
+    {
+      amount = std::stoull(str);
+    }
+    catch (const std::exception&)
+    {
+      return false;
+    }
+    return true;
+  }
+  //---------------------------------------------------------------
   std::string print_tx_verification_context(tx_verification_context const &tvc, transaction const *tx)
   {
     std::ostringstream os;

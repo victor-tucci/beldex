@@ -256,6 +256,10 @@ namespace cryptonote
   // insignificant trailing 0s by default (unlike the above) but can be overridden to not do that.
   std::string format_money(uint64_t amount, bool strip_zeros = true);
 
+  // HF21: formatting amounts with a specific decimal_point
+  std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true);
+  bool parse_asset_amount(uint64_t& amount, std::string_view str_amount, uint8_t decimal_point);
+
   std::string print_tx_verification_context  (tx_verification_context const &tvc, transaction const *tx = nullptr);
   std::string print_vote_verification_context(vote_verification_context const &vvc, master_nodes::quorum_vote_t const *vote = nullptr);
  
