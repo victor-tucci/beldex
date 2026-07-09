@@ -6374,7 +6374,19 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.fee = pd.m_fee;
   result.note = get_tx_note(pd.m_tx_hash);
   result.pay_type = pd.m_type;
-  result.asset_id = pd.is_asset() ? tools::type_to_hex(pd.m_asset_id) : "";
+  crypto::asset_id deduced_asset_id = pd.m_asset_id;
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == pd.m_tx_hash && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  result.asset_id = deduced_asset_id != crypto::null_aid ? tools::type_to_hex(deduced_asset_id) : "";
   result.subaddr_index = pd.m_subaddr_index;
   result.subaddr_indices.push_back(pd.m_subaddr_index);
   result.address = get_subaddress_as_str(pd.m_subaddr_index);
@@ -6407,24 +6419,85 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
   result.amount = pd.m_amount_in - change - result.fee;
   result.note = get_tx_note(txid);
 
+  crypto::asset_id deduced_asset_id = crypto::null_aid;
+  if (pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset || pd.m_pay_type == wallet::pay_type::update_asset || pd.m_pay_type == wallet::pay_type::burn_asset)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == txid && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (const auto& ring : pd.m_rings)
+    {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end()) {
+        deduced_asset_id = m_transfers[it->second].m_asset_id;
+        if (deduced_asset_id != crypto::null_aid)
+          break;
+      }
+    }
+  }
+
   for (const auto &d: pd.m_dests) {
-    if (d.amount == 0 && d.is_zarcanum())
+    crypto::asset_id actual_asset_id = d.is_zarcanum() ? d.asset_id : deduced_asset_id;
+    bool is_zarcanum = actual_asset_id != crypto::null_aid;
+    if (d.amount == 0 && is_zarcanum)
       continue;
     result.destinations.push_back({});
     auto& td = result.destinations.back();
     td.amount = d.amount;
     td.address = d.address(nettype(), pd.m_payment_id);
-    if (d.is_zarcanum())
-      td.asset_id = tools::type_to_hex(d.asset_id);
+    if (is_zarcanum)
+      td.asset_id = tools::type_to_hex(actual_asset_id);
   }
 
   result.pay_type = pd.m_pay_type;
-  if (!pd.m_dests.empty() && pd.m_dests.front().is_zarcanum())
+  if (pd.m_pay_type == wallet::pay_type::burn_asset && deduced_asset_id != crypto::null_aid)
   {
-    result.asset_id = tools::type_to_hex(pd.m_dests.front().asset_id);
-    result.amount = 0;
-    for (const auto& d : pd.m_dests)
-      result.amount += d.amount;
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t spent_asset = 0;
+    for (const auto& ring : pd.m_rings) {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end() && m_transfers[it->second].m_asset_id == deduced_asset_id) {
+        spent_asset += m_transfers[it->second].amount();
+      }
+    }
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = spent_asset > received_asset ? spent_asset - received_asset : 0;
+  }
+  else if ((pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset) && deduced_asset_id != crypto::null_aid)
+  {
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = received_asset;
+  }
+  else if (!pd.m_dests.empty())
+  {
+    crypto::asset_id first_actual_asset_id = pd.m_dests.front().is_zarcanum() ? pd.m_dests.front().asset_id : deduced_asset_id;
+    if (first_actual_asset_id != crypto::null_aid)
+    {
+      if (pd.m_pay_type != wallet::pay_type::deploy_asset && pd.m_pay_type != wallet::pay_type::emit_asset)
+      {
+        result.asset_id = tools::type_to_hex(first_actual_asset_id);
+        result.amount = 0;
+        for (const auto& d : pd.m_dests)
+          result.amount += d.amount;
+      }
+    }
   }
   result.subaddr_index = { pd.m_subaddr_account, 0 };
   for (uint32_t i: pd.m_subaddr_indices)
@@ -6453,25 +6526,86 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.locked = true;
   result.note = get_tx_note(txid);
 
+  crypto::asset_id deduced_asset_id = crypto::null_aid;
+  if (pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset || pd.m_pay_type == wallet::pay_type::update_asset || pd.m_pay_type == wallet::pay_type::burn_asset)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == txid && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (const auto& ring : pd.m_rings)
+    {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end()) {
+        deduced_asset_id = m_transfers[it->second].m_asset_id;
+        if (deduced_asset_id != crypto::null_aid)
+          break;
+      }
+    }
+  }
+
   for (const auto &d: pd.m_dests) {
-    if (d.amount == 0 && d.is_zarcanum())
+    crypto::asset_id actual_asset_id = d.is_zarcanum() ? d.asset_id : deduced_asset_id;
+    bool is_zarcanum = actual_asset_id != crypto::null_aid;
+    if (d.amount == 0 && is_zarcanum)
       continue;
     result.destinations.push_back({});
     auto& td = result.destinations.back();
     td.amount = d.amount;
     td.address = d.address(nettype(), pd.m_payment_id);
-    if (d.is_zarcanum())
-      td.asset_id = tools::type_to_hex(d.asset_id);
+    if (is_zarcanum)
+      td.asset_id = tools::type_to_hex(actual_asset_id);
   }
 
   result.pay_type = pd.m_pay_type;
   result.type = is_failed ? "failed" : "pending";
-  if (!pd.m_dests.empty() && pd.m_dests.front().is_zarcanum())
+  if (pd.m_pay_type == wallet::pay_type::burn_asset && deduced_asset_id != crypto::null_aid)
   {
-    result.asset_id = tools::type_to_hex(pd.m_dests.front().asset_id);
-    result.amount = 0;
-    for (const auto& d : pd.m_dests)
-      result.amount += d.amount;
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t spent_asset = 0;
+    for (const auto& ring : pd.m_rings) {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end() && m_transfers[it->second].m_asset_id == deduced_asset_id) {
+        spent_asset += m_transfers[it->second].amount();
+      }
+    }
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = spent_asset > received_asset ? spent_asset - received_asset : 0;
+  }
+  else if ((pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset) && deduced_asset_id != crypto::null_aid)
+  {
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = received_asset;
+  }
+  else if (!pd.m_dests.empty())
+  {
+    crypto::asset_id first_actual_asset_id = pd.m_dests.front().is_zarcanum() ? pd.m_dests.front().asset_id : deduced_asset_id;
+    if (first_actual_asset_id != crypto::null_aid)
+    {
+      if (pd.m_pay_type != wallet::pay_type::deploy_asset && pd.m_pay_type != wallet::pay_type::emit_asset)
+      {
+        result.asset_id = tools::type_to_hex(first_actual_asset_id);
+        result.amount = 0;
+        for (const auto& d : pd.m_dests)
+          result.amount += d.amount;
+      }
+    }
   }
   result.subaddr_index = { pd.m_subaddr_account, 0 };
   for (uint32_t i: pd.m_subaddr_indices)
@@ -6500,7 +6634,19 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &payment_id
   result.double_spend_seen = ppd.m_double_spend_seen;
   result.pay_type = wallet::pay_type::unspecified;
   result.type = "pool";
-  result.asset_id = pd.is_asset() ? tools::type_to_hex(pd.m_asset_id) : "";
+  crypto::asset_id deduced_asset_id = pd.m_asset_id;
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == pd.m_tx_hash && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  result.asset_id = deduced_asset_id != crypto::null_aid ? tools::type_to_hex(deduced_asset_id) : "";
   result.subaddr_index = pd.m_subaddr_index;
   result.subaddr_indices.push_back(pd.m_subaddr_index);
   result.address = get_subaddress_as_str(pd.m_subaddr_index);
@@ -6561,7 +6707,23 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   // Fill transfers
   transfers.reserve(size);
   for (const auto &i : in)
-    transfers.push_back(make_transfer_view(i.second.m_tx_hash, i.first, i.second));
+  {
+    bool is_deploy_or_emit = false;
+    for (const auto& o : out) {
+      if (o.first == i.second.m_tx_hash && (o.second.m_pay_type == wallet::pay_type::deploy_asset || o.second.m_pay_type == wallet::pay_type::emit_asset)) {
+        is_deploy_or_emit = true; break;
+      }
+    }
+    if (!is_deploy_or_emit) {
+      for (const auto& pof : pending_or_failed) {
+        if (pof.first == i.second.m_tx_hash && (pof.second.m_pay_type == wallet::pay_type::deploy_asset || pof.second.m_pay_type == wallet::pay_type::emit_asset)) {
+          is_deploy_or_emit = true; break;
+        }
+      }
+    }
+    if (!is_deploy_or_emit)
+      transfers.push_back(make_transfer_view(i.second.m_tx_hash, i.first, i.second));
+  }
   for (const auto &o : out)
   {
     bool add_entry = true;

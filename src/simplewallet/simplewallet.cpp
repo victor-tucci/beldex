@@ -9957,7 +9957,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
 
   auto color = epee::console_color_white;
 
-  message_writer(color, true) << fmt::format("{:<8.7} {:<6.6} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}", "Height", "Type", "Locked", "Checkpoint", "Date", "Amount", "Hash", "Payment ID", "Fee", "Destination", "Subaddress", "Note");
+  message_writer(color, true) << fmt::format("{:<8.7} {:<10.10} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}", "Height", "Type", "Locked", "Checkpoint", "Date", "Amount", "Hash", "Payment ID", "Fee", "Destination", "Subaddress", "Note");
 
   for (const auto& transfer : all_transfers)
   {
@@ -9997,7 +9997,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
             transfer.pay_type == wallet::pay_type::bns ||
             transfer.pay_type == wallet::pay_type::miner)
           destinations += output.address.substr(0, 6);
-        else if (transfer.pay_type == wallet::pay_type::coin_burn){
+        else if (transfer.pay_type == wallet::pay_type::coin_burn || transfer.pay_type == wallet::pay_type::burn_asset || transfer.pay_type == wallet::pay_type::update_asset){
             destinations = "-"; continue;}
         else
           destinations += output.address;
@@ -10011,7 +10011,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
     std::transform(transfer.subaddr_indices.begin(), transfer.subaddr_indices.end(), std::back_inserter(subaddr_minors),
         [](const auto& index) { return index.minor; });
 
-    message_writer(color, false) << fmt::format("{:<8.8} {:<6.6} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}"
+    message_writer(color, false) << fmt::format("{:<8.8} {:<10.10} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}"
       , (transfer.type.size() ? transfer.type : (transfer.height == 0 && transfer.flash_mempool) ? "flash" : std::to_string(transfer.height))
       , wallet::pay_type_string(transfer.pay_type)
       , transfer.lock_msg
