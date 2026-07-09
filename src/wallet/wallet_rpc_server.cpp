@@ -1176,32 +1176,71 @@ namespace tools
   }
 
   //------------------------------------------------------------------------------------------------------------------------------
+  enum class asset_prefixed_address_mode
+  {
+    plain_address,
+    native_prefixed_address,
+    asset_prefixed_address,
+  };
+
+  static bool parse_asset_prefixed_address(std::string_view raw, crypto::asset_id& asset_id, std::string& address, asset_prefixed_address_mode* mode = nullptr)
+  {
+    const size_t sep = raw.find(':');
+    address = std::string{raw};
+    asset_id = crypto::null_aid;
+    if (mode)
+      *mode = asset_prefixed_address_mode::plain_address;
+    if (sep == std::string_view::npos)
+      return true;
+
+    const std::string asset_hex = std::string{raw.substr(0, sep)};
+    const std::string parsed_address = std::string{raw.substr(sep + 1)};
+    if (asset_hex == "bdx" && !parsed_address.empty())
+    {
+      address = parsed_address;
+      if (mode)
+        *mode = asset_prefixed_address_mode::native_prefixed_address;
+      return true;
+    }
+    if (asset_hex.size() != 64 || parsed_address.empty())
+      return true;
+    if (!tools::hex_to_type(asset_hex, asset_id))
+      return false;
+
+    address = std::move(parsed_address);
+    if (mode)
+      *mode = asset_prefixed_address_mode::asset_prefixed_address;
+    return true;
+  }
+
+  //------------------------------------------------------------------------------------------------------------------------------
   void wallet_rpc_server::validate_transfer(const std::list<wallet::transfer_destination>& destinations, const std::string& payment_id, std::vector<cryptonote::tx_destination_entry>& dsts, std::vector<uint8_t>& extra, bool at_least_one_destination)
   {
     crypto::hash8 integrated_payment_id = crypto::null_hash8;
     std::string extra_nonce;
     for (auto it = destinations.begin(); it != destinations.end(); it++)
     {
-      cryptonote::address_parse_info info = extract_account_addr(m_wallet->nettype(), it->address);
+      crypto::asset_id parsed_asset_id = crypto::null_aid;
+      std::string parsed_address;
+      if (!parse_asset_prefixed_address(it->address, parsed_asset_id, parsed_address))
+        throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
+
+      cryptonote::address_parse_info info = extract_account_addr(m_wallet->nettype(), parsed_address);
 
       cryptonote::tx_destination_entry de;
-      de.original = it->address;
+      de.original = parsed_address;
       de.addr = info.address;
       de.is_subaddress = info.is_subaddress;
       de.amount = it->amount;
       de.is_integrated = info.has_payment_id;
-
-      // HF21: confidential-asset transfer. An empty asset_id means native BDX
-      // (txout_to_key); otherwise this destination receives the named asset as
-      // a tx_out_zarcanum output. de.amount is the asset's atomic-unit amount.
-      // Mirrors the CLI's `transfer <assetid>:<address> <amount>` form
-      // (simplewallet.cpp parse_asset_prefixed_address_arg -> de.asset_id).
-      if (!it->asset_id.empty())
-      {
-        crypto::asset_id aid;
-        if (!tools::hex_to_type(it->asset_id, aid))
-          throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id in destination: " + it->asset_id};
-        de.asset_id = aid;
+      de.asset_id = parsed_asset_id;
+      if (!it->asset_id.empty()) {
+        crypto::asset_id explicit_asset_id = crypto::null_aid;
+        if (!tools::hex_to_type(it->asset_id, explicit_asset_id))
+          throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
+        if (de.asset_id != crypto::null_aid && de.asset_id != explicit_asset_id)
+          throw wallet_rpc_error{error_code::BAD_HEX, "Conflicting asset ids in destination"};
+        de.asset_id = explicit_asset_id;
       }
 
       dsts.push_back(de);
@@ -1767,6 +1806,12 @@ namespace tools
     destination.back().address = req.address;
     validate_transfer(destination, req.payment_id, dsts, extra, true);
 
+    crypto::asset_id parsed_asset_id = crypto::null_aid;
+    std::string parsed_address;
+    asset_prefixed_address_mode address_mode = asset_prefixed_address_mode::plain_address;
+    if (!parse_asset_prefixed_address(req.address, parsed_asset_id, parsed_address, &address_mode))
+      throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
+
     if (req.outputs < 1)
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Amount of outputs should be greater than 0."};
 
@@ -1783,7 +1828,14 @@ namespace tools
 
     {
       uint32_t priority = convert_priority(req.priority);
-      std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_all(req.below_amount, dsts[0].addr, dsts[0].is_subaddress, req.outputs, cryptonote::TX_OUTPUT_DECOYS, req.unlock_time, priority, extra, req.account_index, subaddr_indices);
+      const auto requested_asset_id = dsts[0].asset_id == crypto::null_aid
+          ? std::optional<crypto::asset_id>{}
+          : std::optional<crypto::asset_id>{dsts[0].asset_id};
+      const auto selection_mode =
+          address_mode == asset_prefixed_address_mode::plain_address && !requested_asset_id.has_value()
+              ? wallet2::sweep_selection_mode::native_and_all_assets
+              : wallet2::sweep_selection_mode::native_only;
+      std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_all(req.below_amount, dsts[0].addr, dsts[0].is_subaddress, req.outputs, cryptonote::TX_OUTPUT_DECOYS, req.unlock_time, priority, extra, req.account_index, subaddr_indices, requested_asset_id, cryptonote::txtype::standard, selection_mode);
 
       fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.amounts_by_dest_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_flash,
             res.tx_hash_list, req.get_tx_hex, res.tx_blob_list, req.get_tx_metadata, res.tx_metadata_list, res.spent_key_images_list);
@@ -1815,15 +1867,16 @@ namespace tools
 
     {
       uint32_t priority = convert_priority(req.priority);
-      std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress, req.outputs, cryptonote::TX_OUTPUT_DECOYS, req.unlock_time, priority, extra);
+      const auto requested_asset_id = dsts[0].asset_id == crypto::null_aid
+          ? std::optional<crypto::asset_id>{}
+          : std::optional<crypto::asset_id>{dsts[0].asset_id};
+      std::vector<wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress, req.outputs, cryptonote::TX_OUTPUT_DECOYS, req.unlock_time, priority, extra, requested_asset_id);
 
       if (ptx_vector.empty())
         throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "No outputs found"};
       if (ptx_vector.size() > 1)
         throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Multiple transactions are created, which is not supposed to happen"};
       const wallet2::pending_tx &ptx = ptx_vector[0];
-      if (ptx.selected_transfers.size() > 1)
-        throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "The transaction uses multiple inputs, which is not supposed to happen"};
 
       fill_response(ptx_vector, req.get_tx_key, res.tx_key, res.amount, res.amounts_by_dest, res.fee, res.multisig_txset, res.unsigned_txset, req.do_not_relay, priority == tx_priority_flash,
           res.tx_hash, req.get_tx_hex, res.tx_blob, req.get_tx_metadata, res.tx_metadata, res.spent_key_images);

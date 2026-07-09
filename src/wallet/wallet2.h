@@ -808,9 +808,15 @@ private:
         uint32_t subaddr_account,
         std::set<uint32_t> subaddr_indices);
 
-    std::vector<pending_tx> create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::txtype tx_type = cryptonote::txtype::standard);
-    std::vector<pending_tx> create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type = cryptonote::txtype::standard);
-    std::vector<pending_tx> create_transactions_from(const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, std::vector<size_t> unused_transfers_indices, std::vector<size_t> unused_dust_indices, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type = cryptonote::txtype::standard);
+    enum class sweep_selection_mode : uint8_t
+    {
+      native_only,
+      native_and_all_assets
+    };
+
+    std::vector<pending_tx> create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, std::optional<crypto::asset_id> requested_asset_id = std::nullopt, cryptonote::txtype tx_type = cryptonote::txtype::standard, sweep_selection_mode selection_mode = sweep_selection_mode::native_only);
+    std::vector<pending_tx> create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, std::optional<crypto::asset_id> requested_asset_id = std::nullopt, cryptonote::txtype tx_type = cryptonote::txtype::standard);
+    std::vector<pending_tx> create_transactions_from(const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, std::vector<size_t> unused_transfers_indices, std::vector<size_t> unused_dust_indices, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, std::optional<crypto::asset_id> requested_asset_id = std::nullopt, cryptonote::txtype tx_type = cryptonote::txtype::standard, std::vector<size_t> preselected_asset_inputs = {});
     std::vector<pending_tx> create_transactions_burn(const std::vector<crypto::key_image> &ki, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type = cryptonote::txtype::coin_burn);
 
     bool sanity_check(const std::vector<pending_tx> &ptx_vector, std::vector<cryptonote::tx_destination_entry> dsts, const unique_index_container& subtract_fee_from_outputs = {}) const;
@@ -824,7 +830,7 @@ private:
     bool sign_multisig_tx_from_file(const fs::path& filename, std::vector<crypto::hash> &txids, std::function<bool(const multisig_tx_set&)> accept_func);
     bool sign_multisig_tx(multisig_tx_set &exported_txs, std::vector<crypto::hash> &txids);
     bool sign_multisig_tx_to_file(multisig_tx_set &exported_txs, const fs::path& filename, std::vector<crypto::hash> &txids);
-    std::vector<pending_tx> create_unmixable_sweep_transactions();
+    std::vector<pending_tx> create_unmixable_sweep_transactions(std::optional<crypto::asset_id> requested_asset_id = std::nullopt);
     void discard_unmixable_outputs();
     bool check_connection(cryptonote::rpc::version_t *version = nullptr, bool *ssl = nullptr, bool throw_on_http_error = false);
     wallet::transfer_view make_transfer_view(const crypto::hash &txid, const crypto::hash &payment_id, const wallet2::payment_details &pd) const;
@@ -1145,7 +1151,7 @@ private:
     uint64_t estimate_blockchain_height();
     std::vector<size_t> select_available_outputs_from_histogram(uint64_t count, bool atleast, bool unlocked, bool allow_rct);
     std::vector<size_t> select_available_outputs(const std::function<bool(const transfer_details &td)> &f) const;
-    std::vector<size_t> select_available_unmixable_outputs();
+    std::vector<size_t> select_available_unmixable_outputs(std::optional<crypto::asset_id> requested_asset_id = std::nullopt);
     std::vector<size_t> select_available_mixable_outputs();
 
     size_t pop_best_value_from(const transfer_container &transfers, std::vector<size_t> &unused_dust_indices, const std::vector<size_t>& selected_transfers, bool smallest = false) const;
