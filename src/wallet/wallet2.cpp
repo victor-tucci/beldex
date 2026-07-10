@@ -12747,13 +12747,163 @@ bool wallet2::sanity_check(const std::vector<wallet2::pending_tx> &ptx_vector, s
   return true;
 }
 
-std::vector<wallet2::pending_tx> wallet2::create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::txtype tx_type)
+std::vector<wallet2::pending_tx> wallet2::create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, std::optional<crypto::asset_id> requested_asset_id, cryptonote::txtype tx_type, sweep_selection_mode selection_mode)
 {
   std::vector<size_t> unused_transfers_indices;
   std::vector<size_t> unused_dust_indices;
+  std::vector<size_t> preselected_asset_inputs;
 
   THROW_WALLET_EXCEPTION_IF(unlocked_balance(subaddr_account, false,NULL,NULL) == 0, error::wallet_internal_error, "No unlocked balance in the entire wallet");
 
+  if (requested_asset_id)
+  {
+    std::map<uint32_t, std::vector<size_t>> asset_indices_per_subaddr;
+    std::map<uint32_t, std::pair<std::vector<size_t>, std::vector<size_t>>> native_fee_indices_per_subaddr;
+    bool fund_found = false;
+    for (size_t i = 0; i < m_transfers.size(); ++i)
+    {
+      const transfer_details& td = m_transfers[i];
+      if (!is_spent(td, false) && !td.m_frozen && !td.m_key_image_partial && is_transfer_unlocked(td) &&
+          td.m_subaddr_index.major == subaddr_account &&
+          (subaddr_indices.empty() || subaddr_indices.count(td.m_subaddr_index.minor) == 1))
+      {
+        fund_found = true;
+        if (td.m_tx.version > txversion::v1)
+        {
+          if (td.m_asset_id == *requested_asset_id && td.is_rct())
+          {
+            if (below == 0 || td.amount() < below)
+              asset_indices_per_subaddr[td.m_subaddr_index.minor].push_back(i);
+          }
+          else if (td.m_asset_id == crypto::null_aid)
+          {
+            if (td.is_rct())
+              native_fee_indices_per_subaddr[td.m_subaddr_index.minor].first.push_back(i);
+            else
+              native_fee_indices_per_subaddr[td.m_subaddr_index.minor].second.push_back(i);
+          }
+        }
+      }
+    }
+
+    THROW_WALLET_EXCEPTION_IF(!fund_found, error::wallet_internal_error, "No unlocked balance in the specified subaddress(es)");
+    THROW_WALLET_EXCEPTION_IF(asset_indices_per_subaddr.empty(), error::wallet_internal_error, "The smallest amount found is not below the specified threshold");
+
+    if (subaddr_indices.empty())
+    {
+      if (asset_indices_per_subaddr.count(0) == 1 && asset_indices_per_subaddr.size() > 1)
+        asset_indices_per_subaddr.erase(0);
+      auto i = asset_indices_per_subaddr.begin();
+      std::advance(i, crypto::rand_idx(asset_indices_per_subaddr.size()));
+      preselected_asset_inputs = i->second;
+      auto native_it = native_fee_indices_per_subaddr.find(i->first);
+      if (native_it != native_fee_indices_per_subaddr.end())
+      {
+        unused_transfers_indices = native_it->second.first;
+        unused_dust_indices = native_it->second.second;
+      }
+      LOG_PRINT_L2("Spending asset from subaddress index " << i->first);
+    }
+    else
+    {
+      for (const auto& [minor_index, asset_indices] : asset_indices_per_subaddr)
+      {
+        preselected_asset_inputs.insert(preselected_asset_inputs.end(), asset_indices.begin(), asset_indices.end());
+        const auto native_it = native_fee_indices_per_subaddr.find(minor_index);
+        if (native_it != native_fee_indices_per_subaddr.end())
+        {
+          unused_transfers_indices.insert(unused_transfers_indices.end(), native_it->second.first.begin(), native_it->second.first.end());
+          unused_dust_indices.insert(unused_dust_indices.end(), native_it->second.second.begin(), native_it->second.second.end());
+        }
+        LOG_PRINT_L2("Spending asset from subaddress index " << minor_index);
+      }
+    }
+
+    return create_transactions_from(address, is_subaddress, outputs, unused_transfers_indices, unused_dust_indices, fake_outs_count, unlock_time, priority, extra, requested_asset_id, tx_type, std::move(preselected_asset_inputs));
+  }
+  else if (selection_mode == sweep_selection_mode::native_and_all_assets)
+  {
+    std::map<uint32_t, std::pair<std::vector<size_t>, std::vector<size_t>>> native_indices_per_subaddr;
+    std::map<uint32_t, std::vector<size_t>> asset_indices_per_subaddr;
+
+    bool fund_found = false;
+    for (size_t i = 0; i < m_transfers.size(); ++i)
+    {
+      const transfer_details& td = m_transfers[i];
+      if (!is_spent(td, false) && !td.m_frozen && !td.m_key_image_partial && is_transfer_unlocked(td) &&
+          td.m_subaddr_index.major == subaddr_account &&
+          (subaddr_indices.empty() || subaddr_indices.count(td.m_subaddr_index.minor) == 1))
+      {
+        fund_found = true;
+        if (below != 0 && td.amount() >= below)
+          continue;
+        if (td.m_tx.version <= txversion::v1)
+          continue;
+
+        if (td.m_asset_id == crypto::null_aid)
+        {
+          if (td.is_rct())
+            native_indices_per_subaddr[td.m_subaddr_index.minor].first.push_back(i);
+          else
+            native_indices_per_subaddr[td.m_subaddr_index.minor].second.push_back(i);
+        }
+        else if (td.is_rct())
+        {
+          asset_indices_per_subaddr[td.m_subaddr_index.minor].push_back(i);
+        }
+      }
+    }
+
+    THROW_WALLET_EXCEPTION_IF(!fund_found, error::wallet_internal_error, "No unlocked balance in the specified subaddress(es)");
+    THROW_WALLET_EXCEPTION_IF(native_indices_per_subaddr.empty() && asset_indices_per_subaddr.empty(), error::wallet_internal_error, "The smallest amount found is not below the specified threshold");
+
+    if (subaddr_indices.empty())
+    {
+      std::set<uint32_t> candidate_subaddrs;
+      for (const auto& [minor_index, _] : native_indices_per_subaddr)
+        candidate_subaddrs.insert(minor_index);
+      for (const auto& [minor_index, _] : asset_indices_per_subaddr)
+        candidate_subaddrs.insert(minor_index);
+
+      if (candidate_subaddrs.count(0) == 1 && candidate_subaddrs.size() > 1)
+        candidate_subaddrs.erase(0);
+
+      auto i = candidate_subaddrs.begin();
+      std::advance(i, crypto::rand_idx(candidate_subaddrs.size()));
+      const uint32_t minor_index = *i;
+
+      const auto native_it = native_indices_per_subaddr.find(minor_index);
+      if (native_it != native_indices_per_subaddr.end())
+      {
+        unused_transfers_indices = native_it->second.first;
+        unused_dust_indices = native_it->second.second;
+      }
+
+      const auto asset_it = asset_indices_per_subaddr.find(minor_index);
+      if (asset_it != asset_indices_per_subaddr.end())
+        preselected_asset_inputs = asset_it->second;
+
+      LOG_PRINT_L2("Spending native and assets from subaddress index " << minor_index);
+    }
+    else
+    {
+      for (const auto& [minor_index, native_indices] : native_indices_per_subaddr)
+      {
+        unused_transfers_indices.insert(unused_transfers_indices.end(), native_indices.first.begin(), native_indices.first.end());
+        unused_dust_indices.insert(unused_dust_indices.end(), native_indices.second.begin(), native_indices.second.end());
+        LOG_PRINT_L2("Spending native from subaddress index " << minor_index);
+      }
+      for (const auto& [minor_index, asset_indices] : asset_indices_per_subaddr)
+      {
+        preselected_asset_inputs.insert(preselected_asset_inputs.end(), asset_indices.begin(), asset_indices.end());
+        LOG_PRINT_L2("Spending assets from subaddress index " << minor_index);
+      }
+    }
+
+    return create_transactions_from(address, is_subaddress, outputs, unused_transfers_indices, unused_dust_indices, fake_outs_count, unlock_time, priority, extra, requested_asset_id, tx_type, std::move(preselected_asset_inputs));
+  }
+  else
+  {
   std::map<uint32_t, std::pair<std::vector<size_t>, std::vector<size_t>>> unused_transfer_dust_indices_per_subaddr;
 
   // gather all dust and non-dust outputs of specified subaddress (if any) and below specified threshold (if any)
@@ -12769,10 +12919,13 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_all(uint64_t below
         if (td.m_tx.version <= txversion::v1)
           continue;
 
-        if (td.is_rct())
-          unused_transfer_dust_indices_per_subaddr[td.m_subaddr_index.minor].first.push_back(i);
-        else
-          unused_transfer_dust_indices_per_subaddr[td.m_subaddr_index.minor].second.push_back(i);
+        if (td.m_asset_id == crypto::null_aid)
+        {
+          if (td.is_rct())
+            unused_transfer_dust_indices_per_subaddr[td.m_subaddr_index.minor].first.push_back(i);
+          else
+            unused_transfer_dust_indices_per_subaddr[td.m_subaddr_index.minor].second.push_back(i);
+        }
       }
     }
   }
@@ -12788,7 +12941,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_all(uint64_t below
     std::advance(i, crypto::rand_idx(unused_transfer_dust_indices_per_subaddr.size()));
     unused_transfers_indices = i->second.first;
     unused_dust_indices = i->second.second;
-    LOG_PRINT_L2("Spending from subaddress index " << i->first);
+    LOG_PRINT_L2("Spending native from subaddress index " << i->first);
   }
   else
   {
@@ -12796,31 +12949,62 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_all(uint64_t below
     {
       unused_transfers_indices.insert(unused_transfers_indices.end(), p.second.first.begin(), p.second.first.end());
       unused_dust_indices.insert(unused_dust_indices.end(), p.second.second.begin(), p.second.second.end());
-      LOG_PRINT_L2("Spending from subaddress index " << p.first);
+      LOG_PRINT_L2("Spending native from subaddress index " << p.first);
     }
   }
 
-  return create_transactions_from(address, is_subaddress, outputs, unused_transfers_indices, unused_dust_indices, fake_outs_count, unlock_time, priority, extra, tx_type);
+  return create_transactions_from(address, is_subaddress, outputs, unused_transfers_indices, unused_dust_indices, fake_outs_count, unlock_time, priority, extra, requested_asset_id, tx_type, std::move(preselected_asset_inputs));
+  }
 }
 
-std::vector<wallet2::pending_tx> wallet2::create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type)
+std::vector<wallet2::pending_tx> wallet2::create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, std::optional<crypto::asset_id> requested_asset_id, cryptonote::txtype tx_type)
 {
   std::vector<size_t> unused_transfers_indices;
   std::vector<size_t> unused_dust_indices;
+  std::vector<size_t> preselected_asset_inputs;
+  std::optional<uint32_t> forced_subaddr_account;
   // find output with the given key image
   for (size_t i = 0; i < m_transfers.size(); ++i)
   {
     const transfer_details& td = m_transfers[i];
-    if (td.m_key_image_known && td.m_key_image == ki && !is_spent(td, false) && !td.m_frozen && is_transfer_unlocked(td))
+    const bool asset_matches =
+        requested_asset_id ? td.m_asset_id == *requested_asset_id : td.m_asset_id == crypto::null_aid;
+    if (td.m_key_image_known && td.m_key_image == ki && asset_matches &&
+        !is_spent(td, false) && !td.m_frozen && is_transfer_unlocked(td))
     {
-      if (td.is_rct())
+      if (requested_asset_id)
+      {
+        preselected_asset_inputs.push_back(i);
+        forced_subaddr_account = td.m_subaddr_index.major;
+      }
+      else if (td.is_rct())
         unused_transfers_indices.push_back(i);
       else
         unused_dust_indices.push_back(i);
       break;
     }
   }
-  return create_transactions_from(address, is_subaddress, outputs, unused_transfers_indices, unused_dust_indices, fake_outs_count, unlock_time, priority, extra, tx_type);
+
+  if (!preselected_asset_inputs.empty())
+  {
+    for (size_t i = 0; i < m_transfers.size(); ++i)
+    {
+      if (i == preselected_asset_inputs.front())
+        continue;
+
+      const transfer_details& td = m_transfers[i];
+      if (!is_spent(td, false) && !td.m_frozen && !td.m_key_image_partial && is_transfer_unlocked(td) &&
+          td.m_subaddr_index.major == *forced_subaddr_account && td.m_asset_id == crypto::null_aid)
+      {
+        if (td.is_rct())
+          unused_transfers_indices.push_back(i);
+        else
+          unused_dust_indices.push_back(i);
+      }
+    }
+  }
+
+  return create_transactions_from(address, is_subaddress, outputs, unused_transfers_indices, unused_dust_indices, fake_outs_count, unlock_time, priority, extra, requested_asset_id, tx_type, std::move(preselected_asset_inputs));
 }
 
 std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::vector<crypto::key_image> &ki, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, cryptonote::txtype tx_type)
@@ -13037,7 +13221,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_burn(const std::ve
   return ptx_vector;
 }
 
-std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, std::vector<size_t> unused_transfers_indices, std::vector<size_t> unused_dust_indices, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, cryptonote::txtype tx_type)
+std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, std::vector<size_t> unused_transfers_indices, std::vector<size_t> unused_dust_indices, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, std::optional<crypto::asset_id> requested_asset_id, cryptonote::txtype tx_type, std::vector<size_t> preselected_asset_inputs)
 {
   //ensure device is let in NONE mode in any case
   hw::device &hwdev = m_account.get_device();
@@ -13060,6 +13244,10 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   uint64_t needed_fee, available_for_fee = 0;
   uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
   std::vector<std::vector<get_outs_entry>> outs;
+  const bool asset_sweep_mode = !preselected_asset_inputs.empty();
+  const bool mixed_asset_native_sweep = asset_sweep_mode && !requested_asset_id.has_value();
+  uint64_t preselected_asset_amount = 0;
+  std::unordered_map<crypto::asset_id, uint64_t> preselected_asset_amounts;
 
   auto hf_version = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_version, error::get_hard_fork_version_error, "Failed to query current hard fork version");
@@ -13093,7 +13281,28 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
 
   LOG_PRINT_L2("Starting with " << unused_transfers_indices.size() << " non-dust outputs and " << unused_dust_indices.size() << " dust outputs");
 
-  if (unused_dust_indices.empty() && unused_transfers_indices.empty())
+  if (asset_sweep_mode)
+  {
+    for (size_t idx : preselected_asset_inputs)
+    {
+      THROW_WALLET_EXCEPTION_IF(idx >= m_transfers.size(), error::wallet_internal_error,
+          "preselected asset input index out of range");
+      const transfer_details& td = m_transfers[idx];
+      THROW_WALLET_EXCEPTION_IF(preselected_asset_amount > std::numeric_limits<uint64_t>::max() - td.amount(),
+          error::wallet_internal_error, "asset sweep amount overflow");
+      preselected_asset_amount += td.amount();
+      THROW_WALLET_EXCEPTION_IF(td.m_asset_id == crypto::null_aid, error::wallet_internal_error,
+          "preselected asset input is native");
+      if (requested_asset_id)
+      {
+        THROW_WALLET_EXCEPTION_IF(td.m_asset_id != *requested_asset_id, error::wallet_internal_error,
+            "preselected input asset id does not match requested asset");
+      }
+      preselected_asset_amounts[td.m_asset_id] += td.amount();
+    }
+  }
+
+  if (unused_dust_indices.empty() && unused_transfers_indices.empty() && !asset_sweep_mode)
     return std::vector<wallet2::pending_tx>();
 
   // start with an empty tx
@@ -13102,40 +13311,48 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   accumulated_outputs = 0;
   accumulated_change = 0;
   needed_fee = 0;
+  if (asset_sweep_mode)
+    txes.back().selected_transfers.insert(txes.back().selected_transfers.end(), preselected_asset_inputs.begin(), preselected_asset_inputs.end());
 
   // while we have something to send
   hwdev.set_mode(hw::device::mode::TRANSACTION_CREATE_FAKE);
-  while (!unused_dust_indices.empty() || !unused_transfers_indices.empty()) {
+  bool attempt_asset_sweep_without_native_fee_input = asset_sweep_mode && unused_dust_indices.empty() && unused_transfers_indices.empty();
+  while (attempt_asset_sweep_without_native_fee_input || !unused_dust_indices.empty() || !unused_transfers_indices.empty()) {
     TX &tx = txes.back();
+    if (attempt_asset_sweep_without_native_fee_input)
+      attempt_asset_sweep_without_native_fee_input = false;
 
     // get a random unspent output and use it to pay next chunk. We try to alternate
     // dust and non dust to ensure we never get with only dust, from which we might
     // get a tx that can't pay for itself
-    uint64_t fee_dust_threshold;
+    if (!unused_dust_indices.empty() || !unused_transfers_indices.empty())
     {
-      const uint64_t estimated_tx_weight_with_one_extra_output = estimate_tx_weight(tx.selected_transfers.size() + 1, fake_outs_count, tx.dsts.size()+1, extra.size(), clsag, bulletproof_plus);
-      fee_dust_threshold = calculate_fee_from_weight(base_fee, estimated_tx_weight_with_one_extra_output, outputs, fee_percent, fixed_fee, fee_quantization_mask);
+      uint64_t fee_dust_threshold;
+      {
+        const uint64_t estimated_tx_weight_with_one_extra_output = estimate_tx_weight(tx.selected_transfers.size() + 1, fake_outs_count, tx.dsts.size()+1, extra.size(), clsag, bulletproof_plus);
+        fee_dust_threshold = calculate_fee_from_weight(base_fee, estimated_tx_weight_with_one_extra_output, outputs, fee_percent, fixed_fee, fee_quantization_mask);
+      }
+
+      size_t idx =
+        unused_transfers_indices.empty()
+          ? pop_best_value(unused_dust_indices, tx.selected_transfers)
+        : unused_dust_indices.empty()
+          ? pop_best_value(unused_transfers_indices, tx.selected_transfers)
+        : ((tx.selected_transfers.size() & 1) || accumulated_outputs > fee_dust_threshold)
+          ? pop_best_value(unused_dust_indices, tx.selected_transfers)
+          : pop_best_value(unused_transfers_indices, tx.selected_transfers);
+
+      const transfer_details &td = m_transfers[idx];
+      LOG_PRINT_L2("Picking output " << idx << ", amount " << print_money(td.amount()));
+
+      // add this output to the list to spend
+      tx.selected_transfers.push_back(idx);
+      uint64_t available_amount = td.amount();
+      accumulated_outputs += available_amount;
+
+      // clear any fake outs we'd already gathered, since we'll need a new set
+      outs.clear();
     }
-
-    size_t idx =
-      unused_transfers_indices.empty()
-        ? pop_best_value(unused_dust_indices, tx.selected_transfers)
-      : unused_dust_indices.empty()
-        ? pop_best_value(unused_transfers_indices, tx.selected_transfers)
-      : ((tx.selected_transfers.size() & 1) || accumulated_outputs > fee_dust_threshold)
-        ? pop_best_value(unused_dust_indices, tx.selected_transfers)
-      : pop_best_value(unused_transfers_indices, tx.selected_transfers);
-
-    const transfer_details &td = m_transfers[idx];
-    LOG_PRINT_L2("Picking output " << idx << ", amount " << print_money(td.amount()));
-
-    // add this output to the list to spend
-    tx.selected_transfers.push_back(idx);
-    uint64_t available_amount = td.amount();
-    accumulated_outputs += available_amount;
-
-    // clear any fake outs we'd already gathered, since we'll need a new set
-    outs.clear();
 
     // here, check if we need to sent tx and start a new one
     LOG_PRINT_L2("Considering whether to create a tx now, " << tx.selected_transfers.size() << " inputs, tx limit "
@@ -13150,9 +13367,56 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
       const size_t num_outputs = get_num_outputs(tx.dsts, m_transfers, tx.selected_transfers, beldex_tx_params);
       needed_fee = estimate_fee(tx.selected_transfers.size(), fake_outs_count, num_outputs, extra.size(), clsag, bulletproof_plus, base_fee, fee_percent, fixed_fee, fee_quantization_mask);
 
-      // add N - 1 outputs for correct initial fee estimation
-      for (size_t i = 0; i < ((outputs > 1) ? outputs - 1 : outputs); ++i)
-        tx.dsts.push_back(tx_destination_entry(1, address, is_subaddress));
+      tx.dsts.clear();
+      if (asset_sweep_mode)
+      {
+        if (mixed_asset_native_sweep)
+        {
+          for (size_t i = 0; i < ((outputs > 1) ? outputs - 1 : outputs); ++i)
+            tx.dsts.push_back(tx_destination_entry(1, address, is_subaddress));
+
+          for (const auto& [asset_id, total_amount] : preselected_asset_amounts)
+          {
+            uint64_t amount_remaining = total_amount;
+            const uint64_t base_amount = total_amount / outputs;
+            const uint64_t residue = total_amount % outputs;
+            for (size_t i = 0; i < outputs; ++i)
+            {
+              tx.dsts.push_back(tx_destination_entry(0, address, is_subaddress));
+              tx.dsts.back().amount = base_amount + (i < residue ? 1 : 0);
+              tx.dsts.back().asset_id = asset_id;
+              amount_remaining -= tx.dsts.back().amount;
+            }
+            THROW_WALLET_EXCEPTION_IF(amount_remaining != 0, error::wallet_internal_error,
+                "asset sweep amount split mismatch");
+          }
+        }
+        else
+        {
+          uint64_t amount_remaining = preselected_asset_amount;
+          const uint64_t base_amount = preselected_asset_amount / outputs;
+          const uint64_t residue = preselected_asset_amount % outputs;
+          for (size_t i = 0; i < outputs; ++i)
+          {
+            tx.dsts.push_back(tx_destination_entry(0, address, is_subaddress));
+            tx.dsts.back().amount = base_amount + (i < residue ? 1 : 0);
+            tx.dsts.back().asset_id = *requested_asset_id;
+            amount_remaining -= tx.dsts.back().amount;
+          }
+          THROW_WALLET_EXCEPTION_IF(amount_remaining != 0, error::wallet_internal_error,
+              "asset sweep amount split mismatch");
+        }
+      }
+      else
+      {
+        // add N - 1 outputs for correct initial fee estimation
+        for (size_t i = 0; i < ((outputs > 1) ? outputs - 1 : outputs); ++i)
+        {
+          tx.dsts.push_back(tx_destination_entry(1, address, is_subaddress));
+          if (requested_asset_id)
+            tx.dsts.back().asset_id = *requested_asset_id;
+        }
+      }
 
       LOG_PRINT_L2("Trying to create a tx now, with " << tx.dsts.size() << " destinations and " <<
         tx.selected_transfers.size() << " outputs");
@@ -13162,32 +13426,46 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
       needed_fee = calculate_fee(test_ptx.tx, txBlob.size(), base_fee, fee_percent, fixed_fee, fee_quantization_mask);
       available_for_fee = test_ptx.fee + test_ptx.change_dts.amount;
       for (auto &dt: test_ptx.dests)
-        available_for_fee += dt.amount;
+      {
+        if (!asset_sweep_mode || dt.asset_id == crypto::null_aid)
+          available_for_fee += dt.amount;
+      }
       LOG_PRINT_L2("Made a " << get_weight_string(test_ptx.tx, txBlob.size()) << " tx, with " << print_money(available_for_fee) << " available for fee (" <<
         print_money(needed_fee) << " needed)");
 
       // add last output, missed for fee estimation
-      if (outputs > 1)
+      if ((mixed_asset_native_sweep || !asset_sweep_mode) && outputs > 1)
+      {
         tx.dsts.push_back(tx_destination_entry(1, address, is_subaddress));
+      }
 
       THROW_WALLET_EXCEPTION_IF(needed_fee > available_for_fee, error::wallet_internal_error, "Transaction cannot pay for itself");
 
       do {
         LOG_PRINT_L2("We made a tx, adjusting fee and saving it");
-        // distribute total transferred amount between outputs
-        uint64_t amount_transferred = available_for_fee - needed_fee;
-        uint64_t dt_amount = amount_transferred / outputs;
-        // residue is distributed as one atomic unit per output until it reaches zero
-        uint64_t residue = amount_transferred % outputs;
-        for (auto &dt: tx.dsts)
+        if (mixed_asset_native_sweep || !asset_sweep_mode)
         {
-          uint64_t dt_residue = 0;
-          if (residue > 0)
+          // distribute total transferred amount between outputs
+          uint64_t amount_transferred = available_for_fee - needed_fee;
+          uint64_t dt_amount = amount_transferred / outputs;
+          // residue is distributed as one atomic unit per output until it reaches zero
+          uint64_t residue = amount_transferred % outputs;
+          size_t native_outputs_assigned = 0;
+          for (auto &dt: tx.dsts)
           {
-            dt_residue = 1;
-            residue -= 1;
+            if (dt.asset_id != crypto::null_aid)
+              continue;
+            uint64_t dt_residue = 0;
+            if (residue > 0)
+            {
+              dt_residue = 1;
+              residue -= 1;
+            }
+            dt.amount = dt_amount + dt_residue;
+            ++native_outputs_assigned;
+            if (native_outputs_assigned == outputs)
+              break;
           }
-          dt.amount = dt_amount + dt_residue;
         }
         transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, outs, unlock_time, needed_fee, extra,
             test_tx, test_ptx, rct_config, beldex_tx_params);
@@ -13255,11 +13533,22 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   {
     for (size_t idx: tx.selected_transfers)
     {
-      a += m_transfers[idx].amount();
+      const auto& td = m_transfers[idx];
+      if (!asset_sweep_mode)
+        a += td.amount();
+      else if (requested_asset_id)
+      {
+        if (td.get_asset_id() == *requested_asset_id)
+          a += td.amount();
+      }
+      else if (td.get_asset_id() == crypto::null_aid)
+        a += td.amount();
     }
     a -= tx.ptx.fee;
   }
   std::vector<cryptonote::tx_destination_entry> synthetic_dsts(1, cryptonote::tx_destination_entry("", a, address, is_subaddress));
+  if (requested_asset_id)
+    synthetic_dsts.front().asset_id = *requested_asset_id;
   THROW_WALLET_EXCEPTION_IF(!sanity_check(ptx_vector, synthetic_dsts), error::wallet_internal_error, "Created transaction(s) failed sanity check");
 
   // if we made it this far, we're OK to actually send the transactions
@@ -13475,11 +13764,26 @@ const wallet2::transfer_details &wallet2::get_transfer_details(size_t idx) const
   return m_transfers[idx];
 }
 //----------------------------------------------------------------------------------------------------
-std::vector<size_t> wallet2::select_available_unmixable_outputs()
+std::vector<size_t> wallet2::select_available_unmixable_outputs(std::optional<crypto::asset_id> requested_asset_id)
 {
   // request all outputs with not enough available mixins
   constexpr size_t min_mixin = 9;
-  return select_available_outputs_from_histogram(min_mixin + 1, false, true, false);
+  if (requested_asset_id)
+  {
+    // Asset outputs are confidential and do not participate in the legacy
+    // amount-based unmixable histogram the same way native non-RCT outputs do.
+    // For asset sweep_unmixable we therefore select all unlocked outputs of the
+    // requested asset and let the no-decoy self-sweep consolidate them.
+    return select_available_outputs([&requested_asset_id](const transfer_details &td) {
+      return td.is_rct() && td.m_asset_id == *requested_asset_id;
+    });
+  }
+
+  auto outputs = select_available_outputs_from_histogram(min_mixin + 1, false, true, false);
+  outputs.erase(std::remove_if(outputs.begin(), outputs.end(),
+      [this](size_t idx) { return m_transfers[idx].m_asset_id != crypto::null_aid; }),
+      outputs.end());
+  return outputs;
 }
 //----------------------------------------------------------------------------------------------------
 std::vector<size_t> wallet2::select_available_mixable_outputs()
@@ -13489,17 +13793,35 @@ std::vector<size_t> wallet2::select_available_mixable_outputs()
   return select_available_outputs_from_histogram(min_mixin + 1, true, true, true);
 }
 //----------------------------------------------------------------------------------------------------
-std::vector<wallet2::pending_tx> wallet2::create_unmixable_sweep_transactions()
+std::vector<wallet2::pending_tx> wallet2::create_unmixable_sweep_transactions(std::optional<crypto::asset_id> requested_asset_id)
 {
   const auto base_fee  = get_base_fees();
 
   // may throw
-  std::vector<size_t> unmixable_outputs = select_available_unmixable_outputs();
+  std::vector<size_t> unmixable_outputs = select_available_unmixable_outputs(requested_asset_id);
   size_t num_dust_outputs = unmixable_outputs.size();
 
   if (num_dust_outputs == 0)
   {
     return std::vector<wallet2::pending_tx>();
+  }
+
+  if (requested_asset_id)
+  {
+    std::vector<size_t> native_fee_transfer_outputs, native_fee_dust_outputs;
+    for (size_t i = 0; i < m_transfers.size(); ++i)
+    {
+      const transfer_details& td = m_transfers[i];
+      if (td.m_asset_id != crypto::null_aid || is_spent(td, false) || td.m_frozen || td.m_key_image_partial || !is_transfer_unlocked(td) || td.m_tx.version <= txversion::v1)
+        continue;
+
+      if (td.amount() < base_fee.first)
+        native_fee_dust_outputs.push_back(i);
+      else
+        native_fee_transfer_outputs.push_back(i);
+    }
+
+    return create_transactions_from(m_account_public_address, false, 1, native_fee_transfer_outputs, native_fee_dust_outputs, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */, 1 /*priority */, std::vector<uint8_t>{}, requested_asset_id, cryptonote::txtype::standard, std::move(unmixable_outputs));
   }
 
   // split in "dust" and "non dust" to make it easier to select outputs
