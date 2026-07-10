@@ -2406,7 +2406,8 @@ namespace tools
     if (info.is_subaddress)
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "Address must not be a subaddress"};
 
-    res.good = m_wallet->check_reserve_proof(info.address, req.message, req.signature, res.total, res.spent);
+    std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> asset_totals;
+    res.good = m_wallet->check_reserve_proof(info.address, req.message, req.signature, res.total, res.spent, asset_totals);
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------

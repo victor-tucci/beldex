@@ -251,68 +251,6 @@ namespace
     return validate_asset_descriptor_for_deploy(descriptor, error);
   }
 
-  std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true)
-  {
-    std::string s = std::to_string(amount);
-    if (s.size() < static_cast<size_t>(decimal_point) + 1)
-      s.insert(0, static_cast<size_t>(decimal_point) + 1 - s.size(), '0');
-
-    if (decimal_point > 0)
-      s.insert(s.size() - decimal_point, ".");
-
-    if (strip_zeros && decimal_point > 0)
-    {
-      while (!s.empty() && s.back() == '0')
-        s.pop_back();
-      if (!s.empty() && s.back() == '.')
-        s.pop_back();
-    }
-
-    return s;
-  }
-
-  bool parse_asset_amount(uint64_t& amount, std::string_view str_amount, uint8_t decimal_point)
-  {
-    while (!str_amount.empty() && std::isspace((unsigned char)str_amount.front()))
-      str_amount.remove_prefix(1);
-    while (!str_amount.empty() && std::isspace((unsigned char)str_amount.back()))
-      str_amount.remove_suffix(1);
-
-    const size_t dot_pos = str_amount.find('.');
-    const std::string_view whole = (dot_pos == std::string_view::npos) ? str_amount : str_amount.substr(0, dot_pos);
-    const std::string_view frac  = (dot_pos == std::string_view::npos) ? std::string_view{} : str_amount.substr(dot_pos + 1);
-
-    for (char c : whole) if (!std::isdigit((unsigned char)c)) return false;
-    for (char c : frac)  if (!std::isdigit((unsigned char)c)) return false;
-    if (whole.empty() && frac.empty()) return false;
-    if (frac.size() > decimal_point) return false;
-
-    amount = 0;
-    for (char c : whole)
-    {
-      if (amount > (std::numeric_limits<uint64_t>::max() - (c - '0')) / 10) return false;
-      amount = amount * 10 + (c - '0');
-    }
-    for (size_t i = 0; i < decimal_point; i++)
-    {
-      if (amount > std::numeric_limits<uint64_t>::max() / 10) return false;
-      amount *= 10;
-    }
-    if (!frac.empty())
-    {
-      uint64_t frac_val = 0;
-      for (char c : frac) frac_val = frac_val * 10 + (c - '0');
-      for (size_t i = 0; i < decimal_point - frac.size(); i++)
-      {
-        if (frac_val > std::numeric_limits<uint64_t>::max() / 10) return false;
-        frac_val *= 10;
-      }
-      if (amount > std::numeric_limits<uint64_t>::max() - frac_val) return false;
-      amount += frac_val;
-    }
-    return true;
-  }
-
   enum class asset_prefixed_address_mode
   {
     plain_address,
@@ -9980,9 +9918,21 @@ bool simple_wallet::check_reserve_proof(const std::vector<std::string> &args)
   try
   {
     uint64_t total, spent;
-    if (m_wallet->check_reserve_proof(info.address, args.size() == 3 ? args[2] : "", sig_str, total, spent))
+    std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> asset_totals;
+    if (m_wallet->check_reserve_proof(info.address, args.size() == 3 ? args[2] : "", sig_str, total, spent, asset_totals))
     {
       success_msg_writer(true) << fmt::format(tr("Good signature -- total: {}, spent: {}, unspent: {}\n"), print_money(total), print_money(spent), print_money(total - spent));
+      for (const auto& [asset_id, amounts] : asset_totals)
+      {
+        uint64_t a_total = amounts.first;
+        uint64_t a_spent = amounts.second;
+        const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+        const std::string f_total = asset_info ? print_asset_amount(a_total, asset_info->decimal_point) : std::to_string(a_total);
+        const std::string f_spent = asset_info ? print_asset_amount(a_spent, asset_info->decimal_point) : std::to_string(a_spent);
+        const std::string f_unspent = asset_info ? print_asset_amount(a_total - a_spent, asset_info->decimal_point) : std::to_string(a_total - a_spent);
+        std::string ticker = asset_info && !asset_info->ticker.empty() ? " (" + asset_info->ticker + ")" : "";
+        success_msg_writer(true) << fmt::format(tr("Asset {}{} -- total: {}, spent: {}, unspent: {}\n"), tools::type_to_hex(asset_id), ticker, f_total, f_spent, f_unspent);
+      }
     }
     else
     {
@@ -10111,7 +10061,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
 
   auto color = epee::console_color_white;
 
-  message_writer(color, true) << fmt::format("{:<8.7} {:<6.6} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}", "Height", "Type", "Locked", "Checkpoint", "Date", "Amount", "Hash", "Payment ID", "Fee", "Destination", "Subaddress", "Note");
+  message_writer(color, true) << fmt::format("{:<8.7} {:<10.10} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}", "Height", "Type", "Locked", "Checkpoint", "Date", "Amount", "Hash", "Payment ID", "Fee", "Destination", "Subaddress", "Note");
 
   for (const auto& transfer : all_transfers)
   {
@@ -10151,7 +10101,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
             transfer.pay_type == wallet::pay_type::bns ||
             transfer.pay_type == wallet::pay_type::miner)
           destinations += output.address.substr(0, 6);
-        else if (transfer.pay_type == wallet::pay_type::coin_burn){
+        else if (transfer.pay_type == wallet::pay_type::coin_burn || transfer.pay_type == wallet::pay_type::burn_asset || transfer.pay_type == wallet::pay_type::update_asset){
             destinations = "-"; continue;}
         else
           destinations += output.address;
@@ -10165,7 +10115,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
     std::transform(transfer.subaddr_indices.begin(), transfer.subaddr_indices.end(), std::back_inserter(subaddr_minors),
         [](const auto& index) { return index.minor; });
 
-    message_writer(color, false) << fmt::format("{:<8.8} {:<6.6} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}"
+    message_writer(color, false) << fmt::format("{:<8.8} {:<10.10} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}"
       , (transfer.type.size() ? transfer.type : (transfer.height == 0 && transfer.flash_mempool) ? "flash" : std::to_string(transfer.height))
       , wallet::pay_type_string(transfer.pay_type)
       , transfer.lock_msg
@@ -10212,7 +10162,14 @@ bool simple_wallet::export_transfers(const std::vector<std::string>& args_)
   fs::ofstream file{fs::u8path(filename_str)};
 
   const bool formatting = true;
-  file << m_wallet->transfers_to_csv(all_transfers, formatting);
+  auto get_asset_info = [this](const crypto::asset_id& asset_id) -> std::pair<std::string, uint8_t> {
+    auto info = get_asset_display_info(*m_wallet, asset_id);
+    if (info)
+      return {info->ticker.empty() ? tools::type_to_hex(asset_id) : info->ticker, info->decimal_point};
+    return {tools::type_to_hex(asset_id), 0};
+  };
+
+  file << m_wallet->transfers_to_csv(all_transfers, formatting, get_asset_info);
   file.close();
 
   success_msg_writer() << tr("CSV exported to ") << filename_str;
@@ -10851,6 +10808,8 @@ void simple_wallet::print_accounts(const std::string& tag)
   }
   success_msg_writer() << fmt::format(tr(" {:>15} {:>21} {:>21} {:>21}"), "Address", "Balance", "Unlocked balance", "Label");
   uint64_t total_balance = 0, total_unlocked_balance = 0;
+  std::map<crypto::asset_id, uint64_t> asset_total_balance;
+  std::map<crypto::asset_id, uint64_t> asset_total_unlocked_balance;
 
   for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index)
   {
@@ -10864,11 +10823,58 @@ void simple_wallet::print_accounts(const std::string& tag)
       % print_money(m_wallet->balance(account_index, false))
       % print_money(m_wallet->unlocked_balance(account_index, false,NULL,NULL))
       % m_wallet->get_subaddress_label({account_index, 0});
+
+    const auto asset_bals = m_wallet->asset_balances(account_index, false);
+    const auto asset_unlocked_bals = m_wallet->asset_balances(account_index, true);
+    if (!asset_bals.empty()) {
+      size_t num_assets = asset_bals.size();
+      size_t count = 0;
+      for (const auto& [asset_id, amount] : asset_bals) {
+        ++count;
+        uint64_t unlocked_amount = 0;
+        auto unlocked_it = asset_unlocked_bals.find(asset_id);
+        if (unlocked_it != asset_unlocked_bals.end())
+          unlocked_amount = unlocked_it->second;
+
+        asset_total_balance[asset_id] += amount;
+        asset_total_unlocked_balance[asset_id] += unlocked_amount;
+
+        const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+        const std::string formatted_amount = asset_info ? print_asset_amount(amount, asset_info->decimal_point, false) : std::to_string(amount);
+        const std::string formatted_unlocked = asset_info ? print_asset_amount(unlocked_amount, asset_info->decimal_point, false) : std::to_string(unlocked_amount);
+
+        std::string asset_label = tools::type_to_hex(asset_id).substr(0, 6);
+        if (asset_info && !asset_info->ticker.empty())
+            asset_label = asset_info->ticker;
+
+        success_msg_writer() << fmt::format("        {} {:<6s} {:>21s} {:>21s}", 
+            count == num_assets ? "\x1B[90m\xE2\x94\x94\xE2\x94\x80\x1B[0m" : "\x1B[90m\xE2\x94\x9C\xE2\x94\x80\x1B[0m",
+            asset_label,
+            formatted_amount,
+            formatted_unlocked);
+      }
+    }
+
     total_balance += m_wallet->balance(account_index, false);
     total_unlocked_balance += m_wallet->unlocked_balance(account_index, false,NULL,NULL);
   }
   success_msg_writer() << tr("----------------------------------------------------------------------------------");
-  success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total", print_money(total_balance), print_money(total_unlocked_balance));
+  success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total BDX", print_money(total_balance), print_money(total_unlocked_balance));
+  
+  if (!asset_total_balance.empty()) {
+    for (const auto& [asset_id, amount] : asset_total_balance) {
+      uint64_t unlocked_amount = asset_total_unlocked_balance[asset_id];
+      const auto asset_info = get_asset_display_info(*m_wallet, asset_id);
+      const std::string formatted_amount = asset_info ? print_asset_amount(amount, asset_info->decimal_point, false) : std::to_string(amount);
+      const std::string formatted_unlocked = asset_info ? print_asset_amount(unlocked_amount, asset_info->decimal_point, false) : std::to_string(unlocked_amount);
+
+      std::string asset_label = tools::type_to_hex(asset_id).substr(0, 6);
+      if (asset_info && !asset_info->ticker.empty())
+          asset_label = asset_info->ticker;
+
+      success_msg_writer() << fmt::format(tr("{:>15} {:>21} {:>21}"), "Total " + asset_label, formatted_amount, formatted_unlocked);
+    }
+  }
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::print_address(const std::vector<std::string> &args/* = std::vector<std::string>()*/)

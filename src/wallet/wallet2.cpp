@@ -1689,13 +1689,18 @@ void wallet2::check_acc_out_precomp(const tx_out &o, const crypto::key_derivatio
   hw::device &hwdev = m_account.get_device();
   std::unique_lock hwdev_lock{hwdev};
   hwdev.set_mode(hw::device::mode::TRANSACTION_PARSE);
-  if (!std::holds_alternative<txout_to_key>(o.target))
+  crypto::public_key out_key;
+  if (const auto* tx_key = std::get_if<txout_to_key>(&o.target))
+    out_key = tx_key->key;
+  else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&o.target))
+    out_key = zarc->stealth_address;
+  else
   {
      tx_scan_info.error = true;
      LOG_ERROR("wrong type id in transaction out");
      return;
   }
-  tx_scan_info.received = is_out_to_acc_precomp(m_subaddresses, var::get<txout_to_key>(o.target).key, derivation, additional_derivations, i, hwdev);
+  tx_scan_info.received = is_out_to_acc_precomp(m_subaddresses, out_key, derivation, additional_derivations, i, hwdev);
   if(tx_scan_info.received)
   {
     tx_scan_info.money_transfered = o.amount; // may be 0 for ringct outputs
@@ -2522,6 +2527,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
     uint64_t self_received = std::accumulate<decltype(tx_money_got_in_outs.begin()), uint64_t>(tx_money_got_in_outs.begin(), tx_money_got_in_outs.end(), 0,
       [&subaddr_account] (uint64_t acc, const tx_money_got_in_out& p)
       {
+        if (p.asset_id != crypto::null_aid) return acc;
         return acc + (p.index.major == *subaddr_account ? p.amount : 0);
       });
     process_outgoing(txid, tx, height, ts, tx_money_spent_in_ins, self_received, *subaddr_account, subaddr_indices);
@@ -2539,7 +2545,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
   uint64_t sub_change = 0;
   for (auto i = tx_money_got_in_outs.begin(); i != tx_money_got_in_outs.end();)
   {
-    if (subaddr_account && i->index.major == *subaddr_account)
+    if (subaddr_account && i->index.major == *subaddr_account && i->asset_id == crypto::null_aid)
     {
       sub_change += i->amount;
       i = tx_money_got_in_outs.erase(i);
@@ -6368,6 +6374,19 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.fee = pd.m_fee;
   result.note = get_tx_note(pd.m_tx_hash);
   result.pay_type = pd.m_type;
+  crypto::asset_id deduced_asset_id = pd.m_asset_id;
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == pd.m_tx_hash && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  result.asset_id = deduced_asset_id != crypto::null_aid ? tools::type_to_hex(deduced_asset_id) : "";
   result.subaddr_index = pd.m_subaddr_index;
   result.subaddr_indices.push_back(pd.m_subaddr_index);
   result.address = get_subaddress_as_str(pd.m_subaddr_index);
@@ -6400,14 +6419,86 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
   result.amount = pd.m_amount_in - change - result.fee;
   result.note = get_tx_note(txid);
 
+  crypto::asset_id deduced_asset_id = crypto::null_aid;
+  if (pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset || pd.m_pay_type == wallet::pay_type::update_asset || pd.m_pay_type == wallet::pay_type::burn_asset)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == txid && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (const auto& ring : pd.m_rings)
+    {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end()) {
+        deduced_asset_id = m_transfers[it->second].m_asset_id;
+        if (deduced_asset_id != crypto::null_aid)
+          break;
+      }
+    }
+  }
+
   for (const auto &d: pd.m_dests) {
+    crypto::asset_id actual_asset_id = d.is_zarcanum() ? d.asset_id : deduced_asset_id;
+    bool is_zarcanum = actual_asset_id != crypto::null_aid;
+    if (d.amount == 0 && is_zarcanum)
+      continue;
     result.destinations.push_back({});
     auto& td = result.destinations.back();
     td.amount = d.amount;
     td.address = d.address(nettype(), pd.m_payment_id);
+    if (is_zarcanum)
+      td.asset_id = tools::type_to_hex(actual_asset_id);
   }
 
   result.pay_type = pd.m_pay_type;
+  if (pd.m_pay_type == wallet::pay_type::burn_asset && deduced_asset_id != crypto::null_aid)
+  {
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t spent_asset = 0;
+    for (const auto& ring : pd.m_rings) {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end() && m_transfers[it->second].m_asset_id == deduced_asset_id) {
+        spent_asset += m_transfers[it->second].amount();
+      }
+    }
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = spent_asset > received_asset ? spent_asset - received_asset : 0;
+  }
+  else if ((pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset) && deduced_asset_id != crypto::null_aid)
+  {
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = received_asset;
+  }
+  else if (!pd.m_dests.empty())
+  {
+    crypto::asset_id first_actual_asset_id = pd.m_dests.front().is_zarcanum() ? pd.m_dests.front().asset_id : deduced_asset_id;
+    if (first_actual_asset_id != crypto::null_aid)
+    {
+      if (pd.m_pay_type != wallet::pay_type::deploy_asset && pd.m_pay_type != wallet::pay_type::emit_asset)
+      {
+        result.asset_id = tools::type_to_hex(first_actual_asset_id);
+        result.amount = 0;
+        for (const auto& d : pd.m_dests)
+          result.amount += d.amount;
+      }
+    }
+  }
   result.subaddr_index = { pd.m_subaddr_account, 0 };
   for (uint32_t i: pd.m_subaddr_indices)
     result.subaddr_indices.push_back({pd.m_subaddr_account, i});
@@ -6425,7 +6516,6 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.txid = tools::type_to_hex(txid);
   result.hash = txid;
   result.payment_id = tools::type_to_hex(pd.m_payment_id);
-  result.payment_id = tools::type_to_hex(pd.m_payment_id);
   if (result.payment_id.substr(16).find_first_not_of('0') == std::string::npos)
     result.payment_id = result.payment_id.substr(0,16);
   result.height = 0;
@@ -6436,15 +6526,87 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.locked = true;
   result.note = get_tx_note(txid);
 
+  crypto::asset_id deduced_asset_id = crypto::null_aid;
+  if (pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset || pd.m_pay_type == wallet::pay_type::update_asset || pd.m_pay_type == wallet::pay_type::burn_asset)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == txid && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (const auto& ring : pd.m_rings)
+    {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end()) {
+        deduced_asset_id = m_transfers[it->second].m_asset_id;
+        if (deduced_asset_id != crypto::null_aid)
+          break;
+      }
+    }
+  }
+
   for (const auto &d: pd.m_dests) {
+    crypto::asset_id actual_asset_id = d.is_zarcanum() ? d.asset_id : deduced_asset_id;
+    bool is_zarcanum = actual_asset_id != crypto::null_aid;
+    if (d.amount == 0 && is_zarcanum)
+      continue;
     result.destinations.push_back({});
     auto& td = result.destinations.back();
     td.amount = d.amount;
     td.address = d.address(nettype(), pd.m_payment_id);
+    if (is_zarcanum)
+      td.asset_id = tools::type_to_hex(actual_asset_id);
   }
 
   result.pay_type = pd.m_pay_type;
   result.type = is_failed ? "failed" : "pending";
+  if (pd.m_pay_type == wallet::pay_type::burn_asset && deduced_asset_id != crypto::null_aid)
+  {
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t spent_asset = 0;
+    for (const auto& ring : pd.m_rings) {
+      auto it = m_key_images.find(ring.first);
+      if (it != m_key_images.end() && m_transfers[it->second].m_asset_id == deduced_asset_id) {
+        spent_asset += m_transfers[it->second].amount();
+      }
+    }
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = spent_asset > received_asset ? spent_asset - received_asset : 0;
+  }
+  else if ((pd.m_pay_type == wallet::pay_type::deploy_asset || pd.m_pay_type == wallet::pay_type::emit_asset) && deduced_asset_id != crypto::null_aid)
+  {
+    result.asset_id = tools::type_to_hex(deduced_asset_id);
+    uint64_t received_asset = 0;
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it) {
+      if (it->m_txid == txid && it->m_asset_id == deduced_asset_id)
+        received_asset += it->amount();
+    }
+    result.amount = received_asset;
+  }
+  else if (!pd.m_dests.empty())
+  {
+    crypto::asset_id first_actual_asset_id = pd.m_dests.front().is_zarcanum() ? pd.m_dests.front().asset_id : deduced_asset_id;
+    if (first_actual_asset_id != crypto::null_aid)
+    {
+      if (pd.m_pay_type != wallet::pay_type::deploy_asset && pd.m_pay_type != wallet::pay_type::emit_asset)
+      {
+        result.asset_id = tools::type_to_hex(first_actual_asset_id);
+        result.amount = 0;
+        for (const auto& d : pd.m_dests)
+          result.amount += d.amount;
+      }
+    }
+  }
   result.subaddr_index = { pd.m_subaddr_account, 0 };
   for (uint32_t i: pd.m_subaddr_indices)
     result.subaddr_indices.push_back({pd.m_subaddr_account, i});
@@ -6472,6 +6634,19 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &payment_id
   result.double_spend_seen = ppd.m_double_spend_seen;
   result.pay_type = wallet::pay_type::unspecified;
   result.type = "pool";
+  crypto::asset_id deduced_asset_id = pd.m_asset_id;
+  if (deduced_asset_id == crypto::null_aid)
+  {
+    for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
+    {
+      if (it->m_txid == pd.m_tx_hash && it->m_asset_id != crypto::null_aid)
+      {
+        deduced_asset_id = it->m_asset_id;
+        break;
+      }
+    }
+  }
+  result.asset_id = deduced_asset_id != crypto::null_aid ? tools::type_to_hex(deduced_asset_id) : "";
   result.subaddr_index = pd.m_subaddr_index;
   result.subaddr_indices.push_back(pd.m_subaddr_index);
   result.address = get_subaddress_as_str(pd.m_subaddr_index);
@@ -6532,7 +6707,23 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   // Fill transfers
   transfers.reserve(size);
   for (const auto &i : in)
-    transfers.push_back(make_transfer_view(i.second.m_tx_hash, i.first, i.second));
+  {
+    bool is_deploy_or_emit = false;
+    for (const auto& o : out) {
+      if (o.first == i.second.m_tx_hash && (o.second.m_pay_type == wallet::pay_type::deploy_asset || o.second.m_pay_type == wallet::pay_type::emit_asset)) {
+        is_deploy_or_emit = true; break;
+      }
+    }
+    if (!is_deploy_or_emit) {
+      for (const auto& pof : pending_or_failed) {
+        if (pof.first == i.second.m_tx_hash && (pof.second.m_pay_type == wallet::pay_type::deploy_asset || pof.second.m_pay_type == wallet::pay_type::emit_asset)) {
+          is_deploy_or_emit = true; break;
+        }
+      }
+    }
+    if (!is_deploy_or_emit)
+      transfers.push_back(make_transfer_view(i.second.m_tx_hash, i.first, i.second));
+  }
   for (const auto &o : out)
   {
     bool add_entry = true;
@@ -6568,34 +6759,53 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   });
 }
 
-std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view> &transfers, bool formatting) const
+std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view> &transfers, bool formatting, std::function<std::pair<std::string, uint8_t>(const crypto::asset_id&)> get_asset_info) const
 {
-  uint64_t running_balance = 0;
-  auto title_formatter = "{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n";
-  auto data_formatter = "{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n";
+  std::map<crypto::asset_id, uint64_t> running_balances;
+  auto title_formatter = "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n";
+  auto data_formatter = "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n";
   if (formatting)
   {
-    title_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:^23s}, {:^21s}, {:>21s}, {:^64s}, {:^16s}, {:^21s}, {:^97s}, {:>21s}, {:>5s}, {:s}\n";
-    data_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:>23s}, {:>21s}, {:>21s}, {:>64s}, {:^16s}, {:>21s}, {:>97s}, {:^21s}, {:^5s}, {:s}\n";
+    title_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:^23s}, {:^9s}, {:^21s}, {:>21s}, {:^64s}, {:^16s}, {:^21s}, {:^97s}, {:>21s}, {:>5s}, {:s}\n";
+    data_formatter = "{:>8s}, {:>9s}, {:>9s}, {:>12s}, {:>23s}, {:>9s}, {:>21s}, {:>21s}, {:>64s}, {:^16s}, {:>21s}, {:>97s}, {:^21s}, {:^5s}, {:s}\n";
   }
   std::stringstream output;
-  output << fmt::format(title_formatter, tr("block"), tr("type"), tr("lock"), tr("checkpointed"), tr("timestamp"), tr("amount"), tr("running balance"), tr("hash"), tr("payment ID"), tr("fee"), tr("destination"), tr("amount"), tr("index"), tr("note"));
+  output << fmt::format(title_formatter, tr("block"), tr("type"), tr("lock"), tr("checkpointed"), tr("timestamp"), tr("asset"), tr("amount"), tr("running balance"), tr("hash"), tr("payment ID"), tr("fee"), tr("destination"), tr("amount"), tr("index"), tr("note"));
   for (const auto &transfer : transfers)
   {
+    crypto::asset_id aid = crypto::null_aid;
+    if (!transfer.asset_id.empty())
+      tools::hex_to_type(transfer.asset_id, aid);
+
+    std::string ticker = "BDX";
+    uint8_t dp = beldex::DISPLAY_DECIMAL_POINT;
+    if (aid != crypto::null_aid && get_asset_info)
+    {
+      auto info = get_asset_info(aid);
+      if (!info.first.empty()) ticker = info.first;
+      dp = info.second;
+    }
+    else if (aid != crypto::null_aid)
+    {
+      ticker = transfer.asset_id;
+      dp = 0; // If we can't fetch it, display atomic units
+    }
+
     switch (transfer.pay_type)
     {
     case wallet::pay_type::in:
     case wallet::pay_type::miner:
     case wallet::pay_type::master_node:
     case wallet::pay_type::governance:
-      running_balance += transfer.amount;
+      running_balances[aid] += transfer.amount;
       break;
     case wallet::pay_type::stake:
     case wallet::pay_type::bns:
-      running_balance -= transfer.fee;
+      running_balances[crypto::null_aid] -= transfer.fee;
       break;
     case wallet::pay_type::out:
-      running_balance -= transfer.amount + transfer.fee;
+      running_balances[aid] -= transfer.amount;
+      running_balances[crypto::null_aid] -= transfer.fee;
       break;
     default:
       MERROR("Warning: Unhandled pay type, this is most likely a developer error, please report it to the Beldex developers.");
@@ -6611,7 +6821,7 @@ std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view> &
     }
     if (transfer.subaddr_indices.size() > 1)
       indices = '"' + indices + '"';
-    output << fmt::format(data_formatter, (transfer.type.size() ? transfer.type : std::to_string(transfer.height)), pay_type_string(transfer.pay_type), transfer.lock_msg, (transfer.checkpointed ? "checkpointed" : "no"), tools::get_human_readable_timestamp(transfer.timestamp), cryptonote::print_money(transfer.amount), cryptonote::print_money(running_balance), transfer.txid, transfer.payment_id, cryptonote::print_money(transfer.fee), (transfer.destinations.size() ? transfer.destinations.front().address : "-"), (transfer.destinations.size() ? cryptonote::print_money(transfer.destinations.front().amount) : ""), indices, transfer.note);
+    output << fmt::format(data_formatter, (transfer.type.size() ? transfer.type : std::to_string(transfer.height)), pay_type_string(transfer.pay_type), transfer.lock_msg, (transfer.checkpointed ? "checkpointed" : "no"), tools::get_human_readable_timestamp(transfer.timestamp), ticker, cryptonote::print_asset_amount(transfer.amount, dp), cryptonote::print_asset_amount(running_balances[aid], dp), transfer.txid, transfer.payment_id, cryptonote::print_money(transfer.fee), (transfer.destinations.size() ? transfer.destinations.front().address : "-"), (transfer.destinations.size() ? cryptonote::print_asset_amount(transfer.destinations.front().amount, dp) : ""), indices, transfer.note);
 
     if (transfer.destinations.size() <= 1)
       continue;
@@ -6620,7 +6830,7 @@ std::string wallet2::transfers_to_csv(const std::vector<wallet::transfer_view> &
     // (start at begin + 1 with std::next)
     for (auto it = std::next(transfer.destinations.cbegin()); it != transfer.destinations.cend(); ++it)
     {
-      output << fmt::format(data_formatter, "", "", "", "", "", "", "", "", "", "", it->address, cryptonote::print_money(it->amount), "", "");
+      output << fmt::format(data_formatter, "", "", "", "", "", "", "", "", "", "", "", it->address, cryptonote::print_asset_amount(it->amount, dp), "", "");
     }
   }
   return output.str();
@@ -7094,7 +7304,10 @@ void wallet2::add_unconfirmed_tx(const cryptonote::transaction& tx, uint64_t amo
   utd.m_amount_in = amount_in;
   utd.m_amount_out = 0;
   for (const auto &d: dests)
-    utd.m_amount_out += d.amount;
+  {
+    if (!d.is_zarcanum())
+      utd.m_amount_out += d.amount;
+  }
   utd.m_amount_out += change_amount; // dests does not contain change
   utd.m_change = change_amount;
   utd.m_sent_time = time(NULL);
@@ -7194,7 +7407,10 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
     payment_id = get_payment_id(ptx);
     dests = ptx.dests;
     for(size_t idx: ptx.selected_transfers)
-      amount_in += m_transfers[idx].amount();
+    {
+      if (!m_transfers[idx].is_zarcanum())
+        amount_in += m_transfers[idx].amount();
+    }
   }
   add_unconfirmed_tx(ptx.tx, amount_in, dests, payment_id, ptx.change_dts.amount, ptx.construction_data.subaddr_account, ptx.construction_data.subaddr_indices);
   if (store_tx_info() && ptx.tx_key != crypto::null_skey)
@@ -13804,13 +14020,18 @@ std::string wallet2::get_spend_proof(const crypto::hash &txid, std::string_view 
 
     // derive the real output keypair
     const transfer_details& in_td = m_transfers[found->second];
-    const txout_to_key* const in_tx_out_pkey = std::get_if<txout_to_key>(std::addressof(in_td.m_tx.vout[in_td.m_internal_output_index].target));
-    THROW_WALLET_EXCEPTION_IF(in_tx_out_pkey == nullptr, error::wallet_internal_error, "Output is not txout_to_key");
+    const crypto::public_key* in_tx_out_pkey_ptr = nullptr;
+    const auto& target = in_td.m_tx.vout[in_td.m_internal_output_index].target;
+    if (const auto* tx_key = std::get_if<txout_to_key>(&target))
+      in_tx_out_pkey_ptr = &tx_key->key;
+    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&target))
+      in_tx_out_pkey_ptr = &zarc->stealth_address;
+    THROW_WALLET_EXCEPTION_IF(!in_tx_out_pkey_ptr, error::wallet_internal_error, "Output is not txout_to_key or tx_out_zarcanum");
     const crypto::public_key in_tx_pub_key = get_tx_pub_key_from_extra(in_td.m_tx, in_td.m_pk_index);
     const std::vector<crypto::public_key> in_additionakl_tx_pub_keys = get_additional_tx_pub_keys_from_extra(in_td.m_tx);
     keypair in_ephemeral;
     crypto::key_image in_img;
-    THROW_WALLET_EXCEPTION_IF(!generate_key_image_helper(m_account.get_keys(), m_subaddresses, in_tx_out_pkey->key, in_tx_pub_key, in_additionakl_tx_pub_keys, in_td.m_internal_output_index, in_ephemeral, in_img, m_account.get_device()),
+    THROW_WALLET_EXCEPTION_IF(!generate_key_image_helper(m_account.get_keys(), m_subaddresses, *in_tx_out_pkey_ptr, in_tx_pub_key, in_additionakl_tx_pub_keys, in_td.m_internal_output_index, in_ephemeral, in_img, m_account.get_device()),
       error::wallet_internal_error, "failed to generate key image");
     THROW_WALLET_EXCEPTION_IF(in_key->k_image != in_img, error::wallet_internal_error, "key image mismatch");
 
@@ -14341,7 +14562,7 @@ std::string wallet2::get_reserve_proof(const std::optional<std::pair<uint32_t, u
   for (size_t i = 0; i < m_transfers.size(); ++i)
   {
     const transfer_details &td = m_transfers[i];
-    if (!is_spent(td, true) && !td.m_frozen && (!account_minreserve || account_minreserve->first == td.m_subaddr_index.major))
+    if (!is_spent(td, true) && !td.m_frozen && (!account_minreserve || (account_minreserve->first == td.m_subaddr_index.major && td.m_asset_id == crypto::null_aid)))
       selected_transfers.push_back(i);
   }
 
@@ -14448,13 +14669,14 @@ std::string wallet2::get_reserve_proof(const std::optional<std::pair<uint32_t, u
   return result;
 }
 
-bool wallet2::check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent)
+bool wallet2::check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent, std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> &asset_totals)
 {
+  asset_totals.clear();
   rpc::version_t rpc_version;
   THROW_WALLET_EXCEPTION_IF(!check_connection(&rpc_version), error::wallet_internal_error, "Failed to connect to daemon: " + get_daemon_address());
   THROW_WALLET_EXCEPTION_IF((rpc_version < rpc::version_t{1, 0}), error::wallet_internal_error, "Daemon RPC version is too old");
 
-  THROW_WALLET_EXCEPTION_IF(tools::starts_with(sig_str, RESERVE_PROOF_MAGIC), error::wallet_internal_error,
+  THROW_WALLET_EXCEPTION_IF(!tools::starts_with(sig_str, RESERVE_PROOF_MAGIC), error::wallet_internal_error,
     "Signature header check error");
   sig_str.remove_prefix(RESERVE_PROOF_MAGIC.size());
 
@@ -14490,7 +14712,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
 
   // fetch txes from daemon
   nlohmann::json get_transactions_params{
-    {"txs_hashes", {std::move(txids_hex)}},
+    {"txs_hashes", std::move(txids_hex)},
     {"data",true}
   };
   auto gettx_res = m_http_client.json_rpc("get_transactions", get_transactions_params);
@@ -14511,7 +14733,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
   for (size_t i = 0; i < proofs.size(); ++i)
   {
     const reserve_proof_entry& proof = proofs[i];
-    THROW_WALLET_EXCEPTION_IF(gettx_res["txs"][i]["in_pool"], error::wallet_internal_error, "Tx is unconfirmed");
+    THROW_WALLET_EXCEPTION_IF(gettx_res["txs"][i].value("in_pool", false), error::wallet_internal_error, "Tx is unconfirmed");
 
     cryptonote::transaction tx;
     crypto::hash tx_hash;
@@ -14522,8 +14744,13 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
 
     THROW_WALLET_EXCEPTION_IF(proof.index_in_tx >= tx.vout.size(), error::wallet_internal_error, "index_in_tx is out of bound");
 
-    const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[proof.index_in_tx].target));
-    THROW_WALLET_EXCEPTION_IF(!out_key, error::wallet_internal_error, "Output key wasn't found");
+    crypto::public_key out_key_pub = crypto::null_pkey;
+    if (const cryptonote::txout_to_key* ok = std::get_if<cryptonote::txout_to_key>(&tx.vout[proof.index_in_tx].target))
+      out_key_pub = ok->key;
+    else if (const cryptonote::tx_out_zarcanum* zc = std::get_if<cryptonote::tx_out_zarcanum>(&tx.vout[proof.index_in_tx].target))
+      out_key_pub = zc->stealth_address;
+    
+    THROW_WALLET_EXCEPTION_IF(out_key_pub == crypto::null_pkey, error::wallet_internal_error, "Output key wasn't found");
 
     // TODO(beldex): We should make a catch-all function that gets all the public
     // keys out into an array and iterate through all insteaad of multiple code
@@ -14570,7 +14797,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       return false;
 
     // check signature for key image
-    ok = crypto::check_key_image_signature(proof.key_image, out_key->key, proof.key_image_sig);
+    ok = crypto::check_key_image_signature(proof.key_image, out_key_pub, proof.key_image_sig);
     if (!ok)
       return false;
 
@@ -14578,13 +14805,14 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
     crypto::key_derivation derivation;
     THROW_WALLET_EXCEPTION_IF(!crypto::generate_key_derivation(proof.shared_secret, rct::rct2sk(rct::I), derivation), error::wallet_internal_error, "Failed to generate key derivation");
     crypto::public_key subaddr_spendkey;
-    crypto::derive_subaddress_public_key(out_key->key, derivation, proof.index_in_tx, subaddr_spendkey);
+    crypto::derive_subaddress_public_key(out_key_pub, derivation, proof.index_in_tx, subaddr_spendkey);
     THROW_WALLET_EXCEPTION_IF(subaddr_spendkeys.count(subaddr_spendkey) == 0, error::wallet_internal_error,
       "The address doesn't seem to have received the fund");
 
     // check amount
     uint64_t amount = tx.vout[proof.index_in_tx].amount;
-    if (amount == 0)
+    crypto::asset_id asset_id = crypto::null_aid;
+    if (amount == 0 && std::holds_alternative<cryptonote::txout_to_key>(tx.vout[proof.index_in_tx].target))
     {
       // decode rct
       crypto::secret_key shared_secret;
@@ -14599,9 +14827,33 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       rct::ecdhDecode(ecdh_info, rct::sk2rct(shared_secret), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
       amount = rct::h2d(ecdh_info.amount);
     }
-    total += amount;
-    if (kispent_res["spent_status"][i])
-      spent += amount;
+    else if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[proof.index_in_tx].target))
+    {
+      const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[proof.index_in_tx].target);
+      rct::key r = cryptonote::zarcanum_derivation_to_scalar(derivation, proof.index_in_tx, "asset_blind");
+      rct::key rX = rct::scalarmultX(r);
+      rct::key asset_id_rct;
+      rct::subKeys(asset_id_rct, rct::aid2rct(zout.blinded_asset_id), rX);
+      asset_id = reinterpret_cast<const crypto::asset_id&>(rct::rct2pk(asset_id_rct));
+
+      rct::key enc_mask = cryptonote::zarcanum_derivation_to_scalar(derivation, proof.index_in_tx, "enc_amount");
+      uint64_t enc_mask_64;
+      memcpy(&enc_mask_64, enc_mask.bytes, sizeof(uint64_t));
+      amount = zout.encrypted_amount ^ enc_mask_64;
+    }
+    
+    if (asset_id == crypto::null_aid)
+    {
+      total += amount;
+      if (kispent_res["spent_status"][i] != rpc::IS_KEY_IMAGE_SPENT::SPENT::UNSPENT)
+        spent += amount;
+    }
+    else
+    {
+      asset_totals[asset_id].first += amount;
+      if (kispent_res["spent_status"][i] != rpc::IS_KEY_IMAGE_SPENT::SPENT::UNSPENT)
+        asset_totals[asset_id].second += amount;
+    }
   }
 
   // check signatures for all subaddress spend keys
@@ -14982,9 +15234,13 @@ std::pair<size_t, std::vector<std::pair<crypto::key_image, crypto::signature>>> 
 
     // get ephemeral public key
     const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
-    THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<txout_to_key>(out.target), error::wallet_internal_error,
-        "Output is not txout_to_key");
-    const auto pkey = var::get<cryptonote::txout_to_key>(out.target).key;
+    const crypto::public_key* pkey_ptr = nullptr;
+    if (const auto* tx_key = std::get_if<txout_to_key>(&out.target))
+      pkey_ptr = &tx_key->key;
+    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&out.target))
+      pkey_ptr = &zarc->stealth_address;
+    THROW_WALLET_EXCEPTION_IF(!pkey_ptr, error::wallet_internal_error, "Output is not txout_to_key or tx_out_zarcanum");
+    const auto pkey = *pkey_ptr;
 
     crypto::public_key tx_pub_key;
     if (!try_get_tx_pub_key_using_td(td, tx_pub_key))
@@ -15105,9 +15361,13 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
 
     // get ephemeral public key
     const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
-    THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<txout_to_key>(out.target), error::wallet_internal_error,
-      "Non txout_to_key output found");
-    const auto& pkey = var::get<cryptonote::txout_to_key>(out.target).key;
+    const crypto::public_key* pkey_ptr = nullptr;
+    if (const auto* tx_key = std::get_if<txout_to_key>(&out.target))
+      pkey_ptr = &tx_key->key;
+    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&out.target))
+      pkey_ptr = &zarc->stealth_address;
+    THROW_WALLET_EXCEPTION_IF(!pkey_ptr, error::wallet_internal_error, "Non txout_to_key or tx_out_zarcanum output found");
+    const auto& pkey = *pkey_ptr;
 
     std::string const key_image_str = tools::type_to_hex(key_image);
     if (!td.m_key_image_known || !(key_image == td.m_key_image))
@@ -15251,6 +15511,9 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
 
       // get received (change) amount
       uint64_t tx_money_got_in_outs = 0;
+      std::map<crypto::asset_id, uint64_t> asset_received;
+      std::map<crypto::asset_id, uint64_t> asset_spent;
+
       const cryptonote::account_keys& keys = m_account.get_keys();
       const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(spent_tx);
       crypto::key_derivation derivation;
@@ -15278,12 +15541,34 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
         {
           if (tx_scan_info.money_transfered == 0 && !miner_tx)
           {
-            rct::key mask;
-            tx_scan_info.money_transfered = tools::decodeRct(spent_tx.rct_signatures, tx_scan_info.received->derivation, output_index, rct_index, mask, hwdev);
+            if (std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+            {
+              const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
+              uint64_t amount = 0;
+              crypto::asset_id asset_id{};
+              rct::key amount_mask{}, asset_blinding_mask{};
+              bool decoded = cryptonote::decode_zarcanum_output(
+                  keys, zout, tx_scan_info.received->derivation, output_index,
+                  amount, asset_id, amount_mask, asset_blinding_mask);
+              if (decoded)
+              {
+                tx_scan_info.money_transfered = amount;
+                tx_scan_info.asset_id = asset_id;
+              }
+            }
+            else
+            {
+              rct::key mask;
+              tx_scan_info.money_transfered = tools::decodeRct(spent_tx.rct_signatures, tx_scan_info.received->derivation, output_index, rct_index, mask, hwdev);
+            }
           }
           THROW_WALLET_EXCEPTION_IF(tx_money_got_in_outs >= std::numeric_limits<uint64_t>::max() - tx_scan_info.money_transfered,
               error::wallet_internal_error, "Overflow in received amounts");
-          tx_money_got_in_outs += tx_scan_info.money_transfered;
+
+          if (tx_scan_info.asset_id == crypto::null_aid)
+            tx_money_got_in_outs += tx_scan_info.money_transfered;
+          else
+            asset_received[tx_scan_info.asset_id] += tx_scan_info.money_transfered;
         }
         if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
           ++rct_index;
@@ -15317,6 +15602,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
           }
           else
           {
+            asset_spent[td.get_asset_id()] += amount;
             LOG_PRINT_L0("Spent asset: " << amount << " atomic units, asset_id "
                 << tools::type_to_hex(td.get_asset_id()) << ", with tx: " << *spent_txid);
           }
@@ -15332,6 +15618,31 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
 
       // create outgoing payment
       process_outgoing(*spent_txid, spent_tx, e["block_height"], e["block_timestamp"], tx_money_spent_in_ins, tx_money_got_in_outs, subaddr_account, subaddr_indices);
+
+      // HF21: If this transaction spent confidential assets, deduce the amount
+      // sent to others (spent - change) and populate a fake destination entry
+      // so the wallet correctly tracks the asset transfer amount.
+      if (!asset_spent.empty())
+      {
+        auto conf_it = m_confirmed_txs.find(*spent_txid);
+        if (conf_it != m_confirmed_txs.end())
+        {
+          for (const auto& [aid, spent_amt] : asset_spent)
+          {
+            uint64_t change_amt = 0;
+            if (auto it = asset_received.find(aid); it != asset_received.end())
+              change_amt = it->second;
+            
+            if (spent_amt > change_amt)
+            {
+              cryptonote::tx_destination_entry fake_dest;
+              fake_dest.amount = spent_amt - change_amt;
+              fake_dest.asset_id = aid;
+              conf_it->second.m_dests.push_back(fake_dest);
+            }
+          }
+        }
+      }
 
       // erase corresponding incoming payment
       for (auto j = m_payments.begin(); j != m_payments.end(); )

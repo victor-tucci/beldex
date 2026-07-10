@@ -858,7 +858,7 @@ private:
       bool all_accounts;
     };
     void get_transfers(get_transfers_args_t args, std::vector<wallet::transfer_view>& transfers);
-    std::string transfers_to_csv(const std::vector<wallet::transfer_view>& transfers, bool formatting = false) const;
+    std::string transfers_to_csv(const std::vector<wallet::transfer_view>& transfers, bool formatting = false, std::function<std::pair<std::string, uint8_t>(const crypto::asset_id&)> get_asset_info = nullptr) const;
     void get_payments(const crypto::hash& payment_id, std::list<wallet2::payment_details>& payments, uint64_t min_height = 0, const std::optional<uint32_t>& subaddr_account = std::nullopt, const std::set<uint32_t>& subaddr_indices = {}) const;
     void get_payments(std::list<std::pair<crypto::hash,wallet2::payment_details>>& payments, uint64_t min_height, uint64_t max_height = (uint64_t)-1, const std::optional<uint32_t>& subaddr_account = std::nullopt, const std::set<uint32_t>& subaddr_indices = {}) const;
     void get_payments_out(std::list<std::pair<crypto::hash,wallet2::confirmed_transfer_details>>& confirmed_payments,
@@ -1121,7 +1121,7 @@ private:
      * \param  spent                    [OUT] the sum of spent funds included in the signature
      * \return                          true if the signature verifies correctly
      */
-    bool check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent);
+    bool check_reserve_proof(const cryptonote::account_public_address &address, std::string_view message, std::string_view sig_str, uint64_t &total, uint64_t &spent, std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> &asset_totals);
 
    /*!
     * \brief GUI Address book get/store

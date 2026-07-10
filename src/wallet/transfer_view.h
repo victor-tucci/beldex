@@ -48,7 +48,11 @@ enum struct pay_type
   master_node,
   governance,
   bns,
-  coin_burn
+  coin_burn,
+  deploy_asset,
+  emit_asset,
+  update_asset,
+  burn_asset
 };
 
 inline const char *pay_type_string(pay_type type)
@@ -64,6 +68,10 @@ inline const char *pay_type_string(pay_type type)
     case pay_type::master_node: return "mnode";
     case pay_type::governance:   return "gov";
     case pay_type::coin_burn:   return "burn";
+    case pay_type::deploy_asset: return "deploy";
+    case pay_type::emit_asset:   return "emit";
+    case pay_type::update_asset: return "update";
+    case pay_type::burn_asset:   return "burn_asset";
     default: assert(false);      return "xxxxx";
   }
 }
@@ -75,6 +83,10 @@ inline pay_type pay_type_from_tx(const cryptonote::transaction tx)
     case cryptonote::txtype::stake: return wallet::pay_type::stake;
     case cryptonote::txtype::beldex_name_system: return wallet::pay_type::bns;
     case cryptonote::txtype::coin_burn: return wallet::pay_type::coin_burn;
+    case cryptonote::txtype::deploy_new_asset: return wallet::pay_type::deploy_asset;
+    case cryptonote::txtype::emit_asset: return wallet::pay_type::emit_asset;
+    case cryptonote::txtype::update_asset: return wallet::pay_type::update_asset;
+    case cryptonote::txtype::burn_asset: return wallet::pay_type::burn_asset;
     default: return wallet::pay_type::out;
   }
 }
