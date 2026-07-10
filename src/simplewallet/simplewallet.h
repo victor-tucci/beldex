@@ -200,7 +200,7 @@ namespace cryptonote
 
     enum class sweep_type_t { stake, register_stake, all_or_below, single };
     bool sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool flash);
-    bool sweep_main(uint32_t account, uint64_t below, Transfer transfer_type, const std::vector<std::string> &args);
+    bool sweep_main(uint32_t account, uint64_t below, Transfer transfer_type, const std::vector<std::string> &args, bool plain_address_sweeps_all_assets = false);
     bool sweep_all(const std::vector<std::string> &args);
     bool sweep_account(const std::vector<std::string> &args);
     bool sweep_below(const std::vector<std::string> &args);

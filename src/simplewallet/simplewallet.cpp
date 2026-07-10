@@ -313,9 +313,18 @@ namespace
     return true;
   }
 
-  bool parse_asset_prefixed_address_arg(const std::string& raw, crypto::asset_id& asset_id, std::string& address)
+  enum class asset_prefixed_address_mode
+  {
+    plain_address,
+    native_prefixed_address,
+    asset_prefixed_address,
+  };
+
+  bool parse_asset_prefixed_address_arg(const std::string& raw, crypto::asset_id& asset_id, std::string& address, asset_prefixed_address_mode* mode = nullptr)
   {
     address = raw;
+    if (mode)
+      *mode = asset_prefixed_address_mode::plain_address;
 
     const size_t sep = raw.find(':');
     if (sep == std::string::npos)
@@ -323,6 +332,14 @@ namespace
 
     const std::string asset_hex = raw.substr(0, sep);
     std::string parsed_address = raw.substr(sep + 1);
+    if (asset_hex == "bdx" && !parsed_address.empty())
+    {
+      asset_id = crypto::null_aid;
+      address = std::move(parsed_address);
+      if (mode)
+        *mode = asset_prefixed_address_mode::native_prefixed_address;
+      return true;
+    }
     if (asset_hex.size() != 64 || parsed_address.empty())
       return true; // not an asset-prefix format; keep legacy behavior
 
@@ -332,6 +349,8 @@ namespace
 
     asset_id = parsed_asset;
     address = std::move(parsed_address);
+    if (mode)
+      *mode = asset_prefixed_address_mode::asset_prefixed_address;
     return true;
   }
 
@@ -500,11 +519,12 @@ namespace
   const char* USAGE_PAYMENT_ID("payment_id");
   const char* USAGE_TRANSFER("transfer [index=<N1>[,<N2>,...]] [flash|unimportant] (<URI> | <assetid:address> <amount>) [subtractfeefrom=<D0>[,<D1>,all,...]] [<payment_id>]");
   const char* USAGE_LOCKED_TRANSFER("locked_transfer [index=<N1>[,<N2>,...]] [<priority>] (<URI> | <addr> <amount>) <lockblocks> [<payment_id (obsolete)>]");
-  const char* USAGE_LOCKED_SWEEP_ALL("locked_sweep_all [index=<N1>[,<N2>,...] | index=all] [<priority>] [<address>] <lockblocks> [<payment_id (obsolete)>]");
-  const char* USAGE_SWEEP_ALL("sweep_all [index=<N1>[,<N2>,...] | index=all] [flash|unimportant] [outputs=<N>] [<address> [<payment_id (obsolete)>]]");
-  const char* USAGE_SWEEP_BELOW("sweep_below <amount_threshold> [index=<N1>[,<N2>,...]] [flash|unimportant] [<address> [<payment_id (obsolete)>]]");
-  const char* USAGE_SWEEP_SINGLE("sweep_single [flash|unimportant] [outputs=<N>] <key_image> <address> [<payment_id (obsolete)>]");
-  const char* USAGE_SWEEP_ACCOUNT("sweep_account <account> [index=<N1>[,<N2>,...] | index=all] [<priority>] [<ring_size>] [outputs=<N>] <address> [<payment_id (obsolete)>]");
+  const char* USAGE_LOCKED_SWEEP_ALL("locked_sweep_all [index=<N1>[,<N2>,...] | index=all] [<priority>] [<address|bdx:address|asset_id:address>] <lockblocks> [<payment_id (obsolete)>]");
+  const char* USAGE_SWEEP_ALL("sweep_all [index=<N1>[,<N2>,...] | index=all] [flash|unimportant] [outputs=<N>] [<address|bdx:address|asset_id:address> [<payment_id (obsolete)>]]");
+  const char* USAGE_SWEEP_BELOW("sweep_below <amount_threshold> [index=<N1>[,<N2>,...]] [flash|unimportant] [<address|bdx:address|asset_id:address> [<payment_id (obsolete)>]]");
+  const char* USAGE_SWEEP_SINGLE("sweep_single [flash|unimportant] [outputs=<N>] <key_image> <address|bdx:address|asset_id:address> [<payment_id (obsolete)>]");
+  const char* USAGE_SWEEP_UNMIXABLE("sweep_unmixable [<asset_id>]");
+  const char* USAGE_SWEEP_ACCOUNT("sweep_account <account> [index=<N1>[,<N2>,...] | index=all] [<priority>] [<ring_size>] [outputs=<N>] <address|bdx:address|asset_id:address> [<payment_id (obsolete)>]");
   const char* USAGE_SIGN_TRANSFER("sign_transfer [export_raw]");
   const char* USAGE_SET_LOG("set_log <level>|{+,-,}<categories>");
   const char* USAGE_ACCOUNT("account\n"
@@ -3009,13 +3029,13 @@ simple_wallet::simple_wallet()
                            tr("Send all unlocked balance to an address and lock it for <lockblocks> (max. 1000000). If no address is specified the address of the currently selected account will be used. If the parameter \"index<N1>[,<N2>,...]\" or \"index=all\" is specified, the wallet sweeps outputs received by those address indices. If omitted, the wallet randomly chooses an address index to be used. <priority> is the priority of the sweep. The higher the priority, the higher the transaction fee. Valid values in priority order (from lowest to highest) are: unimportant, normal, elevated, priority. If omitted, the default value (see the command \"set priority\") is used."));
   m_cmd_binder.set_handler("sweep_unmixable",
                            [this](const auto& x) { return sweep_unmixable(x); },
-                           tr("Deprecated"));
+                           tr(USAGE_SWEEP_UNMIXABLE));
   m_cmd_binder.set_handler("sweep_all", [this](const auto& x) { return sweep_all(x); },
                            tr(USAGE_SWEEP_ALL),
-                           tr("Send all unlocked balance to an address.If no address is specified the address of the currently selected account will be used. If the parameter \"index<N1>[,<N2>,...]\" or \"index=all\" is specified, the wallet sweeps outputs received by those address indices. If omitted, the wallet randomly chooses an address index to be used. If the parameter \"outputs=<N>\" is specified and  N > 0, wallet splits the transaction into N even outputs."));
+                           tr("Send all unlocked balance to an address.If no address is specified the address of the currently selected account will be used. If the parameter \"index<N1>[,<N2>,...]\" or \"index=all\" is specified, the wallet sweeps outputs received by those address indices. If omitted, the wallet randomly chooses an address index to be used. If the parameter \"outputs=<N>\" is specified and  N > 0, wallet splits the transaction into N even outputs. Use a plain address to sweep native balance and all assets, \"bdx:address\" to sweep only native balance, or \"asset_id:address\" to sweep only a specific asset."));
   m_cmd_binder.set_handler("sweep_account", [this](const auto& x) { return sweep_account(x); },
                            tr(USAGE_SWEEP_ACCOUNT),
-                           tr("Send all unlocked balance from a given account to an address. If the parameter \"index=<N1>[,<N2>,...]\" or \"index=all\" is specified, the wallet sweeps outputs received by those or all address indices, respectively. If omitted, the wallet randomly chooses an address index to be used. If the parameter \"outputs=<N>\" is specified and  N > 0, wallet splits the transaction into N even outputs."));
+                           tr("Send all unlocked balance from a given account to an address. If the parameter \"index=<N1>[,<N2>,...]\" or \"index=all\" is specified, the wallet sweeps outputs received by those or all address indices, respectively. If omitted, the wallet randomly chooses an address index to be used. If the parameter \"outputs=<N>\" is specified and  N > 0, wallet splits the transaction into N even outputs. Use a plain address to sweep native balance and all assets from that account, \"bdx:address\" to sweep only native balance, or \"asset_id:address\" to sweep only a specific asset from that account."));
   m_cmd_binder.set_handler("sweep_below",
                            [this](const auto& x) { return sweep_below(x); },
                            tr(USAGE_SWEEP_BELOW),
@@ -3026,7 +3046,7 @@ simple_wallet::simple_wallet()
                            tr("Send a single output of the given key image to an address without change."));
   m_cmd_binder.set_handler("sweep_unmixable",
                            [this](const auto& x) { return sweep_unmixable(x); },
-                           tr("Deprecated"));
+                           tr(USAGE_SWEEP_UNMIXABLE));
   m_cmd_binder.set_handler("sign_transfer",
                            [this](const auto& x) { return sign_transfer(x); },
                            tr(USAGE_SIGN_TRANSFER),
@@ -8606,12 +8626,29 @@ bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
   if (!try_connect_to_daemon())
     return true;
 
+  std::optional<crypto::asset_id> requested_asset_id;
+  if (args_.size() > 1)
+  {
+    PRINT_USAGE(USAGE_SWEEP_UNMIXABLE);
+    return true;
+  }
+  if (!args_.empty())
+  {
+    crypto::asset_id parsed_asset_id = crypto::null_aid;
+    if (args_[0].size() != 64 || !tools::hex_to_type(args_[0], parsed_asset_id))
+    {
+      fail_msg_writer() << tr("Invalid asset id");
+      return true;
+    }
+    requested_asset_id = parsed_asset_id;
+  }
+
   SCOPED_WALLET_UNLOCK();
 
   try
   {
     // figure out what tx will be necessary
-    auto ptx_vector = m_wallet->create_unmixable_sweep_transactions();
+    auto ptx_vector = m_wallet->create_unmixable_sweep_transactions(requested_asset_id);
 
     if (ptx_vector.empty())
     {
@@ -8624,8 +8661,21 @@ bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
     for (size_t n = 0; n < ptx_vector.size(); ++n)
     {
       total_fee += ptx_vector[n].fee;
+      std::optional<crypto::asset_id> swept_asset_id;
+      for (const auto &dt: ptx_vector[n].dests)
+      {
+        if (dt.asset_id != crypto::null_aid)
+        {
+          swept_asset_id = dt.asset_id;
+          break;
+        }
+      }
       for (auto i: ptx_vector[n].selected_transfers)
-        total_unmixable += m_wallet->get_transfer_details(i).amount();
+      {
+        const auto& td = m_wallet->get_transfer_details(i);
+        if (!swept_asset_id || td.get_asset_id() == *swept_asset_id)
+          total_unmixable += td.amount();
+      }
     }
 
     std::string prompt_str = tr("Sweeping ") + print_money(total_unmixable);
@@ -8695,6 +8745,12 @@ bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool flash)
 {
+  if (ptx_vector.empty())
+  {
+    fail_msg_writer() << tr("No outputs found, or daemon is not ready");
+    return false;
+  }
+
   if ((sweep_type == sweep_type_t::stake || sweep_type == sweep_type_t::register_stake) && ptx_vector.size() > 1)
   {
     fail_msg_writer() << tr("Too many outputs. Please sweep_all first");
@@ -8709,17 +8765,23 @@ bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<too
       return true;
     }
 
-    if (ptx_vector[0].selected_transfers.size() != 1)
+    size_t asset_input_count = 0;
+    for (auto i: ptx_vector[0].selected_transfers)
+      asset_input_count += m_wallet->get_transfer_details(i).get_asset_id() != crypto::null_aid;
+
+    if (asset_input_count > 0)
+    {
+      if (asset_input_count != 1)
+      {
+        fail_msg_writer() << tr("The transaction uses multiple or no asset inputs, which is not supposed to happen");
+        return true;
+      }
+    }
+    else if (ptx_vector[0].selected_transfers.size() != 1)
     {
       fail_msg_writer() << tr("The transaction uses multiple or no inputs, which is not supposed to happen");
       return true;
     }
-  }
-
-  if (ptx_vector.empty())
-  {
-    fail_msg_writer() << tr("No outputs found, or daemon is not ready");
-    return false;
   }
 
   // give user total and fee, and prompt to confirm
@@ -8727,8 +8789,22 @@ bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<too
   for (size_t n = 0; n < ptx_vector.size(); ++n)
   {
     total_fee += ptx_vector[n].fee;
+    std::optional<crypto::asset_id> swept_asset_id;
+    for (const auto &dt: ptx_vector[n].dests)
+    {
+      if (dt.asset_id != crypto::null_aid)
+      {
+        swept_asset_id = dt.asset_id;
+        break;
+      }
+    }
+
     for (auto i: ptx_vector[n].selected_transfers)
-      total_sent += m_wallet->get_transfer_details(i).amount();
+    {
+      const auto& td = m_wallet->get_transfer_details(i);
+      if (!swept_asset_id || td.get_asset_id() == *swept_asset_id)
+        total_sent += td.amount();
+    }
 
     if (sweep_type == sweep_type_t::stake || sweep_type == sweep_type_t::register_stake)
       total_sent -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
@@ -8840,7 +8916,7 @@ bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<too
   return true;
 }
 
-bool simple_wallet::sweep_main(uint32_t account, uint64_t below, Transfer transfer_type, const std::vector<std::string> &args_)
+bool simple_wallet::sweep_main(uint32_t account, uint64_t below, Transfer transfer_type, const std::vector<std::string> &args_, bool plain_address_sweeps_all_assets)
 {
   auto print_usage = [this, account, below]()
   {
@@ -8953,14 +9029,27 @@ bool simple_wallet::sweep_main(uint32_t account, uint64_t below, Transfer transf
     }
   }
 
-  cryptonote::address_parse_info info;
   std::string addr;
+  std::optional<crypto::asset_id> requested_asset_id;
+  asset_prefixed_address_mode address_mode = asset_prefixed_address_mode::plain_address;
   if (local_args.size() > 0)
     addr = local_args[0];
   else
     addr = m_wallet->get_subaddress_as_str({m_current_subaddress_account, 0});
 
-  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), addr))
+  std::string parsed_address;
+  crypto::asset_id parsed_asset_id = crypto::null_aid;
+  if (!parse_asset_prefixed_address_arg(addr, parsed_asset_id, parsed_address, &address_mode))
+  {
+    fail_msg_writer() << tr("failed to parse asset id in address");
+    print_usage();
+    return true;
+  }
+  if (parsed_asset_id != crypto::null_aid)
+    requested_asset_id = parsed_asset_id;
+
+  cryptonote::address_parse_info info;
+  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), parsed_address))
   {
     fail_msg_writer() << tr("failed to parse address");
     print_usage();
@@ -8982,7 +9071,11 @@ bool simple_wallet::sweep_main(uint32_t account, uint64_t below, Transfer transf
   SCOPED_WALLET_UNLOCK();
   try
   {
-    auto ptx_vector = m_wallet->create_transactions_all(below, info.address, info.is_subaddress, outputs, cryptonote::TX_OUTPUT_DECOYS, unlock_block /* unlock_time */, priority, extra, account, subaddr_indices);
+    const auto selection_mode =
+        plain_address_sweeps_all_assets && address_mode == asset_prefixed_address_mode::plain_address
+            ? tools::wallet2::sweep_selection_mode::native_and_all_assets
+            : tools::wallet2::sweep_selection_mode::native_only;
+    auto ptx_vector = m_wallet->create_transactions_all(below, info.address, info.is_subaddress, outputs, cryptonote::TX_OUTPUT_DECOYS, unlock_block /* unlock_time */, priority, extra, account, subaddr_indices, requested_asset_id, cryptonote::txtype::standard, selection_mode);
     sweep_main_internal(sweep_type_t::all_or_below, ptx_vector, info, priority == tools::tx_priority_flash);
   }
   catch (const std::exception &e)
@@ -9013,7 +9106,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
   {
     priority = m_wallet->get_default_priority();
     if (priority == 0)
-      priority = tools::tx_priority_flash;
+      priority = tools::tx_priority_unimportant;
   }
 
   size_t outputs = 1;
@@ -9055,8 +9148,19 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
     return true;
   }
 
+  std::string parsed_address;
+  std::optional<crypto::asset_id> requested_asset_id;
+  crypto::asset_id parsed_asset_id = crypto::null_aid;
+  if (!parse_asset_prefixed_address_arg(local_args[1], parsed_asset_id, parsed_address))
+  {
+    fail_msg_writer() << tr("failed to parse asset id in address");
+    return true;
+  }
+  if (parsed_asset_id != crypto::null_aid)
+    requested_asset_id = parsed_asset_id;
+
   cryptonote::address_parse_info info;
-  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), local_args[1]))
+  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), parsed_address))
   {
     fail_msg_writer() << tr("failed to parse address");
     return true;
@@ -9078,7 +9182,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
   try
   {
     // figure out what tx will be necessary
-    auto ptx_vector = m_wallet->create_transactions_single(ki, info.address, info.is_subaddress, outputs, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */, priority, extra);
+    auto ptx_vector = m_wallet->create_transactions_single(ki, info.address, info.is_subaddress, outputs, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */, priority, extra, requested_asset_id);
     sweep_main_internal(sweep_type_t::single, ptx_vector, info, priority == tools::tx_priority_flash);
   }
   catch (const std::exception& e)
@@ -9096,7 +9200,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::sweep_all(const std::vector<std::string> &args_)
 {
-  return sweep_main(m_current_subaddress_account, 0, Transfer::Normal, args_);
+  return sweep_main(m_current_subaddress_account, 0, Transfer::Normal, args_, true);
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::sweep_account(const std::vector<std::string> &args_)
@@ -9115,7 +9219,7 @@ bool simple_wallet::sweep_account(const std::vector<std::string> &args_)
   }
   local_args.erase(local_args.begin());
 
-  sweep_main(account, 0, Transfer::Normal, local_args);
+  sweep_main(account, 0, Transfer::Normal, local_args, true);
   return true;
 }
 //----------------------------------------------------------------------------------------------------
