@@ -749,6 +749,11 @@ namespace rct {
       BEGIN_SERIALIZE_OBJECT() FIELD(sig) END_SERIALIZE()
     };
 
+    // HF21: ring signature spending a single tx_out_zarcanum (confidential
+    // asset) input. Like Zano (where ZC_sig is a signature_v, not a proof_v),
+    // this is stored under the transaction's signatures (transaction::zc_sig),
+    // NOT in transaction::asset_proofs -- so it is intentionally absent from
+    // asset_proof_v below.
     struct ZC_sig
     {
       clsag_ggx clsag_sig;
@@ -781,9 +786,16 @@ namespace rct {
       zc_balance_proof,
       asset_operation_proof,
       asset_operation_ownership_proof,
-      ZC_sig,
       zc_outs_range_proof
     >;
+
+    // HF21: transaction signature variant, modeled on Zano's signature_v.
+    // Currently the only alternative is ZC_sig (confidential-asset input
+    // signatures); wrapping it in a variant makes each element serialize under
+    // its own "ZC_sig" tag inside the tx "signatures" array (transaction::zc_sig),
+    // matching Zano's `"signatures": [ { "ZC_sig": {...} } ]` shape. Add further
+    // signature kinds here as alternatives if/when needed.
+    using signature_v = std::variant<ZC_sig>;
 
 } // namespace rct (continued)
 
@@ -792,5 +804,7 @@ VARIANT_TAG(rct::zc_asset_surjection_proof,       "zc_surjection", 0xb0);
 VARIANT_TAG(rct::zc_balance_proof,                "zc_balance",    0xb1);
 VARIANT_TAG(rct::asset_operation_proof,           "asset_op_proof",0xb2);
 VARIANT_TAG(rct::asset_operation_ownership_proof, "asset_owner",   0xb3);
-VARIANT_TAG(rct::ZC_sig,                          "zc_sig",        0xb4);
+// ZC_sig is a signature_v alternative (transaction::zc_sig), not an
+// asset_proof_v member; its tag lets it serialize as { "ZC_sig": {...} }.
+VARIANT_TAG(rct::ZC_sig,                          "ZC_sig",        0xb4);
 VARIANT_TAG(rct::zc_outs_range_proof,             "zc_range_proof",0xb5);

@@ -280,10 +280,17 @@ namespace cryptonote
     std::vector<std::vector<crypto::signature>> signatures; //count signatures  always the same as inputs count
     rct::rctSig rct_signatures;
 
+    // Confidential asset input signatures (HF21+): one entry per confidential
+    // (zarcanum) input being spent, in tx.vin order. Each is a signature_v (a
+    // variant currently holding only ZC_sig), so it serializes as
+    // { "ZC_sig": {...} } inside the tx "signatures" array -- matching Zano,
+    // where ZC_sig is a signature_v rather than a proof_v. NOT in asset_proofs.
+    std::vector<rct::signature_v> zc_sig;
+
     // Confidential asset proofs (HF21+). Empty for non-asset transactions.
     // Contains: zc_asset_surjection_proof, zc_balance_proof,
     //           asset_operation_proof, asset_operation_ownership_proof,
-    //           ZC_sig (one per ZC input being spent).
+    //           zc_outs_range_proof.
     std::vector<rct::asset_proof_v> asset_proofs;
 
     // hash cache
@@ -299,6 +306,15 @@ namespace cryptonote
     bool has_zarcanum_outputs() const {
       return std::any_of(vout.begin(), vout.end(),
         [](const tx_out& o){ return std::holds_alternative<tx_out_zarcanum>(o.target); });
+    }
+
+    // Returns true if any input is a txin_zc_input (confidential asset spend).
+    // Prefix-derivable, so it decides whether the tx carries a zc_sig
+    // ("signatures") section on the wire -- for well-formed txs this equals
+    // !zc_sig.empty() (one ZC_sig per zc input).
+    bool has_zarcanum_inputs() const {
+      return std::any_of(vin.begin(), vin.end(),
+        [](const txin_v& i){ return std::holds_alternative<txin_zc_input>(i); });
     }
 
     transaction() { set_null(); }
@@ -406,7 +422,24 @@ namespace cryptonote
             rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, native_inputs, native_outputs, mixin);
           }
 
-          // HF21: confidential asset proofs (present only when has_zarcanum_outputs() or for update_asset txs)
+          // HF21: confidential asset input signatures. Emitted first, under the
+          // "signatures" tag, as a signature_v vector (each a { "ZC_sig": {...} })
+          // -- keeping ZC_sig with the tx's signatures rather than lumped into
+          // the asset proofs, as Zano does. Present only when the tx spends a
+          // zarcanum input; the gate is prefix-derivable (has_zarcanum_inputs)
+          // so the deserializer knows whether to read the field, and a tx with
+          // no zc inputs (e.g. deploy_new_asset) omits it entirely rather than
+          // serializing an empty array. This gate and order must stay identical
+          // in calculate_transaction_prunable_hash or the prunable hash won't
+          // reproduce.
+          if (has_zarcanum_inputs())
+          {
+            ar.tag("signatures");
+            serialization::value(ar, zc_sig);
+          }
+
+          // HF21: confidential asset proofs (present when has_zarcanum_outputs()
+          // or for update_asset txs).
           if (!asset_proofs.empty() || has_zarcanum_outputs() || type == txtype::update_asset)
           {
             ar.tag("asset_proofs");

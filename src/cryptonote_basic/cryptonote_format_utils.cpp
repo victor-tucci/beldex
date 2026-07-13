@@ -1547,14 +1547,17 @@ namespace cryptonote
       try {
         const_cast<transaction&>(t).rct_signatures.p.serialize_rctsig_prunable(
                 ba, t.rct_signatures.type, native_inputs, native_outputs, mixin);
-        // HF21: asset_proofs are serialized right after rctsig_prunable in
-        // transaction::serialize_value, and both sit after unprunable_size --
-        // i.e. asset_proofs are part of the PRUNABLE region. The blob-slice path
-        // above hashes them (blob.substr(unprunable_size) covers them), so this
-        // re-serialize path must emit them too, in the same order and under the
-        // same presence condition, or the prunable hash won't match for CA txs
-        // (zc inputs/outputs and update_asset carry their proofs here, not in the
-        // native CLSAG/bulletproof arrays).
+        // HF21: the ZC input signatures (zc_sig) and asset_proofs are
+        // serialized right after rctsig_prunable in transaction::serialize_value,
+        // and both sit after unprunable_size -- i.e. they are part of the
+        // PRUNABLE region. The blob-slice path above hashes them
+        // (blob.substr(unprunable_size) covers them), so this re-serialize path
+        // must emit them too, zc_sig first then asset_proofs, under the SAME
+        // presence gates as transaction::serialize_value, or the prunable hash
+        // won't match for CA txs (zc inputs/outputs and update_asset carry their
+        // sigs/proofs here, not in the native CLSAG/bulletproof arrays).
+        if (t.has_zarcanum_inputs())
+          serialization::value(ba, const_cast<transaction&>(t).zc_sig);
         if (!t.asset_proofs.empty() || t.has_zarcanum_outputs() || t.type == txtype::update_asset)
           serialization::value(ba, const_cast<transaction&>(t).asset_proofs);
       } catch (const std::exception& e) {

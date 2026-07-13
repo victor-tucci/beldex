@@ -1543,7 +1543,9 @@ namespace cryptonote
                                                p.spend_secret, p.amount_mask_diff, p.asset_mask_diff,
                                                p.pseudo_out_amount_commitment, p.pseudo_out_blinded_asset_id,
                                                p.real_index);
-            tx.asset_proofs.push_back(std::move(zc_sig));
+            // ZC_sig lives under the tx's signatures (tx.zc_sig), not in
+            // asset_proofs -- see transaction::zc_sig (cryptonote_basic.h).
+            tx.zc_sig.push_back(std::move(zc_sig));
           }
 
           // ── HF21: asset surjection proof (BGE) for zarcanum outputs ─────────

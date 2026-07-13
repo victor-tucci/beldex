@@ -3464,25 +3464,19 @@ bool Blockchain::expand_transaction_2(transaction &tx, const crypto::hash &tx_pr
   // HF21: ZC_sig.clsag_sig.I (the key image) is deliberately not serialized
   // (same reasoning as native CLSAGs' I above -- it's redundant with the
   // owning txin's own k_image field) and so deserializes to zero. Reconstruct
-  // it here, matching each ZC_sig to its zc input by relative order (the same
-  // order genZCSig's caller pushes them in, mirroring how zc_pending is
-  // indexed by final tx.vin position during construction).
+  // it here, matching each ZC_sig to its zc input by relative order (tx.zc_sig
+  // is pushed in tx.vin order during construction -- one entry per zc input).
   {
     size_t zc_sig_idx = 0;
     for (size_t n = 0; n < tx.vin.size(); ++n)
     {
       if (!std::holds_alternative<txin_zc_input>(tx.vin[n]))
         continue;
+      if (zc_sig_idx >= tx.zc_sig.size())
+        break;
       const crypto::key_image& ki = var::get<txin_zc_input>(tx.vin[n]).k_image;
-      for (size_t k = zc_sig_idx; k < tx.asset_proofs.size(); ++k)
-      {
-        if (auto* zc_sig = std::get_if<rct::ZC_sig>(&tx.asset_proofs[k]))
-        {
-          zc_sig->clsag_sig.I = rct::ki2rct(ki);
-          zc_sig_idx = k + 1;
-          break;
-        }
-      }
+      std::get<rct::ZC_sig>(tx.zc_sig[zc_sig_idx]).clsag_sig.I = rct::ki2rct(ki);
+      ++zc_sig_idx;
     }
   }
 
@@ -3841,8 +3835,25 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       return false;
     }
 
-    // HF21: verify ZC_sig / asset proofs for any confidential asset inputs.
-    if (hf_version >= feature::CONFIDENTIAL_ASSETS && !tx.asset_proofs.empty())
+    // HF21: verify ZC_sig / asset proofs for any confidential asset tx.
+    //
+    // CRITICAL: this gate must trigger on STRUCTURAL confidential-asset content
+    // (zc inputs/outputs, asset-op tx types), NOT merely on asset_proofs being
+    // non-empty. verAssetProofs is the sole place ZC_sig, surjection, balance
+    // and range proofs are verified AND the sole place their PRESENCE is
+    // enforced -- so gating it on an attacker-controlled vector would let a
+    // peer strip every proof (asset_proofs empty, tx.zc_sig empty) and skip all
+    // CA verification, forging spends / minting confidential value at will.
+    // has_zarcanum_inputs()/has_zarcanum_outputs() are prefix-derived and thus
+    // not strippable without changing the actual inputs/outputs. Covers deploy
+    // (zc outs, no zc ins), burn (zc ins, zc outs optional), emit, transfers,
+    // and update_asset (which may have neither, hence the tx-type terms).
+    const bool has_ca_content =
+        !tx.asset_proofs.empty() || !tx.zc_sig.empty() ||
+        tx.has_zarcanum_inputs() || tx.has_zarcanum_outputs() ||
+        tx.type == txtype::deploy_new_asset || tx.type == txtype::emit_asset ||
+        tx.type == txtype::burn_asset || tx.type == txtype::update_asset;
+    if (hf_version >= feature::CONFIDENTIAL_ASSETS && has_ca_content)
     {
       std::vector<rct::keyV> asset_id_rings(tx.vin.size());
       for (size_t n = 0; n < tx.vin.size(); ++n)
