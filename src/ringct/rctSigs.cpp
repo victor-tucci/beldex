@@ -1899,7 +1899,7 @@ namespace rct {
         // Zano's per-type count_type_in_variant_container prevalidation.
         {
             size_t n_surjection = 0, n_balance = 0, n_range = 0,
-                   n_asset_op = 0, n_ownership = 0, n_zc_sig = 0;
+                   n_asset_op = 0, n_ownership = 0;
             for (const auto& proof : tx.asset_proofs)
             {
                 if      (std::holds_alternative<rct::zc_asset_surjection_proof>(proof))       ++n_surjection;
@@ -1907,9 +1907,10 @@ namespace rct {
                 else if (std::holds_alternative<rct::zc_outs_range_proof>(proof))             ++n_range;
                 else if (std::holds_alternative<rct::asset_operation_proof>(proof))           ++n_asset_op;
                 else if (std::holds_alternative<rct::asset_operation_ownership_proof>(proof)) ++n_ownership;
-                else if (std::holds_alternative<rct::ZC_sig>(proof))                          ++n_zc_sig;
                 else { reason = "unknown asset proof type"; return false; }
             }
+            // ZC_sigs live under the tx's signatures (tx.zc_sig), not asset_proofs.
+            const size_t n_zc_sig = tx.zc_sig.size();
 
             // Singleton proofs: at most one of each.
             if (n_surjection > 1) { reason = "multiple zc_asset_surjection_proof entries"; return false; }
@@ -1955,17 +1956,22 @@ namespace rct {
         }
 
         // ── 1. Verify ZC_sig for each ZC input ───────────────────────────────
-        // Count ZC inputs and match them to ZC_sig entries in asset_proofs.
-        // pubkeys[i] / asset_id_rings[i] is the ring for input i (built by
-        // check_tx_inputs / check_tx_input_zc); asset_id_rings is only
-        // populated for indices where tx.vin[i] is a txin_zc_input.
+        // Count ZC inputs and match them to the tx's ZC_sig signatures (one per
+        // zc input, in tx.vin order). pubkeys[i] / asset_id_rings[i] is the ring
+        // for input i (built by check_tx_inputs / check_tx_input_zc);
+        // asset_id_rings is only populated for indices where tx.vin[i] is a
+        // txin_zc_input.
         size_t zc_sig_idx = 0;
         const key tx_prefix_hash = get_hf21_asset_proof_message(tx, pubkeys, hw::get_device("default"));
 
         std::vector<const rct::ZC_sig*> zc_sigs;
-        for (const auto& proof : tx.asset_proofs)
-            if (const auto* zs = std::get_if<rct::ZC_sig>(&proof))
-                zc_sigs.push_back(zs);
+        zc_sigs.reserve(tx.zc_sig.size());
+        for (const auto& sig : tx.zc_sig)
+        {
+            const auto* zs = std::get_if<rct::ZC_sig>(&sig);
+            if (!zs) { reason = "unknown signature type in tx.zc_sig"; return false; }
+            zc_sigs.push_back(zs);
+        }
 
         // Collect ring pubkeys for ZC inputs (subset of all inputs)
         size_t zc_input_count = 0;
