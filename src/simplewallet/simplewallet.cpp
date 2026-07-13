@@ -2412,7 +2412,8 @@ bool simple_wallet::frozen(const std::vector<std::string> &args)
       if (!m_wallet->frozen(i))
         continue;
       const auto& td = m_wallet->get_transfer_details(i);
-      message_writer() << tr("Frozen: ") << td.m_key_image << " " << cryptonote::print_money(td.amount());
+      std::string asset_id_hex = td.m_asset_id != crypto::null_aid ? tools::type_to_hex(td.m_asset_id) : "";
+      message_writer() << tr("Frozen: ") << td.m_key_image << " " << format_amount_with_asset_id(*m_wallet, td.amount(), asset_id_hex);
     }
   }
   else
@@ -8595,37 +8596,36 @@ bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
     }
 
     // give user total and fee, and prompt to confirm
-    uint64_t total_fee = 0, total_unmixable = 0;
+    uint64_t total_fee = 0;
+    std::map<crypto::asset_id, uint64_t> amounts_unmixable;
     for (size_t n = 0; n < ptx_vector.size(); ++n)
     {
       total_fee += ptx_vector[n].fee;
-      std::optional<crypto::asset_id> swept_asset_id;
-      for (const auto &dt: ptx_vector[n].dests)
-      {
-        if (dt.asset_id != crypto::null_aid)
-        {
-          swept_asset_id = dt.asset_id;
-          break;
-        }
-      }
       for (auto i: ptx_vector[n].selected_transfers)
       {
         const auto& td = m_wallet->get_transfer_details(i);
-        if (!swept_asset_id || td.get_asset_id() == *swept_asset_id)
-          total_unmixable += td.amount();
+        amounts_unmixable[td.get_asset_id()] += td.amount();
       }
     }
 
-    std::string prompt_str = tr("Sweeping ") + print_money(total_unmixable);
+    std::string sent_str;
+    for (const auto& [asset_id, amount] : amounts_unmixable)
+    {
+      if (!sent_str.empty())
+        sent_str += " and ";
+      sent_str += format_amount_with_asset_id(*m_wallet, amount, asset_id == crypto::null_aid ? "" : tools::type_to_hex(asset_id), true);
+    }
+
+    std::string prompt_str = tr("Sweeping ") + sent_str;
     if (ptx_vector.size() > 1) {
       prompt_str = fmt::format(tr("Sweeping {} in {} transactions for a total fee of {}. Is this okay?\n"),
-                               print_money(total_unmixable),
+                               sent_str,
                                ((unsigned long long)ptx_vector.size()),
                                print_money(total_fee)); 
     }
     else {
       prompt_str = fmt::format(tr("Sweeping {} for a total fee of {}. Is this okay?\n"),
-                               print_money(total_unmixable),
+                               sent_str,
                                print_money(total_fee)); 
     }
     std::string accepted = input_line(prompt_str, true);
@@ -8723,29 +8723,28 @@ bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<too
   }
 
   // give user total and fee, and prompt to confirm
-  uint64_t total_fee = 0, total_sent = 0;
+  uint64_t total_fee = 0;
+  std::map<crypto::asset_id, uint64_t> amounts_sent;
   for (size_t n = 0; n < ptx_vector.size(); ++n)
   {
     total_fee += ptx_vector[n].fee;
-    std::optional<crypto::asset_id> swept_asset_id;
-    for (const auto &dt: ptx_vector[n].dests)
-    {
-      if (dt.asset_id != crypto::null_aid)
-      {
-        swept_asset_id = dt.asset_id;
-        break;
-      }
-    }
 
     for (auto i: ptx_vector[n].selected_transfers)
     {
       const auto& td = m_wallet->get_transfer_details(i);
-      if (!swept_asset_id || td.get_asset_id() == *swept_asset_id)
-        total_sent += td.amount();
+      amounts_sent[td.get_asset_id()] += td.amount();
     }
 
     if (sweep_type == sweep_type_t::stake || sweep_type == sweep_type_t::register_stake)
-      total_sent -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
+      amounts_sent[crypto::null_aid] -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
+  }
+
+  std::string sent_str;
+  for (const auto& [asset_id, amount] : amounts_sent)
+  {
+    if (!sent_str.empty())
+      sent_str += " and ";
+    sent_str += format_amount_with_asset_id(*m_wallet, amount, asset_id == crypto::null_aid ? "" : tools::type_to_hex(asset_id), true);
   }
 
   std::ostringstream prompt;
@@ -8769,14 +8768,14 @@ bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<too
   if (ptx_vector.size() > 1) {
     prompt << fmt::format(tr("{} {} in {} transactions for a total fee of {}. Is this okay?\n"),
                           label,
-                          print_money(total_sent),
+                          sent_str,
                           ((unsigned long long)ptx_vector.size()),
                           print_money(total_fee)); 
   }
   else {
     prompt << fmt::format(tr("{} {} for a total fee of {}. Is this okay?\n"),
                           label,
-                          print_money(total_sent),
+                          sent_str,
                           print_money(total_fee)); 
   }
   std::string accepted = input_line(prompt.str(), true);
@@ -11658,6 +11657,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
   }
 
   const uint64_t last_block_height = m_wallet->get_blockchain_current_height();
+  bool found = false;
 
   std::list<std::pair<crypto::hash, tools::wallet2::payment_details>> payments;
   m_wallet->get_payments(payments, 0, (uint64_t)-1, m_current_subaddress_account);
@@ -11706,7 +11706,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       success_msg_writer() << "Checkpointed: " << (pd.m_unmined_flash ? "Flash" : pd.m_block_height <= m_wallet->get_immutable_height() ? "Yes" : pd.m_was_flash ? "Flash" : "No");
       success_msg_writer() << "Address index: " << pd.m_subaddr_index.minor;
       success_msg_writer() << "Note: " << m_wallet->get_tx_note(txid);
-      return true;
+      found = true;
     }
   }
 
@@ -11769,7 +11769,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
           success_msg_writer() << "locked for " << tools::get_human_readable_timespan(std::chrono::seconds(pd.m_unlock_time - threshold));
       }
       success_msg_writer() << "Note: " << m_wallet->get_tx_note(txid);
-      return true;
+      found = true;
     }
   }
 
@@ -11793,7 +11793,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
         success_msg_writer() << "Note: " << m_wallet->get_tx_note(txid);
         if (i->second.m_double_spend_seen)
           success_msg_writer() << tr("Double spend seen on the network: this transaction may or may not end up being mined");
-        return true;
+        found = true;
       }
     }
   }
@@ -11837,11 +11837,13 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       success_msg_writer() << "Change: " << format_amount_with_asset_id(*m_wallet, pd.m_change, transfer_asset_id);
       success_msg_writer() << "Fee: " << print_money(fee);
       success_msg_writer() << "Note: " << m_wallet->get_tx_note(txid);
-      return true;
+      found = true;
     }
   }
 
-  fail_msg_writer() << tr("Transaction ID not found");
+  if (!found)
+    fail_msg_writer() << tr("Transaction ID not found");
+  
   return true;
 }
 //----------------------------------------------------------------------------------------------------

@@ -2554,6 +2554,21 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
       ++i;
   }
 
+  // HF21: Also suppress asset change outputs sent back to the spending account.
+  // Asset amounts are in different units so we don't add them to sub_change;
+  // instead we track them separately so the consistency check stays valid.
+  uint64_t asset_sub_change = 0;
+  for (auto i = tx_money_got_in_outs.begin(); i != tx_money_got_in_outs.end();)
+  {
+    if (subaddr_account && i->index.major == *subaddr_account && i->asset_id != crypto::null_aid)
+    {
+      asset_sub_change += i->amount;
+      i = tx_money_got_in_outs.erase(i);
+    }
+    else
+      ++i;
+  }
+
   // create payment_details for each incoming transfer to a subaddress index
   crypto::hash payment_id = null_hash;
   if (tx_money_got_in_outs.size() > 0 || earliest_flash_got_mined_transfers_index != NO_FLASH_MINED_INDEX)
@@ -2607,7 +2622,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
 
   if (tx_money_got_in_outs.size() > 0)
   {
-    uint64_t total_received_2 = sub_change;
+    uint64_t total_received_2 = sub_change + asset_sub_change;
     for (const auto& i : tx_money_got_in_outs)
       total_received_2 += i.amount;
 
@@ -6379,7 +6394,7 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   {
     for (auto it = m_transfers.rbegin(); it != m_transfers.rend(); ++it)
     {
-      if (it->m_txid == pd.m_tx_hash && it->m_asset_id != crypto::null_aid)
+      if (it->m_txid == pd.m_tx_hash && it->m_asset_id != crypto::null_aid && it->amount() == pd.m_amount)
       {
         deduced_asset_id = it->m_asset_id;
         break;
@@ -6444,8 +6459,16 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
     }
   }
 
+  bool has_any_zarcanum_dest = false;
+  for (const auto& d : pd.m_dests) {
+    if (d.is_zarcanum()) {
+      has_any_zarcanum_dest = true;
+      break;
+    }
+  }
+
   for (const auto &d: pd.m_dests) {
-    crypto::asset_id actual_asset_id = d.is_zarcanum() ? d.asset_id : deduced_asset_id;
+    crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
     bool is_zarcanum = actual_asset_id != crypto::null_aid;
     if (d.amount == 0 && is_zarcanum)
       continue;
@@ -6487,7 +6510,16 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
   }
   else if (!pd.m_dests.empty())
   {
-    crypto::asset_id first_actual_asset_id = pd.m_dests.front().is_zarcanum() ? pd.m_dests.front().asset_id : deduced_asset_id;
+    crypto::asset_id first_actual_asset_id = crypto::null_aid;
+    for (const auto& d : pd.m_dests)
+    {
+      crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
+      if (actual_asset_id != crypto::null_aid)
+      {
+        first_actual_asset_id = actual_asset_id;
+        break;
+      }
+    }
     if (first_actual_asset_id != crypto::null_aid)
     {
       if (pd.m_pay_type != wallet::pay_type::deploy_asset && pd.m_pay_type != wallet::pay_type::emit_asset)
@@ -6495,7 +6527,11 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
         result.asset_id = tools::type_to_hex(first_actual_asset_id);
         result.amount = 0;
         for (const auto& d : pd.m_dests)
-          result.amount += d.amount;
+        {
+          crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
+          if (actual_asset_id == first_actual_asset_id)
+            result.amount += d.amount;
+        }
       }
     }
   }
@@ -6551,8 +6587,16 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
     }
   }
 
+  bool has_any_zarcanum_dest = false;
+  for (const auto& d : pd.m_dests) {
+    if (d.is_zarcanum()) {
+      has_any_zarcanum_dest = true;
+      break;
+    }
+  }
+
   for (const auto &d: pd.m_dests) {
-    crypto::asset_id actual_asset_id = d.is_zarcanum() ? d.asset_id : deduced_asset_id;
+    crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
     bool is_zarcanum = actual_asset_id != crypto::null_aid;
     if (d.amount == 0 && is_zarcanum)
       continue;
@@ -6595,7 +6639,16 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   }
   else if (!pd.m_dests.empty())
   {
-    crypto::asset_id first_actual_asset_id = pd.m_dests.front().is_zarcanum() ? pd.m_dests.front().asset_id : deduced_asset_id;
+    crypto::asset_id first_actual_asset_id = crypto::null_aid;
+    for (const auto& d : pd.m_dests)
+    {
+      crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
+      if (actual_asset_id != crypto::null_aid)
+      {
+        first_actual_asset_id = actual_asset_id;
+        break;
+      }
+    }
     if (first_actual_asset_id != crypto::null_aid)
     {
       if (pd.m_pay_type != wallet::pay_type::deploy_asset && pd.m_pay_type != wallet::pay_type::emit_asset)
@@ -6603,7 +6656,11 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
         result.asset_id = tools::type_to_hex(first_actual_asset_id);
         result.amount = 0;
         for (const auto& d : pd.m_dests)
-          result.amount += d.amount;
+        {
+          crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
+          if (actual_asset_id == first_actual_asset_id)
+            result.amount += d.amount;
+        }
       }
     }
   }
@@ -8449,7 +8506,7 @@ bool wallet2::find_and_save_rings(bool force)
   {
     size_t ntxes = slice + SLICE_SIZE > txs_hashes.size() ? txs_hashes.size() - slice : SLICE_SIZE;
     nlohmann::json get_transactions_params{
-      {"txs_hashes", {hashes_to_hex(txs_hashes.begin() + slice, txs_hashes.begin() + ntxes)}},
+      {"txs_hashes", hashes_to_hex(txs_hashes.begin() + slice, txs_hashes.begin() + slice + ntxes)},
       {"data",true}
     };
     auto res = m_http_client.json_rpc("get_transactions", get_transactions_params);
