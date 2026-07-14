@@ -6565,7 +6565,7 @@ bool simple_wallet::locked_transfer(const std::vector<std::string> &args_)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::locked_sweep_all(const std::vector<std::string> &args_)
 {
-  return sweep_main(m_current_subaddress_account, 0, Transfer::Locked, args_);
+  return sweep_main(m_current_subaddress_account, 0, Transfer::Locked, args_, true);
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::register_master_node(const std::vector<std::string> &args_)
@@ -8606,11 +8606,13 @@ bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
         const auto& td = m_wallet->get_transfer_details(i);
         amounts_unmixable[td.get_asset_id()] += td.amount();
       }
+      amounts_unmixable[crypto::null_aid] -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
     }
 
     std::string sent_str;
     for (const auto& [asset_id, amount] : amounts_unmixable)
     {
+      if (amount == 0) continue;
       if (!sent_str.empty())
         sent_str += " and ";
       sent_str += format_amount_with_asset_id(*m_wallet, amount, asset_id == crypto::null_aid ? "" : tools::type_to_hex(asset_id), true);
@@ -8735,13 +8737,16 @@ bool simple_wallet::sweep_main_internal(sweep_type_t sweep_type, std::vector<too
       amounts_sent[td.get_asset_id()] += td.amount();
     }
 
-    if (sweep_type == sweep_type_t::stake || sweep_type == sweep_type_t::register_stake)
-      amounts_sent[crypto::null_aid] -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
+    // Always subtract the BDX change and the BDX fee from the BDX inputs.
+    // This ensures that if BDX was only pulled in to pay the fee for an asset
+    // transfer, its net "swept" amount becomes 0 and won't be misleadingly shown.
+    amounts_sent[crypto::null_aid] -= ptx_vector[n].change_dts.amount + ptx_vector[n].fee;
   }
 
   std::string sent_str;
   for (const auto& [asset_id, amount] : amounts_sent)
   {
+    if (amount == 0) continue;
     if (!sent_str.empty())
       sent_str += " and ";
     sent_str += format_amount_with_asset_id(*m_wallet, amount, asset_id == crypto::null_aid ? "" : tools::type_to_hex(asset_id), true);
