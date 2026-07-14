@@ -282,7 +282,7 @@ namespace cryptonote
 }
 
 BOOST_CLASS_VERSION(cryptonote::tx_source_entry, 1)
-BOOST_CLASS_VERSION(cryptonote::tx_destination_entry, 2)
+BOOST_CLASS_VERSION(cryptonote::tx_destination_entry, 3)
 
 namespace boost
 {
@@ -319,6 +319,9 @@ namespace boost
       }
       a & x.original;
       a & x.is_integrated;
+      if (ver < 3)
+        return;
+      a & x.asset_id;
     }
   }
 }

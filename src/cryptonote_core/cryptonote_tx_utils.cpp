@@ -575,14 +575,12 @@ namespace cryptonote
   {
     account_public_address addr = {null_pkey, null_pkey};
     size_t count = 0;
-    bool found_change = false;
     for (const auto &i : destinations)
     {
       if (i.amount == 0)
         continue;
-      if (change_addr && *change_addr == i && !found_change)
+      if (change_addr && change_addr->addr == i.addr)
       {
-        found_change = true;
         continue;
       }
       if (i.addr == addr)

@@ -1776,7 +1776,7 @@ private:
 
 }
 BOOST_CLASS_VERSION(tools::wallet2, 30)
-BOOST_CLASS_VERSION(tools::wallet2::payment_details, 6)
+BOOST_CLASS_VERSION(tools::wallet2::payment_details, 7)
 BOOST_CLASS_VERSION(tools::wallet2::pool_payment_details, 1)
 BOOST_CLASS_VERSION(tools::wallet2::unconfirmed_transfer_details, 9)
 BOOST_CLASS_VERSION(tools::wallet2::confirmed_transfer_details, 8)
@@ -1943,6 +1943,12 @@ namespace boost::serialization
       a & x.m_unmined_flash;
       if (ver < 6) return;
       a & x.m_was_flash;
+      if (ver < 7)
+      {
+        x.m_asset_id = crypto::null_aid;
+        return;
+      }
+      a & x.m_asset_id;
     }
 
     template <class Archive>
