@@ -481,6 +481,32 @@ namespace cryptonote
     const size_t n_padded_outputs = bulletproof_plus ? rct::n_bulletproof_plus_max_amounts(rv.p.bulletproofs_plus) : rct::n_bulletproof_max_amounts(rv.p.bulletproofs);
     uint64_t bp_clawback = get_transaction_weight_clawback(tx, n_padded_outputs);
     CHECK_AND_ASSERT_THROW_MES_L1(bp_clawback <= std::numeric_limits<uint64_t>::max() - blob_size, "Weight overflow");
+    
+    // Add artificial weight padding for view wallets missing Zarcanum asset proofs
+    if (tx.version >= txversion::v4_tx_types && tx.asset_proofs.empty())
+    {
+      size_t num_zc_inputs = 0;
+      for (const auto& in : tx.vin)
+        if (std::holds_alternative<txin_zc_input>(in))
+          num_zc_inputs++;
+          
+      size_t num_zc_outputs = 0;
+      for (const auto& out : tx.vout)
+        if (std::holds_alternative<tx_out_zarcanum>(out.target))
+          num_zc_outputs++;
+          
+      if (num_zc_inputs > 0 || num_zc_outputs > 0)
+      {
+        size_t estimated_asset_proofs_size = 0;
+        estimated_asset_proofs_size += num_zc_inputs * 928;
+        estimated_asset_proofs_size += num_zc_outputs * 516;
+        if (num_zc_outputs > 0) estimated_asset_proofs_size += 640;
+
+        estimated_asset_proofs_size += 512; // padding for vector lengths
+        return blob_size + bp_clawback + estimated_asset_proofs_size;
+      }
+    }
+
     return blob_size + bp_clawback;
   }
   //---------------------------------------------------------------
