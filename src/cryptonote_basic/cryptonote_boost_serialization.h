@@ -225,6 +225,9 @@ namespace boost
       a & (rct::rctSigBase&)x.rct_signatures;
       if (x.rct_signatures.type != rct::RCTType::Null)
         a & x.rct_signatures.p;
+
+      if (ver >= 1)
+        a & x.asset_proofs;
     }
   }
 
@@ -434,9 +437,94 @@ namespace boost
     a & x.range_proof_type;
     a & x.bp_version;
   }
+  template <class Archive>
+  inline void serialize(Archive &a, crypto::schnorr_sig_s &x, const boost::serialization::version_type ver)
+  {
+    a & x.y;
+    a & x.c;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, crypto::linear_composition_proof_s &x, const boost::serialization::version_type ver)
+  {
+    a & x.y0;
+    a & x.y1;
+    a & x.c;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, crypto::double_schnorr_sig_s &x, const boost::serialization::version_type ver)
+  {
+    a & x.y0;
+    a & x.y1;
+    a & x.c;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, crypto::BGE_proof_s &x, const boost::serialization::version_type ver)
+  {
+    a & x.A;
+    a & x.B;
+    a & x.Pk;
+    a & x.f;
+    a & x.y;
+    a & x.z;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, crypto::vector_ug_aggregation_proof_s &x, const boost::serialization::version_type ver)
+  {
+    a & x.amount_commitments_for_rp_aggregation;
+    a & x.y0s;
+    a & x.y1s;
+    a & x.c;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::clsag_ggx &x, const boost::serialization::version_type ver)
+  {
+    a & x.s_g;
+    a & x.s_x;
+    a & x.c1;
+    a & x.D;
+    a & x.E;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::zc_asset_surjection_proof &x, const boost::serialization::version_type ver)
+  {
+    a & x.bge_proofs;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::zc_balance_proof &x, const boost::serialization::version_type ver)
+  {
+    a & x.P;
+    a & x.dss;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::asset_operation_proof &x, const boost::serialization::version_type ver)
+  {
+    a & x.flags;
+    if (x.has_composition_proof())
+      a & x.composition_proof;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::asset_operation_ownership_proof &x, const boost::serialization::version_type ver)
+  {
+    a & x.sig;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::ZC_sig &x, const boost::serialization::version_type ver)
+  {
+    a & x.clsag_sig;
+    a & x.pseudo_out_amount_commitment;
+    a & x.pseudo_out_blinded_asset_id;
+  }
+  template <class Archive>
+  inline void serialize(Archive &a, rct::zc_outs_range_proof &x, const boost::serialization::version_type ver)
+  {
+    a & x.bpp;
+    a & x.aggregation_proof;
+  }
 }
 }
+
 
 BOOST_CLASS_VERSION(rct::rctSigPrunable, 2)
 BOOST_CLASS_VERSION(rct::rctSig, 2)
 BOOST_CLASS_VERSION(rct::multisig_out, 1)
+BOOST_CLASS_VERSION(cryptonote::transaction, 1)

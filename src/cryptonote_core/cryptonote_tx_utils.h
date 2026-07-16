@@ -281,7 +281,7 @@ namespace cryptonote
 
 }
 
-BOOST_CLASS_VERSION(cryptonote::tx_source_entry, 1)
+BOOST_CLASS_VERSION(cryptonote::tx_source_entry, 2)
 BOOST_CLASS_VERSION(cryptonote::tx_destination_entry, 3)
 
 namespace boost
@@ -302,6 +302,11 @@ namespace boost
         return;
       a & x.multisig_kLRki;
       a & x.real_out_additional_tx_keys;
+      if (ver < 2)
+        return;
+      a & x.asset_id;
+      a & x.asset_mask;
+      a & x.ring_blinded_asset_ids;
     }
 
     template <class Archive>

@@ -1526,9 +1526,11 @@ namespace cryptonote
           }
           const rct::key asset_proof_message = rct::get_hf21_asset_proof_message(tx, input_rings, hwdev);
 
-          // ── HF21: ZC_sig generation for zarcanum inputs ──────────────────────
-          // Deferred until now since the ring signature message depends on
-          // the finalized tx. zc_pending is index-aligned with the final
+          if (!zero_secret_key)
+          {
+            // ── HF21: ZC_sig generation for zarcanum inputs ──────────────────────
+            // Deferred until now since the ring signature message depends on
+            // the finalized tx. zc_pending is index-aligned with the final
           // tx.vin order, so the resulting ZC_sigs come out in the same
           // relative order as their zarcanum inputs (matching
           // verAssetProofs's matching convention).
@@ -1821,6 +1823,7 @@ namespace cryptonote
             tx.asset_proofs.push_back(std::move(ownership_proof));
             MINFO("Attached ownership proof for emit_asset/update_asset tx: " << get_transaction_hash(tx));
           }
+          } // if (!zero_secret_key)
 
           memwipe(inSk.data(), inSk.size() * sizeof(rct::ctkey));
 
