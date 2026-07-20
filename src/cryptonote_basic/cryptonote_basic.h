@@ -439,8 +439,11 @@ namespace cryptonote
           }
 
           // HF21: confidential asset proofs (present when has_zarcanum_outputs()
-          // or for update_asset txs).
-          if (!asset_proofs.empty() || has_zarcanum_outputs() || type == txtype::update_asset)
+          // or for update_asset/burn_asset txs). Burn-all transactions can
+          // consume confidential inputs without producing any confidential
+          // outputs, so the tx type must participate in the deserialization
+          // gate or the trailing proof bytes will be left unread.
+          if (!asset_proofs.empty() || has_zarcanum_outputs() || type == txtype::update_asset || type == txtype::burn_asset)
           {
             ar.tag("asset_proofs");
             serialization::value(ar, asset_proofs);

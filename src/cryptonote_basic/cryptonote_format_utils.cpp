@@ -1580,11 +1580,11 @@ namespace cryptonote
         // (blob.substr(unprunable_size) covers them), so this re-serialize path
         // must emit them too, zc_sig first then asset_proofs, under the SAME
         // presence gates as transaction::serialize_value, or the prunable hash
-        // won't match for CA txs (zc inputs/outputs and update_asset carry their
-        // sigs/proofs here, not in the native CLSAG/bulletproof arrays).
+        // won't match for CA txs (zc inputs/outputs and update_asset/burn_asset
+        // carry their sigs/proofs here, not in the native CLSAG/bulletproof arrays).
         if (t.has_zarcanum_inputs())
           serialization::value(ba, const_cast<transaction&>(t).zc_sig);
-        if (!t.asset_proofs.empty() || t.has_zarcanum_outputs() || t.type == txtype::update_asset)
+        if (!t.asset_proofs.empty() || t.has_zarcanum_outputs() || t.type == txtype::update_asset || t.type == txtype::burn_asset)
           serialization::value(ba, const_cast<transaction&>(t).asset_proofs);
       } catch (const std::exception& e) {
         LOG_ERROR("Failed to serialize rct signatures (prunable): " << e.what());
