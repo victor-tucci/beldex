@@ -2630,7 +2630,8 @@ bool WalletImpl::checkTxKey(const std::string &txid_str, std::string_view tx_key
 
     try
     {
-        wallet()->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations);
+        std::map<crypto::asset_id, uint64_t> asset_received;
+        wallet()->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations, asset_received);
         clearStatus();
         return true;
     }
@@ -2689,7 +2690,8 @@ bool WalletImpl::checkTxProof(const std::string &txid_str, const std::string &ad
 
     try
     {
-        good = wallet()->check_tx_proof(txid, info.address, info.is_subaddress, message, signature, received, in_pool, confirmations);
+        std::map<crypto::asset_id, uint64_t> asset_received;
+        good = wallet()->check_tx_proof(txid, info.address, info.is_subaddress, message, signature, received, in_pool, confirmations, asset_received);
         clearStatus();
         return true;
     }

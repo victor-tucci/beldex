@@ -1066,6 +1066,14 @@ BELDEX_RPC_DOC_INTROSPECT
     };
   };
 
+  struct asset_received_entry
+  {
+    std::string asset_id; // Hex-encoded asset ID
+    uint64_t amount;      // Amount of the asset received
+
+    KV_MAP_SERIALIZABLE
+  };
+
   BELDEX_RPC_DOC_INTROSPECT
   // Check a transaction in the blockchain with its secret key.
   struct CHECK_TX_KEY : RPC_COMMAND
@@ -1083,7 +1091,8 @@ BELDEX_RPC_DOC_INTROSPECT
 
     struct response
     {
-      uint64_t received;      // Amount of the transaction.
+      uint64_t received;      // Amount of the native transaction.
+      std::vector<asset_received_entry> asset_received; // Amount of assets received
       bool in_pool;           // States if the transaction is still in pool or has been added to a block.
       uint64_t confirmations; // Number of block mined after the one with the transaction.
 
@@ -1134,6 +1143,7 @@ BELDEX_RPC_DOC_INTROSPECT
     {
       bool good;              // States if the inputs proves the transaction.
       uint64_t received;      // Amount of the transaction.
+      std::vector<asset_received_entry> asset_received; // Amount of assets received
       bool in_pool;           // States if the transaction is still in pool or has been added to a block.
       uint64_t confirmations; // Number of block mined after the one with the transaction.
 
@@ -2736,6 +2746,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     {
       std::string asset_id;        // Hex-encoded asset ID
       std::string json_filename;   // Path to the asset JSON descriptor file containing metadata to update
+      std::string json_string;     // Inline asset JSON descriptor
       uint32_t priority;           // Transaction priority
       uint32_t account_index;      // (Optional) Index of the account to pay for the transaction fees. (defaults to 0)
       std::set<uint32_t> subaddr_indices; // (Optional) List of subaddresses to pay for the transaction fees.
