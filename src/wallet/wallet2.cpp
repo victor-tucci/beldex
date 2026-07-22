@@ -11727,7 +11727,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_deploy_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::deploy_new_asset, priority);
+      *hf_ver, txtype::deploy_new_asset, priority, assets::burn_needed(*hf_ver, cryptonote::asset_descriptor_operation_type::register_asset));
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11748,7 +11748,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_emit_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::emit_asset, priority);
+      *hf_ver, txtype::emit_asset, priority, assets::burn_needed(*hf_ver, cryptonote::asset_descriptor_operation_type::emit_asset));
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11767,7 +11767,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_update_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::update_asset, priority);
+      *hf_ver, txtype::update_asset, priority, assets::burn_needed(*hf_ver, cryptonote::asset_descriptor_operation_type::update_asset));
 
   std::vector<cryptonote::tx_destination_entry> dsts; // Update tx typically doesn't transfer funds
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
