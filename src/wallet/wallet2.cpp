@@ -6472,6 +6472,8 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
     bool is_zarcanum = actual_asset_id != crypto::null_aid;
     if (d.amount == 0 && is_zarcanum)
       continue;
+    if (d.addr == cryptonote::null_address)
+      continue;
     result.destinations.push_back({});
     auto& td = result.destinations.back();
     td.amount = d.amount;
@@ -6599,6 +6601,8 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
     crypto::asset_id actual_asset_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.asset_id : deduced_asset_id;
     bool is_zarcanum = actual_asset_id != crypto::null_aid;
     if (d.amount == 0 && is_zarcanum)
+      continue;
+    if (d.addr == cryptonote::null_address)
       continue;
     result.destinations.push_back({});
     auto& td = result.destinations.back();
@@ -7744,16 +7748,21 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
 
     for (size_t i = 0; i < tx.vout.size(); ++i)
     {
-      if (!std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target))
+      if (!std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target) &&
+          !std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[i].target))
         continue;
-      const cryptonote::txout_to_key &out = var::get<cryptonote::txout_to_key>(tx.vout[i].target);
+      crypto::public_key out_key;
+      if (std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target))
+        out_key = var::get<cryptonote::txout_to_key>(tx.vout[i].target).key;
+      else
+        out_key = var::get<cryptonote::tx_out_zarcanum>(tx.vout[i].target).stealth_address;
       // if this output is back to this wallet, we can calculate its key image already
-      if (!is_out_to_acc_precomp(m_subaddresses, out.key, derivation, additional_derivations, i, hwdev))
+      if (!is_out_to_acc_precomp(m_subaddresses, out_key, derivation, additional_derivations, i, hwdev))
         continue;
       crypto::key_image ki;
       cryptonote::keypair in_ephemeral;
-      if (generate_key_image_helper(keys, m_subaddresses, out.key, tx_pub_key, additional_tx_pub_keys, i, in_ephemeral, ki, hwdev))
-        signed_txes.tx_key_images[out.key] = ki;
+      if (generate_key_image_helper(keys, m_subaddresses, out_key, tx_pub_key, additional_tx_pub_keys, i, in_ephemeral, ki, hwdev))
+        signed_txes.tx_key_images[out_key] = ki;
       else
         MERROR("Failed to calculate key image");
     }
@@ -11736,7 +11745,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_deploy_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::deploy_new_asset, priority);
+      *hf_ver, txtype::deploy_new_asset, priority, assets::burn_needed(*hf_ver, cryptonote::asset_descriptor_operation_type::register_asset));
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11757,7 +11766,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_emit_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::emit_asset, priority);
+      *hf_ver, txtype::emit_asset, priority, assets::burn_needed(*hf_ver, cryptonote::asset_descriptor_operation_type::emit_asset));
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11776,7 +11785,7 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_update_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::update_asset, priority);
+      *hf_ver, txtype::update_asset, priority, assets::burn_needed(*hf_ver, cryptonote::asset_descriptor_operation_type::update_asset));
 
   std::vector<cryptonote::tx_destination_entry> dsts; // Update tx typically doesn't transfer funds
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
@@ -12806,7 +12815,8 @@ bool wallet2::sanity_check(const std::vector<wallet2::pending_tx> &ptx_vector, s
       try
       {
         std::string proof = get_tx_proof(ptx.tx, ptx.tx_key, ptx.additional_tx_keys, address, r.second.second, "automatic-sanity-check");
-        check_tx_proof(ptx.tx, address, r.second.second, "automatic-sanity-check", proof, received);
+        std::map<crypto::asset_id, uint64_t> asset_received;
+        check_tx_proof(ptx.tx, address, r.second.second, "automatic-sanity-check", proof, received, asset_received);
       }
       catch (const std::exception &e) { received = 0; }
       total_received += received;
@@ -14256,7 +14266,7 @@ bool wallet2::check_spend_proof(const crypto::hash &txid, std::string_view messa
 }
 //----------------------------------------------------------------------------------------------------
 
-void wallet2::check_tx_key(const crypto::hash &txid, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const cryptonote::account_public_address &address, uint64_t &received, bool &in_pool, uint64_t &confirmations)
+void wallet2::check_tx_key(const crypto::hash &txid, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const cryptonote::account_public_address &address, uint64_t &received, bool &in_pool, uint64_t &confirmations, std::map<crypto::asset_id, uint64_t>& asset_received)
 {
   crypto::key_derivation derivation;
   THROW_WALLET_EXCEPTION_IF(!crypto::generate_key_derivation(address.m_view_public_key, tx_key, derivation), error::wallet_internal_error,
@@ -14268,10 +14278,10 @@ void wallet2::check_tx_key(const crypto::hash &txid, const crypto::secret_key &t
     THROW_WALLET_EXCEPTION_IF(!crypto::generate_key_derivation(address.m_view_public_key, additional_tx_keys[i], additional_derivations[i]), error::wallet_internal_error,
       "Failed to generate key derivation from supplied parameters");
 
-  check_tx_key_helper(txid, derivation, additional_derivations, address, received, in_pool, confirmations);
+  check_tx_key_helper(txid, derivation, additional_derivations, address, received, in_pool, confirmations, asset_received);
 }
 
-void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypto::key_derivation &derivation, const std::vector<crypto::key_derivation> &additional_derivations, const cryptonote::account_public_address &address, uint64_t &received) const
+void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypto::key_derivation &derivation, const std::vector<crypto::key_derivation> &additional_derivations, const cryptonote::account_public_address &address, uint64_t &received, std::map<crypto::asset_id, uint64_t>& asset_received) const
 {
   received = 0;
 
@@ -14283,52 +14293,70 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
   for (size_t n = 0; n < tx.vout.size(); ++n)
   {
     const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[n].target));
-    if (!out_key)
+    const cryptonote::tx_out_zarcanum* const out_zarcanum = std::get_if<cryptonote::tx_out_zarcanum>(std::addressof(tx.vout[n].target));
+
+    if (!out_key && !out_zarcanum)
       continue;
+
+    crypto::public_key target_stealth_address = out_key ? out_key->key : out_zarcanum->stealth_address;
 
     crypto::public_key derived_out_key;
     bool r = crypto::derive_public_key(derivation, n, address.m_spend_public_key, derived_out_key);
     THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to derive public key");
-    bool found = out_key->key == derived_out_key;
+    bool found = target_stealth_address == derived_out_key;
     crypto::key_derivation found_derivation = derivation;
     if (!found && !additional_derivations.empty())
     {
       r = crypto::derive_public_key(additional_derivations[n], n, address.m_spend_public_key, derived_out_key);
       THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to derive public key");
-      found = out_key->key == derived_out_key;
+      found = target_stealth_address == derived_out_key;
       found_derivation = additional_derivations[n];
     }
 
     if (found)
     {
       uint64_t amount;
-      if (tx.version == txversion::v1 || tx.rct_signatures.type == rct::RCTType::Null)
+      if (out_zarcanum)
       {
-        amount = tx.vout[n].amount;
+        crypto::asset_id asset_id{};
+        rct::key amount_mask{}, asset_blinding_mask{};
+        bool decoded = cryptonote::decode_zarcanum_output(
+                 m_account.get_keys(), *out_zarcanum, found_derivation, n,
+                 amount, asset_id, amount_mask, asset_blinding_mask);
+        if (decoded)
+          asset_received[asset_id] += amount;
       }
       else
       {
-        crypto::secret_key scalar1;
-        crypto::derivation_to_scalar(found_derivation, n, scalar1);
-        rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[rct_output_index];
-        rct::ecdhDecode(ecdh_info, rct::sk2rct(scalar1), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
-        const rct::key C = tx.rct_signatures.outPk[rct_output_index].mask;
-        rct::key Ctmp;
-        THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.mask.bytes) != 0, error::wallet_internal_error, "Bad ECDH input mask");
-        THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.amount.bytes) != 0, error::wallet_internal_error, "Bad ECDH input amount");
-        rct::addKeys2(Ctmp, ecdh_info.mask, ecdh_info.amount, rct::H);
-        if (rct::equalKeys(C, Ctmp))
-          amount = rct::h2d(ecdh_info.amount);
+        if (tx.version == txversion::v1 || tx.rct_signatures.type == rct::RCTType::Null)
+        {
+          amount = tx.vout[n].amount;
+        }
         else
-          amount = 0;
+        {
+          crypto::secret_key scalar1;
+          crypto::derivation_to_scalar(found_derivation, n, scalar1);
+          rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[rct_output_index];
+          rct::ecdhDecode(ecdh_info, rct::sk2rct(scalar1), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
+          const rct::key C = tx.rct_signatures.outPk[rct_output_index].mask;
+          rct::key Ctmp;
+          THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.mask.bytes) != 0, error::wallet_internal_error, "Bad ECDH input mask");
+          THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.amount.bytes) != 0, error::wallet_internal_error, "Bad ECDH input amount");
+          rct::addKeys2(Ctmp, ecdh_info.mask, ecdh_info.amount, rct::H);
+          if (rct::equalKeys(C, Ctmp))
+            amount = rct::h2d(ecdh_info.amount);
+          else
+            amount = 0;
+        }
+        received += amount;
       }
-      received += amount;
     }
-    ++rct_output_index;
+    if (out_key)
+      ++rct_output_index;
   }
 }
 
-void wallet2::check_tx_key_helper(const crypto::hash &txid, const crypto::key_derivation &derivation, const std::vector<crypto::key_derivation> &additional_derivations, const cryptonote::account_public_address &address, uint64_t &received, bool &in_pool, uint64_t &confirmations)
+void wallet2::check_tx_key_helper(const crypto::hash &txid, const crypto::key_derivation &derivation, const std::vector<crypto::key_derivation> &additional_derivations, const cryptonote::account_public_address &address, uint64_t &received, bool &in_pool, uint64_t &confirmations, std::map<crypto::asset_id, uint64_t>& asset_received)
 {
   nlohmann::json get_transactions_params{
     {"txs_hashes", { tools::type_to_hex(txid) }},
@@ -14344,7 +14372,7 @@ void wallet2::check_tx_key_helper(const crypto::hash &txid, const crypto::key_de
   THROW_WALLET_EXCEPTION_IF(!additional_derivations.empty() && additional_derivations.size() != tx.vout.size(), error::wallet_internal_error,
     "The size of additional derivations is wrong");
 
-  check_tx_key_helper(tx, derivation, additional_derivations, address, received);
+  check_tx_key_helper(tx, derivation, additional_derivations, address, received, asset_received);
 
   in_pool = res["txs"].front().value("in_pool", false);
   confirmations = 0;
@@ -14483,8 +14511,9 @@ std::string wallet2::get_tx_proof(const cryptonote::transaction &tx, const crypt
   for (size_t i = 1; i < num_sigs; ++i)
     THROW_WALLET_EXCEPTION_IF(!crypto::generate_key_derivation(shared_secret[i], rct::rct2sk(rct::I), additional_derivations[i - 1]), error::wallet_internal_error, "Failed to generate key derivation");
   uint64_t received;
-  check_tx_key_helper(tx, derivation, additional_derivations, address, received);
-  THROW_WALLET_EXCEPTION_IF(!received, error::wallet_internal_error, tr("No funds received in this tx."));
+  std::map<crypto::asset_id, uint64_t> asset_received;
+  check_tx_key_helper(tx, derivation, additional_derivations, address, received, asset_received);
+  THROW_WALLET_EXCEPTION_IF(!received && asset_received.empty(), error::wallet_internal_error, tr("No funds received in this tx."));
 
   // concatenate all signature strings
   for (size_t i = 0; i < num_sigs; ++i)
@@ -14495,7 +14524,7 @@ std::string wallet2::get_tx_proof(const cryptonote::transaction &tx, const crypt
   return sig_str;
 }
 
-bool wallet2::check_tx_proof(const crypto::hash &txid, const cryptonote::account_public_address &address, bool is_subaddress, std::string_view message, std::string_view sig_str, uint64_t &received, bool &in_pool, uint64_t &confirmations)
+bool wallet2::check_tx_proof(const crypto::hash &txid, const cryptonote::account_public_address &address, bool is_subaddress, std::string_view message, std::string_view sig_str, uint64_t &received, bool &in_pool, uint64_t &confirmations, std::map<crypto::asset_id, uint64_t>& asset_received)
 {
   // fetch tx pubkey from the daemon
   nlohmann::json get_transactions_params{
@@ -14510,7 +14539,7 @@ bool wallet2::check_tx_proof(const crypto::hash &txid, const cryptonote::account
   THROW_WALLET_EXCEPTION_IF(!ok, error::wallet_internal_error, "Failed to parse transaction from daemon");
   THROW_WALLET_EXCEPTION_IF(tx_hash != txid, error::wallet_internal_error, "Failed to get the right transaction from daemon");
 
-  if (!check_tx_proof(tx, address, is_subaddress, message, sig_str, received))
+  if (!check_tx_proof(tx, address, is_subaddress, message, sig_str, received, asset_received))
     return false;
 
   in_pool = res["txs"].front().value("in_pool", false);;
@@ -14526,7 +14555,7 @@ bool wallet2::check_tx_proof(const crypto::hash &txid, const cryptonote::account
   return true;
 }
 
-bool wallet2::check_tx_proof(const cryptonote::transaction &tx, const cryptonote::account_public_address &address, bool is_subaddress, std::string_view message, std::string_view sig_str, uint64_t &received) const
+bool wallet2::check_tx_proof(const cryptonote::transaction &tx, const cryptonote::account_public_address &address, bool is_subaddress, std::string_view message, std::string_view sig_str, uint64_t &received, std::map<crypto::asset_id, uint64_t>& asset_received) const
 {
   bool is_out;
   if (tools::starts_with(sig_str, OUTBOUND_PROOF_MAGIC)) {
@@ -14619,7 +14648,7 @@ bool wallet2::check_tx_proof(const cryptonote::transaction &tx, const cryptonote
       if (good_signature[i])
         THROW_WALLET_EXCEPTION_IF(!crypto::generate_key_derivation(shared_secret[i], rct::rct2sk(rct::I), additional_derivations[i - 1]), error::wallet_internal_error, "Failed to generate key derivation");
 
-    check_tx_key_helper(tx, derivation, additional_derivations, address, received);
+    check_tx_key_helper(tx, derivation, additional_derivations, address, received, asset_received);
     return true;
   }
   return false;
@@ -15937,9 +15966,15 @@ size_t wallet2::import_outputs(const std::pair<size_t, std::vector<tools::wallet
     }
     const std::vector<crypto::public_key> additional_tx_pub_keys = get_additional_tx_pub_keys_from_extra(td.m_tx);
 
-    THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target),
+    THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target) &&
+                              !std::holds_alternative<cryptonote::tx_out_zarcanum>(td.m_tx.vout[td.m_internal_output_index].target),
         error::wallet_internal_error, "Unsupported output type");
-    const crypto::public_key& out_key = var::get<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key;
+    
+    crypto::public_key out_key;
+    if (std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target))
+      out_key = var::get<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key;
+    else
+      out_key = var::get<cryptonote::tx_out_zarcanum>(td.m_tx.vout[td.m_internal_output_index].target).stealth_address;
     bool r = cryptonote::generate_key_image_helper(m_account.get_keys(), m_subaddresses, out_key, tx_pub_key, additional_tx_pub_keys, td.m_internal_output_index, in_ephemeral, td.m_key_image, m_account.get_device());
     THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key image");
     if (should_expand(td.m_subaddr_index))
@@ -16484,7 +16519,7 @@ bool wallet2::parse_uri(std::string_view uri, std::string &address, std::string 
   }
   uri.remove_prefix(query_begins + 1);
 
-  std::unordered_set<std::string_view> have_arg;
+  std::unordered_set<std::string> have_arg;
   for (const auto &arg: tools::split(uri, "&"sv))
   {
     auto raw_kv = tools::split(arg, "="sv);

@@ -203,33 +203,9 @@ namespace
         !assign_uint64("current_supply", descriptor.current_supply) ||
         !assign_uint8("decimal_point", descriptor.decimal_point) ||
         !assign_string("ticker", descriptor.ticker) ||
-        !assign_string("full_name", descriptor.full_name))
+        !assign_string("full_name", descriptor.full_name) ||
+        !assign_string("meta_info", descriptor.meta_info))
       return false;
-
-    if (json.HasMember("meta_info")) {
-      if (json["meta_info"].IsObject()) {
-        if (!json["meta_info"].HasMember("url") || !json["meta_info"]["url"].IsString() || std::string(json["meta_info"]["url"].GetString()).empty()) {
-          error = "meta_info JSON must contain a non-empty 'url' string";
-          return false;
-        }
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        json["meta_info"].Accept(writer);
-        descriptor.meta_info = buffer.GetString();
-      } else if (json["meta_info"].IsString()) {
-        descriptor.meta_info = json["meta_info"].GetString();
-        if (descriptor.meta_info.find("http://") != 0 && descriptor.meta_info.find("https://") != 0 && descriptor.meta_info.find(".com") == std::string::npos) {
-          error = "meta_info must be a valid URL or a JSON object containing a 'url' field";
-          return false;
-        }
-      } else {
-        error = "meta_info must be a string or a JSON object";
-        return false;
-      }
-    } else {
-      error = "meta_info is required and must contain a URL";
-      return false;
-    }
 
     if (json.HasMember("owner"))
     {
@@ -2311,8 +2287,16 @@ namespace tools
     cryptonote::address_parse_info info;
     if(!get_account_address_from_str(info, m_wallet->nettype(), req.address))
       throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address"};
+    std::map<crypto::asset_id, uint64_t> asset_received;
 
-    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, res.received, res.in_pool, res.confirmations);
+    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, res.received, res.in_pool, res.confirmations, asset_received);
+    for (const auto& [aid, amount] : asset_received)
+    {
+      wallet_rpc::asset_received_entry entry;
+      entry.asset_id = tools::type_to_hex(aid);
+      entry.amount = amount;
+      res.asset_received.push_back(entry);
+    }
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2347,7 +2331,15 @@ namespace tools
       throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address"};
 
     {
-      res.good = m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, req.message, req.signature, res.received, res.in_pool, res.confirmations);
+      std::map<crypto::asset_id, uint64_t> asset_received;
+      res.good = m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, req.message, req.signature, res.received, res.in_pool, res.confirmations, asset_received);
+      for (const auto& [aid, amount] : asset_received)
+      {
+        wallet_rpc::asset_received_entry entry;
+        entry.asset_id = tools::type_to_hex(aid);
+        entry.amount = amount;
+        res.asset_received.push_back(entry);
+      }
     }
     return res;
   }
@@ -4286,8 +4278,8 @@ namespace {
     if (!tools::hex_to_type(req.asset_id, asset_id))
       throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
 
-    if (req.json_filename.empty())
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_filename is required"};
+    if (req.json_filename.empty() && req.json_string.empty())
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_filename or json_string is required"};
 
     nlohmann::json info_res;
     try {
@@ -4322,8 +4314,14 @@ namespace {
     // carry the new meta_info, the rest is taken from the current descriptor.
     cryptonote::asset_descriptor_base file_adb = adb;
     std::string error;
-    if (!load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), file_adb, error))
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + ": " + req.json_filename};
+    bool loaded = false;
+    if (!req.json_string.empty())
+      loaded = load_asset_descriptor_from_json(req.json_string, file_adb, error);
+    else
+      loaded = load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), file_adb, error);
+
+    if (!loaded)
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + (req.json_string.empty() ? (": " + req.json_filename) : "")};
 
     if (file_adb.meta_info == adb.meta_info)
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "update_asset: meta_info is unchanged, nothing to update"};

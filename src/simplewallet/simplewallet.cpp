@@ -202,33 +202,9 @@ namespace
         !assign_uint64("current_supply",   descriptor.current_supply)  ||
         !assign_uint8("decimal_point",     descriptor.decimal_point)   ||
         !assign_string("ticker",           descriptor.ticker)          ||
-        !assign_string("full_name",        descriptor.full_name))
+        !assign_string("full_name",        descriptor.full_name)       ||
+        !assign_string("meta_info",        descriptor.meta_info))
       return false;
-
-    if (json.HasMember("meta_info")) {
-      if (json["meta_info"].IsObject()) {
-        if (!json["meta_info"].HasMember("url") || !json["meta_info"]["url"].IsString() || std::string(json["meta_info"]["url"].GetString()).empty()) {
-          error = sw::tr("meta_info JSON must contain a non-empty 'url' string");
-          return false;
-        }
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        json["meta_info"].Accept(writer);
-        descriptor.meta_info = buffer.GetString();
-      } else if (json["meta_info"].IsString()) {
-        descriptor.meta_info = json["meta_info"].GetString();
-        if (descriptor.meta_info.find("http://") != 0 && descriptor.meta_info.find("https://") != 0 && descriptor.meta_info.find(".com") == std::string::npos) {
-          error = sw::tr("meta_info must be a valid URL or a JSON object containing a 'url' field");
-          return false;
-        }
-      } else {
-        error = sw::tr("meta_info must be a string or a JSON object");
-        return false;
-      }
-    } else {
-      error = sw::tr("meta_info is required and must contain a URL");
-      return false;
-    }
 
     if (json.HasMember("owner"))
     {
@@ -8055,15 +8031,9 @@ bool simple_wallet::assets_by_owner(const std::vector<std::string>& args_)
           {"full_name", info_res.value("full_name", "")},
           {"total_max_supply", info_res.value("total_max_supply", (uint64_t)0)},
           {"current_supply", info_res.value("current_supply", (uint64_t)0)},
-          {"decimal_point", info_res.value("decimal_point", 0)}
+          {"decimal_point", info_res.value("decimal_point", 0)},
+          {"meta_info", info_res.value("meta_info", "")}
         };
-
-        std::string meta_info_str = info_res.value("meta_info", "");
-        try {
-          out["meta_info"] = nlohmann::json::parse(meta_info_str);
-        } catch (...) {
-          out["meta_info"] = meta_info_str;
-        }
         success_msg_writer() << out.dump(2);
       }
     }
@@ -9698,7 +9668,8 @@ bool simple_wallet::check_tx_key(const std::vector<std::string> &args_)
     uint64_t received;
     bool in_pool = false;
     uint64_t confirmations;
-    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations);
+    std::map<crypto::asset_id, uint64_t> asset_received;
+    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations, asset_received);
 
     if (received > 0)
     {
@@ -9770,7 +9741,8 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
     uint64_t received;
     bool in_pool = false;
     uint64_t confirmations;
-    if (m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, args.size() == 4 ? args[3] : "", sig_str, received, in_pool, confirmations))
+    std::map<crypto::asset_id, uint64_t> asset_received;
+    if (m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, args.size() == 4 ? args[3] : "", sig_str, received, in_pool, confirmations, asset_received))
     {
       success_msg_writer(true) << tr("Good signature");
       if (received > 0)
