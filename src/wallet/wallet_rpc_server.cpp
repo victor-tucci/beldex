@@ -2287,8 +2287,16 @@ namespace tools
     cryptonote::address_parse_info info;
     if(!get_account_address_from_str(info, m_wallet->nettype(), req.address))
       throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address"};
+    std::map<crypto::asset_id, uint64_t> asset_received;
 
-    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, res.received, res.in_pool, res.confirmations);
+    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, res.received, res.in_pool, res.confirmations, asset_received);
+    for (const auto& [aid, amount] : asset_received)
+    {
+      wallet_rpc::asset_received_entry entry;
+      entry.asset_id = tools::type_to_hex(aid);
+      entry.amount = amount;
+      res.asset_received.push_back(entry);
+    }
     return res;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -2323,7 +2331,15 @@ namespace tools
       throw wallet_rpc_error{error_code::WRONG_ADDRESS, "Invalid address"};
 
     {
-      res.good = m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, req.message, req.signature, res.received, res.in_pool, res.confirmations);
+      std::map<crypto::asset_id, uint64_t> asset_received;
+      res.good = m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, req.message, req.signature, res.received, res.in_pool, res.confirmations, asset_received);
+      for (const auto& [aid, amount] : asset_received)
+      {
+        wallet_rpc::asset_received_entry entry;
+        entry.asset_id = tools::type_to_hex(aid);
+        entry.amount = amount;
+        res.asset_received.push_back(entry);
+      }
     }
     return res;
   }

@@ -9668,7 +9668,8 @@ bool simple_wallet::check_tx_key(const std::vector<std::string> &args_)
     uint64_t received;
     bool in_pool = false;
     uint64_t confirmations;
-    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations);
+    std::map<crypto::asset_id, uint64_t> asset_received;
+    m_wallet->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations, asset_received);
 
     if (received > 0)
     {
@@ -9740,7 +9741,8 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
     uint64_t received;
     bool in_pool = false;
     uint64_t confirmations;
-    if (m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, args.size() == 4 ? args[3] : "", sig_str, received, in_pool, confirmations))
+    std::map<crypto::asset_id, uint64_t> asset_received;
+    if (m_wallet->check_tx_proof(txid, info.address, info.is_subaddress, args.size() == 4 ? args[3] : "", sig_str, received, in_pool, confirmations, asset_received))
     {
       success_msg_writer(true) << tr("Good signature");
       if (received > 0)
