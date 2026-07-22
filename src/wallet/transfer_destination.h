@@ -41,9 +41,18 @@ struct transfer_destination
   std::string address; // Destination public address.
   uint64_t amount;     // Amount to send to each destination, in atomic units.
 
+  // Gateway bridge memo (HF22+), OPTIONAL: only meaningful when `address` is a
+  // gwB…/gwiB… gateway address. bridge_chain_name resolves via the daemon's
+  // gateway chain registry (e.g. "ethereum", "sepolia"); bridge_evm_address is
+  // 40-char hex (optional "0x"). Leave bridge_chain_name empty for no memo.
+  std::string bridge_chain_name;
+  std::string bridge_evm_address;
+
   BEGIN_KV_SERIALIZE_MAP()
     KV_SERIALIZE(amount)
     KV_SERIALIZE(address)
+    KV_SERIALIZE(bridge_chain_name)
+    KV_SERIALIZE(bridge_evm_address)
   END_KV_SERIALIZE_MAP()
 };
 

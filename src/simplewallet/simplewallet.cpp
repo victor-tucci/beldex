@@ -67,6 +67,7 @@
 #include "cryptonote_core/master_node_voting.h"
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_core/beldex_name_system.h"
+#include "cryptonote_core/gateway_chain_registry.h"
 #include "simplewallet.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
@@ -6002,7 +6003,37 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
         de.gateway_id         = gw_info.gateway_id;
         de.gateway_payment_id = gw_info.has_payment_id ? gw_info.payment_id : 0;
         de.original           = local_args[i];
-        i += 2;
+
+        // Gateway bridge memo (HF22+): OPTIONAL third token "<chain-name>:0x<40hex>"
+        // (e.g. "sepolia:0xDeaDBeeF..."), consumed only when it matches this
+        // shape -- no valid address contains ':', so this is unambiguous.
+        size_t consumed = 2;
+        if (i + 2 < local_args.size())
+        {
+          static const std::regex bridge_re("^([A-Za-z0-9_-]+):(0x[0-9a-fA-F]{40})$");
+          std::smatch match;
+          const std::string& token = local_args[i + 2];
+          if (std::regex_match(token, match, bridge_re))
+          {
+            auto chain_index = cryptonote::gateway_chain_name_to_index(match[1].str());
+            if (!chain_index)
+            {
+              fail_msg_writer() << tr("unknown bridge chain name: ") << match[1].str();
+              return false;
+            }
+            crypto::eth_address evm_addr{};
+            if (!tools::hex_to_type(std::string_view(match[2].str()).substr(2), evm_addr))
+            {
+              fail_msg_writer() << tr("invalid bridge evm address: ") << match[2].str();
+              return false;
+            }
+            de.gateway_bridge_chain_index = *chain_index;
+            de.gateway_bridge_evm_addr    = evm_addr;
+            consumed = 3;
+          }
+        }
+
+        i += consumed;
         dsts.push_back(de);
         continue;
       }

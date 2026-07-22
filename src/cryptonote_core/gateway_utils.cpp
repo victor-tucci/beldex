@@ -4,6 +4,7 @@
 
 #include "gateway_utils.h"
 
+#include <cstring>
 #include <limits>
 #include <mutex>
 #include <set>
@@ -757,6 +758,74 @@ namespace
   }
 }
 
+bool validate_gateway_bridge_memos(const transaction& tx, std::string& reason)
+{
+  std::set<uint32_t> seen;
+  size_t skip = 0;
+  tx_extra_gateway_bridge_memo m{};
+  while (get_field_from_tx_extra(tx.extra, m, skip++))
+  {
+    if (m.version != 0)
+    {
+      reason = "unsupported gateway bridge memo version";
+      return false;
+    }
+    if (!seen.insert(m.output_index).second)
+    {
+      reason = "duplicate gateway bridge memo output_index";
+      return false;
+    }
+    if (m.output_index >= tx.vout.size() || !std::holds_alternative<tx_out_gateway>(tx.vout[m.output_index].target))
+    {
+      reason = "gateway bridge memo output_index does not reference a gateway output";
+      return false;
+    }
+  }
+  return true;
+}
+
+bool decrypt_gateway_bridge_memo(const transaction& tx, const tx_extra_gateway_bridge_memo& memo,
+                                 const crypto::secret_key& gateway_view_secret_key,
+                                 gateway_bridge_memo_plaintext& out)
+{
+  if (memo.output_index >= tx.vout.size() || !std::holds_alternative<tx_out_gateway>(tx.vout[memo.output_index].target))
+    return false;
+
+  const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx.extra);
+  if (tx_pub_key == crypto::null_pkey)
+    return false;
+
+  crypto::key_derivation derivation;
+  if (!crypto::generate_key_derivation(tx_pub_key, gateway_view_secret_key, derivation))
+    return false;
+  crypto::ec_scalar h;
+  crypto::derivation_to_scalar(derivation, memo.output_index, h);
+  std::string buf;
+  buf.reserve(hashkey::GW_BRIDGE_MEMO_MASK.size() + sizeof(h));
+  buf.append(hashkey::GW_BRIDGE_MEMO_MASK);
+  buf.append(reinterpret_cast<const char*>(&h), sizeof(h));
+  const crypto::hash mask = crypto::cn_fast_hash(buf.data(), buf.size());
+
+  unsigned char plain[32];
+  for (size_t i = 0; i < sizeof(plain); ++i)
+    plain[i] = static_cast<unsigned char>(memo.ciphertext.data[i]) ^ static_cast<unsigned char>(mask.data[i]);
+
+  // Integrity check: the 10 trailing plaintext bytes must be zero (see
+  // encrypt_gateway_bridge_memo). A wrong key produces garbage there instead.
+  for (size_t i = 22; i < sizeof(plain); ++i)
+    if (plain[i] != 0)
+      return false;
+
+  uint16_t chain_index;
+  std::memcpy(&chain_index, plain, sizeof(chain_index));
+  crypto::eth_address evm_addr;
+  std::memcpy(&evm_addr, plain + sizeof(chain_index), sizeof(evm_addr));
+
+  out.chain_index = chain_index;
+  out.evm_addr     = evm_addr;
+  return true;
+}
+
 bool validate_tx_gateway_operations_against_db(BlockchainDB& db, network_type nettype, const transaction& tx,
                                                hf hf_version, std::string& reason)
 {
@@ -827,6 +896,8 @@ bool validate_tx_gateway_operations_against_db(BlockchainDB& db, network_type ne
 
   // ---- deposits & withdrawals ----
   if (!validate_gateway_deposits(db, tx, hf_version, reason))
+    return false;
+  if (!validate_gateway_bridge_memos(tx, reason))
     return false;
   if (!validate_gateway_withdrawals(db, nettype, tx, hf_version, reason))
     return false;

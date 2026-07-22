@@ -140,6 +140,7 @@ namespace hashkey {
   inline constexpr std::string_view GW_OWNERSHIP    = "gateway_ownership"sv;    // descriptor-update ownership proof message
   inline constexpr std::string_view GW_OUT_PID_MASK = "gateway_out_pid_mask"sv; // integrated-address payment-id encryption mask
   inline constexpr std::string_view GW_BALANCE      = "gateway_balance"sv;      // gw→wallet withdrawal balance-proof message
+  inline constexpr std::string_view GW_BRIDGE_MEMO_MASK = "gateway_bridge_memo_mask"sv; // bridge-memo (chain+evm_addr) encryption mask
 }
 
 // Maximum allowed stake contribution, as a fraction of the available contribution room.  This

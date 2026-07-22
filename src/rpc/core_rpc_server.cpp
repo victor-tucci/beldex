@@ -68,6 +68,7 @@
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_core/gateway_utils.h"
+#include "cryptonote_core/gateway_chain_registry.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/uptime_proof.h"
 #include "net/parse.h"
@@ -730,6 +731,15 @@ namespace cryptonote::rpc {
         }, x.descriptor.owner_key);
 
         set("gateway_descriptor", std::move(gw));
+      }
+      void operator()(const tx_extra_gateway_bridge_memo& x) {
+        // Opaque to the daemon: the ciphertext only decrypts with the gateway's
+        // secret key (see decrypt_gateway_bridge_memo / scripts/gateway_decode_bridge_memo.py).
+        set("gateway_bridge_memo", json{
+            {"version", x.version},
+            {"output_index", x.output_index},
+            {"ciphertext", tools::type_to_hex(x.ciphertext)},
+        });
       }
       void operator()(const tx_extra_master_node_winner& x) { set("mn_winner", x.m_master_node_key); }
       void operator()(const tx_extra_master_node_pubkey& x) { set("mn_pubkey", x.m_master_node_key); }
@@ -3669,6 +3679,12 @@ namespace cryptonote::rpc {
 
     if (req.destinations.empty() || req.destinations.size() != req.amounts.size())
       throw rpc_error{ERROR_WRONG_PARAM, "destinations and amounts must be non-empty and of equal length"};
+    if (!req.bridge_chain_indices.empty() && req.bridge_chain_indices.size() != req.destinations.size())
+      throw rpc_error{ERROR_WRONG_PARAM, "bridge_chain_indices must be empty or match destinations in length"};
+    if (!req.bridge_evm_addresses.empty() && req.bridge_evm_addresses.size() != req.destinations.size())
+      throw rpc_error{ERROR_WRONG_PARAM, "bridge_evm_addresses must be empty or match destinations in length"};
+    if (req.bridge_chain_indices.empty() != req.bridge_evm_addresses.empty())
+      throw rpc_error{ERROR_WRONG_PARAM, "bridge_chain_indices and bridge_evm_addresses must both be set or both empty"};
 
     auto& db = m_core.get_blockchain_storage().get_db();
     cryptonote::gateway_account_data acct;
@@ -3702,6 +3718,19 @@ namespace cryptonote::rpc {
         d.gateway_id = info.gateway_id;
         d.amount     = req.amounts[i];
         d.payment_id = info.has_payment_id ? info.payment_id : 0;
+        if (!req.bridge_chain_indices.empty() && req.bridge_chain_indices[i] != 0)
+        {
+          if (!cryptonote::gateway_chain_index_to_evm_chain_id(req.bridge_chain_indices[i]))
+            throw rpc_error{ERROR_WRONG_PARAM, "unknown bridge_chain_indices[" + std::to_string(i) + "]"};
+          std::string_view eth_hex = req.bridge_evm_addresses[i];
+          if (eth_hex.size() >= 2 && eth_hex[0] == '0' && (eth_hex[1] == 'x' || eth_hex[1] == 'X'))
+            eth_hex.remove_prefix(2);
+          crypto::eth_address eth_addr{};
+          if (!tools::hex_to_type(eth_hex, eth_addr))
+            throw rpc_error{ERROR_WRONG_PARAM, "invalid bridge_evm_addresses[" + std::to_string(i) + "] (expected 40-char hex, optional 0x prefix)"};
+          d.gateway_bridge_chain_index = req.bridge_chain_indices[i];
+          d.gateway_bridge_evm_addr    = eth_addr;
+        }
         gw_dests.push_back(d);
       }
       else
