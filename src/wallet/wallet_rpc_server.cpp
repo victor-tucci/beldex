@@ -203,33 +203,9 @@ namespace
         !assign_uint64("current_supply", descriptor.current_supply) ||
         !assign_uint8("decimal_point", descriptor.decimal_point) ||
         !assign_string("ticker", descriptor.ticker) ||
-        !assign_string("full_name", descriptor.full_name))
+        !assign_string("full_name", descriptor.full_name) ||
+        !assign_string("meta_info", descriptor.meta_info))
       return false;
-
-    if (json.HasMember("meta_info")) {
-      if (json["meta_info"].IsObject()) {
-        if (!json["meta_info"].HasMember("url") || !json["meta_info"]["url"].IsString() || std::string(json["meta_info"]["url"].GetString()).empty()) {
-          error = "meta_info JSON must contain a non-empty 'url' string";
-          return false;
-        }
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        json["meta_info"].Accept(writer);
-        descriptor.meta_info = buffer.GetString();
-      } else if (json["meta_info"].IsString()) {
-        descriptor.meta_info = json["meta_info"].GetString();
-        if (descriptor.meta_info.find("http://") != 0 && descriptor.meta_info.find("https://") != 0 && descriptor.meta_info.find(".com") == std::string::npos) {
-          error = "meta_info must be a valid URL or a JSON object containing a 'url' field";
-          return false;
-        }
-      } else {
-        error = "meta_info must be a string or a JSON object";
-        return false;
-      }
-    } else {
-      error = "meta_info is required and must contain a URL";
-      return false;
-    }
 
     if (json.HasMember("owner"))
     {
@@ -4286,8 +4262,8 @@ namespace {
     if (!tools::hex_to_type(req.asset_id, asset_id))
       throw wallet_rpc_error{error_code::BAD_HEX, "Failed to parse asset_id"};
 
-    if (req.json_filename.empty())
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_filename is required"};
+    if (req.json_filename.empty() && req.json_string.empty())
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "json_filename or json_string is required"};
 
     nlohmann::json info_res;
     try {
@@ -4322,8 +4298,14 @@ namespace {
     // carry the new meta_info, the rest is taken from the current descriptor.
     cryptonote::asset_descriptor_base file_adb = adb;
     std::string error;
-    if (!load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), file_adb, error))
-      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + ": " + req.json_filename};
+    bool loaded = false;
+    if (!req.json_string.empty())
+      loaded = load_asset_descriptor_from_json(req.json_string, file_adb, error);
+    else
+      loaded = load_asset_descriptor_from_json_file(fs::u8path(req.json_filename), file_adb, error);
+
+    if (!loaded)
+      throw wallet_rpc_error{error_code::UNKNOWN_ERROR, error + (req.json_string.empty() ? (": " + req.json_filename) : "")};
 
     if (file_adb.meta_info == adb.meta_info)
       throw wallet_rpc_error{error_code::UNKNOWN_ERROR, "update_asset: meta_info is unchanged, nothing to update"};
