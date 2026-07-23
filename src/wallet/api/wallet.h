@@ -238,6 +238,7 @@ public:
     bool setBnsRecord(const std::string &name) override;
     std::string nameToNamehash(const std::string &name) override;
     std::vector<bnsInfo>* MyBns() const override;
+    std::vector<assetInfo>* AssetsByOwner(const std::string& owner = "") const override;
     PendingTransaction* createSweepUnmixableTransaction() override;
     bool submitTransaction(std::string_view filename) override;
     UnsignedTransaction* loadUnsignedTx(std::string_view unsigned_filename) override;
