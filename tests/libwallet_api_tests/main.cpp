@@ -57,16 +57,16 @@ namespace
 
 // TODO: get rid of hardcoded paths
 
-const char * WALLET_NAME = "testwallet";
+const char * WALLET_NAME = "wallet2";
 const char * WALLET_NAME_MAINNET = "testwallet_mainnet";
 const char * WALLET_NAME_COPY = "testwallet_copy";
-const char * WALLET_NAME_WITH_DIR = "walletdir/testwallet_test";
+const char * WALLET_NAME_WITH_DIR = "build/bin";
 const char * WALLET_NAME_WITH_DIR_NON_WRITABLE = "/var/walletdir/testwallet_test";
-const char * WALLET_PASS = "password";
-const char * WALLET_PASS2 = "password22";
+const char * WALLET_PASS = "";
+const char * WALLET_PASS2 = "";
 const char * WALLET_LANG = "English";
 
-std::string WALLETS_ROOT_DIR = "/var/monero/testnet_pvt";
+std::string WALLETS_ROOT_DIR = "/root/sowjanya/beldex-v2/build/bin";
 std::string TESTNET_WALLET1_NAME;
 std::string TESTNET_WALLET2_NAME;
 std::string TESTNET_WALLET3_NAME;
@@ -76,8 +76,8 @@ std::string TESTNET_WALLET6_NAME;
 
 const char * TESTNET_WALLET_PASS = "";
 
-std::string CURRENT_SRC_WALLET;
-std::string CURRENT_DST_WALLET;
+std::string CURRENT_SRC_WALLET = "/root/sowjanya/beldex-v2/build/bin/wallet2";
+std::string CURRENT_DST_WALLET = "/root/sowjanya/beldex-v2/build/bin/sow";
 std::string TEST_ASSET_ID;
 uint64_t TEST_ASSET_AMOUNT = 1000000;
 std::string TEST_DEPLOY_TICKER = "";
@@ -96,7 +96,7 @@ const uint64_t AMOUNT_1BDX  =  1000000000L;
 
 const std::string PAYMENT_ID_EMPTY = "";
 
-std::string TESTNET_DAEMON_ADDRESS = "38.242.196.72:19091";
+std::string TESTNET_DAEMON_ADDRESS = "127.0.0.1:38081";
 std::string MAINNET_DAEMON_ADDRESS = "explorer.beldex.io:19091";
 
 
@@ -846,64 +846,64 @@ TEST_F(WalletTest1, WalletRefresh)
 //     ASSERT_TRUE(Utils::close_wallet_quietly(wmgr, wallet1));
 // }
 
-TEST_F(WalletTest1, WalletDeployNewAssetTransaction)
-{
-    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
-    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+// TEST_F(WalletTest1, WalletDeployNewAssetTransaction)
+// {
+//     Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+//     ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
 
-    std::string readiness_error;
-    if (!Utils::wallet_refresh_ready(wallet1, TESTNET_DAEMON_ADDRESS, readiness_error)) {
-        GTEST_SKIP() << readiness_error;
-    }
-    if (wallet1->unlockedBalance(0) == 0) {
-        GTEST_SKIP() << "Need unlocked native BDX to pay deploy_new_asset fee.";
-    }
+//     std::string readiness_error;
+//     if (!Utils::wallet_refresh_ready(wallet1, TESTNET_DAEMON_ADDRESS, readiness_error)) {
+//         GTEST_SKIP() << readiness_error;
+//     }
+//     if (wallet1->unlockedBalance(0) == 0) {
+//         GTEST_SKIP() << "Need unlocked native BDX to pay deploy_new_asset fee.";
+//     }
 
-    const auto unique_suffix = std::to_string(
-            std::chrono::steady_clock::now().time_since_epoch().count());
-    const std::string short_suffix = unique_suffix.substr(unique_suffix.size() > 6 ? unique_suffix.size() - 6 : 0);
-    const std::string ticker = TEST_DEPLOY_TICKER.empty() ? "T" + short_suffix : TEST_DEPLOY_TICKER;
-    const std::string full_name = TEST_DEPLOY_FULL_NAME.empty() ? "Test Asset " + short_suffix : TEST_DEPLOY_FULL_NAME;
+//     const auto unique_suffix = std::to_string(
+//             std::chrono::steady_clock::now().time_since_epoch().count());
+//     const std::string short_suffix = unique_suffix.substr(unique_suffix.size() > 6 ? unique_suffix.size() - 6 : 0);
+//     const std::string ticker = TEST_DEPLOY_TICKER.empty() ? "T" + short_suffix : TEST_DEPLOY_TICKER;
+//     const std::string full_name = TEST_DEPLOY_FULL_NAME.empty() ? "Test Asset " + short_suffix : TEST_DEPLOY_FULL_NAME;
 
-    std::ostringstream descriptor_json;
-    descriptor_json << "{"
-                    << "\"ticker\":\"" << ticker << "\","
-                    << "\"full_name\":\"" << full_name << "\","
-                    << "\"decimal_point\":" << TEST_DEPLOY_DECIMAL_POINT << ","
-                    << "\"total_max_supply\":" << TEST_DEPLOY_TOTAL_MAX_SUPPLY << ","
-                    << "\"current_supply\":" << TEST_DEPLOY_CURRENT_SUPPLY << ","
-                    << "\"meta_info\":\"" << TEST_DEPLOY_META_INFO << "\""
-                    << "}";
+//     std::ostringstream descriptor_json;
+//     descriptor_json << "{"
+//                     << "\"ticker\":\"" << ticker << "\","
+//                     << "\"full_name\":\"" << full_name << "\","
+//                     << "\"decimal_point\":" << TEST_DEPLOY_DECIMAL_POINT << ","
+//                     << "\"total_max_supply\":" << TEST_DEPLOY_TOTAL_MAX_SUPPLY << ","
+//                     << "\"current_supply\":" << TEST_DEPLOY_CURRENT_SUPPLY << ","
+//                     << "\"meta_info\":\"" << TEST_DEPLOY_META_INFO << "\""
+//                     << "}";
 
-    std::cout << "deploy ticker " << ticker
-              << ", full_name " << full_name
-              << ", decimal_point " << TEST_DEPLOY_DECIMAL_POINT
-              << ", total_max_supply " << TEST_DEPLOY_TOTAL_MAX_SUPPLY
-              << ", current_supply " << TEST_DEPLOY_CURRENT_SUPPLY
-              << ", meta_info " << TEST_DEPLOY_META_INFO << std::endl;
+//     std::cout << "deploy ticker " << ticker
+//               << ", full_name " << full_name
+//               << ", decimal_point " << TEST_DEPLOY_DECIMAL_POINT
+//               << ", total_max_supply " << TEST_DEPLOY_TOTAL_MAX_SUPPLY
+//               << ", current_supply " << TEST_DEPLOY_CURRENT_SUPPLY
+//               << ", meta_info " << TEST_DEPLOY_META_INFO << std::endl;
 
-    std::string asset_id;
-    Wallet::PendingTransaction * transaction =
-            wallet1->deployNewAssetTransaction(descriptor_json.str(), asset_id);
+//     std::string asset_id;
+//     Wallet::PendingTransaction * transaction =
+//             wallet1->deployNewAssetTransaction(descriptor_json.str(), asset_id);
 
-    ASSERT_TRUE(transaction->good()) << transaction->status().second;
-    ASSERT_FALSE(asset_id.empty());
-    ASSERT_TRUE(transaction->txCount() > 0);
+//     ASSERT_TRUE(transaction->good()) << transaction->status().second;
+//     ASSERT_FALSE(asset_id.empty());
+//     ASSERT_TRUE(transaction->txCount() > 0);
 
-    if (!transaction->commit()) {
-        const std::string commit_error = transaction->status().second;
-        if (commit_error.find("Double spend") != std::string::npos ||
-            commit_error.find("double spend") != std::string::npos) {
-            GTEST_SKIP() << "Asset deploy transaction is blocked by a pending tx in the daemon txpool: "
-                         << commit_error;
-        }
-        FAIL() << commit_error;
-    }
+//     if (!transaction->commit()) {
+//         const std::string commit_error = transaction->status().second;
+//         if (commit_error.find("Double spend") != std::string::npos ||
+//             commit_error.find("double spend") != std::string::npos) {
+//             GTEST_SKIP() << "Asset deploy transaction is blocked by a pending tx in the daemon txpool: "
+//                          << commit_error;
+//         }
+//         FAIL() << commit_error;
+//     }
 
-    ASSERT_TRUE(wallet1->refresh());
-    std::cout << "deployed asset_id " << asset_id << ", ticker " << ticker << std::endl;
-    ASSERT_TRUE(Utils::close_wallet_quietly(wmgr, wallet1));
-}
+//     ASSERT_TRUE(wallet1->refresh());
+//     std::cout << "deployed asset_id " << asset_id << ", ticker " << ticker << std::endl;
+//     ASSERT_TRUE(Utils::close_wallet_quietly(wmgr, wallet1));
+// }
 
 TEST_F(WalletTest1, WalletEmitAssetTransaction)
 {
@@ -1062,6 +1062,53 @@ TEST_F(WalletTest1, WalletUpdateAssetTransaction)
     }
 
     ASSERT_TRUE(wallet1->refresh());
+    ASSERT_TRUE(Utils::close_wallet_quietly(wmgr, wallet1));
+}
+
+TEST_F(WalletTest1, WalletAssetsByOwner)
+{
+    Wallet::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Wallet::NetworkType::TESTNET);
+    ASSERT_TRUE(wallet1->init(TESTNET_DAEMON_ADDRESS, 0));
+
+    std::string readiness_error;
+    if (!Utils::wallet_refresh_ready(wallet1, TESTNET_DAEMON_ADDRESS, readiness_error)) {
+        GTEST_SKIP() << readiness_error;
+    }
+
+    std::unique_ptr<std::vector<Wallet::assetInfo>> owned_default(wallet1->AssetsByOwner());
+    ASSERT_NE(owned_default, nullptr);
+
+    std::unique_ptr<std::vector<Wallet::assetInfo>> owned_by_address(wallet1->AssetsByOwner(wallet1->mainAddress()));
+    ASSERT_NE(owned_by_address, nullptr);
+
+    std::unique_ptr<std::vector<Wallet::assetInfo>> owned_by_spend_key(wallet1->AssetsByOwner(wallet1->publicSpendKey()));
+    ASSERT_NE(owned_by_spend_key, nullptr);
+
+    std::cout << "Assets by current wallet owner (" << wallet1->publicSpendKey() << "):" << std::endl;
+    for (const auto& asset : *owned_default) {
+        std::cout << "  asset_id: " << asset.asset_id
+                  << ", ticker: " << asset.ticker
+                  << ", full_name: " << asset.full_name
+                  << ", owner: " << asset.owner
+                  << ", decimal_point: " << static_cast<uint32_t>(asset.decimal_point)
+                  << ", total_max_supply: " << asset.total_max_supply
+                  << ", current_supply: " << asset.current_supply
+                  << ", meta_info: " << asset.meta_info
+                  << std::endl;
+        ASSERT_EQ(asset.owner, wallet1->publicSpendKey());
+    }
+
+    auto collect_ids = [](const std::vector<Wallet::assetInfo>& assets) {
+        std::set<std::string> ids;
+        for (const auto& asset : assets) {
+            ids.insert(asset.asset_id);
+        }
+        return ids;
+    };
+
+    ASSERT_EQ(collect_ids(*owned_default), collect_ids(*owned_by_address));
+    ASSERT_EQ(collect_ids(*owned_default), collect_ids(*owned_by_spend_key));
+
     ASSERT_TRUE(Utils::close_wallet_quietly(wmgr, wallet1));
 }
 

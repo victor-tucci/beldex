@@ -1262,6 +1262,76 @@ std::vector<AssetBalanceInfo> WalletImpl::assetBalances(uint32_t accountIndex) c
 }
 
 EXPORT
+std::vector<assetInfo>* WalletImpl::AssetsByOwner(const std::string& owner) const
+{
+    std::vector<assetInfo>* assets = new std::vector<assetInfo>;
+    try
+    {
+        auto w = wallet();
+
+        nlohmann::json list_req = nlohmann::json::object();
+        list_req["offset"] = 0;
+        list_req["count"] = 1000000;
+        const auto list_res = w->json_rpc("get_asset_list", list_req);
+
+        std::string requested_owner = tools::type_to_hex(
+                w->get_account().get_keys().m_account_address.m_spend_public_key);
+        if (!owner.empty())
+        {
+            cryptonote::address_parse_info owner_info{};
+            crypto::public_key owner_spend_key{};
+
+            if (get_account_address_from_str(owner_info, w->nettype(), owner))
+                requested_owner = tools::type_to_hex(owner_info.address.m_spend_public_key);
+            else if (tools::hex_to_type(owner, owner_spend_key))
+                requested_owner = tools::type_to_hex(owner_spend_key);
+            else
+            {
+                setStatusError(tr("Invalid owner address or spend public key"));
+                return assets;
+            }
+        }
+
+        if (!list_res.contains("asset_ids") || !list_res["asset_ids"].is_array())
+        {
+            setStatusError(tr("Invalid daemon response when requesting asset list"));
+            return assets;
+        }
+
+        for (const auto& asset_id_val : list_res["asset_ids"])
+        {
+            const std::string asset_id_hex = asset_id_val.get<std::string>();
+            const nlohmann::json info_res = w->json_rpc("get_asset_info", {{"asset_id", asset_id_hex}});
+
+            if (!info_res.contains("owner") || info_res["owner"].get<std::string>() != requested_owner)
+                continue;
+
+            auto& info = assets->emplace_back();
+            info.asset_id = info_res.value("asset_id", "");
+            info.ticker = info_res.value("ticker", "");
+            info.full_name = info_res.value("full_name", "");
+            info.owner = info_res.value("owner", "");
+            info.total_max_supply = info_res.value("total_max_supply", (uint64_t)0);
+            info.current_supply = info_res.value("current_supply", (uint64_t)0);
+            info.decimal_point = static_cast<uint8_t>(info_res.value("decimal_point", 0));
+            info.meta_info = info_res.value("meta_info", "");
+        }
+    }
+    catch (const std::exception& e)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Failed to build or parse asset-by-owner request: " << e.what());
+        setStatusError(std::string{tr("Failed to build or parse asset-by-owner request: ")} + e.what());
+    }
+    catch (...)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Unknown error while building or parsing asset-by-owner request");
+        setStatusError(tr("Unknown error while building or parsing asset-by-owner request"));
+    }
+
+    return assets;
+}
+
+EXPORT
 uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 {
     return wallet()->unlocked_balance(accountIndex, false);

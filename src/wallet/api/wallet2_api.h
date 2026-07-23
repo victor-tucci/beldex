@@ -329,6 +329,18 @@ struct AssetBalanceInfo
     uint8_t decimalPoint = 0;
 };
 
+struct assetInfo
+{
+    std::string asset_id;
+    std::string ticker;
+    std::string full_name;
+    std::string owner;
+    uint64_t total_max_supply = 0;
+    uint64_t current_supply = 0;
+    uint8_t decimal_point = 0;
+    std::string meta_info;
+};
+
 
 struct DeviceProgress {
     DeviceProgress(): m_progress(0), m_indeterminate(false) {}
@@ -1057,6 +1069,13 @@ struct Wallet
      * \return struct bnsInfo
      */
     virtual std::vector<bnsInfo>* MyBns() const = 0;
+
+    /*!
+     * \brief AssetsByOwner - returns assets owned by the current wallet or the specified owner
+     * \param owner - optional wallet address or spend public key; empty uses this wallet's owner
+     * \return struct assetInfo
+     */
+    virtual std::vector<assetInfo>* AssetsByOwner(const std::string& owner = "") const = 0;
 
     /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
