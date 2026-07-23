@@ -45,10 +45,13 @@
 #include "common_defines.h"
 #include "common/util.h"
 #include "common/fs.h"
+#include "cryptonote_basic/asset_descriptor_operation_utils.h"
 
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
 #include <boost/format.hpp>
+#include <cctype>
+#include <rapidjson/document.h>
 #include <sstream>
 #include <unordered_map>
 #include <thread>
@@ -79,6 +82,154 @@ namespace {
       else if (nettype == cryptonote::network_type::DEVNET)
         dir /= "devnet";
       return dir;
+    }
+
+    bool is_native_sweep_request(const std::optional<std::string>& asset_id)
+    {
+        if (!asset_id) return false;
+        return asset_id->empty() || *asset_id == "BDX" || *asset_id == "bdx" ||
+               *asset_id == "native" || *asset_id == "NATIVE";
+    }
+
+    bool validate_asset_descriptor_for_deploy(const cryptonote::asset_descriptor_base& descriptor, std::string& error)
+    {
+        auto ticker_ok = [](std::string_view ticker) {
+            return !ticker.empty() && ticker.size() <= 14 &&
+                   std::all_of(ticker.begin(), ticker.end(), [](unsigned char c) { return std::isalnum(c); });
+        };
+        auto full_name_ok = [](std::string_view name) {
+            return !name.empty() &&
+                   std::all_of(name.begin(), name.end(), [](unsigned char c) {
+                       return std::isalnum(c) || c == ' ' || c == '_' || c == '-' || c == '.';
+                   });
+        };
+
+        if (!ticker_ok(descriptor.ticker))
+        {
+            error = "ticker is invalid; expected 1-14 alphanumeric characters";
+            return false;
+        }
+        if (!full_name_ok(descriptor.full_name))
+        {
+            error = "full_name contains unsupported characters";
+            return false;
+        }
+        if (descriptor.decimal_point > 18)
+        {
+            error = "decimal_point must be <= 18";
+            return false;
+        }
+        if (descriptor.total_max_supply == 0)
+        {
+            error = "total_max_supply must be greater than 0";
+            return false;
+        }
+        if (descriptor.current_supply > descriptor.total_max_supply)
+        {
+            error = "current_supply cannot exceed total_max_supply";
+            return false;
+        }
+        if (descriptor.meta_info.length() > 4096)
+        {
+            error = "meta_info cannot exceed 4096 characters";
+            return false;
+        }
+        return true;
+    }
+
+    bool load_asset_descriptor_from_json(
+            std::string_view data,
+            cryptonote::asset_descriptor_base& descriptor,
+            std::string& error)
+    {
+        rapidjson::Document json;
+        if (json.Parse(data.data(), data.size()).HasParseError())
+        {
+            error = "invalid JSON";
+            return false;
+        }
+
+        if (!json.IsObject())
+        {
+            error = "top-level JSON must be an object";
+            return false;
+        }
+
+        auto get_string = [&](const char* key, std::string& out, bool required) -> bool {
+            auto it = json.FindMember(key);
+            if (it == json.MemberEnd())
+            {
+                if (required)
+                {
+                    error = std::string{"missing required field: "} + key;
+                    return false;
+                }
+                return true;
+            }
+            if (!it->value.IsString())
+            {
+                error = std::string{"field '"} + key + "' must be a string";
+                return false;
+            }
+            out = {it->value.GetString(), it->value.GetStringLength()};
+            return true;
+        };
+
+        auto get_uint = [&](const char* key, uint64_t& out, bool required) -> bool {
+            auto it = json.FindMember(key);
+            if (it == json.MemberEnd())
+            {
+                if (required)
+                {
+                    error = std::string{"missing required field: "} + key;
+                    return false;
+                }
+                return true;
+            }
+            if (!it->value.IsUint64())
+            {
+                error = std::string{"field '"} + key + "' must be an unsigned integer";
+                return false;
+            }
+            out = it->value.GetUint64();
+            return true;
+        };
+
+        uint64_t decimal_point = 0;
+        std::string owner_str;
+
+        if (!get_string("ticker", descriptor.ticker, true) ||
+            !get_string("full_name", descriptor.full_name, true) ||
+            !get_string("meta_info", descriptor.meta_info, false) ||
+            !get_uint("total_max_supply", descriptor.total_max_supply, true) ||
+            !get_uint("current_supply", descriptor.current_supply, false) ||
+            !get_uint("decimal_point", decimal_point, false) ||
+            !get_string("owner", owner_str, false))
+            return false;
+
+        descriptor.decimal_point = decimal_point;
+        descriptor.owner = crypto::null_pkey;
+        if (!owner_str.empty())
+        {
+            cryptonote::address_parse_info owner_info{};
+            if (cryptonote::get_account_address_from_str(owner_info, cryptonote::network_type::MAINNET, owner_str) ||
+                cryptonote::get_account_address_from_str(owner_info, cryptonote::network_type::TESTNET, owner_str))
+            {
+                if (owner_info.is_subaddress)
+                {
+                    error = "field 'owner' cannot be a subaddress";
+                    return false;
+                }
+                descriptor.owner = owner_info.address.m_spend_public_key;
+            }
+            else if (!tools::hex_to_type(owner_str, descriptor.owner))
+            {
+                error = "field 'owner' must be a valid public key hex string or address";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     void checkMultisigWalletReady(LockedWallet& wallet) {
@@ -1057,6 +1208,130 @@ uint64_t WalletImpl::balance(uint32_t accountIndex) const
 }
 
 EXPORT
+std::vector<AssetBalanceInfo> WalletImpl::assetBalances(uint32_t accountIndex) const
+{
+    auto w = wallet();
+
+    const auto asset_balances_by_subaddr = w->asset_balances_per_subaddress(accountIndex, false);
+    const auto unlocked_asset_balances_by_subaddr = w->unlocked_asset_balances_per_subaddress(accountIndex, true);
+
+    std::map<crypto::asset_id, uint64_t> total_by_asset;
+    std::map<crypto::asset_id, uint64_t> unlocked_by_asset;
+
+    for (const auto& [subaddr_index, asset_balances] : asset_balances_by_subaddr)
+    {
+        for (const auto& [asset_id, amount] : asset_balances)
+            total_by_asset[asset_id] += amount;
+    }
+
+    for (const auto& [subaddr_index, asset_balances] : unlocked_asset_balances_by_subaddr)
+    {
+        for (const auto& [asset_id, amount] : asset_balances)
+            unlocked_by_asset[asset_id] += amount;
+    }
+
+    std::vector<AssetBalanceInfo> result;
+    result.reserve(total_by_asset.size());
+
+    for (const auto& [asset_id, balance] : total_by_asset)
+    {
+        AssetBalanceInfo entry;
+        entry.assetId = tools::type_to_hex(asset_id);
+        entry.balance = balance;
+        if (const auto it = unlocked_by_asset.find(asset_id); it != unlocked_by_asset.end())
+            entry.unlockedBalance = it->second;
+
+        try
+        {
+            nlohmann::json info_req = nlohmann::json::object();
+            info_req["asset_id"] = entry.assetId;
+            const nlohmann::json info_res = w->json_rpc("get_asset_info", info_req);
+            entry.ticker = info_res.value("ticker", "");
+            entry.decimalPoint = static_cast<uint8_t>(info_res.value("decimal_point", 0));
+        }
+        catch (const std::exception&)
+        {
+            // Best-effort metadata lookup: keep balances even if the daemon
+            // cannot supply ticker/decimal-point information right now.
+        }
+
+        result.push_back(std::move(entry));
+    }
+
+    return result;
+}
+
+EXPORT
+std::vector<assetInfo>* WalletImpl::AssetsByOwner(const std::string& owner) const
+{
+    std::vector<assetInfo>* assets = new std::vector<assetInfo>;
+    try
+    {
+        auto w = wallet();
+
+        nlohmann::json list_req = nlohmann::json::object();
+        list_req["offset"] = 0;
+        list_req["count"] = 1000000;
+        const auto list_res = w->json_rpc("get_asset_list", list_req);
+
+        std::string requested_owner = tools::type_to_hex(
+                w->get_account().get_keys().m_account_address.m_spend_public_key);
+        if (!owner.empty())
+        {
+            cryptonote::address_parse_info owner_info{};
+            crypto::public_key owner_spend_key{};
+
+            if (get_account_address_from_str(owner_info, w->nettype(), owner))
+                requested_owner = tools::type_to_hex(owner_info.address.m_spend_public_key);
+            else if (tools::hex_to_type(owner, owner_spend_key))
+                requested_owner = tools::type_to_hex(owner_spend_key);
+            else
+            {
+                setStatusError(tr("Invalid owner address or spend public key"));
+                return assets;
+            }
+        }
+
+        if (!list_res.contains("asset_ids") || !list_res["asset_ids"].is_array())
+        {
+            setStatusError(tr("Invalid daemon response when requesting asset list"));
+            return assets;
+        }
+
+        for (const auto& asset_id_val : list_res["asset_ids"])
+        {
+            const std::string asset_id_hex = asset_id_val.get<std::string>();
+            const nlohmann::json info_res = w->json_rpc("get_asset_info", {{"asset_id", asset_id_hex}});
+
+            if (!info_res.contains("owner") || info_res["owner"].get<std::string>() != requested_owner)
+                continue;
+
+            auto& info = assets->emplace_back();
+            info.asset_id = info_res.value("asset_id", "");
+            info.ticker = info_res.value("ticker", "");
+            info.full_name = info_res.value("full_name", "");
+            info.owner = info_res.value("owner", "");
+            info.total_max_supply = info_res.value("total_max_supply", (uint64_t)0);
+            info.current_supply = info_res.value("current_supply", (uint64_t)0);
+            info.decimal_point = static_cast<uint8_t>(info_res.value("decimal_point", 0));
+            info.meta_info = info_res.value("meta_info", "");
+        }
+    }
+    catch (const std::exception& e)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Failed to build or parse asset-by-owner request: " << e.what());
+        setStatusError(std::string{tr("Failed to build or parse asset-by-owner request: ")} + e.what());
+    }
+    catch (...)
+    {
+        LOG_PRINT_L1(__FUNCTION__ << "Unknown error while building or parsing asset-by-owner request");
+        setStatusError(tr("Unknown error while building or parsing asset-by-owner request"));
+    }
+
+    return assets;
+}
+
+EXPORT
 uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
 {
     return wallet()->unlocked_balance(accountIndex, false);
@@ -1598,7 +1873,7 @@ PendingTransaction* WalletImpl::restoreMultisigTransaction(const std::string& si
 //    - confirmed_transfer_details)
 
 EXPORT
-PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std::string> &dst_addr, std::optional<std::vector<uint64_t>> amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std::string> &dst_addr, std::optional<std::vector<uint64_t>> amount, std::optional<std::string> asset_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {
     clearStatus();
@@ -1613,6 +1888,15 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
         std::vector<uint8_t> extra;
         std::string extra_nonce;
         std::vector<cryptonote::tx_destination_entry> dsts;
+        std::optional<crypto::asset_id> requested_asset_id;
+        if (asset_id) {
+            crypto::asset_id parsed_asset_id = crypto::null_aid;
+            if (!tools::hex_to_type(*asset_id, parsed_asset_id)) {
+                setStatusError(tr("Invalid asset id"));
+                break;
+            }
+            requested_asset_id = parsed_asset_id;
+        }
         if (!amount && dst_addr.size() > 1) {
             setStatusError(tr("Sending all requires one destination address"));
             break;
@@ -1642,11 +1926,13 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
 
             if (amount) {
                 cryptonote::tx_destination_entry de;
-                de.original = dst_addr[i];
-                de.addr = info.address;
+                de.original = dst_addr[i]; // original stirng
+                de.addr = info.address; // parsed address
                 de.amount = (*amount)[i];
                 de.is_subaddress = info.is_subaddress;
                 de.is_integrated = info.has_payment_id;
+                if (requested_asset_id)
+                    de.asset_id = *requested_asset_id;
                 dsts.push_back(de);
 
             } else {
@@ -1658,7 +1944,7 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
         }
         if (error) {
             break;
-        }
+        }// if payment id is present, add it to extra
         if (!extra_nonce.empty() && !add_extra_nonce_to_tx_extra(extra, extra_nonce)) {
             setStatusError(tr("failed to set up payment id, though it was decoded correctly"));
             break;
@@ -1678,7 +1964,7 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
             } else {
                 transaction->m_pending_tx = w->create_transactions_all(0, info.address, info.is_subaddress, 1, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */,
                                                                               priority,
-                                                                              extra, subaddr_account, subaddr_indices);
+                                                                              extra, subaddr_account, subaddr_indices, requested_asset_id);
             }
             pendingTxPostProcess(transaction);
 
@@ -1758,14 +2044,14 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
 
 EXPORT
 PendingTransaction *WalletImpl::createTransaction(const std::string &dst_addr, std::optional<uint64_t> amount,
-                                                  uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+                                                  std::optional<std::string> asset_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {
-    return createTransactionMultDest(std::vector<std::string> {dst_addr},  amount ? (std::vector<uint64_t> {*amount}) : (std::optional<std::vector<uint64_t>>()), priority, subaddr_account, subaddr_indices);
+    return createTransactionMultDest(std::vector<std::string> {dst_addr},  amount ? (std::vector<uint64_t> {*amount}) : (std::optional<std::vector<uint64_t>>()), asset_id, priority, subaddr_account, subaddr_indices);
 }
 
 EXPORT
-PendingTransaction *WalletImpl::createSweepAllTransaction(uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::string> asset_id, std::optional<std::string> dst_addr, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     // Pause refresh thread while creating transaction
@@ -1779,8 +2065,22 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(uint32_t priority, uin
         auto w = wallet();
         std::vector<uint8_t> extra;
         std::string extra_nonce;
+        std::optional<crypto::asset_id> requested_asset_id;
+        const bool native_only = is_native_sweep_request(asset_id);
+        if (asset_id && !native_only) {
+            crypto::asset_id parsed_asset_id = crypto::null_aid;
+            if (!tools::hex_to_type(*asset_id, parsed_asset_id)) {
+                setStatusError(tr("Invalid asset id"));
+                break;
+            }
+            requested_asset_id = parsed_asset_id;
+        }
+        const auto selection_mode =
+                requested_asset_id ? tools::wallet2::sweep_selection_mode::native_only :
+                (native_only ? tools::wallet2::sweep_selection_mode::native_only :
+                               tools::wallet2::sweep_selection_mode::native_and_all_assets);
 
-        std::string addr = w->get_subaddress_as_str({0, 0});
+        std::string addr = dst_addr ? *dst_addr : w->get_subaddress_as_str({0, 0});
         if (!cryptonote::get_account_address_from_str(info, w->nettype(), addr)){
             setStatusError(tr("failed to parse address"));
             break;
@@ -1800,7 +2100,8 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(uint32_t priority, uin
         try {
             transaction->m_pending_tx = w->create_transactions_all(0, info.address, info.is_subaddress, 1, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */,
                                                                             priority,
-                                                                            extra, subaddr_account, subaddr_indices);
+                                                                            extra, subaddr_account, subaddr_indices, requested_asset_id,
+                                                                            cryptonote::txtype::standard, selection_mode);
             pendingTxPostProcess(transaction);
 
         } catch (const tools::error::daemon_busy&) {
@@ -1870,6 +2171,550 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(uint32_t priority, uin
 
     transaction->m_status = status();
     // Resume refresh thread
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::deployNewAssetTransaction(const std::string& descriptor_json, std::string& asset_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+{
+    clearStatus();
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+    asset_id.clear();
+
+    do {
+        if (descriptor_json.empty()) {
+            setStatusError(tr("descriptor_json is required"));
+            break;
+        }
+
+        cryptonote::asset_descriptor_base descriptor{};
+        std::string error;
+        if (!load_asset_descriptor_from_json(descriptor_json, descriptor, error)) {
+            setStatusError(tr("Invalid asset descriptor JSON: ") + error);
+            break;
+        }
+
+        if (!validate_asset_descriptor_for_deploy(descriptor, error)) {
+            setStatusError(tr("Invalid asset descriptor: ") + error);
+            break;
+        }
+
+        auto w = wallet();
+        const auto owner = w->get_account().get_keys().m_account_address.m_spend_public_key;
+        if (descriptor.owner == crypto::null_pkey)
+            descriptor.owner = owner;
+        else if (descriptor.owner != owner) {
+            setStatusError(tr("Asset owner must be this wallet's spend key"));
+            break;
+        }
+
+        if (!w->get_hard_fork_version()) {
+            setStatusError(tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED);
+            break;
+        }
+
+        cryptonote::tx_extra_asset_descriptor_operation ado{};
+        ado.operation_type = cryptonote::asset_descriptor_operation_type::register_asset;
+        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_descriptor |
+                                          cryptonote::asset_field_asset_id_salt);
+        ado.descriptor = descriptor;
+        ado.asset_id_salt = crypto::rand<uint32_t>();
+
+        std::vector<uint8_t> extra;
+        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
+            setStatusError(tr("Failed to encode asset descriptor into tx extra"));
+            break;
+        }
+
+        const crypto::asset_id computed_asset_id = cryptonote::get_or_calculate_asset_id(ado);
+        asset_id = tools::type_to_hex(computed_asset_id);
+
+        std::vector<cryptonote::tx_destination_entry> dsts;
+        if (descriptor.current_supply > 0) {
+            cryptonote::tx_destination_entry dest;
+            dest.addr = w->get_account().get_keys().m_account_address;
+            dest.amount = descriptor.current_supply;
+            dest.asset_id = computed_asset_id;
+            dest.is_subaddress = false;
+            dsts.push_back(dest);
+        }
+
+        try {
+            transaction->m_pending_tx = w->create_asset_deploy_tx(
+                    dsts,
+                    computed_asset_id,
+                    cryptonote::TX_OUTPUT_DECOYS,
+                    priority,
+                    extra,
+                    subaddr_account,
+                    subaddr_indices);
+            pendingTxPostProcess(transaction);
+
+            if (multisig().isMultisig) {
+                auto tx_set = w->make_multisig_tx_set(transaction->m_pending_tx);
+                transaction->m_pending_tx = tx_set.m_ptx;
+                transaction->m_signers = tx_set.m_signers;
+            }
+        } catch (const tools::error::daemon_busy&) {
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") + e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee()) %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big&) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+    } while (false);
+
+    transaction->m_status = status();
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::emitAssetTransaction(const std::string& asset_id, uint64_t amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+{
+    clearStatus();
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do {
+        crypto::asset_id parsed_asset_id = crypto::null_aid;
+        if (!tools::hex_to_type(asset_id, parsed_asset_id) || parsed_asset_id == crypto::null_aid) {
+            setStatusError(tr("Invalid asset id"));
+            break;
+        }
+
+        if (amount == 0) {
+            setStatusError(tr("amount must be greater than zero"));
+            break;
+        }
+
+        auto w = wallet();
+        std::vector<cryptonote::tx_destination_entry> dsts;
+        cryptonote::tx_destination_entry dst;
+        dst.amount = amount;
+        dst.addr = w->get_account().get_keys().m_account_address;
+        dst.is_subaddress = false;
+        dst.asset_id = parsed_asset_id;
+        dsts.push_back(dst);
+
+        cryptonote::tx_extra_asset_descriptor_operation ado{};
+        ado.operation_type = cryptonote::asset_descriptor_operation_type::emit_asset;
+        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_asset_id | cryptonote::asset_field_amount);
+        ado.asset_id = parsed_asset_id;
+        ado.amount = amount;
+
+        std::vector<uint8_t> extra;
+        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
+            setStatusError(tr("Failed to encode asset descriptor into tx extra"));
+            break;
+        }
+
+        try {
+            transaction->m_pending_tx = w->create_asset_emit_tx(
+                    dsts,
+                    parsed_asset_id,
+                    cryptonote::TX_OUTPUT_DECOYS,
+                    priority,
+                    extra,
+                    subaddr_account,
+                    subaddr_indices);
+            pendingTxPostProcess(transaction);
+
+            if (multisig().isMultisig) {
+                auto tx_set = w->make_multisig_tx_set(transaction->m_pending_tx);
+                transaction->m_pending_tx = tx_set.m_ptx;
+                transaction->m_signers = tx_set.m_signers;
+            }
+        } catch (const tools::error::daemon_busy&) {
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") + e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee()) %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big&) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+    } while (false);
+
+    transaction->m_status = status();
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::burnAssetTransaction(const std::string& asset_id, uint64_t amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+{
+    clearStatus();
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do {
+        crypto::asset_id parsed_asset_id = crypto::null_aid;
+        if (!tools::hex_to_type(asset_id, parsed_asset_id) || parsed_asset_id == crypto::null_aid) {
+            setStatusError(tr("Invalid asset id"));
+            break;
+        }
+
+        if (amount == 0) {
+            setStatusError(tr("amount must be greater than zero"));
+            break;
+        }
+
+        std::vector<uint8_t> extra;
+        cryptonote::tx_extra_asset_descriptor_operation ado{};
+        ado.operation_type = cryptonote::asset_descriptor_operation_type::burn_asset;
+        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_asset_id |
+                                          cryptonote::asset_field_amount);
+        ado.asset_id = parsed_asset_id;
+        ado.amount = amount;
+
+        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
+            setStatusError(tr("Failed to encode asset burn operation into tx extra"));
+            break;
+        }
+
+        auto w = wallet();
+        try {
+            transaction->m_pending_tx = w->create_asset_burn_tx(
+                    parsed_asset_id,
+                    amount,
+                    cryptonote::TX_OUTPUT_DECOYS,
+                    priority,
+                    extra,
+                    subaddr_account,
+                    subaddr_indices);
+            pendingTxPostProcess(transaction);
+
+            if (multisig().isMultisig) {
+                auto tx_set = w->make_multisig_tx_set(transaction->m_pending_tx);
+                transaction->m_pending_tx = tx_set.m_ptx;
+                transaction->m_signers = tx_set.m_signers;
+            }
+        } catch (const tools::error::daemon_busy&) {
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") + e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee()) %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big&) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+    } while (false);
+
+    transaction->m_status = status();
+    startRefresh();
+    return transaction;
+}
+
+EXPORT
+PendingTransaction *WalletImpl::updateAssetTransaction(const std::string& asset_id, const std::string& descriptor_json, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+{
+    clearStatus();
+    pauseRefresh();
+
+    PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
+
+    do {
+        if (subaddr_account != 0 || !subaddr_indices.empty()) {
+            setStatusError(tr("update_asset must be issued from the primary account without subaddress switches"));
+            break;
+        }
+
+        crypto::asset_id parsed_asset_id = crypto::null_aid;
+        if (!tools::hex_to_type(asset_id, parsed_asset_id) || parsed_asset_id == crypto::null_aid) {
+            setStatusError(tr("Invalid asset id"));
+            break;
+        }
+
+        if (descriptor_json.empty()) {
+            setStatusError(tr("descriptor_json is required"));
+            break;
+        }
+
+        auto w = wallet();
+        nlohmann::json info_req = nlohmann::json::object();
+        info_req["asset_id"] = asset_id;
+
+        nlohmann::json info_res;
+        try {
+            info_res = w->json_rpc("get_asset_info", info_req);
+        } catch (const std::exception& e) {
+            setStatusError(tr("Failed to fetch asset info from daemon: ") + std::string(e.what()));
+            break;
+        }
+
+        const std::string requested_owner = tools::type_to_hex(
+                w->get_account().get_keys().m_account_address.m_spend_public_key);
+        if (!info_res.contains("owner") || info_res["owner"].get<std::string>() != requested_owner) {
+            setStatusError(tr("This wallet does not own the asset: ") + asset_id);
+            break;
+        }
+
+        cryptonote::asset_descriptor_base adb{};
+        adb.version = info_res.value("version", 1);
+        adb.total_max_supply = info_res.value("total_max_supply", (uint64_t)0);
+        adb.current_supply = info_res.value("current_supply", (uint64_t)0);
+        adb.decimal_point = info_res.value("decimal_point", 0);
+        adb.ticker = info_res.value("ticker", "");
+        adb.full_name = info_res.value("full_name", "");
+        adb.meta_info = info_res.value("meta_info", "");
+        tools::hex_to_type(info_res.value("owner", ""), adb.owner);
+
+        cryptonote::asset_descriptor_base json_adb = adb;
+        std::string error;
+        if (!load_asset_descriptor_from_json(descriptor_json, json_adb, error)) {
+            setStatusError(tr("Invalid asset descriptor JSON: ") + error);
+            break;
+        }
+
+        if (json_adb.meta_info == adb.meta_info && json_adb.owner == adb.owner) {
+            setStatusError(tr("update_asset: meta_info and owner are unchanged, nothing to update"));
+            break;
+        }
+        adb.meta_info = json_adb.meta_info;
+        if (json_adb.owner != crypto::null_pkey) {
+            adb.owner = json_adb.owner;
+        }
+
+        cryptonote::tx_extra_asset_descriptor_operation ado{};
+        ado.operation_type = cryptonote::asset_descriptor_operation_type::update_asset;
+        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_descriptor |
+                                          cryptonote::asset_field_asset_id);
+        ado.descriptor = adb;
+        ado.asset_id = parsed_asset_id;
+
+        std::vector<uint8_t> extra;
+        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
+            setStatusError(tr("Failed to encode asset descriptor into tx extra"));
+            break;
+        }
+
+        try {
+            transaction->m_pending_tx = w->create_asset_update_tx(
+                    parsed_asset_id,
+                    cryptonote::TX_OUTPUT_DECOYS,
+                    priority,
+                    extra,
+                    subaddr_account,
+                    subaddr_indices);
+            pendingTxPostProcess(transaction);
+
+            if (multisig().isMultisig) {
+                auto tx_set = w->make_multisig_tx_set(transaction->m_pending_tx);
+                transaction->m_pending_tx = tx_set.m_ptx;
+                transaction->m_signers = tx_set.m_signers;
+            }
+        } catch (const tools::error::daemon_busy&) {
+            setStatusError(tr("daemon is busy. Please try again later."));
+        } catch (const tools::error::no_connection_to_daemon&) {
+            setStatusError(tr("no connection to daemon. Please make sure daemon is running."));
+        } catch (const tools::error::wallet_rpc_error& e) {
+            setStatusError(tr("RPC error: ") + e.to_string());
+        } catch (const tools::error::get_outs_error &e) {
+            setStatusError((boost::format(tr("failed to get outputs to mix: %s")) % e.what()).str());
+        } catch (const tools::error::not_enough_unlocked_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_money& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, overall balance only %s, sent amount %s")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount());
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_possible& e) {
+            std::ostringstream writer;
+            writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
+                      print_money(e.available()) %
+                      print_money(e.tx_amount() + e.fee()) %
+                      print_money(e.tx_amount()) %
+                      print_money(e.fee());
+            setStatusError(writer.str());
+        } catch (const tools::error::not_enough_outs_to_mix& e) {
+            std::ostringstream writer;
+            writer << tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+            for (const std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs()) {
+                writer << "\n" << tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << tr("found outputs to use") << " = " << outs_for_amount.second;
+            }
+            writer << "\n" << tr("Please sweep unmixable outputs.");
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_not_constructed&) {
+            setStatusError(tr("transaction was not constructed"));
+        } catch (const tools::error::tx_rejected& e) {
+            std::ostringstream writer;
+            writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
+            setStatusError(writer.str());
+        } catch (const tools::error::tx_sum_overflow& e) {
+            setStatusError(e.what());
+        } catch (const tools::error::zero_destination&) {
+            setStatusError(tr("one of destinations is zero"));
+        } catch (const tools::error::tx_too_big&) {
+            setStatusError(tr("failed to find a suitable way to split transactions"));
+        } catch (const tools::error::transfer_error& e) {
+            setStatusError(std::string(tr("unknown transfer error: ")) + e.what());
+        } catch (const tools::error::wallet_internal_error& e) {
+            setStatusError(std::string(tr("internal error: ")) + e.what());
+        } catch (const std::exception& e) {
+            setStatusError(std::string(tr("unexpected error: ")) + e.what());
+        } catch (...) {
+            setStatusError(tr("unknown error"));
+        }
+    } while (false);
+
+    transaction->m_status = status();
     startRefresh();
     return transaction;
 }
@@ -2783,7 +3628,8 @@ bool WalletImpl::checkReserveProof(const std::string &address, const std::string
     try
     {
         clearStatus();
-        good = wallet()->check_reserve_proof(info.address, message, signature, total, spent);
+        std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> asset_totals;
+        good = wallet()->check_reserve_proof(info.address, message, signature, total, spent, asset_totals);
         return true;
     }
     catch (const std::exception &e)

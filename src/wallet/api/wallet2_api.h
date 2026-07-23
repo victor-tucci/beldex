@@ -320,6 +320,27 @@ struct MultisigState {
     uint32_t total;
 };
 
+struct AssetBalanceInfo
+{
+    std::string assetId;
+    std::string ticker;
+    uint64_t balance = 0;
+    uint64_t unlockedBalance = 0;
+    uint8_t decimalPoint = 0;
+};
+
+struct assetInfo
+{
+    std::string asset_id;
+    std::string ticker;
+    std::string full_name;
+    std::string owner;
+    uint64_t total_max_supply = 0;
+    uint64_t current_supply = 0;
+    uint8_t decimal_point = 0;
+    std::string meta_info;
+};
+
 
 struct DeviceProgress {
     DeviceProgress(): m_progress(0), m_indeterminate(false) {}
@@ -615,6 +636,7 @@ struct Wallet
     virtual void setTrustedDaemon(bool arg) = 0;
     virtual bool trustedDaemon() const = 0;
     virtual uint64_t balance(uint32_t accountIndex = 0) const = 0;
+    virtual std::vector<AssetBalanceInfo> assetBalances(uint32_t accountIndex = 0) const = 0;
     uint64_t balanceAll() const {
         uint64_t result = 0;
         for (uint32_t i = 0; i < numSubaddressAccounts(); ++i)
@@ -862,6 +884,7 @@ struct Wallet
 
     virtual PendingTransaction* createTransactionMultDest(const std::vector<std::string> &dst_addr,
                                                    std::optional<std::vector<uint64_t>> amount,
+                                                   std::optional<std::string> asset_id = std::nullopt,
                                                    uint32_t priority = 0,
                                                    uint32_t subaddr_account = 0,
                                                    std::set<uint32_t> subaddr_indices = {}) = 0;
@@ -878,20 +901,90 @@ struct Wallet
      */
     virtual PendingTransaction *createTransaction(const std::string &dst_addr,
                                                   std::optional<uint64_t> amount,
+                                                  std::optional<std::string> asset_id = std::nullopt,
                                                   uint32_t priority                  = 0,
                                                   uint32_t subaddr_account           = 0,
                                                   std::set<uint32_t> subaddr_indices = {}) = 0;
     /*!
      * \brief createSweepAllTransaction creates transaction for self
+     * \param asset_id          optional sweep mode selector:
+     *                          - omitted/nullopt: sweep native BDX and all assets
+     *                          - "BDX"/"native"/"": sweep native BDX only
+     *                          - asset hex id: sweep that asset only
+     * \param dst_addr          optional destination address:
+     *                          - omitted/nullopt: sweep back to the source wallet primary address
+     *                          - set: sweep to the provided destination wallet address
      * \param subaddr_account   subaddress account from which the input funds are taken
      * \param subaddr_indices   set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
      * \param priority          set a priority for the transaction. Accepted Values are: default (0), or 0-5 for: default, unimportant, normal, elevated, priority, flash.
      * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
      *                          after object returned
      */
-    virtual PendingTransaction* createSweepAllTransaction(uint32_t priority = 0,
+    virtual PendingTransaction* createSweepAllTransaction(std::optional<std::string> asset_id = std::nullopt,
+                                                    std::optional<std::string> dst_addr = std::nullopt,
+                                                    uint32_t priority = 0,
                                                     uint32_t subaddr_account = 0,
                                                     std::set<uint32_t> subaddr_indices = {}) = 0;
+    /*!
+     * \brief deployNewAssetTransaction creates a deploy_new_asset transaction from a descriptor json string
+     * \param descriptor_json   serialized asset descriptor json
+     * \param asset_id          computed asset id for the deployment request
+     * \param subaddr_account   subaddress account from which native fee inputs are taken
+     * \param subaddr_indices   set of subaddress indices to use
+     * \param priority          set a priority for the transaction. Accepted Values are: default (0), or 0-5 for: default, unimportant, normal, elevated, priority, flash.
+     * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                          after object returned
+     */
+    virtual PendingTransaction* deployNewAssetTransaction(const std::string& descriptor_json,
+                                                    std::string& asset_id,
+                                                    uint32_t priority = 0,
+                                                    uint32_t subaddr_account = 0,
+                                                    std::set<uint32_t> subaddr_indices = {}) = 0;
+    /*!
+     * \brief emitAssetTransaction creates an emit_asset transaction for an existing asset
+     * \param asset_id          existing asset id hex string
+     * \param amount            amount to emit
+     * \param subaddr_account   subaddress account from which native fee inputs are taken
+     * \param subaddr_indices   set of subaddress indices to use
+     * \param priority          set a priority for the transaction. Accepted Values are: default (0), or 0-5 for: default, unimportant, normal, elevated, priority, flash.
+     * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                          after object returned
+     */
+    virtual PendingTransaction* emitAssetTransaction(const std::string& asset_id,
+                                                    uint64_t amount,
+                                                    uint32_t priority = 0,
+                                                    uint32_t subaddr_account = 0,
+                                                    std::set<uint32_t> subaddr_indices = {}) = 0;
+    /*!
+     * \brief burnAssetTransaction creates a burn_asset transaction for an existing asset
+     * \param asset_id          existing asset id hex string
+     * \param amount            amount to burn
+     * \param subaddr_account   subaddress account from which inputs are taken
+     * \param subaddr_indices   set of subaddress indices to use
+     * \param priority          set a priority for the transaction. Accepted Values are: default (0), or 0-5 for: default, unimportant, normal, elevated, priority, flash.
+     * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                          after object returned
+     */
+    virtual PendingTransaction* burnAssetTransaction(const std::string& asset_id,
+                                                    uint64_t amount,
+                                                    uint32_t priority = 0,
+                                                    uint32_t subaddr_account = 0,
+                                                    std::set<uint32_t> subaddr_indices = {}) = 0;
+    /*!
+     * \brief updateAssetTransaction creates an update_asset transaction for an existing asset
+     * \param asset_id          existing asset id hex string
+     * \param descriptor_json   serialized asset descriptor json; meta_info is applied and owner may be changed
+     * \param subaddr_account   subaddress account from which native fee inputs are taken
+     * \param subaddr_indices   set of subaddress indices to use
+     * \param priority          set a priority for the transaction. Accepted Values are: default (0), or 0-5 for: default, unimportant, normal, elevated, priority, flash.
+     * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                          after object returned
+     */
+    virtual PendingTransaction* updateAssetTransaction(const std::string& asset_id,
+                                                      const std::string& descriptor_json,
+                                                      uint32_t priority = 0,
+                                                      uint32_t subaddr_account = 0,
+                                                      std::set<uint32_t> subaddr_indices = {}) = 0;
 
     /*!
      * \brief createBnsTransaction  creates bns transaction
@@ -976,6 +1069,13 @@ struct Wallet
      * \return struct bnsInfo
      */
     virtual std::vector<bnsInfo>* MyBns() const = 0;
+
+    /*!
+     * \brief AssetsByOwner - returns assets owned by the current wallet or the specified owner
+     * \param owner - optional wallet address or spend public key; empty uses this wallet's owner
+     * \return struct assetInfo
+     */
+    virtual std::vector<assetInfo>* AssetsByOwner(const std::string& owner = "") const = 0;
 
     /*!
      * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.

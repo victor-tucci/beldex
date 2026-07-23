@@ -10836,6 +10836,24 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     LOG_PRINT_L2("Adding asset change output for asset " << asset_id << ": " << print_money(change_amount));
   }
 
+  if (tx_params.tx_type == txtype::burn_asset && splitted_dsts.size() < 2)
+  {
+    // HF17+ requires at least 2 outputs for transfer-like txs. Asset burns can
+    // legitimately end up with only a single native change output, so append a
+    // zero-value dummy native output to preserve the burn semantics while
+    // satisfying the minimum output count.
+    cryptonote::account_base dummy;
+    dummy.generate();
+
+    cryptonote::tx_destination_entry dummy_dts{};
+    dummy_dts.addr = dummy.get_keys().m_account_address;
+    dummy_dts.amount = 0;
+    dummy_dts.is_subaddress = false;
+
+    splitted_dsts.push_back(dummy_dts);
+    LOG_PRINT_L2("Added dummy native output for burn_asset to satisfy the HF17 two-output minimum");
+  }
+
   crypto::secret_key tx_key;
   std::vector<crypto::secret_key> additional_tx_keys;
   rct::multisig_out msout;
@@ -12062,7 +12080,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   // early out if we know we can't make it anyway
   // we could also check for being within FEE_PER_KB, but if the fee calculation
   // ever changes, this might be missed, so let this go through
-  const uint64_t min_outputs = (tx_params.tx_type == cryptonote::txtype::beldex_name_system || tx_params.tx_type == cryptonote::txtype::coin_burn || tx_params.tx_type == cryptonote::txtype::burn_asset || tx_params.tx_type == cryptonote::txtype::update_asset) ? 1 : 2; // if bns/burn/update, only request the change output
+  const uint64_t min_outputs = (tx_params.tx_type == cryptonote::txtype::beldex_name_system || tx_params.tx_type == cryptonote::txtype::coin_burn || tx_params.tx_type == cryptonote::txtype::update_asset) ? 1 : 2; // BNS/coin_burn/update can stay single-output; burn_asset must satisfy the HF17 2-output minimum
   {
     uint64_t min_fee = (
         base_fee.first * estimate_rct_tx_size(1, fake_outs_count, min_outputs, extra.size(), clsag, bulletproof_plus) +
