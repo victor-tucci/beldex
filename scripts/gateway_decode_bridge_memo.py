@@ -45,8 +45,46 @@ GW_BRIDGE_MEMO_MASK = b"gateway_bridge_memo_mask"
 TX_EXTRA_TAG_PUBKEY = 0x01
 TX_EXTRA_TAG_GATEWAY_BRIDGE_MEMO = 0x7D
 
-# Mirror of src/cryptonote_core/gateway_chain_registry.h. Keep in sync.
-CHAIN_REGISTRY = {1: ("ethereum", 1), 2: ("sepolia", 11155111), 3: ("holesky", 17000), 4: ("bsc", 56)}
+# on-chain chain_index bit layout (see pack_chain_index/unpack_chain_index,
+# cryptonote_config.h): top bit = network, low 15 bits = enum index within
+# that network's MainnetChain/TestnetChain enum.
+GATEWAY_CHAIN_INDEX_NETWORK_BIT = 0x8000
+GATEWAY_CHAIN_INDEX_MASK = 0x7FFF
+MAINNET = "mainnet"
+TESTNET = "testnet"
+
+
+def unpack_chain_index(packed):
+    """Mirror of cryptonote::unpack_chain_index (cryptonote_config.h). Returns
+    (network, enum_index)."""
+    nettype = TESTNET if (packed & GATEWAY_CHAIN_INDEX_NETWORK_BIT) else MAINNET
+    enum_index = packed & GATEWAY_CHAIN_INDEX_MASK
+    return nettype, enum_index
+
+
+# Mirror of the MainnetChain/TestnetChain registry in cryptonote_config.h. Keep
+# in sync. Keyed by (network, enum_index) -- the same key unpack_chain_index
+# produces from a decrypted chain_index -- to (name, real EVM chain id).
+CHAIN_REGISTRY = {
+    (MAINNET, 1): ("ethereum", 1),
+    (MAINNET, 2): ("bsc", 56),
+    (MAINNET, 3): ("polygon", 137),
+    (MAINNET, 4): ("avalanche", 43114),
+    (MAINNET, 5): ("arbitrum", 42161),
+    (MAINNET, 6): ("optimism", 10),
+    (MAINNET, 7): ("base", 8453),
+    (MAINNET, 8): ("fantom", 250),
+
+    (TESTNET, 1): ("sepolia", 11155111),
+    (TESTNET, 2): ("holesky", 17000),
+    (TESTNET, 3): ("bsc-testnet", 97),
+    (TESTNET, 4): ("polygon-amoy", 80002),
+    (TESTNET, 5): ("avalanche-fuji", 43113),
+    (TESTNET, 6): ("arbitrum-sepolia", 421614),
+    (TESTNET, 7): ("optimism-sepolia", 11155420),
+    (TESTNET, 8): ("base-sepolia", 84532),
+    (TESTNET, 9): ("fantom-testnet", 4002),
+}
 
 
 class ParseError(Exception):
@@ -248,10 +286,13 @@ def main():
                 memo["output_index"]))
             continue
         chain_index, evm_addr = result
-        name, evm_chain_id = CHAIN_REGISTRY.get(chain_index, ("unknown chain_index {}".format(chain_index), None))
+        nettype, enum_index = unpack_chain_index(chain_index)
+        name, evm_chain_id = CHAIN_REGISTRY.get(
+            (nettype, enum_index),
+            ("unknown chain_index {} (network={}, enum_index={})".format(chain_index, nettype, enum_index), None))
         found += 1
-        print("output[{}]: chain={} (evm_chain_id={})  evm_addr=0x{}".format(
-            memo["output_index"], name, evm_chain_id, evm_addr.hex()))
+        print("output[{}]: chain={} (evm_chain_id={}, network={})  evm_addr=0x{}".format(
+            memo["output_index"], name, evm_chain_id, nettype, evm_addr.hex()))
 
     if found == 0:
         sys.exit(1)

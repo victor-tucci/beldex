@@ -55,7 +55,6 @@
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "daemonizer/daemonizer.h"
 #include "cryptonote_core/beldex_name_system.h"
-#include "cryptonote_core/gateway_chain_registry.h"
 #include "serialization/boost_std_variant.h"
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
@@ -919,18 +918,20 @@ namespace tools
         de.gateway_id         = gw_info.gateway_id;
         de.gateway_payment_id = gw_info.has_payment_id ? gw_info.payment_id : 0;
 
-        if (!it->bridge_chain_name.empty())
+        if (it->bridge_chain_id != 0)
         {
-          auto chain_index = cryptonote::gateway_chain_name_to_index(it->bridge_chain_name);
-          if (!chain_index)
-            throw wallet_rpc_error{error_code::WRONG_ADDRESS, "unknown bridge_chain_name: "s + it->bridge_chain_name};
+          auto entry = cryptonote::resolve_chain_id(it->bridge_chain_id);
+          if (!entry)
+            throw wallet_rpc_error{error_code::WRONG_ADDRESS, "unknown bridge_chain_id: "s + std::to_string(it->bridge_chain_id)};
+          if (entry->nettype != m_wallet->nettype())
+            throw wallet_rpc_error{error_code::WRONG_ADDRESS, "bridge_chain_id "s + std::to_string(it->bridge_chain_id) + " is not valid for this wallet's network"};
           std::string_view eth_hex = it->bridge_evm_address;
           if (eth_hex.size() >= 2 && eth_hex[0] == '0' && (eth_hex[1] == 'x' || eth_hex[1] == 'X'))
             eth_hex.remove_prefix(2);
           crypto::eth_address eth_addr{};
           if (!tools::hex_to_type(eth_hex, eth_addr))
             throw wallet_rpc_error{error_code::WRONG_ADDRESS, "invalid bridge_evm_address: "s + it->bridge_evm_address};
-          de.gateway_bridge_chain_index = *chain_index;
+          de.gateway_bridge_chain_index = cryptonote::pack_chain_index(*entry);
           de.gateway_bridge_evm_addr    = eth_addr;
         }
 

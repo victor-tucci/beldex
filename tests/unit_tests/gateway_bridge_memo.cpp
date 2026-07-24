@@ -15,7 +15,6 @@
 #include "cryptonote_basic/tx_extra.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/gateway_utils.h"
-#include "cryptonote_core/gateway_chain_registry.h"
 #include "cryptonote_config.h"
 #include "crypto/crypto.h"
 
@@ -249,21 +248,123 @@ namespace {
 
   TEST(GatewayChainRegistry, roundtrip_and_sentinel)
   {
-    for (const auto& e : GATEWAY_CHAIN_REGISTRY)
+    for (const auto& [real_chain_id, e] : detail::gateway_chain_registry())
     {
-      EXPECT_NE(e.chain_index, 0u) << "chain_index 0 is the reserved 'no memo' sentinel";
-      auto id = gateway_chain_index_to_evm_chain_id(e.chain_index);
+      EXPECT_NE(e.enum_index, 0u) << "enum_index 0 is the reserved NONE sentinel";
+
+      uint16_t packed = pack_chain_index(e);
+      UnpackedChainIndex unpacked = unpack_chain_index(packed);
+      EXPECT_EQ(unpacked.nettype, e.nettype);
+      EXPECT_EQ(unpacked.enum_index, e.enum_index);
+
+      auto id = gateway_chain_index_to_evm_chain_id(packed);
       ASSERT_TRUE(id.has_value());
-      EXPECT_EQ(*id, e.evm_chain_id);
-      auto idx = gateway_evm_chain_id_to_chain_index(e.evm_chain_id);
+      EXPECT_EQ(*id, e.real_chain_id);
+      auto idx = gateway_evm_chain_id_to_chain_index(e.real_chain_id);
       ASSERT_TRUE(idx.has_value());
-      EXPECT_EQ(*idx, e.chain_index);
-      auto name_idx = gateway_chain_name_to_index(e.name);
-      ASSERT_TRUE(name_idx.has_value());
-      EXPECT_EQ(*name_idx, e.chain_index);
+      EXPECT_EQ(*idx, packed);
+      auto resolved = resolve_chain_id(e.real_chain_id);
+      ASSERT_TRUE(resolved.has_value());
+      EXPECT_EQ(resolved->nettype, e.nettype);
+      EXPECT_EQ(resolved->enum_index, e.enum_index);
+      EXPECT_EQ(pack_chain_index(*resolved), packed);
+      auto name = gateway_chain_index_to_name(packed);
+      ASSERT_TRUE(name.has_value());
+      EXPECT_EQ(*name, e.name);
     }
     EXPECT_FALSE(gateway_chain_index_to_evm_chain_id(0).has_value());
+    EXPECT_FALSE(resolve_chain_id(0).has_value()); // 0 is not a valid EIP-155 chain id
+    EXPECT_FALSE(resolve_chain_id(999999999).has_value()); // not a registered chain
   }
+
+  TEST(GatewayChainRegistry, packing_disambiguates_colliding_enum_values)
+  {
+    // MainnetChain::ETHEREUM and TestnetChain::SEPOLIA are both enum value 1 --
+    // packing must make their on-chain representations different numbers.
+    ChainEntry mainnet_eth{1, MAINNET, static_cast<uint16_t>(MainnetChain::ETHEREUM), "ethereum"};
+    ChainEntry testnet_sep{11155111, TESTNET, static_cast<uint16_t>(TestnetChain::SEPOLIA), "sepolia"};
+    EXPECT_EQ(mainnet_eth.enum_index, testnet_sep.enum_index) << "test assumes a genuine collision";
+    EXPECT_NE(pack_chain_index(mainnet_eth), pack_chain_index(testnet_sep));
+    EXPECT_EQ(unpack_chain_index(pack_chain_index(mainnet_eth)).nettype, MAINNET);
+    EXPECT_EQ(unpack_chain_index(pack_chain_index(testnet_sep)).nettype, TESTNET);
+  }
+
+  TEST(GatewayChainRegistry, resolve_chain_id_success_and_rejection)
+  {
+    // Reverse lookup (real EVM chain id -> ChainEntry), spelled out explicitly
+    // for one mainnet and one testnet entry (roundtrip_and_sentinel already
+    // covers this generically for the whole table).
+    auto eth = resolve_chain_id(1);
+    ASSERT_TRUE(eth.has_value());
+    EXPECT_EQ(eth->nettype, MAINNET);
+    EXPECT_EQ(eth->enum_index, static_cast<uint16_t>(MainnetChain::ETHEREUM));
+    EXPECT_EQ(eth->name, "ethereum");
+
+    auto sep = resolve_chain_id(11155111);
+    ASSERT_TRUE(sep.has_value());
+    EXPECT_EQ(sep->nettype, TESTNET);
+    EXPECT_EQ(sep->enum_index, static_cast<uint16_t>(TestnetChain::SEPOLIA));
+    EXPECT_EQ(sep->name, "sepolia");
+
+    // Rejection: 0 is not a valid EIP-155 chain id, and an arbitrary large
+    // number is just never going to be a chain anyone registered.
+    EXPECT_FALSE(resolve_chain_id(0).has_value());
+    EXPECT_FALSE(resolve_chain_id(999999999).has_value());
+  }
+
+  TEST(GatewayChainRegistry, pack_unpack_roundtrip_mainnet_and_testnet)
+  {
+    // Spelled out explicitly for one mainnet and one testnet entry, checking
+    // the network bit lands where expected in each direction (packing_
+    // disambiguates_colliding_enum_values above checks they differ from each
+    // other; this checks each one individually round-trips correctly).
+    ChainEntry mainnet_entry{1, MAINNET, static_cast<uint16_t>(MainnetChain::ETHEREUM), "ethereum"};
+    uint16_t packed_mainnet = pack_chain_index(mainnet_entry);
+    EXPECT_EQ(packed_mainnet & GATEWAY_CHAIN_INDEX_NETWORK_BIT, 0u) << "mainnet must not set the network bit";
+    UnpackedChainIndex unpacked_mainnet = unpack_chain_index(packed_mainnet);
+    EXPECT_EQ(unpacked_mainnet.nettype, MAINNET);
+    EXPECT_EQ(unpacked_mainnet.enum_index, mainnet_entry.enum_index);
+
+    ChainEntry testnet_entry{11155111, TESTNET, static_cast<uint16_t>(TestnetChain::SEPOLIA), "sepolia"};
+    uint16_t packed_testnet = pack_chain_index(testnet_entry);
+    EXPECT_NE(packed_testnet & GATEWAY_CHAIN_INDEX_NETWORK_BIT, 0u) << "testnet must set the network bit";
+    UnpackedChainIndex unpacked_testnet = unpack_chain_index(packed_testnet);
+    EXPECT_EQ(unpacked_testnet.nettype, TESTNET);
+    EXPECT_EQ(unpacked_testnet.enum_index, testnet_entry.enum_index);
+  }
+
+  TEST(GatewayChainRegistry, register_chain_rejects_duplicates)
+  {
+    // Exercises detail::register_chain directly against a fresh map/set, not
+    // the pre-populated singleton (which asserts on failure rather than
+    // returning it) -- this is the only way to actually observe the
+    // rejection path's return value.
+    std::unordered_map<uint64_t, ChainEntry> registry;
+    std::set<std::pair<network_type, uint16_t>> seen;
+
+    EXPECT_TRUE(detail::register_chain(registry, seen, 1, MAINNET, 1, "chain-a"));
+    EXPECT_EQ(registry.size(), 1u);
+
+    // Duplicate real_chain_id is rejected, even with a different (nettype, enum_index)/name.
+    EXPECT_FALSE(detail::register_chain(registry, seen, 1, TESTNET, 99, "chain-a-dup-id"));
+    EXPECT_EQ(registry.size(), 1u) << "a rejected registration must not mutate the map";
+
+    // Duplicate (nettype, enum_index) is rejected, even with a different real_chain_id/name.
+    EXPECT_FALSE(detail::register_chain(registry, seen, 2, MAINNET, 1, "chain-b-dup-slot"));
+    EXPECT_EQ(registry.size(), 1u);
+
+    // A genuinely new chain_id AND new (nettype, enum_index) succeeds.
+    EXPECT_TRUE(detail::register_chain(registry, seen, 2, MAINNET, 2, "chain-b"));
+    EXPECT_EQ(registry.size(), 2u);
+  }
+
+  // No consensus-validation test for "memo with an unrecognized packed chain_index"
+  // was added: the chain registry deliberately stayed non-consensus (see the
+  // decision + reasoning documented in cryptonote_config.h right above the
+  // registry, and in gateway_utils.cpp at validate_gateway_bridge_memos).
+  // chain_index only ever exists inside the encrypted ciphertext --
+  // validate_gateway_bridge_memos never decrypts it and structurally can't, so
+  // there is no consensus-side chain_index check for such a test to exercise.
 
   TEST(GatewayBridgeMemo, domain_separation_from_payment_id_mask)
   {

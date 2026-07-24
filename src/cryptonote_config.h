@@ -31,7 +31,10 @@
 #pragma once
 
 
+#include <cassert>
 #include <cstddef>
+#include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -40,6 +43,8 @@
 #include <array>
 #include <ratio>
 #include <array>
+#include <unordered_map>
+#include <utility>
 
 using namespace std::literals;
 namespace cryptonote {
@@ -272,6 +277,218 @@ enum network_type : uint8_t
   FAKECHAIN,
   UNDEFINED = 255
 };
+
+// Gateway bridge memo (HF22+) chain registry. Maps the compact on-chain
+// chain_index (see tx_extra_gateway_bridge_memo) to a real EVM chain id
+// (EIP-155).
+//
+// NON-CONSENSUS BY STRUCTURAL NECESSITY, NOT BY CONVENTION -- living in this
+// file (cryptonote_config.h, alongside plenty of genuinely consensus-critical
+// constants) does not by itself make this table fork-relevant. It isn't,
+// because it *can't* be: chain_index is never a plaintext field of
+// tx_extra_gateway_bridge_memo (that struct only exposes {version,
+// output_index, ciphertext} -- see cryptonote_basic/tx_extra.h). chain_index
+// only ever exists in *decrypted* form, produced exclusively by
+// decrypt_gateway_bridge_memo(tx, memo, gateway_view_secret_key, out)
+// (gateway_utils.cpp), which requires the gateway's view secret key as an
+// explicit argument. validate_gateway_bridge_memos -- the actual
+// consensus-level check, run identically by every node with no access to any
+// gateway's private key material -- structurally cannot call that function
+// with real key material, and so cannot see, let alone validate, a memo's
+// chain_index. It only ever checks the plaintext fields (version,
+// output_index bounds/uniqueness); see the matching note there.
+//
+// Consequence: nodes never need to agree on this table's *contents* for
+// consensus to hold -- only the DKG/build-time constant that consensus
+// actually depends on (the memo struct's wire format) is fixed by a hard
+// fork. Adding, removing, or renumbering chain entries here is a plain code
+// change/soft update: an older node with a stale table simply can't resolve
+// a chain a newer table knows about -- exactly like failing to decrypt a
+// memo for any other reason -- never a validation disagreement, since it was
+// never validating chain_index in the first place. If a future change ever
+// moves chain_index (or any part of the memo's meaning) into a *plaintext*,
+// validator-visible field, this reasoning stops applying immediately and
+// this table becomes genuinely fork-relevant from that point on -- update
+// this comment (and add the consensus check) the moment that happens, don't
+// let it go stale.
+//
+// Split into two enums (rather than one flat index) because MainnetChain and
+// TestnetChain reuse the same small integer range (e.g. index 1 is Ethereum
+// under one, Sepolia under the other) -- pack_chain_index/unpack_chain_index
+// below fold the network into the same 2-byte on-chain value specifically so
+// a decrypted chain_index is self-describing without needing separate
+// context about which network produced it.
+enum class MainnetChain : uint16_t
+{
+  NONE = 0,
+  ETHEREUM,
+  BSC,
+  POLYGON,
+  AVALANCHE,
+  ARBITRUM,
+  OPTIMISM,
+  BASE,
+  FANTOM,
+};
+
+enum class TestnetChain : uint16_t
+{
+  NONE = 0,
+  SEPOLIA,
+  HOLESKY,
+  BSC_TESTNET,
+  POLYGON_AMOY,
+  AVALANCHE_FUJI,
+  ARBITRUM_SEPOLIA,
+  OPTIMISM_SEPOLIA,
+  BASE_SEPOLIA,
+  FANTOM_TESTNET,
+};
+
+// One registered chain: its real EVM chain id, which Beldex network_type it's
+// registered under, its compact enum index within that network's enum
+// (MainnetChain or TestnetChain, per `nettype`), and a human-readable name.
+struct ChainEntry
+{
+  uint64_t         real_chain_id;
+  network_type     nettype;
+  uint16_t         enum_index; // value of MainnetChain (if nettype==MAINNET) or TestnetChain (otherwise)
+  std::string_view name;
+};
+
+// The on-chain chain_index (tx_extra_gateway_bridge_memo's plaintext) packs both
+// the enum index AND which network it belongs to into one uint16_t, so the raw
+// number is self-describing -- decoding it never depends on separately knowing
+// which Beldex network produced the memo. Top bit = network (0 = mainnet, 1 =
+// testnet); low 15 bits = the enum index within that network's enum. This is a
+// pure application-layer encoding: the on-chain field stays a plain 2-byte
+// uint16_t, so the 32-byte memo plaintext layout and its 10-byte zero-padding
+// integrity check (see tx_extra_gateway_bridge_memo) are unaffected.
+inline constexpr uint16_t GATEWAY_CHAIN_INDEX_NETWORK_BIT = 0x8000;
+inline constexpr uint16_t GATEWAY_CHAIN_INDEX_MASK        = 0x7FFF;
+
+struct UnpackedChainIndex
+{
+  network_type nettype;
+  uint16_t     enum_index;
+};
+
+inline uint16_t pack_chain_index(const ChainEntry& entry)
+{
+  uint16_t bit = (entry.nettype == TESTNET) ? GATEWAY_CHAIN_INDEX_NETWORK_BIT : uint16_t{0};
+  return bit | (entry.enum_index & GATEWAY_CHAIN_INDEX_MASK);
+}
+
+inline UnpackedChainIndex unpack_chain_index(uint16_t packed)
+{
+  return UnpackedChainIndex{
+      (packed & GATEWAY_CHAIN_INDEX_NETWORK_BIT) ? TESTNET : MAINNET,
+      static_cast<uint16_t>(packed & GATEWAY_CHAIN_INDEX_MASK)};
+}
+
+namespace detail
+{
+  // Registers one chain into `registry`/`seen`, rejecting (returning false,
+  // registering nothing) if `real_chain_id` is already registered, or if
+  // (nettype, enum_index) is already registered -- both would otherwise silently
+  // shadow an earlier entry or make two different real chains indistinguishable
+  // on-chain.
+  inline bool register_chain(
+      std::unordered_map<uint64_t, ChainEntry>& registry,
+      std::set<std::pair<network_type, uint16_t>>& seen,
+      uint64_t real_chain_id, network_type nettype, uint16_t enum_index, std::string_view name)
+  {
+    if (registry.count(real_chain_id))
+      return false;
+    if (!seen.emplace(nettype, enum_index).second)
+      return false;
+    registry.emplace(real_chain_id, ChainEntry{real_chain_id, nettype, enum_index, name});
+    return true;
+  }
+
+  inline const std::unordered_map<uint64_t, ChainEntry>& gateway_chain_registry()
+  {
+    static const std::unordered_map<uint64_t, ChainEntry> registry = [] {
+      std::unordered_map<uint64_t, ChainEntry> r;
+      std::set<std::pair<network_type, uint16_t>> seen;
+      auto reg = [&](uint64_t id, network_type nt, uint16_t idx, std::string_view name) {
+        bool ok = register_chain(r, seen, id, nt, idx, name);
+        assert(ok && "duplicate gateway chain registration (chain id or (nettype, enum_index) collision)");
+        (void)ok;
+      };
+
+      reg(1,     MAINNET, static_cast<uint16_t>(MainnetChain::ETHEREUM),  "ethereum");
+      reg(56,    MAINNET, static_cast<uint16_t>(MainnetChain::BSC),       "bsc");
+      reg(137,   MAINNET, static_cast<uint16_t>(MainnetChain::POLYGON),   "polygon");
+      reg(43114, MAINNET, static_cast<uint16_t>(MainnetChain::AVALANCHE), "avalanche");
+      reg(42161, MAINNET, static_cast<uint16_t>(MainnetChain::ARBITRUM),  "arbitrum");
+      reg(10,    MAINNET, static_cast<uint16_t>(MainnetChain::OPTIMISM),  "optimism");
+      reg(8453,  MAINNET, static_cast<uint16_t>(MainnetChain::BASE),      "base");
+      reg(250,   MAINNET, static_cast<uint16_t>(MainnetChain::FANTOM),    "fantom");
+
+      reg(11155111, TESTNET, static_cast<uint16_t>(TestnetChain::SEPOLIA),          "sepolia");
+      reg(17000,    TESTNET, static_cast<uint16_t>(TestnetChain::HOLESKY),          "holesky");
+      reg(97,       TESTNET, static_cast<uint16_t>(TestnetChain::BSC_TESTNET),      "bsc-testnet");
+      reg(80002,    TESTNET, static_cast<uint16_t>(TestnetChain::POLYGON_AMOY),     "polygon-amoy");
+      reg(43113,    TESTNET, static_cast<uint16_t>(TestnetChain::AVALANCHE_FUJI),   "avalanche-fuji");
+      reg(421614,   TESTNET, static_cast<uint16_t>(TestnetChain::ARBITRUM_SEPOLIA), "arbitrum-sepolia");
+      reg(11155420, TESTNET, static_cast<uint16_t>(TestnetChain::OPTIMISM_SEPOLIA), "optimism-sepolia");
+      reg(84532,    TESTNET, static_cast<uint16_t>(TestnetChain::BASE_SEPOLIA),     "base-sepolia");
+      reg(4002,     TESTNET, static_cast<uint16_t>(TestnetChain::FANTOM_TESTNET),   "fantom-testnet");
+
+      return r;
+    }();
+    return registry;
+  }
+} // namespace detail
+
+// packed chain_index -> real EVM chain id, or nullopt if not registered. Self-contained:
+// the network to look up under comes from the packed value itself, not a caller-supplied nettype.
+inline std::optional<uint64_t> gateway_chain_index_to_evm_chain_id(uint16_t chain_index)
+{
+  UnpackedChainIndex u = unpack_chain_index(chain_index);
+  if (u.enum_index == 0)
+    return std::nullopt;
+  for (const auto& [id, entry] : detail::gateway_chain_registry())
+    if (entry.nettype == u.nettype && entry.enum_index == u.enum_index)
+      return entry.real_chain_id;
+  return std::nullopt;
+}
+
+// real EVM chain id -> packed chain_index, or nullopt if unregistered.
+inline std::optional<uint16_t> gateway_evm_chain_id_to_chain_index(uint64_t evm_chain_id)
+{
+  auto const& registry = detail::gateway_chain_registry();
+  auto it = registry.find(evm_chain_id);
+  if (it == registry.end())
+    return std::nullopt;
+  return pack_chain_index(it->second);
+}
+
+// real EVM chain id -> the full registered ChainEntry, or nullopt if unrecognized. Callers that
+// care whether the chain belongs to their own Beldex network (e.g. rejecting a real mainnet chain
+// id typed into a testnet wallet) must check the returned entry's `nettype` themselves -- this
+// function is deliberately network-agnostic, since a real chain id is globally unique on its own.
+inline std::optional<ChainEntry> resolve_chain_id(uint64_t real_chain_id)
+{
+  auto const& registry = detail::gateway_chain_registry();
+  auto it = registry.find(real_chain_id);
+  if (it == registry.end())
+    return std::nullopt;
+  return it->second;
+}
+
+// packed chain_index -> chain name, or nullopt if not registered.
+inline std::optional<std::string_view> gateway_chain_index_to_name(uint16_t chain_index)
+{
+  UnpackedChainIndex u = unpack_chain_index(chain_index);
+  if (u.enum_index == 0)
+    return std::nullopt;
+  for (const auto& [id, entry] : detail::gateway_chain_registry())
+    if (entry.nettype == u.nettype && entry.enum_index == u.enum_index)
+      return entry.name;
+  return std::nullopt;
+}
 
 // Constants for older hard-forks that are mostly irrelevant now, but are still needed to sync the
 // older parts of the blockchain:

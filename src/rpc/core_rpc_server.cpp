@@ -68,7 +68,6 @@
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_core/gateway_utils.h"
-#include "cryptonote_core/gateway_chain_registry.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/uptime_proof.h"
 #include "net/parse.h"
@@ -3679,12 +3678,12 @@ namespace cryptonote::rpc {
 
     if (req.destinations.empty() || req.destinations.size() != req.amounts.size())
       throw rpc_error{ERROR_WRONG_PARAM, "destinations and amounts must be non-empty and of equal length"};
-    if (!req.bridge_chain_indices.empty() && req.bridge_chain_indices.size() != req.destinations.size())
-      throw rpc_error{ERROR_WRONG_PARAM, "bridge_chain_indices must be empty or match destinations in length"};
+    if (!req.bridge_chain_ids.empty() && req.bridge_chain_ids.size() != req.destinations.size())
+      throw rpc_error{ERROR_WRONG_PARAM, "bridge_chain_ids must be empty or match destinations in length"};
     if (!req.bridge_evm_addresses.empty() && req.bridge_evm_addresses.size() != req.destinations.size())
       throw rpc_error{ERROR_WRONG_PARAM, "bridge_evm_addresses must be empty or match destinations in length"};
-    if (req.bridge_chain_indices.empty() != req.bridge_evm_addresses.empty())
-      throw rpc_error{ERROR_WRONG_PARAM, "bridge_chain_indices and bridge_evm_addresses must both be set or both empty"};
+    if (req.bridge_chain_ids.empty() != req.bridge_evm_addresses.empty())
+      throw rpc_error{ERROR_WRONG_PARAM, "bridge_chain_ids and bridge_evm_addresses must both be set or both empty"};
 
     auto& db = m_core.get_blockchain_storage().get_db();
     cryptonote::gateway_account_data acct;
@@ -3718,17 +3717,24 @@ namespace cryptonote::rpc {
         d.gateway_id = info.gateway_id;
         d.amount     = req.amounts[i];
         d.payment_id = info.has_payment_id ? info.payment_id : 0;
-        if (!req.bridge_chain_indices.empty() && req.bridge_chain_indices[i] != 0)
+        if (!req.bridge_chain_ids.empty() && req.bridge_chain_ids[i] != 0)
         {
-          if (!cryptonote::gateway_chain_index_to_evm_chain_id(req.bridge_chain_indices[i]))
-            throw rpc_error{ERROR_WRONG_PARAM, "unknown bridge_chain_indices[" + std::to_string(i) + "]"};
+          // bridge_chain_ids[i] is the real EVM chain id (EIP-155), same as simplewallet's CLI
+          // and wallet-rpc's bridge_chain_id. A testnet daemon still shouldn't accept a
+          // caller-submitted chain id that names a real mainnet chain (or vice versa) -- that's
+          // almost certainly a caller mistake, not something any legitimate flow needs -- so
+          // check both: the id must resolve to a real, registered chain, AND that chain's
+          // network must match this daemon's own.
+          auto entry = cryptonote::resolve_chain_id(req.bridge_chain_ids[i]);
+          if (!entry || entry->nettype != nettype)
+            throw rpc_error{ERROR_WRONG_PARAM, "unknown bridge_chain_ids[" + std::to_string(i) + "]"};
           std::string_view eth_hex = req.bridge_evm_addresses[i];
           if (eth_hex.size() >= 2 && eth_hex[0] == '0' && (eth_hex[1] == 'x' || eth_hex[1] == 'X'))
             eth_hex.remove_prefix(2);
           crypto::eth_address eth_addr{};
           if (!tools::hex_to_type(eth_hex, eth_addr))
             throw rpc_error{ERROR_WRONG_PARAM, "invalid bridge_evm_addresses[" + std::to_string(i) + "] (expected 40-char hex, optional 0x prefix)"};
-          d.gateway_bridge_chain_index = req.bridge_chain_indices[i];
+          d.gateway_bridge_chain_index = cryptonote::pack_chain_index(*entry);
           d.gateway_bridge_evm_addr    = eth_addr;
         }
         gw_dests.push_back(d);

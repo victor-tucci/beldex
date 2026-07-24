@@ -67,7 +67,7 @@
 #include "cryptonote_core/master_node_voting.h"
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_core/beldex_name_system.h"
-#include "cryptonote_core/gateway_chain_registry.h"
+#include "cryptonote_config.h"
 #include "simplewallet.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "rpc/core_rpc_server_commands_defs.h"
@@ -6004,21 +6004,33 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
         de.gateway_payment_id = gw_info.has_payment_id ? gw_info.payment_id : 0;
         de.original           = local_args[i];
 
-        // Gateway bridge memo (HF22+): OPTIONAL third token "<chain-name>:0x<40hex>"
-        // (e.g. "sepolia:0xDeaDBeeF..."), consumed only when it matches this
-        // shape -- no valid address contains ':', so this is unambiguous.
+        // Gateway bridge memo (HF22+): OPTIONAL third token "<evm-chain-id>:0x<40hex>"
+        // (e.g. "11155111:0xDeaDBeeF..." for Sepolia), consumed only when it matches
+        // this shape -- no valid address contains ':', so this is unambiguous.
+        // <evm-chain-id> is the real EIP-155 chain id, not a Beldex-internal index.
         size_t consumed = 2;
         if (i + 2 < local_args.size())
         {
-          static const std::regex bridge_re("^([A-Za-z0-9_-]+):(0x[0-9a-fA-F]{40})$");
+          static const std::regex bridge_re("^([0-9]+):(0x[0-9a-fA-F]{40})$");
           std::smatch match;
           const std::string& token = local_args[i + 2];
           if (std::regex_match(token, match, bridge_re))
           {
-            auto chain_index = cryptonote::gateway_chain_name_to_index(match[1].str());
-            if (!chain_index)
+            uint64_t chain_id = 0;
+            if (!tools::parse_int(match[1].str(), chain_id))
             {
-              fail_msg_writer() << tr("unknown bridge chain name: ") << match[1].str();
+              fail_msg_writer() << tr("bridge chain id out of range: ") << match[1].str();
+              return false;
+            }
+            auto entry = cryptonote::resolve_chain_id(chain_id);
+            if (!entry)
+            {
+              fail_msg_writer() << tr("unknown bridge chain id: ") << match[1].str();
+              return false;
+            }
+            if (entry->nettype != m_wallet->nettype())
+            {
+              fail_msg_writer() << tr("bridge chain id is not valid for this wallet's network: ") << match[1].str();
               return false;
             }
             crypto::eth_address evm_addr{};
@@ -6027,7 +6039,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
               fail_msg_writer() << tr("invalid bridge evm address: ") << match[2].str();
               return false;
             }
-            de.gateway_bridge_chain_index = *chain_index;
+            de.gateway_bridge_chain_index = cryptonote::pack_chain_index(*entry);
             de.gateway_bridge_evm_addr    = evm_addr;
             consumed = 3;
           }
