@@ -128,6 +128,7 @@ inline constexpr size_t DEFAULT_MEMPOOL_MAX_WEIGHT           = 72h / TARGET_BLOC
 
 inline constexpr uint64_t FEE_PER_BYTE                         = 215;   // Fallback used in wallet if no fee is available from RPC
 inline constexpr uint64_t FEE_PER_OUTPUT_V17                   = 100000; // 0.0001 BDX per tx output 
+inline constexpr uint64_t FEE_PER_OUTPUT_V21                   = 10000000; // 0.01 BDX per tx output 
 inline constexpr uint64_t DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT      = 300000;
 inline constexpr uint64_t FEE_QUANTIZATION_DECIMALS                     = 8;
 
