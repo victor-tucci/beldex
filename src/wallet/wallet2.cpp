@@ -264,6 +264,35 @@ namespace {
   //   }
   // }
 
+  crypto::chacha_key ionic_swap_chacha_key(const crypto::key_derivation& derivation)
+  {
+    crypto::chacha_key key;
+    crypto::generate_chacha_key(&derivation, sizeof(derivation), key, 1);
+    return key;
+  }
+
+  std::string encrypt_ionic_swap_payload(std::string_view plaintext, const crypto::key_derivation& derivation)
+  {
+    const auto key = ionic_swap_chacha_key(derivation);
+    const crypto::chacha_iv iv = crypto::rand<crypto::chacha_iv>();
+    std::string ciphertext(sizeof(iv) + plaintext.size(), '\0');
+    memcpy(ciphertext.data(), &iv, sizeof(iv));
+    crypto::chacha20(plaintext.data(), plaintext.size(), key, iv, ciphertext.data() + sizeof(iv));
+    return ciphertext;
+  }
+
+  std::string decrypt_ionic_swap_payload(std::string_view ciphertext, const crypto::key_derivation& derivation)
+  {
+    THROW_WALLET_EXCEPTION_IF(ciphertext.size() < sizeof(crypto::chacha_iv), tools::error::wallet_internal_error,
+        "Ionic swap proposal context is truncated");
+
+    const auto key = ionic_swap_chacha_key(derivation);
+    const auto& iv = *reinterpret_cast<const crypto::chacha_iv*>(ciphertext.data());
+    std::string plaintext(ciphertext.size() - sizeof(iv), '\0');
+    crypto::chacha20(ciphertext.data() + sizeof(iv), plaintext.size(), key, iv, plaintext.data());
+    return plaintext;
+  }
+
   size_t get_num_outputs(const std::vector<cryptonote::tx_destination_entry> &dsts, const std::vector<tools::wallet2::transfer_details> &transfers, const std::vector<size_t> &selected_transfers, const beldex_construct_tx_params& tx_params)
   {
     size_t outputs = dsts.size();
@@ -7507,6 +7536,43 @@ void wallet2::commit_tx(std::vector<pending_tx>& ptx_vector, bool flash)
   }
 }
 //----------------------------------------------------------------------------------------------------
+void wallet2::commit_raw_tx(const cryptonote::transaction& tx, bool flash)
+{
+  if (m_light_wallet)
+  {
+    light_rpc::SUBMIT_RAW_TX::request oreq{};
+    light_rpc::SUBMIT_RAW_TX::response ores{};
+    oreq.address = get_account().get_public_address_str(m_nettype);
+    oreq.view_key = tools::type_to_hex(get_account().get_keys().m_view_secret_key);
+    oreq.tx = oxenc::to_hex(tx_to_blob(tx));
+    oreq.flash = flash;
+    bool r = invoke_http<light_rpc::SUBMIT_RAW_TX>(oreq, ores);
+    THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "submit_raw_tx");
+    THROW_WALLET_EXCEPTION_IF(ores.status != "OK" && ores.status != "success",
+        error::tx_rejected, tx, get_rpc_status(ores.status), ores.error);
+  }
+  else
+  {
+    nlohmann::json send_transaction_params{
+      {"tx_as_hex", oxenc::to_hex(tx_to_blob(tx))},
+      {"do_not_relay", false},
+      {"flash", flash},
+    };
+    auto daemon_send_resp = m_http_client.json_rpc("send_raw_transaction", send_transaction_params);
+    THROW_WALLET_EXCEPTION_IF(daemon_send_resp["status"] == rpc::STATUS_BUSY, error::daemon_busy, "sendrawtransaction");
+    if (flash)
+      THROW_WALLET_EXCEPTION_IF(daemon_send_resp["status"] != rpc::STATUS_OK,
+          error::tx_flash_rejected, tx, get_rpc_status(daemon_send_resp["status"]),
+          daemon_send_resp["reason"].is_string() ? daemon_send_resp["reason"].get<std::string>() : "Daemon provided no reason");
+    else
+      THROW_WALLET_EXCEPTION_IF(daemon_send_resp["status"] != rpc::STATUS_OK,
+          error::tx_rejected, tx, get_rpc_status(daemon_send_resp["status"]),
+          daemon_send_resp["reason"].is_string() ? daemon_send_resp["reason"].get<std::string>() : "Daemon provided no reason");
+  }
+
+  LOG_PRINT_L2("Raw transaction " << get_transaction_hash(tx) << " submitted to daemon");
+}
+//----------------------------------------------------------------------------------------------------
 bool wallet2::save_tx(const std::vector<pending_tx>& ptx_vector, const fs::path& filename) const
 {
   LOG_PRINT_L0("saving " << ptx_vector.size() << " transactions");
@@ -11814,6 +11880,197 @@ std::vector<wallet2::pending_tx> wallet2::create_asset_burn_tx(
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
                                subaddr_indices, tx_params);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+bool wallet2::create_ionic_swap_proposal(
+    const ionic_swap_proposal_info& proposal_details,
+    const cryptonote::account_public_address& destination_addr,
+    ionic_swap_proposal& proposal)
+{
+  std::vector<size_t> selected_transfers_for_template;
+  return build_ionic_swap_template(proposal_details, destination_addr, proposal, selected_transfers_for_template);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+bool wallet2::build_ionic_swap_template(
+    const ionic_swap_proposal_info& proposal_details,
+    const cryptonote::account_public_address& destination_addr,
+    ionic_swap_proposal& proposal,
+    std::vector<size_t>& selected_transfers)
+{
+  THROW_WALLET_EXCEPTION_IF(proposal_details.to_finalizer.empty(), error::wallet_internal_error,
+      "Ionic swap proposal requires at least one initiator-funded transfer");
+
+  uint32_t priority = get_default_priority();
+  if (priority == tx_priority_default || priority == tx_priority_flash)
+    priority = tx_priority_unimportant;
+
+  std::vector<cryptonote::tx_destination_entry> dsts;
+  dsts.reserve(proposal_details.to_finalizer.size());
+  for (const auto& funds : proposal_details.to_finalizer)
+  {
+    THROW_WALLET_EXCEPTION_IF(funds.amount == 0, error::wallet_internal_error,
+        "Ionic swap proposal contains a zero-amount transfer");
+    cryptonote::tx_destination_entry dst{funds.amount, destination_addr, false};
+    dst.asset_id = funds.asset_id;
+    dsts.push_back(std::move(dst));
+  }
+
+  auto hf_ver = get_hard_fork_version();
+  THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error, "Failed to get hard fork version from daemon");
+  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_ver, txtype::standard, priority);
+
+  auto ptx_vector = create_transactions_2(
+      dsts,
+      cryptonote::TX_OUTPUT_DECOYS,
+      0 /* unlock_time */,
+      priority,
+      {} /* extra */,
+      0 /* subaddr_account */,
+      {} /* subaddr_indices */,
+      tx_params);
+
+  THROW_WALLET_EXCEPTION_IF(ptx_vector.size() != 1, error::wallet_internal_error,
+      "Ionic swap proposal construction produced an unexpected number of transactions");
+
+  auto& ptx = ptx_vector.front();
+  selected_transfers = ptx.selected_transfers;
+
+  crypto::key_derivation derivation{};
+  THROW_WALLET_EXCEPTION_IF(
+      !crypto::generate_key_derivation(destination_addr.m_view_public_key, ptx.tx_key, derivation),
+      error::wallet_internal_error,
+      "Failed to derive Ionic swap proposal encryption key");
+
+  ionic_swap_proposal_context context{};
+  context.proposal_info = proposal_details;
+  context.initiator_address = m_account.get_keys().m_account_address;
+  context.created_at = static_cast<uint64_t>(time(nullptr));
+  context.selected_transfers = selected_transfers;
+
+  std::string context_blob = serialization::dump_binary(context);
+  proposal.tx_template = ptx.tx;
+  proposal.encrypted_context = encrypt_ionic_swap_payload(context_blob, derivation);
+  return true;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+bool wallet2::get_ionic_swap_proposal_info(
+    const std::string& raw_proposal,
+    ionic_swap_proposal_info& proposal_info) const
+{
+  try
+  {
+    ionic_swap_proposal proposal{};
+    serialization::parse_binary(raw_proposal, proposal);
+    ionic_swap_proposal_context context{};
+    if (!decrypt_ionic_swap_proposal_context(proposal, context))
+      return false;
+    proposal_info = context.proposal_info;
+    return true;
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+bool wallet2::decrypt_ionic_swap_proposal_context(
+    const ionic_swap_proposal& proposal,
+    ionic_swap_proposal_context& context) const
+{
+  try
+  {
+    const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(proposal.tx_template);
+    THROW_WALLET_EXCEPTION_IF(tx_pub_key == crypto::null_pkey, error::wallet_internal_error,
+        "Ionic swap proposal transaction template does not contain a tx public key");
+
+    crypto::key_derivation derivation{};
+    THROW_WALLET_EXCEPTION_IF(
+        !crypto::generate_key_derivation(tx_pub_key, get_account().get_keys().m_view_secret_key, derivation),
+        error::wallet_internal_error,
+        "Failed to derive Ionic swap proposal decryption key");
+
+    serialization::parse_binary(decrypt_ionic_swap_payload(proposal.encrypted_context, derivation), context);
+    return true;
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+bool wallet2::accept_ionic_swap_proposal(
+    const std::string& raw_proposal,
+    std::vector<cryptonote::transaction>& result_txs)
+{
+  try
+  {
+    ionic_swap_proposal proposal{};
+    serialization::parse_binary(raw_proposal, proposal);
+    return accept_ionic_swap_proposal(proposal, result_txs);
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+bool wallet2::accept_ionic_swap_proposal(
+    const ionic_swap_proposal& proposal,
+    std::vector<cryptonote::transaction>& result_txs)
+{
+  ionic_swap_proposal_context context{};
+  THROW_WALLET_EXCEPTION_IF(
+      !decrypt_ionic_swap_proposal_context(proposal, context),
+      error::wallet_internal_error,
+      "Failed to decode ionic swap proposal context");
+
+  const uint64_t now = static_cast<uint64_t>(time(nullptr));
+  THROW_WALLET_EXCEPTION_IF(
+      context.proposal_info.expiration_time > 0 &&
+      now > context.created_at + context.proposal_info.expiration_time,
+      error::wallet_internal_error,
+      "Ionic swap proposal has expired");
+
+  result_txs.clear();
+  result_txs.push_back(proposal.tx_template);
+
+  if (context.proposal_info.to_initiator.empty())
+    return true;
+
+  uint32_t priority = get_default_priority();
+  if (priority == tx_priority_default || priority == tx_priority_flash)
+    priority = tx_priority_unimportant;
+
+  std::vector<cryptonote::tx_destination_entry> dsts;
+  dsts.reserve(context.proposal_info.to_initiator.size());
+  for (const auto& funds : context.proposal_info.to_initiator)
+  {
+    THROW_WALLET_EXCEPTION_IF(funds.amount == 0, error::wallet_internal_error,
+        "Ionic swap proposal contains a zero-amount counterparty transfer");
+    cryptonote::tx_destination_entry dst{funds.amount, context.initiator_address, false};
+    dst.asset_id = funds.asset_id;
+    dsts.push_back(std::move(dst));
+  }
+
+  auto hf_ver = get_hard_fork_version();
+  THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error, "Failed to get hard fork version from daemon");
+  beldex_construct_tx_params tx_params = wallet2::construct_params(*hf_ver, txtype::standard, priority);
+
+  auto ptx_vector = create_transactions_2(
+      dsts,
+      cryptonote::TX_OUTPUT_DECOYS,
+      0 /* unlock_time */,
+      priority,
+      {} /* extra */,
+      0 /* subaddr_account */,
+      {} /* subaddr_indices */,
+      tx_params);
+
+  THROW_WALLET_EXCEPTION_IF(ptx_vector.size() != 1, error::wallet_internal_error,
+      "Ionic swap proposal acceptance produced an unexpected number of transactions");
+
+  result_txs.push_back(ptx_vector.front().tx);
+  return true;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, beldex_construct_tx_params &tx_params, const unique_index_container& subtract_fee_from_outputs)

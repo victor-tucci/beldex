@@ -58,6 +58,7 @@
 #include "ringct/rctOps.h"
 #include "checkpoints/checkpoints.h"
 #include "serialization/pair.h"
+#include "serialization/string.h"
 
 #include "wallet_errors.h"
 #include "common/password.h"
@@ -91,6 +92,7 @@ class wallet_accessor_test;
 BELDEX_RPC_DOC_INTROSPECT
 namespace tools
 {
+  inline constexpr uint64_t IONIC_SWAP_PROPOSAL_EXPIRATION_SECONDS = 24 * 60 * 60;
   static const char *ERR_MSG_NETWORK_VERSION_QUERY_FAILED = tr("Could not query the current network version, try later");
   static const char *ERR_MSG_NETWORK_HEIGHT_QUERY_FAILED = tr("Could not query the current network block height, try later: ");
   static const char *ERR_MSG_MASTER_NODE_LIST_QUERY_FAILED = tr("Failed to query daemon for master node list");
@@ -178,6 +180,58 @@ private:
     void on_progress(const hw::device_progress& event) override;
   private:
     wallet2 * wallet;
+  };
+
+  struct ionic_swap_asset_funds
+  {
+    crypto::asset_id asset_id = crypto::null_aid;
+    uint64_t amount = 0;
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(asset_id)
+      VARINT_FIELD(amount)
+    END_SERIALIZE()
+  };
+
+  struct ionic_swap_proposal_info
+  {
+    std::vector<ionic_swap_asset_funds> to_finalizer;
+    std::vector<ionic_swap_asset_funds> to_initiator;
+    uint64_t fee_contribution_a = 0;
+    uint64_t expiration_time = IONIC_SWAP_PROPOSAL_EXPIRATION_SECONDS;
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(to_finalizer)
+      FIELD(to_initiator)
+      VARINT_FIELD(fee_contribution_a)
+      VARINT_FIELD(expiration_time)
+    END_SERIALIZE()
+  };
+
+  struct ionic_swap_proposal_context
+  {
+    ionic_swap_proposal_info proposal_info;
+    cryptonote::account_public_address initiator_address;
+    uint64_t created_at = 0;
+    std::vector<size_t> selected_transfers;
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(proposal_info)
+      FIELD(initiator_address)
+      VARINT_FIELD(created_at)
+      FIELD(selected_transfers)
+    END_SERIALIZE()
+  };
+
+  struct ionic_swap_proposal
+  {
+    cryptonote::transaction tx_template;
+    std::string encrypted_context;
+
+    BEGIN_SERIALIZE_OBJECT()
+      FIELD(tx_template)
+      FIELD(encrypted_context)
+    END_SERIALIZE()
   };
 
   struct tx_money_got_in_out
@@ -753,6 +807,7 @@ private:
 
     void commit_tx(pending_tx& ptx_vector, bool flash = false);
     void commit_tx(std::vector<pending_tx>& ptx_vector, bool flash = false);
+    void commit_raw_tx(const cryptonote::transaction& tx, bool flash = false);
     bool save_tx(const std::vector<pending_tx>& ptx_vector, const fs::path& filename) const;
     std::string dump_tx_to_str(const std::vector<pending_tx> &ptx_vector) const;
     std::string save_multisig_tx(multisig_tx_set txs);
@@ -807,6 +862,27 @@ private:
         const std::vector<uint8_t>& extra,
         uint32_t subaddr_account,
         std::set<uint32_t> subaddr_indices);
+    bool create_ionic_swap_proposal(
+        const ionic_swap_proposal_info& proposal_details,
+        const cryptonote::account_public_address& destination_addr,
+        ionic_swap_proposal& proposal);
+    bool build_ionic_swap_template(
+        const ionic_swap_proposal_info& proposal_details,
+        const cryptonote::account_public_address& destination_addr,
+        ionic_swap_proposal& proposal,
+        std::vector<size_t>& selected_transfers);
+    bool get_ionic_swap_proposal_info(
+        const std::string& raw_proposal,
+        ionic_swap_proposal_info& proposal_info) const;
+    bool decrypt_ionic_swap_proposal_context(
+        const ionic_swap_proposal& proposal,
+        ionic_swap_proposal_context& context) const;
+    bool accept_ionic_swap_proposal(
+        const std::string& raw_proposal,
+        std::vector<cryptonote::transaction>& result_txs);
+    bool accept_ionic_swap_proposal(
+        const ionic_swap_proposal& proposal,
+        std::vector<cryptonote::transaction>& result_txs);
 
     enum class sweep_selection_mode : uint8_t
     {
