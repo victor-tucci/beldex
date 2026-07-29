@@ -6039,7 +6039,7 @@ bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std:
               fail_msg_writer() << tr("invalid bridge evm address: ") << match[2].str();
               return false;
             }
-            de.gateway_bridge_chain_index = cryptonote::pack_chain_index(*entry);
+            de.gateway_bridge_chain_index = entry->chain_index;
             de.gateway_bridge_evm_addr    = evm_addr;
             consumed = 3;
           }

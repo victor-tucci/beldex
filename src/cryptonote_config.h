@@ -312,129 +312,120 @@ enum network_type : uint8_t
 // this comment (and add the consensus check) the moment that happens, don't
 // let it go stale.
 //
-// Split into two enums (rather than one flat index) because MainnetChain and
-// TestnetChain reuse the same small integer range (e.g. index 1 is Ethereum
-// under one, Sepolia under the other) -- pack_chain_index/unpack_chain_index
-// below fold the network into the same 2-byte on-chain value specifically so
-// a decrypted chain_index is self-describing without needing separate
-// context about which network produced it.
-enum class MainnetChain : uint16_t
-{
-  NONE = 0,
-  ETHEREUM,
-  BSC,
-  POLYGON,
-  AVALANCHE,
-  ARBITRUM,
-  OPTIMISM,
-  BASE,
-  FANTOM,
-};
+// Each chain's chain_index is derived purely from its own (nettype, real_chain_id)
+// -- via a fixed bit-mixing hash, see detail::derive_chain_index -- never from its
+// position in the table below or from any other entry. That means registration
+// order here is meaningless: adding, removing, or reordering an unrelated chain
+// can never change an already-assigned chain's index. Top bit of the result =
+// network (0 mainnet / 1 testnet); see the non-consensus note above for why a
+// node with a stale table simply fails to resolve an id it doesn't recognize,
+// same as any other unrecognized value, rather than this being a fork issue.
 
-enum class TestnetChain : uint16_t
-{
-  NONE = 0,
-  SEPOLIA,
-  HOLESKY,
-  BSC_TESTNET,
-  POLYGON_AMOY,
-  AVALANCHE_FUJI,
-  ARBITRUM_SEPOLIA,
-  OPTIMISM_SEPOLIA,
-  BASE_SEPOLIA,
-  FANTOM_TESTNET,
-};
-
-// One registered chain: its real EVM chain id, which Beldex network_type it's
-// registered under, its compact enum index within that network's enum
-// (MainnetChain or TestnetChain, per `nettype`), and a human-readable name.
+// One registered chain: its real EVM chain id, the packed on-chain chain_index
+// that identifies it inside a decrypted tx_extra_gateway_bridge_memo, which
+// Beldex network it's registered under, and a human-readable name.
 struct ChainEntry
 {
   uint64_t         real_chain_id;
+  uint16_t         chain_index;
   network_type     nettype;
-  uint16_t         enum_index; // value of MainnetChain (if nettype==MAINNET) or TestnetChain (otherwise)
   std::string_view name;
 };
 
-// The on-chain chain_index (tx_extra_gateway_bridge_memo's plaintext) packs both
-// the enum index AND which network it belongs to into one uint16_t, so the raw
-// number is self-describing -- decoding it never depends on separately knowing
-// which Beldex network produced the memo. Top bit = network (0 = mainnet, 1 =
-// testnet); low 15 bits = the enum index within that network's enum. This is a
-// pure application-layer encoding: the on-chain field stays a plain 2-byte
-// uint16_t, so the 32-byte memo plaintext layout and its 10-byte zero-padding
-// integrity check (see tx_extra_gateway_bridge_memo) are unaffected.
+// This is a pure application-layer encoding of chain_index's top bit: the
+// on-chain field itself stays a plain 2-byte uint16_t, so the 32-byte memo
+// plaintext layout and its 10-byte zero-padding integrity check (see
+// tx_extra_gateway_bridge_memo) are unaffected.
 inline constexpr uint16_t GATEWAY_CHAIN_INDEX_NETWORK_BIT = 0x8000;
-inline constexpr uint16_t GATEWAY_CHAIN_INDEX_MASK        = 0x7FFF;
-
-struct UnpackedChainIndex
-{
-  network_type nettype;
-  uint16_t     enum_index;
-};
-
-inline uint16_t pack_chain_index(const ChainEntry& entry)
-{
-  uint16_t bit = (entry.nettype == TESTNET) ? GATEWAY_CHAIN_INDEX_NETWORK_BIT : uint16_t{0};
-  return bit | (entry.enum_index & GATEWAY_CHAIN_INDEX_MASK);
-}
-
-inline UnpackedChainIndex unpack_chain_index(uint16_t packed)
-{
-  return UnpackedChainIndex{
-      (packed & GATEWAY_CHAIN_INDEX_NETWORK_BIT) ? TESTNET : MAINNET,
-      static_cast<uint16_t>(packed & GATEWAY_CHAIN_INDEX_MASK)};
-}
 
 namespace detail
 {
-  // Registers one chain into `registry`/`seen`, rejecting (returning false,
-  // registering nothing) if `real_chain_id` is already registered, or if
-  // (nettype, enum_index) is already registered -- both would otherwise silently
-  // shadow an earlier entry or make two different real chains indistinguishable
-  // on-chain.
-  inline bool register_chain(
-      std::unordered_map<uint64_t, ChainEntry>& registry,
-      std::set<std::pair<network_type, uint16_t>>& seen,
-      uint64_t real_chain_id, network_type nettype, uint16_t enum_index, std::string_view name)
+  // SplitMix64's finalizer: a fixed, well-known 64-bit bit-mixing function. Uses
+  // only unsigned arithmetic (wraps mod 2^64, fully specified by the standard),
+  // so it is bit-for-bit identical on every conforming compiler/platform.
+  // Deliberately NOT std::hash: std::hash's algorithm is left unspecified by the
+  // standard and can differ across standard library implementations, which would
+  // make a chain's derived chain_index depend on which platform built the binary
+  // -- unacceptable for a value that has to mean the same thing in an encrypted
+  // memo regardless of which wallet/gateway build produced or reads it.
+  inline constexpr uint64_t mix64(uint64_t x)
   {
-    if (registry.count(real_chain_id))
-      return false;
-    if (!seen.emplace(nettype, enum_index).second)
-      return false;
-    registry.emplace(real_chain_id, ChainEntry{real_chain_id, nettype, enum_index, name});
-    return true;
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
   }
 
-  inline const std::unordered_map<uint64_t, ChainEntry>& gateway_chain_registry()
+  // Derives a chain's chain_index purely from (nettype, real_chain_id) -- see the
+  // registry's doc comment above for why this must never depend on position or
+  // any other entry. A 15-bit slot is astronomically unlikely to collide for the
+  // handful of chains registered below, and if two ever did collide,
+  // register_chain rejects the second one immediately and deterministically at
+  // static-init time (every build, every run, since the input table is fixed) --
+  // there is no scenario where a collision reaches production undetected.
+  inline constexpr uint16_t derive_chain_index(network_type nettype, uint64_t real_chain_id)
   {
-    static const std::unordered_map<uint64_t, ChainEntry> registry = [] {
-      std::unordered_map<uint64_t, ChainEntry> r;
-      std::set<std::pair<network_type, uint16_t>> seen;
-      auto reg = [&](uint64_t id, network_type nt, uint16_t idx, std::string_view name) {
-        bool ok = register_chain(r, seen, id, nt, idx, name);
-        assert(ok && "duplicate gateway chain registration (chain id or (nettype, enum_index) collision)");
-        (void)ok;
+    uint16_t low15 = static_cast<uint16_t>(mix64(real_chain_id) & 0x7FFF);
+    if (low15 == 0)
+      low15 = 1; // 0 is reserved: chain_index == 0 means "no bridge memo"
+    return (nettype == TESTNET ? GATEWAY_CHAIN_INDEX_NETWORK_BIT : uint16_t{0}) | low15;
+  }
+
+  // Two directions into the same fixed table: by chain_index (what a decrypted
+  // memo carries) and by real_chain_id (what a caller building a deposit
+  // destination starts from). Kept as two maps rather than one, since neither
+  // key is cheaply derivable from the other.
+  struct GatewayChainRegistry
+  {
+    std::unordered_map<uint16_t, ChainEntry> by_chain_index;
+    std::unordered_map<uint64_t, uint16_t>   by_real_chain_id;
+  };
+
+  // Registers one chain -- callers supply only its real EVM chain id, which
+  // Beldex network it belongs to, and a name; chain_index is always derived, never
+  // passed in. Throws if the derived chain_index collides with an
+  // already-registered one, or if real_chain_id is a duplicate -- this runs once
+  // at static init, so there's no performance reason to let a release build
+  // (NDEBUG) silently swallow a collision that would otherwise leave one of the
+  // two chains permanently unresolvable with no diagnostic.
+  inline void register_chain(GatewayChainRegistry& registry,
+      uint64_t real_chain_id, network_type nettype, std::string_view name)
+  {
+    uint16_t chain_index = derive_chain_index(nettype, real_chain_id);
+    if (registry.by_chain_index.count(chain_index) || registry.by_real_chain_id.count(real_chain_id))
+      throw std::logic_error("duplicate/colliding gateway chain registration: "s + std::string(name));
+    registry.by_chain_index.emplace(chain_index, ChainEntry{real_chain_id, chain_index, nettype, name});
+    registry.by_real_chain_id.emplace(real_chain_id, chain_index);
+  }
+
+  inline const GatewayChainRegistry& gateway_chain_registry()
+  {
+    static const GatewayChainRegistry registry = [] {
+      GatewayChainRegistry r;
+      auto reg = [&](uint64_t real_chain_id, network_type nettype, std::string_view name) {
+        register_chain(r, real_chain_id, nettype, name);
       };
 
-      reg(1,     MAINNET, static_cast<uint16_t>(MainnetChain::ETHEREUM),  "ethereum");
-      reg(56,    MAINNET, static_cast<uint16_t>(MainnetChain::BSC),       "bsc");
-      reg(137,   MAINNET, static_cast<uint16_t>(MainnetChain::POLYGON),   "polygon");
-      reg(43114, MAINNET, static_cast<uint16_t>(MainnetChain::AVALANCHE), "avalanche");
-      reg(42161, MAINNET, static_cast<uint16_t>(MainnetChain::ARBITRUM),  "arbitrum");
-      reg(10,    MAINNET, static_cast<uint16_t>(MainnetChain::OPTIMISM),  "optimism");
-      reg(8453,  MAINNET, static_cast<uint16_t>(MainnetChain::BASE),      "base");
-      reg(250,   MAINNET, static_cast<uint16_t>(MainnetChain::FANTOM),    "fantom");
+      reg(1,     MAINNET, "ethereum");
+      reg(56,    MAINNET, "bsc");
+      reg(137,   MAINNET, "polygon");
+      reg(43114, MAINNET, "avalanche");
+      reg(42161, MAINNET, "arbitrum");
+      reg(10,    MAINNET, "optimism");
+      reg(8453,  MAINNET, "base");
+      reg(250,   MAINNET, "fantom");
 
-      reg(11155111, TESTNET, static_cast<uint16_t>(TestnetChain::SEPOLIA),          "sepolia");
-      reg(17000,    TESTNET, static_cast<uint16_t>(TestnetChain::HOLESKY),          "holesky");
-      reg(97,       TESTNET, static_cast<uint16_t>(TestnetChain::BSC_TESTNET),      "bsc-testnet");
-      reg(80002,    TESTNET, static_cast<uint16_t>(TestnetChain::POLYGON_AMOY),     "polygon-amoy");
-      reg(43113,    TESTNET, static_cast<uint16_t>(TestnetChain::AVALANCHE_FUJI),   "avalanche-fuji");
-      reg(421614,   TESTNET, static_cast<uint16_t>(TestnetChain::ARBITRUM_SEPOLIA), "arbitrum-sepolia");
-      reg(11155420, TESTNET, static_cast<uint16_t>(TestnetChain::OPTIMISM_SEPOLIA), "optimism-sepolia");
-      reg(84532,    TESTNET, static_cast<uint16_t>(TestnetChain::BASE_SEPOLIA),     "base-sepolia");
-      reg(4002,     TESTNET, static_cast<uint16_t>(TestnetChain::FANTOM_TESTNET),   "fantom-testnet");
+      reg(11155111, TESTNET, "sepolia");
+      reg(17000,    TESTNET, "holesky");
+      reg(97,       TESTNET, "bsc-testnet");
+      reg(80002,    TESTNET, "polygon-amoy");
+      reg(43113,    TESTNET, "avalanche-fuji");
+      reg(421614,   TESTNET, "arbitrum-sepolia");
+      reg(11155420, TESTNET, "optimism-sepolia");
+      reg(84532,    TESTNET, "base-sepolia");
+      reg(4002,     TESTNET, "fantom-testnet");
 
       return r;
     }();
@@ -442,27 +433,24 @@ namespace detail
   }
 } // namespace detail
 
-// packed chain_index -> real EVM chain id, or nullopt if not registered. Self-contained:
-// the network to look up under comes from the packed value itself, not a caller-supplied nettype.
+// packed chain_index -> real EVM chain id, or nullopt if not registered.
 inline std::optional<uint64_t> gateway_chain_index_to_evm_chain_id(uint16_t chain_index)
 {
-  UnpackedChainIndex u = unpack_chain_index(chain_index);
-  if (u.enum_index == 0)
+  auto const& by_index = detail::gateway_chain_registry().by_chain_index;
+  auto it = by_index.find(chain_index);
+  if (it == by_index.end())
     return std::nullopt;
-  for (const auto& [id, entry] : detail::gateway_chain_registry())
-    if (entry.nettype == u.nettype && entry.enum_index == u.enum_index)
-      return entry.real_chain_id;
-  return std::nullopt;
+  return it->second.real_chain_id;
 }
 
 // real EVM chain id -> packed chain_index, or nullopt if unregistered.
 inline std::optional<uint16_t> gateway_evm_chain_id_to_chain_index(uint64_t evm_chain_id)
 {
-  auto const& registry = detail::gateway_chain_registry();
-  auto it = registry.find(evm_chain_id);
-  if (it == registry.end())
+  auto const& by_id = detail::gateway_chain_registry().by_real_chain_id;
+  auto it = by_id.find(evm_chain_id);
+  if (it == by_id.end())
     return std::nullopt;
-  return pack_chain_index(it->second);
+  return it->second;
 }
 
 // real EVM chain id -> the full registered ChainEntry, or nullopt if unrecognized. Callers that
@@ -472,22 +460,20 @@ inline std::optional<uint16_t> gateway_evm_chain_id_to_chain_index(uint64_t evm_
 inline std::optional<ChainEntry> resolve_chain_id(uint64_t real_chain_id)
 {
   auto const& registry = detail::gateway_chain_registry();
-  auto it = registry.find(real_chain_id);
-  if (it == registry.end())
+  auto it = registry.by_real_chain_id.find(real_chain_id);
+  if (it == registry.by_real_chain_id.end())
     return std::nullopt;
-  return it->second;
+  return registry.by_chain_index.at(it->second);
 }
 
 // packed chain_index -> chain name, or nullopt if not registered.
 inline std::optional<std::string_view> gateway_chain_index_to_name(uint16_t chain_index)
 {
-  UnpackedChainIndex u = unpack_chain_index(chain_index);
-  if (u.enum_index == 0)
+  auto const& by_index = detail::gateway_chain_registry().by_chain_index;
+  auto it = by_index.find(chain_index);
+  if (it == by_index.end())
     return std::nullopt;
-  for (const auto& [id, entry] : detail::gateway_chain_registry())
-    if (entry.nettype == u.nettype && entry.enum_index == u.enum_index)
-      return entry.name;
-  return std::nullopt;
+  return it->second.name;
 }
 
 // Constants for older hard-forks that are mostly irrelevant now, but are still needed to sync the

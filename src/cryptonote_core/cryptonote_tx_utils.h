@@ -180,7 +180,7 @@ namespace cryptonote
 
     // Gateway bridge memo (HF22+): OPTIONAL destination-chain routing hint,
     // encrypted into a paired tx_extra entry. chain_index == 0 means "no memo"
-    // (0 is reserved, see the MainnetChain/TestnetChain registry in cryptonote_config.h).
+    // (0 is reserved, see the gateway chain registry in cryptonote_config.h).
     uint16_t gateway_bridge_chain_index = 0;
     crypto::eth_address gateway_bridge_evm_addr{};
 

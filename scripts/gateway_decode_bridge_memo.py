@@ -45,46 +45,73 @@ GW_BRIDGE_MEMO_MASK = b"gateway_bridge_memo_mask"
 TX_EXTRA_TAG_PUBKEY = 0x01
 TX_EXTRA_TAG_GATEWAY_BRIDGE_MEMO = 0x7D
 
-# on-chain chain_index bit layout (see pack_chain_index/unpack_chain_index,
-# cryptonote_config.h): top bit = network, low 15 bits = enum index within
-# that network's MainnetChain/TestnetChain enum.
+# on-chain chain_index bit layout (see detail::derive_chain_index,
+# cryptonote_config.h): top bit = network, low 15 bits = a hash of
+# (network, real_chain_id) -- never a small hand-numbered index.
 GATEWAY_CHAIN_INDEX_NETWORK_BIT = 0x8000
 GATEWAY_CHAIN_INDEX_MASK = 0x7FFF
 MAINNET = "mainnet"
 TESTNET = "testnet"
 
-
-def unpack_chain_index(packed):
-    """Mirror of cryptonote::unpack_chain_index (cryptonote_config.h). Returns
-    (network, enum_index)."""
-    nettype = TESTNET if (packed & GATEWAY_CHAIN_INDEX_NETWORK_BIT) else MAINNET
-    enum_index = packed & GATEWAY_CHAIN_INDEX_MASK
-    return nettype, enum_index
+_MASK64 = (1 << 64) - 1
 
 
-# Mirror of the MainnetChain/TestnetChain registry in cryptonote_config.h. Keep
-# in sync. Keyed by (network, enum_index) -- the same key unpack_chain_index
-# produces from a decrypted chain_index -- to (name, real EVM chain id).
-CHAIN_REGISTRY = {
-    (MAINNET, 1): ("ethereum", 1),
-    (MAINNET, 2): ("bsc", 56),
-    (MAINNET, 3): ("polygon", 137),
-    (MAINNET, 4): ("avalanche", 43114),
-    (MAINNET, 5): ("arbitrum", 42161),
-    (MAINNET, 6): ("optimism", 10),
-    (MAINNET, 7): ("base", 8453),
-    (MAINNET, 8): ("fantom", 250),
+def _mix64(x):
+    """Mirror of cryptonote::detail::mix64 (cryptonote_config.h) -- SplitMix64's
+    finalizer. Must stay bit-for-bit identical to the C++ version: same fixed
+    constants, same operation order, same 64-bit wraparound (hence the explicit
+    masking Python needs but C++'s uint64_t gets for free)."""
+    x &= _MASK64
+    x ^= x >> 30
+    x = (x * 0xbf58476d1ce4e5b9) & _MASK64
+    x ^= x >> 27
+    x = (x * 0x94d049bb133111eb) & _MASK64
+    x ^= x >> 31
+    return x
 
-    (TESTNET, 1): ("sepolia", 11155111),
-    (TESTNET, 2): ("holesky", 17000),
-    (TESTNET, 3): ("bsc-testnet", 97),
-    (TESTNET, 4): ("polygon-amoy", 80002),
-    (TESTNET, 5): ("avalanche-fuji", 43113),
-    (TESTNET, 6): ("arbitrum-sepolia", 421614),
-    (TESTNET, 7): ("optimism-sepolia", 11155420),
-    (TESTNET, 8): ("base-sepolia", 84532),
-    (TESTNET, 9): ("fantom-testnet", 4002),
-}
+
+def derive_chain_index(nettype, real_chain_id):
+    """Mirror of cryptonote::detail::derive_chain_index (cryptonote_config.h)."""
+    low15 = _mix64(real_chain_id) & GATEWAY_CHAIN_INDEX_MASK
+    if low15 == 0:
+        low15 = 1  # 0 is reserved: chain_index == 0 means "no bridge memo"
+    return (GATEWAY_CHAIN_INDEX_NETWORK_BIT if nettype == TESTNET else 0) | low15
+
+
+# Mirror of the gateway_chain_registry table in cryptonote_config.h. Keep this
+# (real_chain_id, network, name) list in sync -- chain_index itself is always
+# derived below via derive_chain_index, never hand-numbered, exactly like the
+# C++ side (see the reasoning in cryptonote_config.h: a derived index can't be
+# silently broken by reordering or inserting an unrelated entry).
+_CHAIN_LIST = [
+    (1, MAINNET, "ethereum"),
+    (56, MAINNET, "bsc"),
+    (137, MAINNET, "polygon"),
+    (43114, MAINNET, "avalanche"),
+    (42161, MAINNET, "arbitrum"),
+    (10, MAINNET, "optimism"),
+    (8453, MAINNET, "base"),
+    (250, MAINNET, "fantom"),
+
+    (11155111, TESTNET, "sepolia"),
+    (17000, TESTNET, "holesky"),
+    (97, TESTNET, "bsc-testnet"),
+    (80002, TESTNET, "polygon-amoy"),
+    (43113, TESTNET, "avalanche-fuji"),
+    (421614, TESTNET, "arbitrum-sepolia"),
+    (11155420, TESTNET, "optimism-sepolia"),
+    (84532, TESTNET, "base-sepolia"),
+    (4002, TESTNET, "fantom-testnet"),
+]
+
+# chain_index -> (name, real_chain_id, network), built by deriving each entry's
+# index exactly the way the C++ registry does.
+CHAIN_REGISTRY = {}
+for _real_chain_id, _nettype, _name in _CHAIN_LIST:
+    _idx = derive_chain_index(_nettype, _real_chain_id)
+    if _idx in CHAIN_REGISTRY:
+        raise RuntimeError("duplicate/colliding chain_index in CHAIN_REGISTRY: {}".format(_name))
+    CHAIN_REGISTRY[_idx] = (_name, _real_chain_id, _nettype)
 
 
 class ParseError(Exception):
@@ -286,10 +313,12 @@ def main():
                 memo["output_index"]))
             continue
         chain_index, evm_addr = result
-        nettype, enum_index = unpack_chain_index(chain_index)
-        name, evm_chain_id = CHAIN_REGISTRY.get(
-            (nettype, enum_index),
-            ("unknown chain_index {} (network={}, enum_index={})".format(chain_index, nettype, enum_index), None))
+        entry = CHAIN_REGISTRY.get(chain_index)
+        if entry is None:
+            nettype = TESTNET if (chain_index & GATEWAY_CHAIN_INDEX_NETWORK_BIT) else MAINNET
+            name, evm_chain_id = "unknown chain_index {} (network={})".format(chain_index, nettype), None
+        else:
+            name, evm_chain_id, nettype = entry
         found += 1
         print("output[{}]: chain={} (evm_chain_id={}, network={})  evm_addr=0x{}".format(
             memo["output_index"], name, evm_chain_id, nettype, evm_addr.hex()))

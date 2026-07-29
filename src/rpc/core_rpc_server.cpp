@@ -3734,7 +3734,7 @@ namespace cryptonote::rpc {
           crypto::eth_address eth_addr{};
           if (!tools::hex_to_type(eth_hex, eth_addr))
             throw rpc_error{ERROR_WRONG_PARAM, "invalid bridge_evm_addresses[" + std::to_string(i) + "] (expected 40-char hex, optional 0x prefix)"};
-          d.gateway_bridge_chain_index = cryptonote::pack_chain_index(*entry);
+          d.gateway_bridge_chain_index = entry->chain_index;
           d.gateway_bridge_evm_addr    = eth_addr;
         }
         gw_dests.push_back(d);

@@ -761,7 +761,7 @@ namespace
 bool validate_gateway_bridge_memos(const transaction& tx, std::string& reason)
 {
   // Deliberately does NOT check chain_index against the chain registry
-  // (cryptonote_config.h's MainnetChain/TestnetChain/gateway_chain_registry) --
+  // (cryptonote_config.h's gateway_chain_registry) --
   // it structurally can't. chain_index only exists inside `m.ciphertext`,
   // encrypted; this function only ever sees the plaintext fields (version,
   // output_index) below. Decoding chain_index requires the gateway's view

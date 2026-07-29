@@ -931,7 +931,7 @@ namespace tools
           crypto::eth_address eth_addr{};
           if (!tools::hex_to_type(eth_hex, eth_addr))
             throw wallet_rpc_error{error_code::WRONG_ADDRESS, "invalid bridge_evm_address: "s + it->bridge_evm_address};
-          de.gateway_bridge_chain_index = cryptonote::pack_chain_index(*entry);
+          de.gateway_bridge_chain_index = entry->chain_index;
           de.gateway_bridge_evm_addr    = eth_addr;
         }
 
