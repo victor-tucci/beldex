@@ -11897,7 +11897,7 @@ bool wallet2::build_ionic_swap_template(
     ionic_swap_proposal& proposal,
     std::vector<size_t>& selected_transfers)
 {
-  THROW_WALLET_EXCEPTION_IF(proposal_details.to_finalizer.empty(), error::wallet_internal_error,
+  THROW_WALLET_EXCEPTION_IF(proposal_details.to_initiator.empty(), error::wallet_internal_error,
       "Ionic swap proposal requires at least one initiator-funded transfer");
 
   uint32_t priority = get_default_priority();
@@ -11905,8 +11905,8 @@ bool wallet2::build_ionic_swap_template(
     priority = tx_priority_unimportant;
 
   std::vector<cryptonote::tx_destination_entry> dsts;
-  dsts.reserve(proposal_details.to_finalizer.size());
-  for (const auto& funds : proposal_details.to_finalizer)
+  dsts.reserve(proposal_details.to_initiator.size());
+  for (const auto& funds : proposal_details.to_initiator)
   {
     THROW_WALLET_EXCEPTION_IF(funds.amount == 0, error::wallet_internal_error,
         "Ionic swap proposal contains a zero-amount transfer");
@@ -12034,7 +12034,7 @@ bool wallet2::accept_ionic_swap_proposal(
   result_txs.clear();
   result_txs.push_back(proposal.tx_template);
 
-  if (context.proposal_info.to_initiator.empty())
+  if (context.proposal_info.to_finalizer.empty())
     return true;
 
   uint32_t priority = get_default_priority();
@@ -12042,8 +12042,8 @@ bool wallet2::accept_ionic_swap_proposal(
     priority = tx_priority_unimportant;
 
   std::vector<cryptonote::tx_destination_entry> dsts;
-  dsts.reserve(context.proposal_info.to_initiator.size());
-  for (const auto& funds : context.proposal_info.to_initiator)
+  dsts.reserve(context.proposal_info.to_finalizer.size());
+  for (const auto& funds : context.proposal_info.to_finalizer)
   {
     THROW_WALLET_EXCEPTION_IF(funds.amount == 0, error::wallet_internal_error,
         "Ionic swap proposal contains a zero-amount counterparty transfer");

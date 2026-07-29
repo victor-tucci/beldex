@@ -195,15 +195,16 @@ private:
 
   struct ionic_swap_proposal_info
   {
+    // JSON/UI semantics:
+    // - to_initiator: assets the initiator contributes when creating the proposal
+    // - to_finalizer: assets the finalizer contributes when accepting the proposal
     std::vector<ionic_swap_asset_funds> to_finalizer;
     std::vector<ionic_swap_asset_funds> to_initiator;
-    uint64_t fee_contribution_a = 0;
     uint64_t expiration_time = IONIC_SWAP_PROPOSAL_EXPIRATION_SECONDS;
 
     BEGIN_SERIALIZE_OBJECT()
       FIELD(to_finalizer)
       FIELD(to_initiator)
-      VARINT_FIELD(fee_contribution_a)
       VARINT_FIELD(expiration_time)
     END_SERIALIZE()
   };

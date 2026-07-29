@@ -223,9 +223,9 @@ namespace
 
   bool validate_ionic_swap_proposal_info_for_cli(const tools::ionic_swap_proposal_info& proposal_info, std::string& error)
   {
-    if (proposal_info.to_finalizer.empty())
+    if (proposal_info.to_initiator.empty())
     {
-      error = sw::tr("Ionic swap proposal must include at least one initiator-funded transfer to the finalizer");
+      error = sw::tr("Ionic swap proposal must include at least one initiator-funded transfer");
       return false;
     }
 
@@ -341,18 +341,6 @@ namespace
         !assign_uint64("expiration_time", proposal_info.expiration_time))
       return false;
 
-    if (json.HasMember("fee_contribution_a") && json.HasMember("fee_paid_by_a"))
-    {
-      error = sw::tr("Specify only one of fee_contribution_a or fee_paid_by_a");
-      return false;
-    }
-
-    if (!assign_uint64("fee_contribution_a", proposal_info.fee_contribution_a))
-      return false;
-    if (proposal_info.fee_contribution_a == 0 && json.HasMember("fee_paid_by_a") &&
-        !assign_uint64("fee_paid_by_a", proposal_info.fee_contribution_a))
-      return false;
-
     if (!json.HasMember("expiration_time"))
       proposal_info.expiration_time = tools::IONIC_SWAP_PROPOSAL_EXPIRATION_SECONDS;
 
@@ -376,7 +364,6 @@ namespace
     return {
         {"to_finalizer", funds_to_json(proposal_info.to_finalizer)},
         {"to_initiator", funds_to_json(proposal_info.to_initiator)},
-        {"fee_contribution_a", proposal_info.fee_contribution_a},
         {"expiration_time", proposal_info.expiration_time},
     };
   }
