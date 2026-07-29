@@ -197,6 +197,9 @@ namespace cryptonote
     bool emit_asset(const std::vector<std::string>& args);        // HF21
     bool burn_asset(const std::vector<std::string>& args);        // HF21
     bool update_asset(const std::vector<std::string>& args);
+    bool generate_ionic_swap_proposal(const std::vector<std::string>& args);
+    bool get_ionic_swap_proposal_info(const std::vector<std::string>& args);
+    bool accept_ionic_swap_proposal(const std::vector<std::string>& args);
 
     enum class sweep_type_t { stake, register_stake, all_or_below, single };
     bool sweep_main_internal(sweep_type_t sweep_type, std::vector<tools::wallet2::pending_tx> &ptx_vector, cryptonote::address_parse_info const &dest, bool flash);

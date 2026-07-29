@@ -191,12 +191,6 @@ namespace
       if (p > std::numeric_limits<uint8_t>::max()) { error = std::string{f} + " is out of range"; return false; }
       t = static_cast<uint8_t>(p); return true;
     };
-    auto assign_bool = [&](const char* f, bool& t) -> bool {
-      if (!json.HasMember(f)) return true;
-      if (!json[f].IsBool()) { error = std::string{f} + " must be a boolean"; return false; }
-      t = json[f].GetBool(); return true;
-    };
-
     if (!assign_uint8("version",          descriptor.version)         ||
         !assign_uint64("total_max_supply", descriptor.total_max_supply)||
         !assign_uint64("current_supply",   descriptor.current_supply)  ||
@@ -225,6 +219,178 @@ namespace
       }
     }
     return validate_asset_descriptor_for_deploy(descriptor, error);
+  }
+
+  bool validate_ionic_swap_proposal_info_for_cli(const tools::ionic_swap_proposal_info& proposal_info, std::string& error)
+  {
+    if (proposal_info.to_initiator.empty())
+    {
+      error = sw::tr("Ionic swap proposal must include at least one initiator-funded transfer");
+      return false;
+    }
+
+    auto validate_funds = [&](std::string_view label, const std::vector<tools::ionic_swap_asset_funds>& funds) -> bool
+    {
+      for (const auto& entry : funds)
+      {
+        if (entry.amount == 0)
+        {
+          error = std::string{label} + " cannot contain zero-amount entries";
+          return false;
+        }
+      }
+      return true;
+    };
+
+    if (!validate_funds("to_finalizer", proposal_info.to_finalizer) ||
+        !validate_funds("to_initiator", proposal_info.to_initiator))
+      return false;
+
+    return true;
+  }
+
+  bool load_ionic_swap_proposal_info_from_json_file(
+      const fs::path& filename,
+      tools::ionic_swap_proposal_info& proposal_info,
+      std::string& error)
+  {
+    std::string data;
+    if (!tools::slurp_file(filename, data))
+    {
+      error = sw::tr("Failed to read Ionic swap proposal file");
+      return false;
+    }
+
+    rapidjson::Document json;
+    if (json.Parse(data.c_str()).HasParseError())
+    {
+      error = sw::tr("Ionic swap proposal is not valid JSON");
+      return false;
+    }
+    if (!json.IsObject())
+    {
+      error = sw::tr("Ionic swap proposal root must be a JSON object");
+      return false;
+    }
+
+    auto assign_uint64 = [&](const char* field_name, uint64_t& value) -> bool {
+      if (!json.HasMember(field_name))
+        return true;
+      if (!json[field_name].IsUint64())
+      {
+        error = std::string{field_name} + " must be an unsigned integer";
+        return false;
+      }
+      value = json[field_name].GetUint64();
+      return true;
+    };
+
+    auto assign_funds = [&](const char* field_name, std::vector<tools::ionic_swap_asset_funds>& out) -> bool {
+      if (!json.HasMember(field_name))
+        return true;
+
+      const auto& field = json[field_name];
+      if (!field.IsArray())
+      {
+        error = std::string{field_name} + " must be an array";
+        return false;
+      }
+
+      out.clear();
+      out.reserve(field.Size());
+      for (const auto& item : field.GetArray())
+      {
+        if (!item.IsObject())
+        {
+          error = std::string{field_name} + " entries must be objects";
+          return false;
+        }
+        if (!item.HasMember("amount") || !item["amount"].IsUint64())
+        {
+          error = std::string{field_name} + " entries must contain an unsigned amount";
+          return false;
+        }
+
+        tools::ionic_swap_asset_funds entry{};
+        entry.amount = item["amount"].GetUint64();
+
+        if (item.HasMember("asset_id"))
+        {
+          if (!item["asset_id"].IsString())
+          {
+            error = std::string{field_name} + " asset_id must be a string";
+            return false;
+          }
+
+          const std::string asset_hex = item["asset_id"].GetString();
+          if (!asset_hex.empty() && asset_hex != "bdx" && !tools::hex_to_type(asset_hex, entry.asset_id))
+          {
+            error = "invalid asset_id: " + asset_hex;
+            return false;
+          }
+        }
+
+        out.push_back(entry);
+      }
+
+      return true;
+    };
+
+    if (!assign_funds("to_finalizer", proposal_info.to_finalizer) ||
+        !assign_funds("to_initiator", proposal_info.to_initiator) ||
+        !assign_uint64("expiration_time", proposal_info.expiration_time))
+      return false;
+
+    if (!json.HasMember("expiration_time"))
+      proposal_info.expiration_time = tools::IONIC_SWAP_PROPOSAL_EXPIRATION_SECONDS;
+
+    return validate_ionic_swap_proposal_info_for_cli(proposal_info, error);
+  }
+
+  nlohmann::json ionic_swap_proposal_info_to_json(const tools::ionic_swap_proposal_info& proposal_info)
+  {
+    auto funds_to_json = [](const std::vector<tools::ionic_swap_asset_funds>& funds) {
+      nlohmann::json entries = nlohmann::json::array();
+      for (const auto& entry : funds)
+      {
+        entries.push_back({
+            {"asset_id", entry.asset_id == crypto::null_aid ? "bdx" : tools::type_to_hex(entry.asset_id)},
+            {"amount", entry.amount},
+        });
+      }
+      return entries;
+    };
+
+    return {
+        {"to_finalizer", funds_to_json(proposal_info.to_finalizer)},
+        {"to_initiator", funds_to_json(proposal_info.to_initiator)},
+        {"expiration_time", proposal_info.expiration_time},
+    };
+  }
+
+  bool load_ionic_swap_proposal_blob_from_file(
+      const fs::path& filename,
+      std::string& raw_proposal,
+      std::string& error)
+  {
+    std::string raw_hex_proposal;
+    if (!tools::slurp_file(filename, raw_hex_proposal))
+    {
+      error = "Failed to load proposal hex from file";
+      return false;
+    }
+    epee::string_tools::trim(raw_hex_proposal);
+
+    try
+    {
+      raw_proposal = oxenc::from_hex(raw_hex_proposal);
+      return true;
+    }
+    catch (const std::exception& e)
+    {
+      error = std::string{"Failed to parse proposal hex to raw data: "} + e.what();
+      return false;
+    }
   }
 
   enum class asset_prefixed_address_mode
@@ -547,6 +713,9 @@ namespace
   const char* USAGE_EMIT_ASSET("emit_asset [index=<N1>[,<N2>,...]] [<priority>] <asset_id> <amount>");
   const char* USAGE_BURN_ASSET("burn_asset [index=<N1>[,<N2>,...]] [<priority>] <asset_id> <amount>");
   const char* USAGE_UPDATE_ASSET("update_asset [index=<N1>[,<N2>,...]] [<priority>] <asset_id> <descriptor_json_file>");
+  const char* USAGE_GENERATE_IONIC_SWAP_PROPOSAL("generate_ionic_swap_proposal <proposal_json_file> <destination_address>");
+  const char* USAGE_GET_IONIC_SWAP_PROPOSAL_INFO("get_ionic_swap_proposal_info <proposal_hex_file>");
+  const char* USAGE_ACCEPT_IONIC_SWAP_PROPOSAL("accept_ionic_swap_proposal <proposal_hex_file>");
 
 
 #if defined (BELDEX_ENABLE_INTEGRATION_TEST_HOOKS)
@@ -3480,6 +3649,21 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
                            [this](const auto& x) { return update_asset(x); },
                            tr(USAGE_UPDATE_ASSET),
                            tr("Update an deployed asset's meta info. Provide the asset ID and a file containing the new meta info. The optional index= and <priority> parameters work as in the `transfer' command."));
+
+  m_cmd_binder.set_handler("generate_ionic_swap_proposal",
+                           [this](const auto& x) { return generate_ionic_swap_proposal(x); },
+                           tr(USAGE_GENERATE_IONIC_SWAP_PROPOSAL),
+                           tr("Create an Ionic swap proposal from a JSON file and print the serialized proposal as hex."));
+
+  m_cmd_binder.set_handler("get_ionic_swap_proposal_info",
+                           [this](const auto& x) { return get_ionic_swap_proposal_info(x); },
+                           tr(USAGE_GET_IONIC_SWAP_PROPOSAL_INFO),
+                           tr("Load an Ionic swap proposal hex file and print the decoded proposal info as JSON."));
+
+  m_cmd_binder.set_handler("accept_ionic_swap_proposal",
+                           [this](const auto& x) { return accept_ionic_swap_proposal(x); },
+                           tr(USAGE_ACCEPT_IONIC_SWAP_PROPOSAL),
+                           tr("Load an Ionic swap proposal hex file, accept it, and build the resulting transaction."));
 }
 
 simple_wallet::~simple_wallet()
@@ -8517,6 +8701,160 @@ bool simple_wallet::update_asset(const std::vector<std::string>& args_)
         << "  Asset ID:     " << tools::type_to_hex(asset_id) << "\n"
         << "  Ticker:       " << adb.ticker << "\n"
         << "  Full name:    " << adb.full_name;
+  }
+  catch (const std::exception& e)
+  {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+    return true;
+  }
+  catch (...)
+  {
+    LOG_ERROR("unknown error");
+    fail_msg_writer() << tr("unknown error");
+    return true;
+  }
+
+  return true;
+}
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::generate_ionic_swap_proposal(const std::vector<std::string>& args)
+{
+  if (!try_connect_to_daemon())
+    return false;
+
+  if (args.size() != 2)
+  {
+    PRINT_USAGE(USAGE_GENERATE_IONIC_SWAP_PROPOSAL);
+    return true;
+  }
+
+  std::string error;
+  tools::ionic_swap_proposal_info proposal_info{};
+  if (!load_ionic_swap_proposal_info_from_json_file(fs::u8path(args[0]), proposal_info, error))
+  {
+    fail_msg_writer() << error << ": " << args[0];
+    return true;
+  }
+
+  cryptonote::address_parse_info info{};
+  if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), args[1]))
+  {
+    fail_msg_writer() << "wrong address: " << args[1];
+    return true;
+  }
+  if (info.has_payment_id)
+  {
+    fail_msg_writer() << "Integrated addresses not supported yet";
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try
+  {
+    tools::ionic_swap_proposal proposal{};
+    bool r = m_wallet->create_ionic_swap_proposal(proposal_info, info.address, proposal);
+    if (!r)
+    {
+      fail_msg_writer() << "Failed to create ionic_swap proposal";
+      return true;
+    }
+
+    success_msg_writer() << "Generated proposal:\n"
+                         << oxenc::to_hex(serialization::dump_binary(proposal));
+  }
+  catch (const std::exception& e)
+  {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+    return true;
+  }
+  catch (...)
+  {
+    LOG_ERROR("unknown error");
+    fail_msg_writer() << tr("unknown error");
+    return true;
+  }
+
+  return true;
+}
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::get_ionic_swap_proposal_info(const std::vector<std::string>& args)
+{
+  if (args.size() != 1)
+  {
+    PRINT_USAGE(USAGE_GET_IONIC_SWAP_PROPOSAL_INFO);
+    return true;
+  }
+
+  std::string raw_proposal;
+  std::string error;
+  if (!load_ionic_swap_proposal_blob_from_file(fs::u8path(args[0]), raw_proposal, error))
+  {
+    fail_msg_writer() << error;
+    return true;
+  }
+
+  try
+  {
+    tools::ionic_swap_proposal_info proposal_info{};
+    if (!m_wallet->get_ionic_swap_proposal_info(raw_proposal, proposal_info))
+    {
+      fail_msg_writer() << "Failed to decode proposal info";
+      return true;
+    }
+
+    success_msg_writer() << "Proposal details:\n" << ionic_swap_proposal_info_to_json(proposal_info).dump(2);
+  }
+  catch (const std::exception& e)
+  {
+    fail_msg_writer() << "Failed to inspect ionic_swap proposal: " << e.what();
+    return true;
+  }
+
+  return true;
+}
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::accept_ionic_swap_proposal(const std::vector<std::string>& args)
+{
+  if (!try_connect_to_daemon())
+    return true;
+
+  if (args.size() != 1)
+  {
+    PRINT_USAGE(USAGE_ACCEPT_IONIC_SWAP_PROPOSAL);
+    return true;
+  }
+
+  std::string raw_proposal;
+  std::string error;
+  if (!load_ionic_swap_proposal_blob_from_file(fs::u8path(args[0]), raw_proposal, error))
+  {
+    fail_msg_writer() << error;
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try
+  {
+    std::vector<cryptonote::transaction> result_txs;
+    if (!m_wallet->accept_ionic_swap_proposal(raw_proposal, result_txs))
+    {
+      fail_msg_writer() << "Failed accept ionic_swap proposal";
+      return true;
+    }
+
+    constexpr bool FIXME_flash = false;
+    std::vector<std::string> tx_ids;
+    tx_ids.reserve(result_txs.size());
+    for (const auto& tx : result_txs)
+    {
+      m_wallet->commit_raw_tx(tx, FIXME_flash);
+      tx_ids.push_back("<" + tools::type_to_hex(cryptonote::get_transaction_hash(tx)) + ">");
+    }
+
+    success_msg_writer() << "Proposal accepted and submitted " << result_txs.size()
+                         << " transaction(s): " << tools::join(", ", tx_ids);
   }
   catch (const std::exception& e)
   {
