@@ -18,9 +18,9 @@
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 
 // Include rctTypes.h FIRST so rct::key and crypto::*_proof_s are both defined
-// before asset_proofs.h body is processed (breaks the include-guard deadlock).
+// before token_proofs.h body is processed (breaks the include-guard deadlock).
 #include "ringct/rctTypes.h"
-#include "crypto/asset_proofs.h"
+#include "crypto/token_proofs.h"
 
 #include <cassert>
 #include <stdexcept>
@@ -32,7 +32,7 @@
 #include "ringct/rctOps.h"       // scalarmultBase, scalarmultX, addKeys, subKeys, skGen …
 
 #undef BELDEX_DEFAULT_LOG_CATEGORY
-#define BELDEX_DEFAULT_LOG_CATEGORY "asset_proofs"
+#define BELDEX_DEFAULT_LOG_CATEGORY "token_proofs"
 
 namespace crypto {
 
@@ -610,7 +610,7 @@ bool generate_BGE_proof(const rct::key&  context_hash,
     //
     // Unlike Zano's generic one-out-of-many proof (which runs on a
     // caller-shifted ring so ring[l] == secret*X directly, collapsing the
-    // whole check to z*X), this proof keeps the *unshifted* asset-id ring
+    // whole check to z*X), this proof keeps the *unshifted* token-id ring
     // and folds the shift (T = ring[l] + r_blind*X) into the final check
     // instead. That changes which identity z has to satisfy: substituting
     // ring[l] = T - r_blind*X into the base-agnostic identity
@@ -707,7 +707,7 @@ bool verify_BGE_proof(const rct::key&    context_hash,
     if (LHS != RHS) return false;
 
     // ── Check 2: sum_i(p_i*ring[i]) - sum_k(x^k*Pk8[k]) == x^m*T - z*X ──
-    // where T is the blinded_asset_id, ring[l] + r_blind*X == T for the
+    // where T is the blinded_token_id, ring[l] + r_blind*X == T for the
     // (hidden) real index l, and z == x^m*r_blind + sum_k(x^k*ro[k]) (see
     // generate_BGE_proof). Rewrite as a single zero check:
     //   sum_i(p_i*ring[i]) - sum_k(x^k*Pk8[k]) - x^m*T + z*X == 0
@@ -769,9 +769,9 @@ bool verify_BGE_proof(const rct::key&    context_hash,
 // ---------------------------------------------------------------------------
 //
 // Adapted from Zano's vector_UG_aggregation_proof (src/crypto/zarcanum.cpp).
-// See asset_proofs.h for the proof's purpose and the Beldex-specific
+// See token_proofs.h for the proof's purpose and the Beldex-specific
 // adaptations: a fixed `tags[j]` per tx instead of Zano's per-output blinded
-// asset tag, and the existing rct::H (rather than a dedicated new generator)
+// token tag, and the existing rct::H (rather than a dedicated new generator)
 // as the auxiliary commitment's value-base, so the unmodified Bulletproof+
 // engine can be reused without modification.
 

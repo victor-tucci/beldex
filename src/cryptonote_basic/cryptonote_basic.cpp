@@ -20,7 +20,7 @@ transaction::transaction(const transaction &t) :
   signatures(t.signatures),
   rct_signatures(t.rct_signatures),
   zc_sig(t.zc_sig),
-  asset_proofs(t.asset_proofs),
+  token_proofs(t.token_proofs),
   pruned(t.pruned),
   unprunable_size(t.unprunable_size.load()),
   prefix_size(t.prefix_size.load())
@@ -42,7 +42,7 @@ transaction& transaction::operator=(const transaction& t) {
   signatures = t.signatures;
   rct_signatures = t.rct_signatures;
   zc_sig = t.zc_sig;
-  asset_proofs = t.asset_proofs;
+  token_proofs = t.token_proofs;
   if (t.is_hash_valid()) {
     hash = t.hash;
     set_hash_valid(true);
@@ -64,7 +64,7 @@ void transaction::set_null()
   rct_signatures = {};
   rct_signatures.type = rct::RCTType::Null;
   zc_sig.clear();
-  asset_proofs.clear();
+  token_proofs.clear();
   set_hash_valid(false);
   set_blob_size_valid(false);
   pruned = false;

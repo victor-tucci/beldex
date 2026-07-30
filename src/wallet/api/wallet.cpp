@@ -45,7 +45,7 @@
 #include "common_defines.h"
 #include "common/util.h"
 #include "common/fs.h"
-#include "cryptonote_basic/asset_descriptor_operation_utils.h"
+#include "cryptonote_basic/token_descriptor_operation_utils.h"
 
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
@@ -84,14 +84,14 @@ namespace {
       return dir;
     }
 
-    bool is_native_sweep_request(const std::optional<std::string>& asset_id)
+    bool is_native_sweep_request(const std::optional<std::string>& token_id)
     {
-        if (!asset_id) return false;
-        return asset_id->empty() || *asset_id == "BDX" || *asset_id == "bdx" ||
-               *asset_id == "native" || *asset_id == "NATIVE";
+        if (!token_id) return false;
+        return token_id->empty() || *token_id == "BDX" || *token_id == "bdx" ||
+               *token_id == "native" || *token_id == "NATIVE";
     }
 
-    bool validate_asset_descriptor_for_deploy(const cryptonote::asset_descriptor_base& descriptor, std::string& error)
+    bool validate_token_descriptor_for_deploy(const cryptonote::token_descriptor_base& descriptor, std::string& error)
     {
         auto ticker_ok = [](std::string_view ticker) {
             return !ticker.empty() && ticker.size() <= 14 &&
@@ -137,9 +137,9 @@ namespace {
         return true;
     }
 
-    bool load_asset_descriptor_from_json(
+    bool load_token_descriptor_from_json(
             std::string_view data,
-            cryptonote::asset_descriptor_base& descriptor,
+            cryptonote::token_descriptor_base& descriptor,
             std::string& error)
     {
         rapidjson::Document json;
@@ -338,7 +338,7 @@ struct Wallet2CallbackImpl : public tools::i_wallet2_callback
                         const crypto::hash &txid,
                         const cryptonote::transaction &in_tx,
                         uint64_t amount,
-                        const crypto::asset_id &asset_id,
+                        const crypto::token_id &token_id,
                         const cryptonote::transaction &spend_tx,
                         const cryptonote::subaddress_index &subaddr_index) override
     {
@@ -346,7 +346,7 @@ struct Wallet2CallbackImpl : public tools::i_wallet2_callback
         std::string tx_hash = tools::type_to_hex(txid);
         LOG_PRINT_L3(__FUNCTION__ << ": money spent. height:  " << height
                      << ", tx: " << tx_hash
-                     << ", amount: " << (asset_id == crypto::null_aid ? print_money(amount) : std::to_string(amount))
+                     << ", amount: " << (token_id == crypto::null_tid ? print_money(amount) : std::to_string(amount))
                      << ", idx: " << subaddr_index);
         // do not signal on sent tx if wallet is not syncronized completely
         if (m_listener && m_wallet->synchronized()) {
@@ -1208,44 +1208,44 @@ uint64_t WalletImpl::balance(uint32_t accountIndex) const
 }
 
 EXPORT
-std::vector<AssetBalanceInfo> WalletImpl::assetBalances(uint32_t accountIndex) const
+std::vector<TokenBalanceInfo> WalletImpl::tokenBalances(uint32_t accountIndex) const
 {
     auto w = wallet();
 
-    const auto asset_balances_by_subaddr = w->asset_balances_per_subaddress(accountIndex, false);
-    const auto unlocked_asset_balances_by_subaddr = w->unlocked_asset_balances_per_subaddress(accountIndex, true);
+    const auto token_balances_by_subaddr = w->token_balances_per_subaddress(accountIndex, false);
+    const auto unlocked_token_balances_by_subaddr = w->unlocked_token_balances_per_subaddress(accountIndex, true);
 
-    std::map<crypto::asset_id, uint64_t> total_by_asset;
-    std::map<crypto::asset_id, uint64_t> unlocked_by_asset;
+    std::map<crypto::token_id, uint64_t> total_by_token;
+    std::map<crypto::token_id, uint64_t> unlocked_by_token;
 
-    for (const auto& [subaddr_index, asset_balances] : asset_balances_by_subaddr)
+    for (const auto& [subaddr_index, token_balances] : token_balances_by_subaddr)
     {
-        for (const auto& [asset_id, amount] : asset_balances)
-            total_by_asset[asset_id] += amount;
+        for (const auto& [token_id, amount] : token_balances)
+            total_by_token[token_id] += amount;
     }
 
-    for (const auto& [subaddr_index, asset_balances] : unlocked_asset_balances_by_subaddr)
+    for (const auto& [subaddr_index, token_balances] : unlocked_token_balances_by_subaddr)
     {
-        for (const auto& [asset_id, amount] : asset_balances)
-            unlocked_by_asset[asset_id] += amount;
+        for (const auto& [token_id, amount] : token_balances)
+            unlocked_by_token[token_id] += amount;
     }
 
-    std::vector<AssetBalanceInfo> result;
-    result.reserve(total_by_asset.size());
+    std::vector<TokenBalanceInfo> result;
+    result.reserve(total_by_token.size());
 
-    for (const auto& [asset_id, balance] : total_by_asset)
+    for (const auto& [token_id, balance] : total_by_token)
     {
-        AssetBalanceInfo entry;
-        entry.assetId = tools::type_to_hex(asset_id);
+        TokenBalanceInfo entry;
+        entry.tokenId = tools::type_to_hex(token_id);
         entry.balance = balance;
-        if (const auto it = unlocked_by_asset.find(asset_id); it != unlocked_by_asset.end())
+        if (const auto it = unlocked_by_token.find(token_id); it != unlocked_by_token.end())
             entry.unlockedBalance = it->second;
 
         try
         {
             nlohmann::json info_req = nlohmann::json::object();
-            info_req["asset_id"] = entry.assetId;
-            const nlohmann::json info_res = w->json_rpc("get_asset_info", info_req);
+            info_req["token_id"] = entry.tokenId;
+            const nlohmann::json info_res = w->json_rpc("get_token_info", info_req);
             entry.ticker = info_res.value("ticker", "");
             entry.decimalPoint = static_cast<uint8_t>(info_res.value("decimal_point", 0));
         }
@@ -1262,9 +1262,9 @@ std::vector<AssetBalanceInfo> WalletImpl::assetBalances(uint32_t accountIndex) c
 }
 
 EXPORT
-std::vector<assetInfo>* WalletImpl::AssetsByOwner(const std::string& owner) const
+std::vector<tokenInfo>* WalletImpl::TokensByOwner(const std::string& owner) const
 {
-    std::vector<assetInfo>* assets = new std::vector<assetInfo>;
+    std::vector<tokenInfo>* tokens = new std::vector<tokenInfo>;
     try
     {
         auto w = wallet();
@@ -1272,7 +1272,7 @@ std::vector<assetInfo>* WalletImpl::AssetsByOwner(const std::string& owner) cons
         nlohmann::json list_req = nlohmann::json::object();
         list_req["offset"] = 0;
         list_req["count"] = 1000000;
-        const auto list_res = w->json_rpc("get_asset_list", list_req);
+        const auto list_res = w->json_rpc("get_token_list", list_req);
 
         std::string requested_owner = tools::type_to_hex(
                 w->get_account().get_keys().m_account_address.m_spend_public_key);
@@ -1288,26 +1288,26 @@ std::vector<assetInfo>* WalletImpl::AssetsByOwner(const std::string& owner) cons
             else
             {
                 setStatusError(tr("Invalid owner address or spend public key"));
-                return assets;
+                return tokens;
             }
         }
 
-        if (!list_res.contains("asset_ids") || !list_res["asset_ids"].is_array())
+        if (!list_res.contains("token_ids") || !list_res["token_ids"].is_array())
         {
-            setStatusError(tr("Invalid daemon response when requesting asset list"));
-            return assets;
+            setStatusError(tr("Invalid daemon response when requesting token list"));
+            return tokens;
         }
 
-        for (const auto& asset_id_val : list_res["asset_ids"])
+        for (const auto& token_id_val : list_res["token_ids"])
         {
-            const std::string asset_id_hex = asset_id_val.get<std::string>();
-            const nlohmann::json info_res = w->json_rpc("get_asset_info", {{"asset_id", asset_id_hex}});
+            const std::string token_id_hex = token_id_val.get<std::string>();
+            const nlohmann::json info_res = w->json_rpc("get_token_info", {{"token_id", token_id_hex}});
 
             if (!info_res.contains("owner") || info_res["owner"].get<std::string>() != requested_owner)
                 continue;
 
-            auto& info = assets->emplace_back();
-            info.asset_id = info_res.value("asset_id", "");
+            auto& info = tokens->emplace_back();
+            info.token_id = info_res.value("token_id", "");
             info.ticker = info_res.value("ticker", "");
             info.full_name = info_res.value("full_name", "");
             info.owner = info_res.value("owner", "");
@@ -1319,16 +1319,16 @@ std::vector<assetInfo>* WalletImpl::AssetsByOwner(const std::string& owner) cons
     }
     catch (const std::exception& e)
     {
-        LOG_PRINT_L1(__FUNCTION__ << "Failed to build or parse asset-by-owner request: " << e.what());
-        setStatusError(std::string{tr("Failed to build or parse asset-by-owner request: ")} + e.what());
+        LOG_PRINT_L1(__FUNCTION__ << "Failed to build or parse token-by-owner request: " << e.what());
+        setStatusError(std::string{tr("Failed to build or parse token-by-owner request: ")} + e.what());
     }
     catch (...)
     {
-        LOG_PRINT_L1(__FUNCTION__ << "Unknown error while building or parsing asset-by-owner request");
-        setStatusError(tr("Unknown error while building or parsing asset-by-owner request"));
+        LOG_PRINT_L1(__FUNCTION__ << "Unknown error while building or parsing token-by-owner request");
+        setStatusError(tr("Unknown error while building or parsing token-by-owner request"));
     }
 
-    return assets;
+    return tokens;
 }
 
 EXPORT
@@ -1873,7 +1873,7 @@ PendingTransaction* WalletImpl::restoreMultisigTransaction(const std::string& si
 //    - confirmed_transfer_details)
 
 EXPORT
-PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std::string> &dst_addr, std::optional<std::vector<uint64_t>> amount, std::optional<std::string> asset_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std::string> &dst_addr, std::optional<std::vector<uint64_t>> amount, std::optional<std::string> token_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {
     clearStatus();
@@ -1888,14 +1888,14 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
         std::vector<uint8_t> extra;
         std::string extra_nonce;
         std::vector<cryptonote::tx_destination_entry> dsts;
-        std::optional<crypto::asset_id> requested_asset_id;
-        if (asset_id) {
-            crypto::asset_id parsed_asset_id = crypto::null_aid;
-            if (!tools::hex_to_type(*asset_id, parsed_asset_id)) {
-                setStatusError(tr("Invalid asset id"));
+        std::optional<crypto::token_id> requested_token_id;
+        if (token_id) {
+            crypto::token_id parsed_token_id = crypto::null_tid;
+            if (!tools::hex_to_type(*token_id, parsed_token_id)) {
+                setStatusError(tr("Invalid token id"));
                 break;
             }
-            requested_asset_id = parsed_asset_id;
+            requested_token_id = parsed_token_id;
         }
         if (!amount && dst_addr.size() > 1) {
             setStatusError(tr("Sending all requires one destination address"));
@@ -1931,8 +1931,8 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
                 de.amount = (*amount)[i];
                 de.is_subaddress = info.is_subaddress;
                 de.is_integrated = info.has_payment_id;
-                if (requested_asset_id)
-                    de.asset_id = *requested_asset_id;
+                if (requested_token_id)
+                    de.token_id = *requested_token_id;
                 dsts.push_back(de);
 
             } else {
@@ -1964,7 +1964,7 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
             } else {
                 transaction->m_pending_tx = w->create_transactions_all(0, info.address, info.is_subaddress, 1, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */,
                                                                               priority,
-                                                                              extra, subaddr_account, subaddr_indices, requested_asset_id);
+                                                                              extra, subaddr_account, subaddr_indices, requested_token_id);
             }
             pendingTxPostProcess(transaction);
 
@@ -2044,14 +2044,14 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<std:
 
 EXPORT
 PendingTransaction *WalletImpl::createTransaction(const std::string &dst_addr, std::optional<uint64_t> amount,
-                                                  std::optional<std::string> asset_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+                                                  std::optional<std::string> token_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 
 {
-    return createTransactionMultDest(std::vector<std::string> {dst_addr},  amount ? (std::vector<uint64_t> {*amount}) : (std::optional<std::vector<uint64_t>>()), asset_id, priority, subaddr_account, subaddr_indices);
+    return createTransactionMultDest(std::vector<std::string> {dst_addr},  amount ? (std::vector<uint64_t> {*amount}) : (std::optional<std::vector<uint64_t>>()), token_id, priority, subaddr_account, subaddr_indices);
 }
 
 EXPORT
-PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::string> asset_id, std::optional<std::string> dst_addr, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::string> token_id, std::optional<std::string> dst_addr, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     // Pause refresh thread while creating transaction
@@ -2065,20 +2065,20 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::str
         auto w = wallet();
         std::vector<uint8_t> extra;
         std::string extra_nonce;
-        std::optional<crypto::asset_id> requested_asset_id;
-        const bool native_only = is_native_sweep_request(asset_id);
-        if (asset_id && !native_only) {
-            crypto::asset_id parsed_asset_id = crypto::null_aid;
-            if (!tools::hex_to_type(*asset_id, parsed_asset_id)) {
-                setStatusError(tr("Invalid asset id"));
+        std::optional<crypto::token_id> requested_token_id;
+        const bool native_only = is_native_sweep_request(token_id);
+        if (token_id && !native_only) {
+            crypto::token_id parsed_token_id = crypto::null_tid;
+            if (!tools::hex_to_type(*token_id, parsed_token_id)) {
+                setStatusError(tr("Invalid token id"));
                 break;
             }
-            requested_asset_id = parsed_asset_id;
+            requested_token_id = parsed_token_id;
         }
         const auto selection_mode =
-                requested_asset_id ? tools::wallet2::sweep_selection_mode::native_only :
+                requested_token_id ? tools::wallet2::sweep_selection_mode::native_only :
                 (native_only ? tools::wallet2::sweep_selection_mode::native_only :
-                               tools::wallet2::sweep_selection_mode::native_and_all_assets);
+                               tools::wallet2::sweep_selection_mode::native_and_all_tokens);
 
         std::string addr = dst_addr ? *dst_addr : w->get_subaddress_as_str({0, 0});
         if (!cryptonote::get_account_address_from_str(info, w->nettype(), addr)){
@@ -2100,7 +2100,7 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::str
         try {
             transaction->m_pending_tx = w->create_transactions_all(0, info.address, info.is_subaddress, 1, cryptonote::TX_OUTPUT_DECOYS, 0 /* unlock_time */,
                                                                             priority,
-                                                                            extra, subaddr_account, subaddr_indices, requested_asset_id,
+                                                                            extra, subaddr_account, subaddr_indices, requested_token_id,
                                                                             cryptonote::txtype::standard, selection_mode);
             pendingTxPostProcess(transaction);
 
@@ -2176,13 +2176,13 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::str
 }
 
 EXPORT
-PendingTransaction *WalletImpl::deployNewAssetTransaction(const std::string& descriptor_json, std::string& asset_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::deployNewTokenTransaction(const std::string& descriptor_json, std::string& token_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     pauseRefresh();
 
     PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
-    asset_id.clear();
+    token_id.clear();
 
     do {
         if (descriptor_json.empty()) {
@@ -2190,15 +2190,15 @@ PendingTransaction *WalletImpl::deployNewAssetTransaction(const std::string& des
             break;
         }
 
-        cryptonote::asset_descriptor_base descriptor{};
+        cryptonote::token_descriptor_base descriptor{};
         std::string error;
-        if (!load_asset_descriptor_from_json(descriptor_json, descriptor, error)) {
-            setStatusError(tr("Invalid asset descriptor JSON: ") + error);
+        if (!load_token_descriptor_from_json(descriptor_json, descriptor, error)) {
+            setStatusError(tr("Invalid token descriptor JSON: ") + error);
             break;
         }
 
-        if (!validate_asset_descriptor_for_deploy(descriptor, error)) {
-            setStatusError(tr("Invalid asset descriptor: ") + error);
+        if (!validate_token_descriptor_for_deploy(descriptor, error)) {
+            setStatusError(tr("Invalid token descriptor: ") + error);
             break;
         }
 
@@ -2207,7 +2207,7 @@ PendingTransaction *WalletImpl::deployNewAssetTransaction(const std::string& des
         if (descriptor.owner == crypto::null_pkey)
             descriptor.owner = owner;
         else if (descriptor.owner != owner) {
-            setStatusError(tr("Asset owner must be this wallet's spend key"));
+            setStatusError(tr("Token owner must be this wallet's spend key"));
             break;
         }
 
@@ -2216,36 +2216,36 @@ PendingTransaction *WalletImpl::deployNewAssetTransaction(const std::string& des
             break;
         }
 
-        cryptonote::tx_extra_asset_descriptor_operation ado{};
-        ado.operation_type = cryptonote::asset_descriptor_operation_type::register_asset;
-        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_descriptor |
-                                          cryptonote::asset_field_asset_id_salt);
-        ado.descriptor = descriptor;
-        ado.asset_id_salt = crypto::rand<uint32_t>();
+        cryptonote::tx_extra_token_descriptor_operation tdo{};
+        tdo.operation_type = cryptonote::token_descriptor_operation_type::register_token;
+        tdo.fields = static_cast<uint8_t>(cryptonote::token_field_descriptor |
+                                          cryptonote::token_field_token_id_salt);
+        tdo.descriptor = descriptor;
+        tdo.token_id_salt = crypto::rand<uint32_t>();
 
         std::vector<uint8_t> extra;
-        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
-            setStatusError(tr("Failed to encode asset descriptor into tx extra"));
+        if (!cryptonote::add_token_descriptor_operation_to_tx_extra(extra, tdo)) {
+            setStatusError(tr("Failed to encode token descriptor into tx extra"));
             break;
         }
 
-        const crypto::asset_id computed_asset_id = cryptonote::get_or_calculate_asset_id(ado);
-        asset_id = tools::type_to_hex(computed_asset_id);
+        const crypto::token_id computed_token_id = cryptonote::get_or_calculate_token_id(tdo);
+        token_id = tools::type_to_hex(computed_token_id);
 
         std::vector<cryptonote::tx_destination_entry> dsts;
         if (descriptor.current_supply > 0) {
             cryptonote::tx_destination_entry dest;
             dest.addr = w->get_account().get_keys().m_account_address;
             dest.amount = descriptor.current_supply;
-            dest.asset_id = computed_asset_id;
+            dest.token_id = computed_token_id;
             dest.is_subaddress = false;
             dsts.push_back(dest);
         }
 
         try {
-            transaction->m_pending_tx = w->create_asset_deploy_tx(
+            transaction->m_pending_tx = w->create_token_deploy_tx(
                     dsts,
-                    computed_asset_id,
+                    computed_token_id,
                     cryptonote::TX_OUTPUT_DECOYS,
                     priority,
                     extra,
@@ -2323,7 +2323,7 @@ PendingTransaction *WalletImpl::deployNewAssetTransaction(const std::string& des
 }
 
 EXPORT
-PendingTransaction *WalletImpl::emitAssetTransaction(const std::string& asset_id, uint64_t amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::mintTokenTransaction(const std::string& token_id, uint64_t amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     pauseRefresh();
@@ -2331,9 +2331,9 @@ PendingTransaction *WalletImpl::emitAssetTransaction(const std::string& asset_id
     PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
 
     do {
-        crypto::asset_id parsed_asset_id = crypto::null_aid;
-        if (!tools::hex_to_type(asset_id, parsed_asset_id) || parsed_asset_id == crypto::null_aid) {
-            setStatusError(tr("Invalid asset id"));
+        crypto::token_id parsed_token_id = crypto::null_tid;
+        if (!tools::hex_to_type(token_id, parsed_token_id) || parsed_token_id == crypto::null_tid) {
+            setStatusError(tr("Invalid token id"));
             break;
         }
 
@@ -2348,25 +2348,25 @@ PendingTransaction *WalletImpl::emitAssetTransaction(const std::string& asset_id
         dst.amount = amount;
         dst.addr = w->get_account().get_keys().m_account_address;
         dst.is_subaddress = false;
-        dst.asset_id = parsed_asset_id;
+        dst.token_id = parsed_token_id;
         dsts.push_back(dst);
 
-        cryptonote::tx_extra_asset_descriptor_operation ado{};
-        ado.operation_type = cryptonote::asset_descriptor_operation_type::emit_asset;
-        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_asset_id | cryptonote::asset_field_amount);
-        ado.asset_id = parsed_asset_id;
-        ado.amount = amount;
+        cryptonote::tx_extra_token_descriptor_operation tdo{};
+        tdo.operation_type = cryptonote::token_descriptor_operation_type::mint_token;
+        tdo.fields = static_cast<uint8_t>(cryptonote::token_field_token_id | cryptonote::token_field_amount);
+        tdo.token_id = parsed_token_id;
+        tdo.amount = amount;
 
         std::vector<uint8_t> extra;
-        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
-            setStatusError(tr("Failed to encode asset descriptor into tx extra"));
+        if (!cryptonote::add_token_descriptor_operation_to_tx_extra(extra, tdo)) {
+            setStatusError(tr("Failed to encode token descriptor into tx extra"));
             break;
         }
 
         try {
-            transaction->m_pending_tx = w->create_asset_emit_tx(
+            transaction->m_pending_tx = w->create_token_mint_tx(
                     dsts,
-                    parsed_asset_id,
+                    parsed_token_id,
                     cryptonote::TX_OUTPUT_DECOYS,
                     priority,
                     extra,
@@ -2444,7 +2444,7 @@ PendingTransaction *WalletImpl::emitAssetTransaction(const std::string& asset_id
 }
 
 EXPORT
-PendingTransaction *WalletImpl::burnAssetTransaction(const std::string& asset_id, uint64_t amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::burnTokenTransaction(const std::string& token_id, uint64_t amount, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     pauseRefresh();
@@ -2452,9 +2452,9 @@ PendingTransaction *WalletImpl::burnAssetTransaction(const std::string& asset_id
     PendingTransactionImpl * transaction = new PendingTransactionImpl(*this);
 
     do {
-        crypto::asset_id parsed_asset_id = crypto::null_aid;
-        if (!tools::hex_to_type(asset_id, parsed_asset_id) || parsed_asset_id == crypto::null_aid) {
-            setStatusError(tr("Invalid asset id"));
+        crypto::token_id parsed_token_id = crypto::null_tid;
+        if (!tools::hex_to_type(token_id, parsed_token_id) || parsed_token_id == crypto::null_tid) {
+            setStatusError(tr("Invalid token id"));
             break;
         }
 
@@ -2464,22 +2464,22 @@ PendingTransaction *WalletImpl::burnAssetTransaction(const std::string& asset_id
         }
 
         std::vector<uint8_t> extra;
-        cryptonote::tx_extra_asset_descriptor_operation ado{};
-        ado.operation_type = cryptonote::asset_descriptor_operation_type::burn_asset;
-        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_asset_id |
-                                          cryptonote::asset_field_amount);
-        ado.asset_id = parsed_asset_id;
-        ado.amount = amount;
+        cryptonote::tx_extra_token_descriptor_operation tdo{};
+        tdo.operation_type = cryptonote::token_descriptor_operation_type::burn_token;
+        tdo.fields = static_cast<uint8_t>(cryptonote::token_field_token_id |
+                                          cryptonote::token_field_amount);
+        tdo.token_id = parsed_token_id;
+        tdo.amount = amount;
 
-        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
-            setStatusError(tr("Failed to encode asset burn operation into tx extra"));
+        if (!cryptonote::add_token_descriptor_operation_to_tx_extra(extra, tdo)) {
+            setStatusError(tr("Failed to encode token burn operation into tx extra"));
             break;
         }
 
         auto w = wallet();
         try {
-            transaction->m_pending_tx = w->create_asset_burn_tx(
-                    parsed_asset_id,
+            transaction->m_pending_tx = w->create_token_burn_tx(
+                    parsed_token_id,
                     amount,
                     cryptonote::TX_OUTPUT_DECOYS,
                     priority,
@@ -2558,7 +2558,7 @@ PendingTransaction *WalletImpl::burnAssetTransaction(const std::string& asset_id
 }
 
 EXPORT
-PendingTransaction *WalletImpl::updateAssetTransaction(const std::string& asset_id, const std::string& descriptor_json, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::updateTokenTransaction(const std::string& token_id, const std::string& descriptor_json, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     pauseRefresh();
@@ -2567,13 +2567,13 @@ PendingTransaction *WalletImpl::updateAssetTransaction(const std::string& asset_
 
     do {
         if (subaddr_account != 0 || !subaddr_indices.empty()) {
-            setStatusError(tr("update_asset must be issued from the primary account without subaddress switches"));
+            setStatusError(tr("update_token must be issued from the primary account without subaddress switches"));
             break;
         }
 
-        crypto::asset_id parsed_asset_id = crypto::null_aid;
-        if (!tools::hex_to_type(asset_id, parsed_asset_id) || parsed_asset_id == crypto::null_aid) {
-            setStatusError(tr("Invalid asset id"));
+        crypto::token_id parsed_token_id = crypto::null_tid;
+        if (!tools::hex_to_type(token_id, parsed_token_id) || parsed_token_id == crypto::null_tid) {
+            setStatusError(tr("Invalid token id"));
             break;
         }
 
@@ -2584,24 +2584,24 @@ PendingTransaction *WalletImpl::updateAssetTransaction(const std::string& asset_
 
         auto w = wallet();
         nlohmann::json info_req = nlohmann::json::object();
-        info_req["asset_id"] = asset_id;
+        info_req["token_id"] = token_id;
 
         nlohmann::json info_res;
         try {
-            info_res = w->json_rpc("get_asset_info", info_req);
+            info_res = w->json_rpc("get_token_info", info_req);
         } catch (const std::exception& e) {
-            setStatusError(tr("Failed to fetch asset info from daemon: ") + std::string(e.what()));
+            setStatusError(tr("Failed to fetch token info from daemon: ") + std::string(e.what()));
             break;
         }
 
         const std::string requested_owner = tools::type_to_hex(
                 w->get_account().get_keys().m_account_address.m_spend_public_key);
         if (!info_res.contains("owner") || info_res["owner"].get<std::string>() != requested_owner) {
-            setStatusError(tr("This wallet does not own the asset: ") + asset_id);
+            setStatusError(tr("This wallet does not own the token: ") + token_id);
             break;
         }
 
-        cryptonote::asset_descriptor_base adb{};
+        cryptonote::token_descriptor_base adb{};
         adb.version = info_res.value("version", 1);
         adb.total_max_supply = info_res.value("total_max_supply", (uint64_t)0);
         adb.current_supply = info_res.value("current_supply", (uint64_t)0);
@@ -2611,15 +2611,15 @@ PendingTransaction *WalletImpl::updateAssetTransaction(const std::string& asset_
         adb.meta_info = info_res.value("meta_info", "");
         tools::hex_to_type(info_res.value("owner", ""), adb.owner);
 
-        cryptonote::asset_descriptor_base json_adb = adb;
+        cryptonote::token_descriptor_base json_adb = adb;
         std::string error;
-        if (!load_asset_descriptor_from_json(descriptor_json, json_adb, error)) {
-            setStatusError(tr("Invalid asset descriptor JSON: ") + error);
+        if (!load_token_descriptor_from_json(descriptor_json, json_adb, error)) {
+            setStatusError(tr("Invalid token descriptor JSON: ") + error);
             break;
         }
 
         if (json_adb.meta_info == adb.meta_info && json_adb.owner == adb.owner) {
-            setStatusError(tr("update_asset: meta_info and owner are unchanged, nothing to update"));
+            setStatusError(tr("update_token: meta_info and owner are unchanged, nothing to update"));
             break;
         }
         adb.meta_info = json_adb.meta_info;
@@ -2627,22 +2627,22 @@ PendingTransaction *WalletImpl::updateAssetTransaction(const std::string& asset_
             adb.owner = json_adb.owner;
         }
 
-        cryptonote::tx_extra_asset_descriptor_operation ado{};
-        ado.operation_type = cryptonote::asset_descriptor_operation_type::update_asset;
-        ado.fields = static_cast<uint8_t>(cryptonote::asset_field_descriptor |
-                                          cryptonote::asset_field_asset_id);
-        ado.descriptor = adb;
-        ado.asset_id = parsed_asset_id;
+        cryptonote::tx_extra_token_descriptor_operation tdo{};
+        tdo.operation_type = cryptonote::token_descriptor_operation_type::update_token;
+        tdo.fields = static_cast<uint8_t>(cryptonote::token_field_descriptor |
+                                          cryptonote::token_field_token_id);
+        tdo.descriptor = adb;
+        tdo.token_id = parsed_token_id;
 
         std::vector<uint8_t> extra;
-        if (!cryptonote::add_asset_descriptor_operation_to_tx_extra(extra, ado)) {
-            setStatusError(tr("Failed to encode asset descriptor into tx extra"));
+        if (!cryptonote::add_token_descriptor_operation_to_tx_extra(extra, tdo)) {
+            setStatusError(tr("Failed to encode token descriptor into tx extra"));
             break;
         }
 
         try {
-            transaction->m_pending_tx = w->create_asset_update_tx(
-                    parsed_asset_id,
+            transaction->m_pending_tx = w->create_token_update_tx(
+                    parsed_token_id,
                     cryptonote::TX_OUTPUT_DECOYS,
                     priority,
                     extra,
@@ -3475,8 +3475,8 @@ bool WalletImpl::checkTxKey(const std::string &txid_str, std::string_view tx_key
 
     try
     {
-        std::map<crypto::asset_id, uint64_t> asset_received;
-        wallet()->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations, asset_received);
+        std::map<crypto::token_id, uint64_t> token_received;
+        wallet()->check_tx_key(txid, tx_key, additional_tx_keys, info.address, received, in_pool, confirmations, token_received);
         clearStatus();
         return true;
     }
@@ -3535,8 +3535,8 @@ bool WalletImpl::checkTxProof(const std::string &txid_str, const std::string &ad
 
     try
     {
-        std::map<crypto::asset_id, uint64_t> asset_received;
-        good = wallet()->check_tx_proof(txid, info.address, info.is_subaddress, message, signature, received, in_pool, confirmations, asset_received);
+        std::map<crypto::token_id, uint64_t> token_received;
+        good = wallet()->check_tx_proof(txid, info.address, info.is_subaddress, message, signature, received, in_pool, confirmations, token_received);
         clearStatus();
         return true;
     }
@@ -3628,8 +3628,8 @@ bool WalletImpl::checkReserveProof(const std::string &address, const std::string
     try
     {
         clearStatus();
-        std::map<crypto::asset_id, std::pair<uint64_t, uint64_t>> asset_totals;
-        good = wallet()->check_reserve_proof(info.address, message, signature, total, spent, asset_totals);
+        std::map<crypto::token_id, std::pair<uint64_t, uint64_t>> token_totals;
+        good = wallet()->check_reserve_proof(info.address, message, signature, total, spent, token_totals);
         return true;
     }
     catch (const std::exception &e)

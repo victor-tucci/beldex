@@ -58,9 +58,9 @@ namespace boost
     a & reinterpret_cast<char (&)[sizeof(crypto::public_key)]>(x);
   }
   template <class Archive>
-  inline void serialize(Archive &a, crypto::asset_id &x, const boost::serialization::version_type ver)
+  inline void serialize(Archive &a, crypto::token_id &x, const boost::serialization::version_type ver)
   {
-    a & reinterpret_cast<char (&)[sizeof(crypto::asset_id)]>(x);
+    a & reinterpret_cast<char (&)[sizeof(crypto::token_id)]>(x);
   }
   template <class Archive>
   inline void serialize(Archive &a, crypto::secret_key &x, const boost::serialization::version_type ver)
@@ -114,13 +114,13 @@ namespace boost
     a & x.hash;
   }
 
-  // HF21: confidential asset output
+  // HF21: private token output
   template <class Archive>
   inline void serialize(Archive &a, cryptonote::tx_out_zarcanum &x, const boost::serialization::version_type ver)
   {
     a & x.stealth_address;
     a & x.amount_commitment;
-    a & x.blinded_asset_id;
+    a & x.blinded_token_id;
     a & x.encrypted_amount;
     a & x.mix_attr;
     a & x.version;
@@ -227,7 +227,7 @@ namespace boost
         a & x.rct_signatures.p;
 
       if (ver >= 1)
-        a & x.asset_proofs;
+        a & x.token_proofs;
     }
   }
 
@@ -485,7 +485,7 @@ namespace boost
     a & x.E;
   }
   template <class Archive>
-  inline void serialize(Archive &a, rct::zc_asset_surjection_proof &x, const boost::serialization::version_type ver)
+  inline void serialize(Archive &a, rct::zc_token_surjection_proof &x, const boost::serialization::version_type ver)
   {
     a & x.bge_proofs;
   }
@@ -496,14 +496,14 @@ namespace boost
     a & x.dss;
   }
   template <class Archive>
-  inline void serialize(Archive &a, rct::asset_operation_proof &x, const boost::serialization::version_type ver)
+  inline void serialize(Archive &a, rct::token_operation_proof &x, const boost::serialization::version_type ver)
   {
     a & x.flags;
     if (x.has_composition_proof())
       a & x.composition_proof;
   }
   template <class Archive>
-  inline void serialize(Archive &a, rct::asset_operation_ownership_proof &x, const boost::serialization::version_type ver)
+  inline void serialize(Archive &a, rct::token_operation_ownership_proof &x, const boost::serialization::version_type ver)
   {
     a & x.sig;
   }
@@ -512,7 +512,7 @@ namespace boost
   {
     a & x.clsag_sig;
     a & x.pseudo_out_amount_commitment;
-    a & x.pseudo_out_blinded_asset_id;
+    a & x.pseudo_out_blinded_token_id;
   }
   template <class Archive>
   inline void serialize(Archive &a, rct::zc_outs_range_proof &x, const boost::serialization::version_type ver)

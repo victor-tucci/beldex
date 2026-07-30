@@ -220,14 +220,14 @@ static const zero_commitment zero_commitments[] = {
 
 namespace rct {
 
-    // ── X generator (asset ID blinding base, HF21+) ──────────────────────────
-    // X = 8 * hash_to_curve("beldex_asset_id_blinding_generator")
+    // ── X generator (token ID blinding base, HF21+) ──────────────────────────
+    // X = 8 * hash_to_curve("beldex_token_id_blinding_generator")
     // Computed once at first use; same construction as ge_p3_H.
     static ge_p3 s_ge_p3_X;
     static std::once_flag s_ge_p3_X_flag;
 
     static void init_ge_p3_X() {
-        static const char domain[] = "beldex_asset_id_blinding_generator";
+        static const char domain[] = "beldex_token_id_blinding_generator";
         uint8_t h[32];
         keccak(reinterpret_cast<const uint8_t*>(domain), sizeof(domain) - 1, h, 32);
         ge_p2 p2;
@@ -421,7 +421,7 @@ namespace rct {
         return aP;
     }
 
-    // Computes a*X where X is the asset-ID blinding generator (HF21+)
+    // Computes a*X where X is the token-ID blinding generator (HF21+)
     key scalarmultX(const key& a) {
         ge_p2 R;
         ge_scalarmult(&R, a.bytes, &rct_get_ge_p3_X());
@@ -437,33 +437,33 @@ namespace rct {
         return X;
     }
 
-    // Pedersen commitment for a custom asset output:
+    // Pedersen commitment for a custom token output:
     //   C = amount * T + mask * G
-    // where T is the blinded asset id (T = asset_id + r*X) -- for an output,
-    // its OWN T; for a pseudo-output (spend-side), T_real = asset_id + real_r*X
+    // where T is the blinded token id (T = token_id + r*X) -- for an output,
+    // its OWN T; for a pseudo-output (spend-side), T_real = token_id + real_r*X
     // reconstructed from the real spent output's own blinding scalar (NOT a
     // fresh/independent blinding). This is required for CLSAG_GGX's layer-1
     // (mask) relation to collapse cleanly for the real ring index: since both
     // sides use the identical T, the amount term cancels and only the mask
-    // differs -- passing the plaintext asset_id here instead would make the
+    // differs -- passing the plaintext token_id here instead would make the
     // proof unconstructible for genuine spends. Mirrors Zano's
     // currency_format_utils.cpp:2456/2490.
-    key commitAsset(const key& mask, const key& blinded_asset_id, xmr_amount amount) {
+    key commitToken(const key& mask, const key& blinded_token_id, xmr_amount amount) {
         key am = d2h(amount);
-        key amAsset = scalarmultKey(blinded_asset_id, am);  // amount * T
+        key amToken = scalarmultKey(blinded_token_id, am);  // amount * T
         key maskG = scalarmultBase(mask);            // mask * G
         key C;
-        addKeys(C, amAsset, maskG);
+        addKeys(C, amToken, maskG);
         return C;
     }
 
-    // Blind an asset ID for a tx_out_zarcanum output:
-    //   T = asset_id + r * X
+    // Blind an token ID for a tx_out_zarcanum output:
+    //   T = token_id + r * X
     // where r is the per-output blinding scalar
-    key blindAssetId(const key& asset_id, const key& r) {
+    key blindTokenId(const key& token_id, const key& r) {
         key rX = scalarmultX(r);   // r * X
         key T;
-        addKeys(T, asset_id, rX);  // asset_id + r*X
+        addKeys(T, token_id, rX);  // token_id + r*X
         return T;
     }
 
