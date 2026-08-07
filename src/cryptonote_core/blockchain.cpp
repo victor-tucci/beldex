@@ -44,9 +44,9 @@
 #include "common/median.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
-#include "cryptonote_basic/asset_descriptor_operation_utils.h"
+#include "cryptonote_basic/token_descriptor_operation_utils.h"
 #include "cryptonote_basic/hardfork.h"
-#include "cryptonote_core/asset_history_utils.h"
+#include "cryptonote_core/token_history_utils.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "ringct/rctTypes.h"
 #include "tx_pool.h"
@@ -293,10 +293,10 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_to_key& tx_in_to_key, vi
   return true;
 }
 //------------------------------------------------------------------
-// HF21: confidential asset (zarcanum) analogue of scan_outputkeys_for_indexes.
+// HF21: private token (zarcanum) analogue of scan_outputkeys_for_indexes.
 // Zarcanum outputs live in the same amount=0 bucket as native rct outputs;
-// the visitor additionally receives each ring member's blinded_asset_id so
-// callers can build the asset-id ring needed by ZC_sig verification.
+// the visitor additionally receives each ring member's blinded_token_id so
+// callers can build the token-id ring needed by ZC_sig verification.
 template <class visitor_t>
 bool Blockchain::scan_outputkeys_for_indexes(const txin_zc_input& tx_in_zc, visitor_t &vis, const crypto::hash &tx_prefix_hash, uint64_t* pmax_related_block_height) const
 {
@@ -330,7 +330,7 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_zc_input& tx_in_zc, visi
     try
     {
       const output_data_t &output_index = outputs.at(count);
-      if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment, output_index.blinded_asset_id))
+      if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment, output_index.blinded_token_id))
       {
         MERROR_VER("Failed to handle_output for zarcanum output no = " << count << ", with absolute offset " << i);
         return false;
@@ -814,12 +814,12 @@ block Blockchain::pop_block_from_blockchain()
     throw;
   }
 
-  if (popped_hf >= feature::CONFIDENTIAL_ASSETS)
+  if (popped_hf >= feature::PRIVATE_TOKENS)
   {
     std::string rewind_reason;
     CHECK_AND_ASSERT_THROW_MES(
-        rewind_assets_from_transactions(*m_db, popped_txs, &rewind_reason),
-        "Failed to rewind asset history while popping block: " + rewind_reason);
+        rewind_tokens_from_transactions(*m_db, popped_txs, &rewind_reason),
+        "Failed to rewind token history while popping block: " + rewind_reason);
   }
 
   m_bns_db.block_detach(*this, m_db->height());
@@ -2549,7 +2549,7 @@ bool Blockchain::get_outs(const rpc::GET_OUTPUTS_BIN::request& req, rpc::GET_OUT
       return false;
     }
     for (const auto &t: data)
-      res.outs.push_back({t.pubkey, t.commitment, is_output_spendtime_unlocked(t.unlock_time), t.height, crypto::null_hash, t.blinded_asset_id});
+      res.outs.push_back({t.pubkey, t.commitment, is_output_spendtime_unlocked(t.unlock_time), t.height, crypto::null_hash, t.blinded_token_id});
 
     if (req.get_txid)
     {
@@ -3152,7 +3152,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     if (const auto* zout = std::get_if<tx_out_zarcanum>(&o.target))
     {
       if (!crypto::check_key(zout->stealth_address) ||
-          !crypto::check_asset_key(zout->blinded_asset_id) ||
+          !crypto::check_token_key(zout->blinded_token_id) ||
           !crypto::check_key(zout->amount_commitment))
       {
         MERROR_VER("tx_out_zarcanum has invalid pubkey field");
@@ -3271,33 +3271,33 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     }
   }
   
-  // HF21: confidential asset output proof checks
+  // HF21: private token output proof checks
   //
-  // Registration-style asset deploys create new asset outputs from tx.extra and
-  // do not have prior asset inputs to prove membership/balance against.  The
+  // Registration-style token deploys create new token outputs from tx.extra and
+  // do not have prior token inputs to prove membership/balance against.  The
   // spend-style ZC proof bundle is only required for transactions that are not
-  // initial asset registrations.
-  if (hf_version >= feature::CONFIDENTIAL_ASSETS &&
-      (tx.has_zarcanum_outputs() || tx.type == txtype::burn_asset))
+  // initial token registrations.
+  if (hf_version >= feature::PRIVATE_TOKENS &&
+      (tx.has_zarcanum_outputs() || tx.type == txtype::burn_token))
   {
-    if (tx.type == txtype::emit_asset)
+    if (tx.type == txtype::mint_token)
     {
-      // Emission mints the asset from nothing (no asset inputs), so there is no
-      // asset in==out balance proof.  It instead requires:
-      //   - an amount-commitment proof (asset_operation_proof) binding the
+      // Emission mints the token from nothing (no token inputs), so there is no
+      // token in==out balance proof.  It instead requires:
+      //   - an amount-commitment proof (token_operation_proof) binding the
       //     declared amount to the minted output commitments, and
-      //   - an ownership signature from the asset owner.
+      //   - an ownership signature from the token owner.
       // The cryptographic verification of both happens in
-      // validate_tx_asset_operations_against_db(); here we only do a cheap
+      // validate_tx_token_operations_against_db(); here we only do a cheap
       // structural presence check for early rejection.  (The native BDX side
       // that pays the fee is balanced by the standard RingCT signature.)
       bool has_amount_commitment = false;
       bool has_ownership         = false;
 
-      for (const auto& proof : tx.asset_proofs)
+      for (const auto& proof : tx.token_proofs)
       {
-        if (std::holds_alternative<rct::asset_operation_proof>(proof))           { has_amount_commitment = true; }
-        if (std::holds_alternative<rct::asset_operation_ownership_proof>(proof)) { has_ownership          = true; }
+        if (std::holds_alternative<rct::token_operation_proof>(proof))           { has_amount_commitment = true; }
+        if (std::holds_alternative<rct::token_operation_ownership_proof>(proof)) { has_ownership          = true; }
       }
       if (!has_amount_commitment)
       {
@@ -3313,35 +3313,35 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       }
     }
 
-    if(tx.type == txtype::deploy_new_asset)
+    if(tx.type == txtype::deploy_new_token)
     {
-      // Initial registration of a new asset requires an amount-commitment proof binding the declared total supply to the output commitments,
-      // but does not require an ownership proof since the asset is not yet owned by anyone.
-      // Again, the cryptographic verification of the amount-commitment proof happens in validate_tx_asset_operations_against_db();
+      // Initial registration of a new token requires an amount-commitment proof binding the declared total supply to the output commitments,
+      // but does not require an ownership proof since the token is not yet owned by anyone.
+      // Again, the cryptographic verification of the amount-commitment proof happens in validate_tx_token_operations_against_db();
       // here we only do a cheap structural presence check for early rejection.
       bool has_amount_commitment = false;
-      for (const auto& proof : tx.asset_proofs)      
+      for (const auto& proof : tx.token_proofs)      
       {
-        if (std::holds_alternative<rct::asset_operation_proof>(proof)) { has_amount_commitment = true; }
+        if (std::holds_alternative<rct::token_operation_proof>(proof)) { has_amount_commitment = true; }
       }
       if (!has_amount_commitment)
       {
-        MERROR_VER("Asset registration tx missing amount-commitment proof");
+        MERROR_VER("Token registration tx missing amount-commitment proof");
         tvc.m_invalid_input = true;
         return false;
       }
     }
 
-    if (tx.type == txtype::burn_asset)
+    if (tx.type == txtype::burn_token)
     {
       bool has_amount_commitment = false;
-      for (const auto& proof : tx.asset_proofs)
+      for (const auto& proof : tx.token_proofs)
       {
-        if (std::holds_alternative<rct::asset_operation_proof>(proof)) { has_amount_commitment = true; }
+        if (std::holds_alternative<rct::token_operation_proof>(proof)) { has_amount_commitment = true; }
       }
       if (!has_amount_commitment)
       {
-        MERROR_VER("Asset burn tx missing amount-commitment proof");
+        MERROR_VER("Token burn tx missing amount-commitment proof");
         tvc.m_invalid_input = true;
         return false;
       }
@@ -3378,11 +3378,11 @@ bool Blockchain::expand_transaction_2(transaction &tx, const crypto::hash &tx_pr
   // message - hash of the transaction prefix
   rv.message = rct::hash2rct(tx_prefix_hash);
 
-  // HF21: confidential asset (zarcanum) inputs are proven by a separate ZC_sig
+  // HF21: private token (zarcanum) inputs are proven by a separate ZC_sig
   // (CLSAG-GGX) and never participate in the native CLSAG/MG array below, so
   // they're excluded here. native_vin_indices maps a "native-only" position
   // (0..native count) back to its real tx.vin index, preserving relative order.
-  // For tx versions/rct types that predate confidential assets, this is simply
+  // For tx versions/rct types that predate private tokens, this is simply
   // the identity mapping (no txin_zc_input can appear in such a tx).
   std::vector<size_t> native_vin_indices;
   native_vin_indices.reserve(tx.vin.size());
@@ -3526,8 +3526,8 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     crypto::hash tx_prefix_hash = get_transaction_prefix_hash(tx);
 
     std::vector<std::vector<rct::ctkey>> pubkeys(tx.vin.size());
-    // HF21: parallel ring of blinded asset ids, only populated for zarcanum inputs.
-    std::vector<std::vector<crypto::asset_id>> zc_asset_id_rings(tx.vin.size());
+    // HF21: parallel ring of blinded token ids, only populated for zarcanum inputs.
+    std::vector<std::vector<crypto::token_id>> zc_token_id_rings(tx.vin.size());
     std::vector<size_t> native_sig_indices; // which sig_index values are txin_to_key, in order
     native_sig_indices.reserve(tx.vin.size());
     size_t sig_index = 0;
@@ -3569,7 +3569,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           }
         }
 
-        if (!check_tx_input_zc(in_zc, tx_prefix_hash, pubkeys[sig_index], zc_asset_id_rings[sig_index], pmax_used_block_height))
+        if (!check_tx_input_zc(in_zc, tx_prefix_hash, pubkeys[sig_index], zc_token_id_rings[sig_index], pmax_used_block_height))
         {
           MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin zc key with k_image: " << in_zc.k_image << "  sig_index: " << sig_index);
           if (pmax_used_block_height)
@@ -3577,7 +3577,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           return false;
         }
 
-        // Confidential asset inputs cannot be master node stakes; no master node checks apply.
+        // Private token inputs cannot be master node stakes; no master node checks apply.
         continue;
       }
 
@@ -3699,9 +3699,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     case rct::RCTType::BulletproofPlus:
     {
       // check all this, either reconstructed (so should really pass), or not.
-      // Confidential asset (zarcanum) inputs are excluded here -- they're not
+      // Private token (zarcanum) inputs are excluded here -- they're not
       // part of the native CLSAG/MG array, and are checked separately via
-      // verAssetProofs/ZC_sig instead.
+      // verTokenProofs/ZC_sig instead.
       {
         if (native_sig_indices.size() != rv.mixRing.size())
         {
@@ -3763,7 +3763,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      if (!rct::verRctNonSemanticsSimple(rv, hf_version >= feature::CONFIDENTIAL_ASSETS))
+      if (!rct::verRctNonSemanticsSimple(rv, hf_version >= feature::PRIVATE_TOKENS))
       {
         MERROR_VER("Failed to check ringct signatures!");
         tvc.m_verbose_error = "ringct non-semantics verification failed";
@@ -3823,7 +3823,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      if (!rct::verRct(rv, false, hf_version >= feature::CONFIDENTIAL_ASSETS))
+      if (!rct::verRct(rv, false, hf_version >= feature::PRIVATE_TOKENS))
       {
         MERROR_VER("Failed to check ringct signatures!");
         return false;
@@ -3835,40 +3835,40 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       return false;
     }
 
-    // HF21: verify ZC_sig / asset proofs for any confidential asset tx.
+    // HF21: verify ZC_sig / token proofs for any private token tx.
     //
-    // CRITICAL: this gate must trigger on STRUCTURAL confidential-asset content
-    // (zc inputs/outputs, asset-op tx types), NOT merely on asset_proofs being
-    // non-empty. verAssetProofs is the sole place ZC_sig, surjection, balance
+    // CRITICAL: this gate must trigger on STRUCTURAL private-token content
+    // (zc inputs/outputs, token-op tx types), NOT merely on token_proofs being
+    // non-empty. verTokenProofs is the sole place ZC_sig, surjection, balance
     // and range proofs are verified AND the sole place their PRESENCE is
     // enforced -- so gating it on an attacker-controlled vector would let a
-    // peer strip every proof (asset_proofs empty, tx.zc_sig empty) and skip all
-    // CA verification, forging spends / minting confidential value at will.
+    // peer strip every proof (token_proofs empty, tx.zc_sig empty) and skip all
+    // PT verification, forging spends / minting confidential value at will.
     // has_zarcanum_inputs()/has_zarcanum_outputs() are prefix-derived and thus
     // not strippable without changing the actual inputs/outputs. Covers deploy
-    // (zc outs, no zc ins), burn (zc ins, zc outs optional), emit, transfers,
-    // and update_asset (which may have neither, hence the tx-type terms).
-    const bool has_ca_content =
-        !tx.asset_proofs.empty() || !tx.zc_sig.empty() ||
+    // (zc outs, no zc ins), burn (zc ins, zc outs optional), mint, transfers,
+    // and update_token (which may have neither, hence the tx-type terms).
+    const bool has_pt_content =
+        !tx.token_proofs.empty() || !tx.zc_sig.empty() ||
         tx.has_zarcanum_inputs() || tx.has_zarcanum_outputs() ||
-        tx.type == txtype::deploy_new_asset || tx.type == txtype::emit_asset ||
-        tx.type == txtype::burn_asset || tx.type == txtype::update_asset;
-    if (hf_version >= feature::CONFIDENTIAL_ASSETS && has_ca_content)
+        tx.type == txtype::deploy_new_token || tx.type == txtype::mint_token ||
+        tx.type == txtype::burn_token || tx.type == txtype::update_token;
+    if (hf_version >= feature::PRIVATE_TOKENS && has_pt_content)
     {
-      std::vector<rct::keyV> asset_id_rings(tx.vin.size());
+      std::vector<rct::keyV> token_id_rings(tx.vin.size());
       for (size_t n = 0; n < tx.vin.size(); ++n)
       {
-        if (zc_asset_id_rings[n].empty())
+        if (zc_token_id_rings[n].empty())
           continue;
-        asset_id_rings[n].reserve(zc_asset_id_rings[n].size());
-        for (const auto& aid : zc_asset_id_rings[n])
-          asset_id_rings[n].push_back(rct::aid2rct(aid));
+        token_id_rings[n].reserve(zc_token_id_rings[n].size());
+        for (const auto& tid : zc_token_id_rings[n])
+          token_id_rings[n].push_back(rct::tid2rct(tid));
       }
 
-      std::string asset_proof_reason;
-      if (!rct::verAssetProofs(tx, pubkeys, asset_id_rings, asset_proof_reason))
+      std::string token_proof_reason;
+      if (!rct::verTokenProofs(tx, pubkeys, token_id_rings, token_proof_reason))
       {
-        MERROR_VER("Failed to verify asset proofs: " << asset_proof_reason);
+        MERROR_VER("Failed to verify token proofs: " << token_proof_reason);
         tvc.m_invalid_input = true;
         return false;
       }
@@ -3924,13 +3924,13 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         return false;
       }
     }
-    else if (tx.type == txtype::deploy_new_asset || tx.type == txtype::emit_asset || tx.type == txtype::update_asset)
+    else if (tx.type == txtype::deploy_new_token || tx.type == txtype::mint_token || tx.type == txtype::update_token)
     {
-      cryptonote::tx_extra_asset_descriptor_operation op;
+      cryptonote::tx_extra_token_descriptor_operation op;
       size_t skip = 0;
       uint64_t total_burn_required = 0;
-      while (cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, op, skip++)) {
-        total_burn_required += assets::burn_needed(hf_version, op.operation_type);
+      while (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, op, skip++)) {
+        total_burn_required += tokens::burn_needed(hf_version, op.operation_type);
       }
       
       if (total_burn_required > 0)
@@ -3940,9 +3940,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
         if (burn < total_burn_required || burn > fee)
         {
-          tvc.m_verbose_error = "Asset transaction requires burning " + std::to_string(total_burn_required) + 
+          tvc.m_verbose_error = "Token transaction requires burning " + std::to_string(total_burn_required) + 
                                 " but burned " + std::to_string(burn) + " (fee: " + std::to_string(fee) + ")";
-          MERROR_VER("Failed to validate Asset TX reason: " << tvc.m_verbose_error);
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
           return false;
         }
       }
@@ -4048,12 +4048,12 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     }
   }
 
-  // Asset consensus rules must pass in mempool and block-context tx input validation.
+  // Token consensus rules must pass in mempool and block-context tx input validation.
   {
     std::string reason;
-    if (!validate_tx_asset_operations_against_db(*m_db, tx, reason, hf_version))
+    if (!validate_tx_token_operations_against_db(*m_db, tx, reason, hf_version))
     {
-      MERROR_VER("TX " << get_transaction_hash(tx) << " failed asset consensus validation: " << reason);
+      MERROR_VER("TX " << get_transaction_hash(tx) << " failed token consensus validation: " << reason);
       tvc.m_invalid_input = true;
       tvc.m_verifivation_failed = true;
       tvc.m_verbose_error = std::move(reason);
@@ -4124,7 +4124,7 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
     assert(hi == 0);
     lo /= 5;
 
-    if (version >= hf::hf21_confidential_assets)
+    if (version >= hf::hf21_private_tokens)
       fees.second = FEE_PER_OUTPUT_V21;
     else if(version >= hf::hf17_POS)
       fees.second = FEE_PER_OUTPUT_V17;
@@ -4320,21 +4320,21 @@ bool Blockchain::check_tx_input(const txin_to_key& txin, const crypto::hash& tx_
   return true;
 }
 //------------------------------------------------------------------
-// HF21: confidential asset (zarcanum) analogue of check_tx_input.
-bool Blockchain::check_tx_input_zc(const txin_zc_input& txin, const crypto::hash& tx_prefix_hash, std::vector<rct::ctkey> &output_keys, std::vector<crypto::asset_id> &output_blinded_asset_ids, uint64_t* pmax_related_block_height)
+// HF21: private token (zarcanum) analogue of check_tx_input.
+bool Blockchain::check_tx_input_zc(const txin_zc_input& txin, const crypto::hash& tx_prefix_hash, std::vector<rct::ctkey> &output_keys, std::vector<crypto::token_id> &output_blinded_token_ids, uint64_t* pmax_related_block_height)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
 
   struct zc_outputs_visitor
   {
     std::vector<rct::ctkey>& m_output_keys;
-    std::vector<crypto::asset_id>& m_output_blinded_asset_ids;
+    std::vector<crypto::token_id>& m_output_blinded_token_ids;
     const Blockchain& m_bch;
-    zc_outputs_visitor(std::vector<rct::ctkey>& output_keys, std::vector<crypto::asset_id>& output_blinded_asset_ids, const Blockchain& bch) :
-      m_output_keys(output_keys), m_output_blinded_asset_ids(output_blinded_asset_ids), m_bch(bch)
+    zc_outputs_visitor(std::vector<rct::ctkey>& output_keys, std::vector<crypto::token_id>& output_blinded_token_ids, const Blockchain& bch) :
+      m_output_keys(output_keys), m_output_blinded_token_ids(output_blinded_token_ids), m_bch(bch)
     {
     }
-    bool handle_output(uint64_t unlock_time, const crypto::public_key &pubkey, const rct::key &commitment, const crypto::asset_id &blinded_asset_id)
+    bool handle_output(uint64_t unlock_time, const crypto::public_key &pubkey, const rct::key &commitment, const crypto::token_id &blinded_token_id)
     {
       if (!m_bch.is_output_spendtime_unlocked(unlock_time))
       {
@@ -4343,15 +4343,15 @@ bool Blockchain::check_tx_input_zc(const txin_zc_input& txin, const crypto::hash
       }
 
       m_output_keys.push_back(rct::ctkey({rct::pk2rct(pubkey), commitment}));
-      m_output_blinded_asset_ids.push_back(blinded_asset_id);
+      m_output_blinded_token_ids.push_back(blinded_token_id);
       return true;
     }
   };
 
   output_keys.clear();
-  output_blinded_asset_ids.clear();
+  output_blinded_token_ids.clear();
 
-  zc_outputs_visitor vi(output_keys, output_blinded_asset_ids, *this);
+  zc_outputs_visitor vi(output_keys, output_blinded_token_ids, *this);
   if (!scan_outputkeys_for_indexes(txin, vi, tx_prefix_hash, pmax_related_block_height))
   {
     MERROR_VER("Failed to get output keys for zarcanum input, count indexes " << txin.key_offsets.size());
@@ -4718,7 +4718,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   size_t cumulative_block_weight = coinbase_weight;
 
   std::vector<std::pair<transaction, blobdata>> txs;
-  std::unordered_map<crypto::asset_id, asset_consensus_state> pending_asset_states;
+  std::unordered_map<crypto::token_id, token_consensus_state> pending_token_states;
   key_images_container keys;
 
   uint64_t fee_summary = 0;
@@ -4826,38 +4826,38 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 #endif
     t_checktx += std::chrono::steady_clock::now() - cc;
 
-    // Gather and validate asset descriptor operations carried in tx.extra.
+    // Gather and validate token descriptor operations carried in tx.extra.
     {
       size_t op_index = 0;
-      tx_extra_asset_descriptor_operation op{};
-      while (cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, op, op_index++))
+      tx_extra_token_descriptor_operation op{};
+      while (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, op, op_index++))
       {
         std::string op_validation_reason;
-        if (!validate_asset_descriptor_operation(op, op_validation_reason))
+        if (!validate_token_descriptor_operation(op, op_validation_reason))
         {
-          MERROR_VER("Invalid asset descriptor operation in tx " << tx_id << ": " << op_validation_reason);
+          MERROR_VER("Invalid token descriptor operation in tx " << tx_id << ": " << op_validation_reason);
           bvc.m_verifivation_failed = true;
           return_tx_to_pool(txs);
           return false;
         }
 
-        if (tx.type != txtype::deploy_new_asset && tx.type != txtype::emit_asset && tx.type != txtype::update_asset && tx.type != txtype::burn_asset)
+        if (tx.type != txtype::deploy_new_token && tx.type != txtype::mint_token && tx.type != txtype::update_token && tx.type != txtype::burn_token)
         {
-          MERROR_VER("Asset operation found in tx type " << tx.type << " but only deploy_new_asset, emit_asset, update_asset, burn_asset are allowed");
+          MERROR_VER("Token operation found in tx type " << tx.type << " but only deploy_new_token, mint_token, update_token, burn_token are allowed");
           bvc.m_verifivation_failed = true;
           return_tx_to_pool(txs);
           return false;
         }
 
-        crypto::asset_id const asset_id = cryptonote::get_or_calculate_asset_id(op);
+        crypto::token_id const token_id = cryptonote::get_or_calculate_token_id(op);
 
-        auto [state_it, inserted] = pending_asset_states.try_emplace(asset_id);
+        auto [state_it, inserted] = pending_token_states.try_emplace(token_id);
         if (inserted)
         {
           std::string load_reason;
-          if (!load_asset_state_from_history(*m_db, asset_id, state_it->second, load_reason))
+          if (!load_token_state_from_history(*m_db, token_id, state_it->second, load_reason))
           {
-            MERROR_VER("Failed to load existing asset state for tx " << tx_id << ": " << load_reason);
+            MERROR_VER("Failed to load existing token state for tx " << tx_id << ": " << load_reason);
             bvc.m_verifivation_failed = true;
             return_tx_to_pool(txs);
             return false;
@@ -4865,9 +4865,9 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
         }
 
         std::string state_reason;
-        if (!apply_asset_operation_to_state(asset_id, op, state_it->second, state_reason))
+        if (!apply_token_operation_to_state(token_id, op, state_it->second, state_reason))
         {
-          MERROR_VER("Invalid asset operation state transition in tx " << tx_id << ": " << state_reason);
+          MERROR_VER("Invalid token operation state transition in tx " << tx_id << ": " << state_reason);
           bvc.m_verifivation_failed = true;
           return_tx_to_pool(txs);
           return false;
@@ -5004,51 +5004,51 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
   const hf blk_hf = get_network_version(new_height - 1);
 
-  // Persist validated asset operations once block/tx acceptance has succeeded.
-  if (blk_hf >= feature::CONFIDENTIAL_ASSETS)
+  // Persist validated token operations once block/tx acceptance has succeeded.
+  if (blk_hf >= feature::PRIVATE_TOKENS)
   {
     try
     {
       std::string append_reason;
       CHECK_AND_ASSERT_MES(
-          append_assets_from_transactions(*m_db, only_txs, &append_reason),
+          append_tokens_from_transactions(*m_db, only_txs, &append_reason),
           false,
-          "Failed to persist asset operation(s): " << append_reason);
+          "Failed to persist token operation(s): " << append_reason);
     }
     catch (const std::exception& e)
     {
-      MGINFO_RED("Failed to persist asset operation(s): " << e.what());
+      MGINFO_RED("Failed to persist token operation(s): " << e.what());
       bvc.m_verifivation_failed = true;
       return false;
     }
   }
 
-  // HF21: index every tx_out_zarcanum output in the per-asset LMDB table.
-  // This feeds the BGE surjection ring for future asset transfers.
+  // HF21: index every tx_out_zarcanum output in the per-token LMDB table.
+  // This feeds the BGE surjection ring for future token transfers.
   if (get_current_blockchain_height() >= 1)
   {
-    if (blk_hf >= feature::CONFIDENTIAL_ASSETS)
+    if (blk_hf >= feature::PRIVATE_TOKENS)
     {
       try
       {
         for (const auto& tx : only_txs)
         {
-          tx_extra_asset_descriptor_operation ado{};
+          tx_extra_token_descriptor_operation tdo{};
           size_t skip = 0;
-          crypto::asset_id asset_id = crypto::null_aid;
-          while (get_asset_descriptor_operation_from_tx_extra(tx.extra, ado, skip++))
+          crypto::token_id token_id = crypto::null_tid;
+          while (get_token_descriptor_operation_from_tx_extra(tx.extra, tdo, skip++))
           {
-            const crypto::asset_id op_asset_id = get_or_calculate_asset_id(ado);
-            if (op_asset_id == crypto::null_aid)
+            const crypto::token_id op_token_id = get_or_calculate_token_id(tdo);
+            if (op_token_id == crypto::null_tid)
               continue;
 
-            if (asset_id == crypto::null_aid)
-              asset_id = op_asset_id;
-            else if (asset_id != op_asset_id)
-              throw std::runtime_error{"tx contains outputs for multiple asset ids"};
+            if (token_id == crypto::null_tid)
+              token_id = op_token_id;
+            else if (token_id != op_token_id)
+              throw std::runtime_error{"tx contains outputs for multiple token ids"};
           }
 
-          if (asset_id == crypto::null_aid)
+          if (token_id == crypto::null_tid)
             continue;
 
           for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
@@ -5059,14 +5059,14 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
             // Retrieve it from the DB (it was just written).
             // ZC outputs have amount=0 on-chain; count all amount=0 outputs for the index.
             // uint64_t global_idx = m_db->get_num_outputs(0) - tx.vout.size() + out_idx;
-            // m_db->add_asset_output(asset_id, global_idx);
+            // m_db->add_token_output(token_id, global_idx);
           }
         }
       }
       catch (const std::exception& e)
       {
-        MGINFO_RED("Failed to index asset outputs: " << e.what());
-        // Non-fatal: asset output index is a performance index, not consensus-critical.
+        MGINFO_RED("Failed to index token outputs: " << e.what());
+        // Non-fatal: token output index is a performance index, not consensus-critical.
       }
     }
   }

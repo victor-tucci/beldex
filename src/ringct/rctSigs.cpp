@@ -35,7 +35,7 @@
 #include "rctSigs.h"
 #include "bulletproofs.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
-#include "cryptonote_basic/asset_descriptor_operation_utils.h"
+#include "cryptonote_basic/token_descriptor_operation_utils.h"
 #include "cryptonote_config.h"
 #include "bulletproofs_plus.h"
 
@@ -872,7 +872,7 @@ namespace rct {
       return  prehash;
     }
 
-    key get_hf21_asset_proof_message(const cryptonote::transaction& tx, const rct::ctkeyM& rings, hw::device &hwdev)
+    key get_hf21_token_proof_message(const cryptonote::transaction& tx, const rct::ctkeyM& rings, hw::device &hwdev)
     {
       const key pre = get_pre_clsag_hash(tx.rct_signatures, hwdev, true);
       std::vector<uint8_t> blob;
@@ -925,7 +925,7 @@ namespace rct {
         const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
         append(&zout.stealth_address, sizeof(zout.stealth_address));
         append(&zout.amount_commitment, sizeof(zout.amount_commitment));
-        append(&zout.blinded_asset_id, sizeof(zout.blinded_asset_id));
+        append(&zout.blinded_token_id, sizeof(zout.blinded_token_id));
       }
 
       crypto::hash h = crypto::null_hash;
@@ -1882,42 +1882,42 @@ namespace rct {
             return signMultisigMLSAG(rv, indices, k, msout, secret_key);
     }
 
-    // ── HF21: verAssetProofs ─────────────────────────────────────────────────
+    // ── HF21: verTokenProofs ─────────────────────────────────────────────────
 
-    bool verAssetProofs(const cryptonote::transaction& tx,
+    bool verTokenProofs(const cryptonote::transaction& tx,
                         const rct::ctkeyM& pubkeys,
-                        const std::vector<rct::keyV>& asset_id_rings,
+                        const std::vector<rct::keyV>& token_id_rings,
                         std::string& reason)
     {
         // ── 0. Prevalidate the proof set is well-formed ──────────────────────
-        // asset_proofs is a self-describing serialized vector, so serialization
+        // token_proofs is a self-describing serialized vector, so serialization
         // constrains neither WHICH proofs appear nor how many. Reject duplicates
         // of singleton proofs, an unknown proof type, and any proof that doesn't
-        // belong to this tx kind -- otherwise a peer could pad asset_proofs with
-        // extra/duplicate entries, and since asset_proofs are part of the
+        // belong to this tx kind -- otherwise a peer could pad token_proofs with
+        // extra/duplicate entries, and since token_proofs are part of the
         // prunable hash that yields a verifying-but-bloated variant tx. Mirrors
         // Zano's per-type count_type_in_variant_container prevalidation.
         {
             size_t n_surjection = 0, n_balance = 0, n_range = 0,
-                   n_asset_op = 0, n_ownership = 0;
-            for (const auto& proof : tx.asset_proofs)
+                   n_token_op = 0, n_ownership = 0;
+            for (const auto& proof : tx.token_proofs)
             {
-                if      (std::holds_alternative<rct::zc_asset_surjection_proof>(proof))       ++n_surjection;
+                if      (std::holds_alternative<rct::zc_token_surjection_proof>(proof))       ++n_surjection;
                 else if (std::holds_alternative<rct::zc_balance_proof>(proof))                ++n_balance;
                 else if (std::holds_alternative<rct::zc_outs_range_proof>(proof))             ++n_range;
-                else if (std::holds_alternative<rct::asset_operation_proof>(proof))           ++n_asset_op;
-                else if (std::holds_alternative<rct::asset_operation_ownership_proof>(proof)) ++n_ownership;
-                else { reason = "unknown asset proof type"; return false; }
+                else if (std::holds_alternative<rct::token_operation_proof>(proof))           ++n_token_op;
+                else if (std::holds_alternative<rct::token_operation_ownership_proof>(proof)) ++n_ownership;
+                else { reason = "unknown token proof type"; return false; }
             }
-            // ZC_sigs live under the tx's signatures (tx.zc_sig), not asset_proofs.
+            // ZC_sigs live under the tx's signatures (tx.zc_sig), not token_proofs.
             const size_t n_zc_sig = tx.zc_sig.size();
 
             // Singleton proofs: at most one of each.
-            if (n_surjection > 1) { reason = "multiple zc_asset_surjection_proof entries"; return false; }
+            if (n_surjection > 1) { reason = "multiple zc_token_surjection_proof entries"; return false; }
             if (n_balance    > 1) { reason = "multiple zc_balance_proof entries"; return false; }
             if (n_range      > 1) { reason = "multiple zc_outs_range_proof entries"; return false; }
-            if (n_asset_op   > 1) { reason = "multiple asset_operation_proof entries"; return false; }
-            if (n_ownership  > 1) { reason = "multiple asset_operation_ownership_proof entries"; return false; }
+            if (n_token_op   > 1) { reason = "multiple token_operation_proof entries"; return false; }
+            if (n_ownership  > 1) { reason = "multiple token_operation_ownership_proof entries"; return false; }
 
             // ZC_sig: exactly one per confidential (zarcanum) input.
             size_t zc_input_count = 0;
@@ -1931,38 +1931,38 @@ namespace rct {
                 return false;
             }
 
-            // Asset-operation proofs only belong to their originating tx kinds:
-            //   asset_operation_proof          -> deploy_new_asset / emit_asset / burn_asset
-            //   asset_operation_ownership_proof -> emit_asset / update_asset
-            // (see construct_tx_with_tx_key.) burn_asset also carries an
+            // Token-operation proofs only belong to their originating tx kinds:
+            //   token_operation_proof          -> deploy_new_token / mint_token / burn_token
+            //   token_operation_ownership_proof -> mint_token / update_token
+            // (see construct_tx_with_tx_key.) burn_token also carries an
             // amount-commitment composition_proof: it binds the publicly-declared
-            // burned amount to the ADO commitment that the zc_balance_proof then
+            // burned amount to the TDO commitment that the zc_balance_proof then
             // subtracts from the spend equation.
-            const bool aop_allowed       = tx.type == cryptonote::txtype::deploy_new_asset
-                                        || tx.type == cryptonote::txtype::emit_asset
-                                        || tx.type == cryptonote::txtype::burn_asset;
-            const bool ownership_allowed = tx.type == cryptonote::txtype::emit_asset
-                                        || tx.type == cryptonote::txtype::update_asset;
-            if (n_asset_op  != 0 && !aop_allowed)
+            const bool aop_allowed       = tx.type == cryptonote::txtype::deploy_new_token
+                                        || tx.type == cryptonote::txtype::mint_token
+                                        || tx.type == cryptonote::txtype::burn_token;
+            const bool ownership_allowed = tx.type == cryptonote::txtype::mint_token
+                                        || tx.type == cryptonote::txtype::update_token;
+            if (n_token_op  != 0 && !aop_allowed)
             {
-                reason = "asset_operation_proof present on a tx that is not deploy/emit/burn";
+                reason = "token_operation_proof present on a tx that is not deploy/mint/burn";
                 return false;
             }
             if (n_ownership != 0 && !ownership_allowed)
             {
-                reason = "asset_operation_ownership_proof present on a tx that is not emit/update";
+                reason = "token_operation_ownership_proof present on a tx that is not mint/update";
                 return false;
             }
         }
 
         // ── 1. Verify ZC_sig for each ZC input ───────────────────────────────
         // Count ZC inputs and match them to the tx's ZC_sig signatures (one per
-        // zc input, in tx.vin order). pubkeys[i] / asset_id_rings[i] is the ring
+        // zc input, in tx.vin order). pubkeys[i] / token_id_rings[i] is the ring
         // for input i (built by check_tx_inputs / check_tx_input_zc);
-        // asset_id_rings is only populated for indices where tx.vin[i] is a
+        // token_id_rings is only populated for indices where tx.vin[i] is a
         // txin_zc_input.
         size_t zc_sig_idx = 0;
-        const key tx_prefix_hash = get_hf21_asset_proof_message(tx, pubkeys, hw::get_device("default"));
+        const key tx_prefix_hash = get_hf21_token_proof_message(tx, pubkeys, hw::get_device("default"));
 
         std::vector<const rct::ZC_sig*> zc_sigs;
         zc_sigs.reserve(tx.zc_sig.size());
@@ -1986,8 +1986,8 @@ namespace rct {
             const rct::ZC_sig& zc_sig = *zc_sigs[zc_sig_idx];
 
             // Extract ring stealth addresses and amount commitments for this
-            // input from pubkeys[i]; the blinded-asset-id ring comes from
-            // asset_id_rings[i] (threaded through by check_tx_input_zc).
+            // input from pubkeys[i]; the blinded-token-id ring comes from
+            // token_id_rings[i] (threaded through by check_tx_input_zc).
             rct::keyV ring_dest, ring_amount;
             ring_dest.reserve(pubkeys[i].size());
             ring_amount.reserve(pubkeys[i].size());
@@ -1996,16 +1996,16 @@ namespace rct {
                 ring_dest.push_back(ctk.dest);
                 ring_amount.push_back(ctk.mask);
             }
-            const rct::keyV& ring_asset_id = asset_id_rings[i];
+            const rct::keyV& ring_token_id = token_id_rings[i];
 
-            if (ring_asset_id.size() != ring_dest.size())
+            if (ring_token_id.size() != ring_dest.size())
             {
-                reason = "asset-id ring size mismatch for input " + std::to_string(i);
+                reason = "token-id ring size mismatch for input " + std::to_string(i);
                 return false;
             }
 
             // The ZC_sig is now the single source of truth for this input's
-            // pseudo-out amount commitment and blinded asset id -- the balance
+            // pseudo-out amount commitment and blinded token id -- the balance
             // proof and surjection proof both read the same zc_sig.pseudo_out_*
             // values verified here, so there is no separate txin declaration to
             // cross-check against (and thus no decoupling risk to guard).
@@ -2021,14 +2021,14 @@ namespace rct {
             // catch. (Chain-resolved ring members are already subgroup-checked at
             // output-creation time in check_tx_outputs, so they need no recheck.)
             if (!rct::isInMainSubgroup(zc_sig.pseudo_out_amount_commitment) ||
-                !rct::isInMainSubgroup(zc_sig.pseudo_out_blinded_asset_id))
+                !rct::isInMainSubgroup(zc_sig.pseudo_out_blinded_token_id))
             {
                 reason = "ZC_sig pseudo-out point not in main subgroup for input " + std::to_string(i);
                 return false;
             }
 
-            if (!verZCSig(tx_prefix_hash, zc_sig, ring_dest, ring_amount, ring_asset_id,
-                          zc_sig.pseudo_out_amount_commitment, zc_sig.pseudo_out_blinded_asset_id))
+            if (!verZCSig(tx_prefix_hash, zc_sig, ring_dest, ring_amount, ring_token_id,
+                          zc_sig.pseudo_out_amount_commitment, zc_sig.pseudo_out_blinded_token_id))
             {
                 reason = "ZC_sig verification failed for input " + std::to_string(i);
                 return false;
@@ -2052,24 +2052,24 @@ namespace rct {
             return false;
         }
 
-        // ── 2. Verify asset surjection proof (BGE) ────────────────────────────
-        // For each tx_out_zarcanum output, verify its blinded_asset_id is a
-        // valid blinding of one of the tx's legitimate asset sources, without
+        // ── 2. Verify token surjection proof (BGE) ────────────────────────────
+        // For each tx_out_zarcanum output, verify its blinded_token_id is a
+        // valid blinding of one of the tx's legitimate token sources, without
         // revealing which one. Ring members (must match construct_tx_with_tx_key's
         // surjection block bit-for-bit, in the same order):
-        //   - every spent zc input's pseudo-blinded asset id (zc_sigs, step 1), and
-        //   - for deploy_new_asset/emit_asset, the asset-descriptor-operation's
-        //     own asset id H_ado, appended LAST (mirrors Zano's "asset emission"
-        //     ring member, generate_asset_surjection_proof_hf6). This is what
-        //     binds EACH mint output to the declared asset: the ADO
+        //   - every spent zc input's pseudo-blinded token id (zc_sigs, step 1), and
+        //   - for deploy_new_token/mint_token, the token-descriptor-operation's
+        //     own token id H_tdo, appended LAST (mirrors Zano's "token emission"
+        //     ring member, generate_token_surjection_proof_hf6). This is what
+        //     binds EACH mint output to the declared token: the TDO
         //     composition_proof only constrains the weighted sum
-        //     Σ amount_j·H_j == declared·H_ado, not each output's hidden H_j, so
+        //     Σ amount_j·H_j == declared·H_tdo, not each output's hidden H_j, so
         //     without a per-output surjection a multi-output mint could set
-        //     output#1 to a large amount of a DIFFERENT existing asset B and
-        //     output#2 to a compensating garbage asset -- inflating asset B.
+        //     output#1 to a large amount of a DIFFERENT existing token B and
+        //     output#2 to a compensating garbage token -- inflating token B.
         //
-        // Native coin never carries an asset id (is_zarcanum() == asset_id !=
-        // null_aid), so native fee/change inputs never need a ring slot here.
+        // Native coin never carries an token id (is_zarcanum() == token_id !=
+        // null_tid), so native fee/change inputs never need a ring slot here.
         bool any_zc_outputs = false;
         for (const auto& out : tx.vout)
             if (std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target)) { any_zc_outputs = true; break; }
@@ -2078,36 +2078,36 @@ namespace rct {
         rct::keyV surjection_ring;
         surjection_ring.reserve(zc_sigs.size() + 1);
         for (const auto* zs : zc_sigs)
-            surjection_ring.push_back(zs->pseudo_out_blinded_asset_id);
+            surjection_ring.push_back(zs->pseudo_out_blinded_token_id);
 
-        if (tx.type == cryptonote::txtype::deploy_new_asset || tx.type == cryptonote::txtype::emit_asset)
+        if (tx.type == cryptonote::txtype::deploy_new_token || tx.type == cryptonote::txtype::mint_token)
         {
-            cryptonote::tx_extra_asset_descriptor_operation ado{};
-            if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
+            cryptonote::tx_extra_token_descriptor_operation tdo{};
+            if (!cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo))
             {
-                reason = "mint tx is missing its asset_descriptor_operation in tx.extra";
+                reason = "mint tx is missing its token_descriptor_operation in tx.extra";
                 return false;
             }
-            const crypto::asset_id asset_id = (tx.type == cryptonote::txtype::deploy_new_asset)
-                ? cryptonote::get_or_calculate_asset_id(ado)
-                : ado.asset_id;
-            if (asset_id == crypto::null_aid)
+            const crypto::token_id token_id = (tx.type == cryptonote::txtype::deploy_new_token)
+                ? cryptonote::get_or_calculate_token_id(tdo)
+                : tdo.token_id;
+            if (token_id == crypto::null_tid)
             {
-                reason = "mint tx asset_descriptor_operation has no resolvable asset_id";
+                reason = "mint tx token_descriptor_operation has no resolvable token_id";
                 return false;
             }
-            surjection_ring.push_back(rct::aid2rct(asset_id));
+            surjection_ring.push_back(rct::tid2rct(token_id));
         }
 
         bool found_surjection_proof = false;
-        for (const auto& proof : tx.asset_proofs)
+        for (const auto& proof : tx.token_proofs)
         {
-            if (const auto* sp = std::get_if<rct::zc_asset_surjection_proof>(&proof))
+            if (const auto* sp = std::get_if<rct::zc_token_surjection_proof>(&proof))
             {
                 found_surjection_proof = true;
                 if (surjection_ring.empty())
                 {
-                    reason = "surjection proof present but tx has no asset source (no zc inputs and not a mint)";
+                    reason = "surjection proof present but tx has no token source (no zc inputs and not a mint)";
                     return false;
                 }
 
@@ -2123,7 +2123,7 @@ namespace rct {
                     }
 
                     const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[k].target);
-                    const rct::key T = rct::aid2rct(zout.blinded_asset_id);
+                    const rct::key T = rct::tid2rct(zout.blinded_token_id);
 
                     if (!crypto::verify_BGE_proof(tx_prefix_hash, surjection_ring, T, sp->bge_proofs[out_idx]))
                     {
@@ -2143,37 +2143,37 @@ namespace rct {
         }
 
         // Any tx that produces zarcanum outputs must carry a surjection proof
-        // binding each output's asset id to a legitimate source (a spent zc
-        // input, or -- for deploy/emit -- the mint ADO). This covers both spends
-        // and mints; without it a tx could claim any asset id for its outputs.
+        // binding each output's token id to a legitimate source (a spent zc
+        // input, or -- for deploy/mint -- the mint TDO). This covers both spends
+        // and mints; without it a tx could claim any token id for its outputs.
         if (any_zc_outputs && !found_surjection_proof)
         {
-            reason = "zarcanum outputs present without an asset surjection proof";
+            reason = "zarcanum outputs present without an token surjection proof";
             return false;
         }
 
-        // ── 3. Verify ownership proof for asset operations ────────────────────
-        // For deploy/emit/burn, verify the Schnorr signature against descriptor.owner.
-        for (const auto& proof : tx.asset_proofs)
+        // ── 3. Verify ownership proof for token operations ────────────────────
+        // For deploy/mint/burn, verify the Schnorr signature against descriptor.owner.
+        for (const auto& proof : tx.token_proofs)
         {
-            if (const auto* op = std::get_if<rct::asset_operation_ownership_proof>(&proof))
+            if (const auto* op = std::get_if<rct::token_operation_ownership_proof>(&proof))
             {
                 // The message signed is the tx prefix hash.
-                // The public key is retrieved from the asset descriptor in
-                // validate_tx_asset_operations_against_db (asset_history_utils).
+                // The public key is retrieved from the token descriptor in
+                // validate_tx_token_operations_against_db (token_history_utils).
                 // Here we check the proof is non-zero (structural check only;
-                // key-specific check is in asset_history_utils.cpp).
+                // key-specific check is in token_history_utils.cpp).
                 if (op->sig.c == rct::zero() || op->sig.y == rct::zero())
                 {
-                    reason = "asset ownership proof is zero";
+                    reason = "token ownership proof is zero";
                     return false;
                 }
             }
         }
 
-        // ── 4. Verify HF21 CA balance proof (asset conservation statement) ───
+        // ── 4. Verify HF21 PT balance proof (token conservation statement) ───
         const rct::zc_balance_proof* bal = nullptr;
-        for (const auto& proof : tx.asset_proofs)
+        for (const auto& proof : tx.token_proofs)
         {
             if (const auto* bp = std::get_if<rct::zc_balance_proof>(&proof))
             {
@@ -2189,7 +2189,7 @@ namespace rct {
         {
             if (bal == nullptr)
             {
-                reason = "missing zc_balance_proof for CA spend";
+                reason = "missing zc_balance_proof for PT spend";
                 return false;
             }
 
@@ -2210,20 +2210,20 @@ namespace rct {
 
             rct::key expected_P = rct::zero();
             rct::subKeys(expected_P, sum_in_C, sum_out_C);
-            if (tx.type == cryptonote::txtype::burn_asset)
+            if (tx.type == cryptonote::txtype::burn_token)
             {
-                cryptonote::tx_extra_asset_descriptor_operation ado{};
-                if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
+                cryptonote::tx_extra_token_descriptor_operation tdo{};
+                if (!cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo))
                 {
-                    reason = "burn tx is missing its asset_descriptor_operation in tx.extra";
+                    reason = "burn tx is missing its token_descriptor_operation in tx.extra";
                     return false;
                 }
-                if (!ado.field_is_set(cryptonote::asset_field_amount_commitment))
+                if (!tdo.field_is_set(cryptonote::token_field_amount_commitment))
                 {
-                    reason = "burn tx asset_descriptor_operation is missing amount_commitment";
+                    reason = "burn tx token_descriptor_operation is missing amount_commitment";
                     return false;
                 }
-                rct::subKeys(expected_P, expected_P, rct::pk2rct(ado.amount_commitment));
+                rct::subKeys(expected_P, expected_P, rct::pk2rct(tdo.amount_commitment));
             }
             if (bal->P != expected_P)
             {
@@ -2238,13 +2238,13 @@ namespace rct {
             }
         }
 
-        // ── 5. Verify HF21 asset outputs range proof (overflow/inflation guard) ─
+        // ── 5. Verify HF21 token outputs range proof (overflow/inflation guard) ─
         // Confirms every zarcanum output's amount is in [0, 2^64), preventing a
         // wraparound-based inflation attack that the balance proof alone can't
         // catch (it only checks conservation, not range).
         {
             const rct::zc_outs_range_proof* rp = nullptr;
-            for (const auto& proof : tx.asset_proofs)
+            for (const auto& proof : tx.token_proofs)
             {
                 if (const auto* p = std::get_if<rct::zc_outs_range_proof>(&proof))
                 {
@@ -2265,37 +2265,37 @@ namespace rct {
                     return false;
                 }
 
-                // Zarcanum outputs need *some* source pinning their asset id to
-                // exist at all: either spent zc inputs (whose hidden asset ids
-                // need not agree -- multiple distinct confidential assets are
+                // Zarcanum outputs need *some* source pinning their token id to
+                // exist at all: either spent zc inputs (whose hidden token ids
+                // need not agree -- multiple distinct private tokens are
                 // allowed in one tx, see construct_tx_with_tx_key) or, for mints
-                // with no zc input (deploy_new_asset/emit_asset), the asset
-                // descriptor operation's own (plaintext, public) asset_id.
+                // with no zc input (deploy_new_token/mint_token), the token
+                // descriptor operation's own (plaintext, public) token_id.
                 //
-                // Note: zc inputs no longer declare any plaintext asset id (it
-                // stays hidden behind the ZC_sig's pseudo_out_blinded_asset_id).
-                // It doesn't need to be revealed: each output's real asset basis
+                // Note: zc inputs no longer declare any plaintext token id (it
+                // stays hidden behind the ZC_sig's pseudo_out_blinded_token_id).
+                // It doesn't need to be revealed: each output's real token basis
                 // is independently pinned down by verify_BGE_proof (ties the
                 // output's blinded id back to a real spent input's) and the
                 // aggregation proof below (ties the output's real commitment to
                 // its own blinded id as tag) -- both require finding a discrete-
-                // log relation between two independently hash-derived asset
+                // log relation between two independently hash-derived token
                 // points, which is assumed infeasible.
                 bool tag_set = zc_input_count > 0;
-                if (!tag_set && (tx.type == cryptonote::txtype::deploy_new_asset || tx.type == cryptonote::txtype::emit_asset))
+                if (!tag_set && (tx.type == cryptonote::txtype::deploy_new_token || tx.type == cryptonote::txtype::mint_token))
                 {
-                    cryptonote::tx_extra_asset_descriptor_operation ado{};
-                    if (!cryptonote::get_asset_descriptor_operation_from_tx_extra(tx.extra, ado))
+                    cryptonote::tx_extra_token_descriptor_operation tdo{};
+                    if (!cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo))
                     {
-                        reason = "mint tx is missing its asset_descriptor_operation in tx.extra";
+                        reason = "mint tx is missing its token_descriptor_operation in tx.extra";
                         return false;
                     }
-                    const crypto::asset_id asset_id = (tx.type == cryptonote::txtype::deploy_new_asset)
-                        ? cryptonote::get_or_calculate_asset_id(ado)
-                        : ado.asset_id;
-                    if (asset_id == crypto::null_aid)
+                    const crypto::token_id token_id = (tx.type == cryptonote::txtype::deploy_new_token)
+                        ? cryptonote::get_or_calculate_token_id(tdo)
+                        : tdo.token_id;
+                    if (token_id == crypto::null_tid)
                     {
-                        reason = "mint tx asset_descriptor_operation has no resolvable asset_id";
+                        reason = "mint tx token_descriptor_operation has no resolvable token_id";
                         return false;
                     }
                     tag_set = true;
@@ -2303,7 +2303,7 @@ namespace rct {
 
                 if (!tag_set)
                 {
-                    reason = "zarcanum outputs present without any source to declare the asset id";
+                    reason = "zarcanum outputs present without any source to declare the token id";
                     return false;
                 }
 
@@ -2314,12 +2314,12 @@ namespace rct {
                         continue;
                     const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
                     real_commitments.push_back(rct::pk2rct(zout.amount_commitment));
-                    // tags[j] must be this output's OWN blinded asset id T_j
+                    // tags[j] must be this output's OWN blinded token id T_j
                     // (not the shared plaintext-derived `tag`) -- it's the
                     // base zout.amount_commitment was actually built on (see
-                    // rct::commitAsset), and the aggregation proof checks
+                    // rct::commitToken), and the aggregation proof checks
                     // real_commitments[j] against "tags[j] + w*H" directly.
-                    tags.push_back(rct::aid2rct(zout.blinded_asset_id));
+                    tags.push_back(rct::tid2rct(zout.blinded_token_id));
                 }
 
                 if (!crypto::verify_vector_ug_aggregation_proof(tx_prefix_hash, real_commitments, tags, rp->aggregation_proof))
@@ -2353,14 +2353,14 @@ namespace rct {
     // Proves, for a hidden real index l in a ring of size n:
     //   layer 0 (G): knowledge of p such that p*G == P[l]                 (stealth address)
     //   layer 1 (G): knowledge of f such that f*G == A[l] - pseudo_A      (amount commitment)
-    //   layer 2 (X): knowledge of t such that t*X == T[l] - pseudo_T      (blinded asset id)
+    //   layer 2 (X): knowledge of t such that t*X == T[l] - pseudo_T      (blinded token id)
     // all bound to one key image I = p*Hp(P[l]) via a single Fiat-Shamir challenge chain,
     // following the same aggregation-coefficient trick Beldex's CLSAG_Gen already uses for
     // its two G-layers (mu_P/mu_C), extended with a third coefficient mu_T for the X-layer.
     //
-    // P, A, T are parallel rings (stealth addresses, amount commitments, blinded asset ids).
+    // P, A, T are parallel rings (stealth addresses, amount commitments, blinded token ids).
     // A[i]/T[i] are canonical (full-scale) points, matching how C_nonzero is used by CLSAG_Gen.
-    // pseudo_A/pseudo_T are the pseudo-output's amount commitment and blinded asset id, also
+    // pseudo_A/pseudo_T are the pseudo-output's amount commitment and blinded token id, also
     // full-scale (not premultiplied by 1/8); only the auxiliary key images D, E get the
     // standard 1/8 treatment before being stored, mirroring clsag::D.
 
@@ -2619,31 +2619,31 @@ namespace rct {
     // ── HF21: ZC_sig generation and verification ─────────────────────────────
     //
     // ZC_sig wraps CLSAG_GGX: a 3-layer ring signature proving stealth-address
-    // ownership, amount-commitment balance and asset-id balance for one input
+    // ownership, amount-commitment balance and token-id balance for one input
     // spending a tx_out_zarcanum, in a single linked proof.
 
     ZC_sig genZCSig(const key& message,
                     const keyV& ring_stealth_addrs,
                     const keyV& ring_amount_commitments,
-                    const keyV& ring_blinded_asset_ids,
+                    const keyV& ring_blinded_token_ids,
                     const key& spend_secret,
                     const key& real_amount_mask_diff,
-                    const key& real_asset_mask_diff,
+                    const key& real_token_mask_diff,
                     const key& pseudo_out_amount_commitment,
-                    const key& pseudo_out_blinded_asset_id,
+                    const key& pseudo_out_blinded_token_id,
                     unsigned int real_index)
     {
         CHECK_AND_ASSERT_THROW_MES(!ring_stealth_addrs.empty(), "Empty ring for ZC_sig");
         CHECK_AND_ASSERT_THROW_MES(real_index < ring_stealth_addrs.size(), "Invalid real_index");
 
         ZC_sig result;
-        result.clsag_sig = CLSAG_GGX_Gen(message, ring_stealth_addrs, ring_amount_commitments, ring_blinded_asset_ids,
-                                         spend_secret, real_amount_mask_diff, real_asset_mask_diff,
-                                         pseudo_out_amount_commitment, pseudo_out_blinded_asset_id, real_index);
+        result.clsag_sig = CLSAG_GGX_Gen(message, ring_stealth_addrs, ring_amount_commitments, ring_blinded_token_ids,
+                                         spend_secret, real_amount_mask_diff, real_token_mask_diff,
+                                         pseudo_out_amount_commitment, pseudo_out_blinded_token_id, real_index);
         result.pseudo_out_amount_commitment = pseudo_out_amount_commitment;
-        result.pseudo_out_blinded_asset_id  = pseudo_out_blinded_asset_id;
-        CHECK_AND_ASSERT_THROW_MES(verify_CLSAG_GGX(message, ring_stealth_addrs, ring_amount_commitments, ring_blinded_asset_ids,
-                                                    pseudo_out_amount_commitment, pseudo_out_blinded_asset_id, result.clsag_sig),
+        result.pseudo_out_blinded_token_id  = pseudo_out_blinded_token_id;
+        CHECK_AND_ASSERT_THROW_MES(verify_CLSAG_GGX(message, ring_stealth_addrs, ring_amount_commitments, ring_blinded_token_ids,
+                                                    pseudo_out_amount_commitment, pseudo_out_blinded_token_id, result.clsag_sig),
                                    "Generated ZC_sig failed local verification");
         return result;
     }
@@ -2652,17 +2652,17 @@ namespace rct {
                   const ZC_sig& sig,
                   const keyV& ring_stealth_addrs,
                   const keyV& ring_amount_commitments,
-                  const keyV& ring_blinded_asset_ids,
+                  const keyV& ring_blinded_token_ids,
                   const key& pseudo_out_amount_commitment,
-                  const key& pseudo_out_blinded_asset_id)
+                  const key& pseudo_out_blinded_token_id)
     {
         if (ring_stealth_addrs.empty()) return false;
         if (!(sig.pseudo_out_amount_commitment == pseudo_out_amount_commitment) ||
-            !(sig.pseudo_out_blinded_asset_id == pseudo_out_blinded_asset_id))
+            !(sig.pseudo_out_blinded_token_id == pseudo_out_blinded_token_id))
             return false;
 
-        return verify_CLSAG_GGX(message, ring_stealth_addrs, ring_amount_commitments, ring_blinded_asset_ids,
-                                pseudo_out_amount_commitment, pseudo_out_blinded_asset_id, sig.clsag_sig);
+        return verify_CLSAG_GGX(message, ring_stealth_addrs, ring_amount_commitments, ring_blinded_token_ids,
+                                pseudo_out_amount_commitment, pseudo_out_blinded_token_id, sig.clsag_sig);
     }
 
 }

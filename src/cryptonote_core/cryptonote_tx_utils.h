@@ -145,14 +145,14 @@ namespace cryptonote
     rct::key mask;                      //ringct amount mask
     rct::multisig_kLRki multisig_kLRki; //multisig info
 
-    // Confidential asset (HF21+). null_aid = native BDX input (txin_to_key).
-    crypto::asset_id asset_id = crypto::null_aid;
-    rct::key asset_mask = rct::zero();  // real output's asset-id blinding mask (transfer_details::m_asset_mask)
-    // Blinded asset ids of the ring, parallel to `outputs` (same index correspondence).
+    // Private token (HF21+). null_tid = native BDX input (txin_to_key).
+    crypto::token_id token_id = crypto::null_tid;
+    rct::key token_mask = rct::zero();  // real output's token-id blinding mask (transfer_details::m_token_mask)
+    // Blinded token ids of the ring, parallel to `outputs` (same index correspondence).
     // Only populated/used when is_zarcanum() is true.
-    std::vector<crypto::asset_id> ring_blinded_asset_ids;
+    std::vector<crypto::token_id> ring_blinded_token_ids;
 
-    bool is_zarcanum() const { return asset_id != crypto::null_aid; }
+    bool is_zarcanum() const { return token_id != crypto::null_tid; }
 
     void push_output(uint64_t idx, const crypto::public_key &k, uint64_t amount) { outputs.push_back(std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::zeroCommit(amount)}))); }
 
@@ -166,9 +166,9 @@ namespace cryptonote
       FIELD(rct)
       FIELD(mask)
       FIELD(multisig_kLRki)
-      FIELD(asset_id)
-      FIELD(asset_mask)
-      FIELD(ring_blinded_asset_ids)
+      FIELD(token_id)
+      FIELD(token_mask)
+      FIELD(ring_blinded_token_ids)
 
       if (real_output >= outputs.size())
         throw std::invalid_argument{"invalid real_output size"};
@@ -182,14 +182,14 @@ namespace cryptonote
     account_public_address addr;        // Destination Address
     bool is_subaddress;
     bool is_integrated;
-    // Confidential asset (HF21+). null_pkey = native BDX output (txout_to_key).
-    crypto::asset_id asset_id = crypto::null_aid;
+    // Private token (HF21+). null_pkey = native BDX output (txout_to_key).
+    crypto::token_id token_id = crypto::null_tid;
 
     tx_destination_entry() : amount(0), addr{}, is_subaddress(false), is_integrated(false) { }
     tx_destination_entry(uint64_t a, const account_public_address &ad, bool is_subaddress) : amount(a), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
     tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, bool is_subaddress) : original(o), amount(a), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
 
-    bool is_zarcanum() const { return asset_id != crypto::null_aid; }
+    bool is_zarcanum() const { return token_id != crypto::null_tid; }
 
     bool operator==(const tx_destination_entry& other) const
     {
@@ -217,7 +217,7 @@ namespace cryptonote
       FIELD(addr)
       FIELD(is_subaddress)
       FIELD(is_integrated)
-      FIELD(asset_id)
+      FIELD(token_id)
     END_SERIALIZE()
   };
 
@@ -236,10 +236,10 @@ namespace cryptonote
     // allow these amounts to be burned).
     uint64_t burn_fixed   = 0; // atomic units
     uint64_t burn_percent = 0; // 123 = 1.23x base fee.
-    // Asset burn metadata. These fields are only meaningful for txtype::burn_asset;
+    // Token burn metadata. These fields are only meaningful for txtype::burn_token;
     // native BDX burn amounts continue to use burn_fixed/burn_percent above.
-    crypto::asset_id burn_asset_id = crypto::null_aid;
-    uint64_t burn_asset_amount = 0;
+    crypto::token_id burn_token_id = crypto::null_tid;
+    uint64_t burn_token_amount = 0;
   };
 
   //---------------------------------------------------------------
@@ -304,9 +304,9 @@ namespace boost
       a & x.real_out_additional_tx_keys;
       if (ver < 2)
         return;
-      a & x.asset_id;
-      a & x.asset_mask;
-      a & x.ring_blinded_asset_ids;
+      a & x.token_id;
+      a & x.token_mask;
+      a & x.ring_blinded_token_ids;
     }
 
     template <class Archive>
@@ -326,7 +326,7 @@ namespace boost
       a & x.is_integrated;
       if (ver < 3)
         return;
-      a & x.asset_id;
+      a & x.token_id;
     }
   }
 }

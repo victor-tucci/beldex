@@ -1717,7 +1717,7 @@ namespace cryptonote::rpc {
     std::vector<std::uint64_t> distribution;
     std::uint64_t start_height;
     std::uint64_t base;
-    std::vector<std::uint64_t> output_indices; // bucket_rank → real amount-0 global index; populated only for native/asset filter
+    std::vector<std::uint64_t> output_indices; // bucket_rank → real amount-0 global index; populated only for native/token filter
   };
 
 
@@ -2639,28 +2639,28 @@ namespace cryptonote::rpc {
     }request;
   };
 
-  // ── HF21 Confidential Asset RPC endpoints ──────────────────────────────────
+  // ── HF21 Private Token RPC endpoints ──────────────────────────────────
 
-  /// RPC: daemon/get_asset_info
-  /// Returns the current state of a registered confidential asset.
-  /// Input:  asset_id (hex-encoded 32-byte public key)
+  /// RPC: daemon/get_token_info
+  /// Returns the current state of a registered private token.
+  /// Input:  token_id (hex-encoded 32-byte public key)
   /// Output: ticker, full_name, owner, current_supply, total_max_supply,
   ///         decimal_point, operation_count
-  struct GET_ASSET_INFO : PUBLIC
+  struct GET_TOKEN_INFO : PUBLIC
   {
-    static constexpr auto names() { return NAMES("get_asset_info"); }
+    static constexpr auto names() { return NAMES("get_token_info"); }
 
     struct request_parameters {
-      std::string asset_id; ///< Hex-encoded asset ID (32 bytes = 64 hex chars)
+      std::string token_id; ///< Hex-encoded token ID (32 bytes = 64 hex chars)
     } request;
   };
 
-  /// RPC: daemon/get_asset_list
-  /// Returns the list of all registered asset IDs on the chain.
-  /// Output: asset_ids (array of hex strings)
-  struct GET_ASSET_LIST : PUBLIC
+  /// RPC: daemon/get_token_list
+  /// Returns the list of all registered token IDs on the chain.
+  /// Output: token_ids (array of hex strings)
+  struct GET_TOKEN_LIST : PUBLIC
   {
-    static constexpr auto names() { return NAMES("get_asset_list"); }
+    static constexpr auto names() { return NAMES("get_token_list"); }
 
     struct request_parameters {
       uint64_t offset = 0;   ///< Pagination offset
@@ -2744,8 +2744,8 @@ namespace cryptonote::rpc {
     BNS_RESOLVE,
     BNS_LOOKUP,
     BNS_VALUE_DECRYPT,
-    GET_ASSET_INFO,
-    GET_ASSET_LIST,
+    GET_TOKEN_INFO,
+    GET_TOKEN_LIST,
     OUT_PEERS,
     GET_OUTPUT_DISTRIBUTION,
     POP_BLOCKS,

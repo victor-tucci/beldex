@@ -402,15 +402,15 @@ namespace cryptonote::rpc {
         "type", required{value_decrypt.request.type});
   }
 
-  void parse_request(GET_ASSET_INFO& asset_info, rpc_input in) {
+  void parse_request(GET_TOKEN_INFO& token_info, rpc_input in) {
     get_values(in,
-        "asset_id", required{asset_info.request.asset_id});
+        "token_id", required{token_info.request.token_id});
   }
 
-  void parse_request(GET_ASSET_LIST& asset_list, rpc_input in) {
+  void parse_request(GET_TOKEN_LIST& token_list, rpc_input in) {
     get_values(in,
-        "count", asset_list.request.count,
-        "offset", asset_list.request.offset);
+        "count", token_list.request.count,
+        "offset", token_list.request.offset);
   }
 
   void parse_request(GET_QUORUM_STATE& qs, rpc_input in) {

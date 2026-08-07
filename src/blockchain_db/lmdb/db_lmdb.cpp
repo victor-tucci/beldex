@@ -65,8 +65,8 @@ enum struct lmdb_version
     v5,     // alt_block_data_1_t => alt_block_data_t: Alt block data has boolean for if the block was checkpointed
     v6,     // remigrate quorum_signature struct due to alignment change
     v7,     // rebuild the checkpoint table because v6 update in-place made MDB_LAST not give us the newest checkpoint
-    v8,     // add asset history table for custom asset registry state
-    v9,     // add blinded_asset_id to output metadata for confidential asset ring filtering
+    v8,     // add token history table for custom token registry state
+    v9,     // add blinded_token_id to output metadata for private token ring filtering
     _count
 };
 
@@ -220,7 +220,7 @@ namespace
  * txpool_blob       txn hash     txn blob
  *
  * alt_blocks       block hash   {block data, block blob}
- * assets           asset_id     [tx_extra_asset_descriptor_operation...]
+ * tokens           token_id     [tx_extra_token_descriptor_operation...]
  *
  * Note: where the data items are of uniform size, DUPFIXED tables have
  * been used to save space. In most of these cases, a dummy "zerokval"
@@ -259,7 +259,7 @@ const char* const LMDB_MASTER_NODE_DATA = "master_node_data";
 const char* const LMDB_MASTER_NODE_LATEST = "master_node_proofs"; // contains the latest data sent with a proof: time, aux keys, ip, ports
 
 const char* const LMDB_PROPERTIES = "properties";
-const char* const LMDB_ASSET_HISTORIES = "asset_histories";
+const char* const LMDB_TOKEN_HISTORIES = "token_histories";
 
 constexpr unsigned int LMDB_DB_COUNT = 24; // Should agree with the number of db's above
 
@@ -404,7 +404,7 @@ void setup_rcursor(const MDB_dbi& db, MDB_cursor*& cursor, MDB_txn* txn, bool* r
 #define m_cur_alt_blocks	m_cursors->alt_blocks
 #define m_cur_hf_versions	m_cursors->hf_versions
 #define m_cur_properties	m_cursors->properties
-#define m_cur_asset_histories	m_cursors->asset_histories
+#define m_cur_token_histories	m_cursors->token_histories
 
 namespace cryptonote
 {
@@ -1145,7 +1145,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   CURSOR(output_txs)
   CURSOR(output_amounts)
 
-  // Confidential asset outputs (tx_out_zarcanum) always have amount == 0 on-chain
+  // Private token outputs (tx_out_zarcanum) always have amount == 0 on-chain
   // and carry their own commitment; they are stored with stealth_address as pubkey.
   const bool is_zarcanum = std::holds_alternative<tx_out_zarcanum>(tx_output.target);
   if (!is_zarcanum && !std::holds_alternative<txout_to_key>(tx_output.target))
@@ -1185,7 +1185,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
     ok.data.unlock_time = unlock_time;
     ok.data.height = m_height;
     ok.data.commitment = rct::pk2rct(zout.amount_commitment);
-    ok.data.blinded_asset_id = zout.blinded_asset_id;
+    ok.data.blinded_token_id = zout.blinded_token_id;
     data.mv_size = sizeof(ok);
   }
   else
@@ -1193,7 +1193,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
     ok.data.pubkey = var::get<txout_to_key>(tx_output.target).key;
     ok.data.unlock_time = unlock_time;
     ok.data.height = m_height;
-    ok.data.blinded_asset_id = crypto::null_aid;
+    ok.data.blinded_token_id = crypto::null_tid;
     if (tx_output.amount == 0)
     {
       ok.data.commitment = *commitment;
@@ -1209,13 +1209,13 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
       throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
 
-  // HF21: for confidential asset outputs, also record in the per-asset index
-  // so the wallet can enumerate all outputs of a specific asset for BGE ring.
-  // The plaintext asset_id is populated by append_assets_from_transactions()
+  // HF21: for private token outputs, also record in the per-token index
+  // so the wallet can enumerate all outputs of a specific token for BGE ring.
+  // The plaintext token_id is populated by append_tokens_from_transactions()
   // which runs after block acceptance and has access to tx.extra.
-  // Here we only need the global output index to be stored; asset_id is stored
+  // Here we only need the global output index to be stored; token_id is stored
   // by the caller that knows the tx context (see blockchain.cpp add_block path).
-  // Therefore: add_asset_output() is called from blockchain.cpp, not here.
+  // Therefore: add_token_output() is called from blockchain.cpp, not here.
 
   return ok.amount_index;
 }
@@ -1560,7 +1560,7 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
   lmdb_db_open(txn, LMDB_MASTER_NODE_DATA, MDB_INTEGERKEY | MDB_CREATE, m_master_node_data, "Failed to open db handle for m_master_node_data");
 
   lmdb_db_open(txn, LMDB_MASTER_NODE_LATEST, MDB_CREATE, m_master_node_proofs, "Failed to open db handle for m_master_node_proofs");
-  lmdb_db_open(txn, LMDB_ASSET_HISTORIES, MDB_CREATE, m_asset_histories, "Failed to open db handle for m_asset_histories");
+  lmdb_db_open(txn, LMDB_TOKEN_HISTORIES, MDB_CREATE, m_token_histories, "Failed to open db handle for m_token_histories");
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
@@ -1581,7 +1581,7 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
   mdb_set_compare(txn, m_txpool_blob, compare_hash32);
   mdb_set_compare(txn, m_alt_blocks, compare_hash32);
   mdb_set_compare(txn, m_master_node_proofs, compare_hash32);
-  mdb_set_compare(txn, m_asset_histories, compare_hash32);
+  mdb_set_compare(txn, m_token_histories, compare_hash32);
   mdb_set_compare(txn, m_properties, compare_string);
 
   if (!(mdb_flags & MDB_RDONLY))
@@ -1745,8 +1745,8 @@ void BlockchainLMDB::reset()
     throw0(DB_ERROR(lmdb_error("Failed to drop m_hf_versions: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_master_node_data, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_master_node_data: ", result).c_str()));
-  if (auto result = mdb_drop(txn, m_asset_histories, 0))
-    throw0(DB_ERROR(lmdb_error("Failed to drop m_asset_histories: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_token_histories, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_token_histories: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_properties, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_properties: ", result).c_str()));
 
@@ -4311,7 +4311,7 @@ void BlockchainLMDB::get_output_key(const epee::span<const uint64_t> &amounts, c
       output_data_t &data = outputs.back();
       memcpy(&data, &okp->data, sizeof(pre_rct_output_data_t));
       data.commitment = rct::zeroCommit(amount);
-      data.blinded_asset_id = crypto::null_aid;
+      data.blinded_token_id = crypto::null_tid;
     }
   }
 
@@ -4479,8 +4479,8 @@ bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_heig
     const outkey *ok = (const outkey *)v.mv_data;
     if (amount == 0)
     {
-      const bool output_is_asset = ok->data.blinded_asset_id != crypto::null_aid;
-      if ((output_type == output_distribution_type::asset) != output_is_asset)
+      const bool output_is_token = ok->data.blinded_token_id != crypto::null_tid;
+      if ((output_type == output_distribution_type::token) != output_is_token)
         continue;
     }
     const uint64_t height = ok->data.height;
@@ -6106,13 +6106,13 @@ void BlockchainLMDB::migrate_6_7()
 void BlockchainLMDB::migrate_7_8()
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
-  MGINFO_YELLOW("Migrating blockchain from DB version 7 to 8 - adding asset history table");
+  MGINFO_YELLOW("Migrating blockchain from DB version 7 to 8 - adding token history table");
 
   mdb_txn_safe txn(false);
   if (auto result = mdb_txn_begin(m_env, NULL, 0, txn))
     throw0(DB_ERROR(lmdb_error("Failed to create a transaction for the db: ", result).c_str()));
 
-  lmdb_db_open(txn, LMDB_ASSET_HISTORIES, MDB_CREATE, m_asset_histories, "Failed to open db handle for m_asset_histories");
+  lmdb_db_open(txn, LMDB_TOKEN_HISTORIES, MDB_CREATE, m_token_histories, "Failed to open db handle for m_token_histories");
   txn.commit();
 
   if (int result = write_db_version(m_env, m_properties, (uint32_t)lmdb_version::v8))
@@ -6123,13 +6123,13 @@ void BlockchainLMDB::migrate_8_9()
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   const auto migration_started = std::chrono::steady_clock::now();
-  MGINFO_YELLOW("Migrating blockchain from DB version 8 to 9 - adding blinded_asset_id to output records; this may take a while:");
+  MGINFO_YELLOW("Migrating blockchain from DB version 8 to 9 - adding blinded_token_id to output records; this may take a while:");
 
-  // v9 appends a 32-byte crypto::asset_id (blinded_asset_id) to output_data_t,
+  // v9 appends a 32-byte crypto::token_id (blinded_token_id) to output_data_t,
   // which lives in the rct (amount==0) records of m_output_amounts. That table
   // is MDB_DUPFIXED, so all dups under a key must share one size; we therefore
   // rebuild the rct dup-list at the new record size via a temp table. Native /
-  // legacy outputs get null_aid; confidential-asset (zarcanum) outputs get their
+  // legacy outputs get null_tid; private-token (zarcanum) outputs get their
   // real blinded id, recovered by a forward scan that reproduces the exact
   // output_id assignment order (per block: miner_tx, then txs in tx_hashes
   // order, each vout ascending — see BlockchainDB::add_block).
@@ -6152,9 +6152,9 @@ void BlockchainLMDB::migrate_8_9()
   };
 #pragma pack(pop)
 
-  // No confidential-asset (zarcanum) outputs exist on chain at this migration,
-  // so there is nothing to preserve - every output gets null_aid below. The old
-  // full-chain scan that built an output_id -> blinded_asset_id map was therefore
+  // No private-token (zarcanum) outputs exist on chain at this migration,
+  // so there is nothing to preserve - every output gets null_tid below. The old
+  // full-chain scan that built an output_id -> blinded_token_id map was therefore
   // pure overhead and has been removed.
 
   // ── Rebuild m_output_amounts at the new record size ──
@@ -6202,9 +6202,9 @@ void BlockchainLMDB::migrate_8_9()
         nk.data.unlock_time = old->data.unlock_time;
         nk.data.height = old->data.height;
         nk.data.commitment = old->data.commitment;
-        // No confidential-asset outputs exist yet at this migration, so every
-        // record gets the null blinded asset id.
-        nk.data.blinded_asset_id = crypto::null_aid;
+        // No private-token outputs exist yet at this migration, so every
+        // record gets the null blinded token id.
+        nk.data.blinded_token_id = crypto::null_tid;
         MDB_val nv{sizeof(outkey), &nk};
 
         if (mdb_cursor_put(c_tmp, &k, &nv, MDB_APPENDDUP))
@@ -6535,35 +6535,35 @@ bool BlockchainLMDB::remove_master_node_proof(const crypto::public_key& pubkey)
   return true;
 }
 
-void BlockchainLMDB::set_asset_history(const crypto::asset_id& asset_id, const std::string& data)
+void BlockchainLMDB::set_token_history(const crypto::token_id& token_id, const std::string& data)
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
 
   TXN_BLOCK_PREFIX(0);
   mdb_txn_cursors *m_cursors = &m_wcursors;
-  setup_cursor(m_asset_histories, m_cur_asset_histories, *txn_ptr);
+  setup_cursor(m_token_histories, m_cur_token_histories, *txn_ptr);
 
-  MDB_val key{sizeof(asset_id), (void*)&asset_id};
+  MDB_val key{sizeof(token_id), (void*)&token_id};
   MDB_val_sized(blob, data);
-  int result = mdb_cursor_put(m_cur_asset_histories, &key, &blob, 0);
+  int result = mdb_cursor_put(m_cur_token_histories, &key, &blob, 0);
   if (result)
-    throw0(DB_ERROR(lmdb_error("Failed to write asset history to db transaction: ", result)));
+    throw0(DB_ERROR(lmdb_error("Failed to write token history to db transaction: ", result)));
 
   TXN_BLOCK_POSTFIX_SUCCESS();
 }
 
-bool BlockchainLMDB::get_asset_history(const crypto::asset_id& asset_id, std::string& data) const
+bool BlockchainLMDB::get_token_history(const crypto::token_id& token_id, std::string& data) const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
 
   TXN_PREFIX_RDONLY();
-  RCURSOR(asset_histories);
+  RCURSOR(token_histories);
 
-  MDB_val k{sizeof(asset_id), (void*)&asset_id};
+  MDB_val k{sizeof(token_id), (void*)&token_id};
   MDB_val v;
-  int result = mdb_cursor_get(m_cur_asset_histories, &k, &v, MDB_SET_KEY);
+  int result = mdb_cursor_get(m_cur_token_histories, &k, &v, MDB_SET_KEY);
   if (result != MDB_SUCCESS)
   {
     if (result == MDB_NOTFOUND)
@@ -6572,7 +6572,7 @@ bool BlockchainLMDB::get_asset_history(const crypto::asset_id& asset_id, std::st
     }
     else
     {
-      throw0(DB_ERROR(lmdb_error("DB error attempting to get asset history", result).c_str()));
+      throw0(DB_ERROR(lmdb_error("DB error attempting to get token history", result).c_str()));
     }
   }
 
@@ -6580,73 +6580,73 @@ bool BlockchainLMDB::get_asset_history(const crypto::asset_id& asset_id, std::st
   return true;
 }
 
-bool BlockchainLMDB::remove_asset_history(const crypto::asset_id& asset_id)
+bool BlockchainLMDB::remove_token_history(const crypto::token_id& token_id)
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
 
   TXN_BLOCK_PREFIX(0);
   mdb_txn_cursors *m_cursors = &m_wcursors;
-  setup_cursor(m_asset_histories, m_cur_asset_histories, *txn_ptr);
+  setup_cursor(m_token_histories, m_cur_token_histories, *txn_ptr);
 
-  MDB_val key{sizeof(asset_id), (void*)&asset_id};
-  int result = mdb_cursor_get(m_cur_asset_histories, &key, nullptr, MDB_SET_KEY);
+  MDB_val key{sizeof(token_id), (void*)&token_id};
+  int result = mdb_cursor_get(m_cur_token_histories, &key, nullptr, MDB_SET_KEY);
   if (result == MDB_NOTFOUND)
     return false;
   if (result != MDB_SUCCESS)
-    throw0(DB_ERROR(lmdb_error("Error finding asset history to remove: ", result)));
+    throw0(DB_ERROR(lmdb_error("Error finding token history to remove: ", result)));
 
-  result = mdb_cursor_del(m_cur_asset_histories, 0);
+  result = mdb_cursor_del(m_cur_token_histories, 0);
   if (result != MDB_SUCCESS)
-    throw0(DB_ERROR(lmdb_error("Error removing asset history: ", result)));
+    throw0(DB_ERROR(lmdb_error("Error removing token history: ", result)));
 
   TXN_BLOCK_POSTFIX_SUCCESS();
   return true;
 }
 
-bool BlockchainLMDB::asset_exists(const crypto::asset_id& asset_id) const
+bool BlockchainLMDB::token_exists(const crypto::token_id& token_id) const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
 
   TXN_PREFIX_RDONLY();
-  RCURSOR(asset_histories)
+  RCURSOR(token_histories)
 
-  MDB_val key{sizeof(asset_id), (void*)&asset_id};
+  MDB_val key{sizeof(token_id), (void*)&token_id};
   MDB_val value{};
-  int result = mdb_cursor_get(m_cur_asset_histories, &key, &value, MDB_SET_KEY);
+  int result = mdb_cursor_get(m_cur_token_histories, &key, &value, MDB_SET_KEY);
   if (result == MDB_NOTFOUND)
     return false;
   if (result != MDB_SUCCESS)
-    throw0(DB_ERROR(lmdb_error("Error checking asset existence: ", result)));
+    throw0(DB_ERROR(lmdb_error("Error checking token existence: ", result)));
 
   return true;
 }
 
-std::vector<crypto::asset_id> BlockchainLMDB::get_all_asset_ids() const
+std::vector<crypto::token_id> BlockchainLMDB::get_all_token_ids() const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
 
   TXN_PREFIX_RDONLY();
-  RCURSOR(asset_histories)
+  RCURSOR(token_histories)
 
-  std::vector<crypto::asset_id> result;
+  std::vector<crypto::token_id> result;
   MDB_val key{}, value{};
   MDB_cursor_op op = MDB_FIRST;
   while (true)
   {
-    int get_result = mdb_cursor_get(m_cur_asset_histories, &key, &value, op);
+    int get_result = mdb_cursor_get(m_cur_token_histories, &key, &value, op);
     op = MDB_NEXT;
 
     if (get_result == MDB_NOTFOUND)
       break;
     if (get_result != MDB_SUCCESS)
-      throw0(DB_ERROR(lmdb_error("Failed to enumerate assets: ", get_result)));
-    if (key.mv_size != sizeof(crypto::asset_id))
-      throw0(DB_ERROR("Invalid key size in assets table"));
+      throw0(DB_ERROR(lmdb_error("Failed to enumerate tokens: ", get_result)));
+    if (key.mv_size != sizeof(crypto::token_id))
+      throw0(DB_ERROR("Invalid key size in tokens table"));
 
-    result.push_back(*static_cast<const crypto::asset_id*>(key.mv_data));
+    result.push_back(*static_cast<const crypto::token_id*>(key.mv_data));
   }
 
   return result;

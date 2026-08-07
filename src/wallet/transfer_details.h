@@ -60,16 +60,16 @@ struct transfer_details
   std::vector<multisig_info> m_multisig_info; // one per other participant
   std::vector<std::pair<uint64_t, crypto::hash>> m_uses;
 
-  // Confidential asset (HF21+). null_aid = native BDX (txout_to_key).
-  crypto::asset_id m_asset_id = crypto::null_aid;
-  // Amount blinding mask for the asset commitment (needed to build pseudo-out when spending).
-  rct::key m_asset_mask = rct::zero();
+  // Private token (HF21+). null_tid = native BDX (txout_to_key).
+  crypto::token_id m_token_id = crypto::null_tid;
+  // Amount blinding mask for the token commitment (needed to build pseudo-out when spending).
+  rct::key m_token_mask = rct::zero();
 
   bool is_rct() const { return m_rct; }
-  bool is_zarcanum() const { return m_asset_id != crypto::null_aid; }
+  bool is_zarcanum() const { return m_token_id != crypto::null_tid; }
   uint64_t amount() const { return m_amount; }
 
-  const crypto::asset_id &get_asset_id() const { return m_asset_id; }
+  const crypto::token_id &get_token_id() const { return m_token_id; }
 
   const crypto::public_key &get_public_key() const {
     if (std::holds_alternative<cryptonote::tx_out_zarcanum>(m_tx.vout[m_internal_output_index].target))
@@ -103,8 +103,8 @@ void serialize_value(Archive& ar, transfer_details& x) {
   field(ar, "m_multisig_k", x.m_multisig_k);
   field(ar, "m_multisig_info", x.m_multisig_info);
   field(ar, "m_uses", x.m_uses);
-  field(ar, "m_asset_id", x.m_asset_id);
-  field(ar, "m_asset_mask", x.m_asset_mask);
+  field(ar, "m_token_id", x.m_token_id);
+  field(ar, "m_token_mask", x.m_token_mask);
 }
 
 }
@@ -145,8 +145,8 @@ void serialize(Archive &a, wallet::transfer_details &x, const unsigned int ver)
     a & x.m_was_flash;
   if (ver > 14)
   {
-    a & x.m_asset_id;
-    a & x.m_asset_mask;
+    a & x.m_token_id;
+    a & x.m_token_mask;
   }
 
   if constexpr (typename Archive::is_loading())
@@ -161,8 +161,8 @@ void serialize(Archive &a, wallet::transfer_details &x, const unsigned int ver)
       x.m_was_flash = false;
     if (ver < 15)
     {
-      x.m_asset_id   = crypto::null_aid;
-      x.m_asset_mask = rct::zero();
+      x.m_token_id   = crypto::null_tid;
+      x.m_token_mask = rct::zero();
     }
   }
 }

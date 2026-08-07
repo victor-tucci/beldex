@@ -170,16 +170,16 @@ namespace cryptonote
   bool get_encrypted_payment_id_from_tx_extra_nonce(const blobdata& extra_nonce, crypto::hash8& payment_id);
   bool add_burned_amount_to_tx_extra(std::vector<uint8_t>& tx_extra, uint64_t burn);
   uint64_t get_burned_amount_from_tx_extra(const std::vector<uint8_t>& tx_extra);
-  bool add_asset_descriptor_operation_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_asset_descriptor_operation& op);
-  bool get_asset_descriptor_operation_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_asset_descriptor_operation& op, size_t skip = 0);
+  bool add_token_descriptor_operation_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_token_descriptor_operation& op);
+  bool get_token_descriptor_operation_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_token_descriptor_operation& op, size_t skip = 0);
   bool is_out_to_acc(const account_keys& acc, const txout_to_key& out_key, const crypto::public_key& tx_pub_key, const std::vector<crypto::public_key>& additional_tx_public_keys, size_t output_index);
-  // Overload for confidential asset outputs (HF21+): checks stealth_address match.
+  // Overload for private token outputs (HF21+): checks stealth_address match.
   bool is_out_to_acc(const account_keys& acc, const tx_out_zarcanum& zout, const crypto::public_key& tx_pub_key, size_t output_index);
 
   // HF21: domain-separated scalar derivation for zarcanum output fields.
   // Produces a deterministic scalar from a shared key_derivation + output_index + domain tag.
-  // domain: "asset_blind" → asset ID blinding scalar r (T = asset_id + r*X)
-  //         "amount_mask" → Pedersen mask          (C = amount*T + mask*G, T = blinded_asset_id)
+  // domain: "token_blind" → token ID blinding scalar r (T = token_id + r*X)
+  //         "amount_mask" → Pedersen mask          (C = amount*T + mask*G, T = blinded_token_id)
   //         "enc_amount"  → amount encryption mask (enc = amount XOR le64(mask))
   rct::key zarcanum_derivation_to_scalar(const crypto::key_derivation& derivation,
                                           size_t output_index,
@@ -187,15 +187,15 @@ namespace cryptonote
 
   // HF21: decode a tx_out_zarcanum received by acc.
   // Returns false if the output does not belong to acc.
-  // On success fills: amount, asset_id, amount_mask, asset_blinding_mask.
+  // On success fills: amount, token_id, amount_mask, token_blinding_mask.
   bool decode_zarcanum_output(const account_keys& acc,
                                const tx_out_zarcanum& zout,
                                const crypto::key_derivation& derivation,
                                size_t output_index,
                                uint64_t& amount_out,
-                               crypto::asset_id& asset_id_out,
+                               crypto::token_id& token_id_out,
                                rct::key& amount_mask_out,
-                               rct::key& asset_blinding_mask_out);
+                               rct::key& token_blinding_mask_out);
   struct subaddress_receive_info
   {
     subaddress_index index;
@@ -257,8 +257,8 @@ namespace cryptonote
   std::string format_money(uint64_t amount, bool strip_zeros = true);
 
   // HF21: formatting amounts with a specific decimal_point
-  std::string print_asset_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true);
-  bool parse_asset_amount(uint64_t& amount, std::string_view str_amount, uint8_t decimal_point);
+  std::string print_token_amount(uint64_t amount, uint8_t decimal_point, bool strip_zeros = true);
+  bool parse_token_amount(uint64_t& amount, std::string_view str_amount, uint8_t decimal_point);
 
   std::string print_tx_verification_context  (tx_verification_context const &tvc, transaction const *tx = nullptr);
   std::string print_vote_verification_context(vote_verification_context const &vvc, master_nodes::quorum_vote_t const *vote = nullptr);

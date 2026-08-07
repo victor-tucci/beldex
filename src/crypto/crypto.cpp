@@ -188,7 +188,7 @@ namespace crypto {
     return ge_frombytes_vartime(&point, &key) == 0;
   }
 
-  bool check_asset_key(const asset_id &key) {
+  bool check_token_key(const token_id &key) {
     ge_p3 point;
     return ge_frombytes_vartime(&point, &key) == 0;
   }
