@@ -1412,13 +1412,15 @@ private:
 
     // Gateway address (HF22) registration: builds a tx that burns
     // GATEWAY_ADDRESS_REGISTRATION_FEE and carries a register descriptor op in
-    // tx_extra. `gateway_skey` is the SECRET key of the on-chain gateway id: the
-    // id (pubkey) is derived from it, and the tx is self-signed with it to prove
-    // the registrant controls the id (consensus requires this — F2). `owner_key`
-    // is the owner key that authorizes spends/updates — any of the three
-    // supported types (native Schnorr `crypto::public_key`, secp256k1
-    // `eth_public_key`, RFC-8032 `eddsa_public_key`); validated before building.
-    std::vector<pending_tx> create_gateway_register_tx(const crypto::secret_key& gateway_skey, const cryptonote::gateway_owner_key_v& owner_key, const std::string& meta_info, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {});
+    // tx_extra. The gateway id is this wallet's view public key: the tx is
+    // self-signed with the wallet's view secret key to prove the registrant
+    // controls the id (consensus requires this — F2). The id is intrinsic to the
+    // wallet and is never supplied by the caller. `owner_key` is the owner key
+    // that authorizes spends/updates — any of the three supported types (native
+    // Schnorr `crypto::public_key`, secp256k1 `eth_public_key`, RFC-8032
+    // `eddsa_public_key`); validated before building. `out_gateway_id`, if
+    // non-null, receives the resulting id.
+    std::vector<pending_tx> create_gateway_register_tx(const cryptonote::gateway_owner_key_v& owner_key, const std::string& meta_info, std::string *reason, uint32_t priority = 0, uint32_t account_index = 0, std::set<uint32_t> subaddr_indices = {}, crypto::public_key *out_gateway_id = nullptr);
 
     // signature: (Optional) If set, use the signature given, otherwise by default derive the signature from the wallet spend key as an ed25519 key.
     //            The signature is derived from the hash of the previous txid blob and previous value blob of the mapping. By default this is signed using the wallet's spend key as an ed25519 keypair.

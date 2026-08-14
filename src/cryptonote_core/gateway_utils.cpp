@@ -423,21 +423,21 @@ bool is_valid_gateway_owner_key(const gateway_owner_key_v& owner_key)
   return false;
 }
 
-bool verify_gateway_owner_signature(const gateway_owner_key_v& owner_key,
-                                    const gateway_owner_sig_v& sig,
-                                    const crypto::hash& msg)
+bool verify_gateway_signature(const gateway_owner_key_v& authorizing_key,
+                              const gateway_owner_sig_v& sig,
+                              const crypto::hash& msg)
 {
-  if (const auto* pk = std::get_if<crypto::public_key>(&owner_key))
+  if (const auto* pk = std::get_if<crypto::public_key>(&authorizing_key))
   {
     const auto* s = std::get_if<crypto::signature>(&sig);
     return s && crypto::check_signature(msg, *pk, *s);
   }
-  if (const auto* pk = std::get_if<crypto::eth_public_key>(&owner_key))
+  if (const auto* pk = std::get_if<crypto::eth_public_key>(&authorizing_key))
   {
     const auto* s = std::get_if<crypto::eth_signature>(&sig);
     return s && crypto::verify_eth_signature(msg, *pk, *s);
   }
-  if (const auto* pk = std::get_if<crypto::eddsa_public_key>(&owner_key))
+  if (const auto* pk = std::get_if<crypto::eddsa_public_key>(&authorizing_key))
   {
     const auto* s = std::get_if<crypto::eddsa_signature>(&sig);
     return s && crypto::verify_eddsa_signature(msg, *pk, *s);
@@ -533,10 +533,15 @@ bool validate_gateway_descriptor_operation(BlockchainDB& db, network_type nettyp
         return false;
       }
       {
+        // On a REGISTER the authorizing key is the gateway ID itself, not an
+        // owner key: the point is to prove the registrant controls the id being
+        // claimed (F2). The descriptor's owner_key cannot authorize this — it is
+        // attacker-chosen at this moment, since the gateway does not exist yet.
         // address_id is a native ed25519 key, so the proof must be the native
-        // Schnorr variant; verify_gateway_owner_signature enforces the match.
+        // Schnorr variant; verify_gateway_signature enforces the match.
+        const gateway_owner_key_v authorizing_key{op.address_id};
         const crypto::hash msg = gateway_ownership_message(nettype, tx);
-        if (!verify_gateway_owner_signature(gateway_owner_key_v{op.address_id}, reg_proof->sig, msg))
+        if (!verify_gateway_signature(authorizing_key, reg_proof->sig, msg))
         {
           reason = "gateway-id ownership proof verification failed";
           return false;
@@ -602,7 +607,7 @@ bool validate_gateway_descriptor_operation(BlockchainDB& db, network_type nettyp
       }
 
       const crypto::hash msg = gateway_ownership_message(nettype, tx);
-      if (!verify_gateway_owner_signature(acct.latest_descriptor().owner_key, proof->sig, msg))
+      if (!verify_gateway_signature(acct.latest_descriptor().owner_key, proof->sig, msg))
       {
         reason = "gateway ownership proof verification failed";
         return false;
@@ -817,7 +822,7 @@ namespace
         reason = "missing gateway input signature";
         return false;
       }
-      if (!verify_gateway_owner_signature(it->second.latest_descriptor().owner_key, sigs[gw_in_index]->sig, msg))
+      if (!verify_gateway_signature(it->second.latest_descriptor().owner_key, sigs[gw_in_index]->sig, msg))
       {
         reason = "gateway input signature verification failed";
         return false;

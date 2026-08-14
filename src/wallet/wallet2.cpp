@@ -8958,13 +8958,13 @@ std::vector<wallet2::pending_tx> wallet2::bns_create_buy_mapping_tx(bns::mapping
   return result;
 }
 
-std::vector<wallet2::pending_tx> wallet2::create_gateway_register_tx(const crypto::secret_key& gateway_skey,
-                                                                    const cryptonote::gateway_owner_key_v& owner_key,
+std::vector<wallet2::pending_tx> wallet2::create_gateway_register_tx(const cryptonote::gateway_owner_key_v& owner_key,
                                                                     const std::string& meta_info,
                                                                     std::string *reason,
                                                                     uint32_t priority,
                                                                     uint32_t account_index,
-                                                                    std::set<uint32_t> subaddr_indices)
+                                                                    std::set<uint32_t> subaddr_indices,
+                                                                    crypto::public_key *out_gateway_id)
 {
   auto hf_version = get_hard_fork_version();
   if (!hf_version)
@@ -8978,14 +8978,17 @@ std::vector<wallet2::pending_tx> wallet2::create_gateway_register_tx(const crypt
     return {};
   }
 
-  // The gateway id (pubkey) is derived from its secret key. We sign the register
-  // with this secret so consensus can verify the registrant controls the id (F2).
+  // The gateway id is this wallet's view public key. We sign the register with the
+  // wallet's view secret key so consensus can verify the registrant controls the id
+  // (F2). The id is intrinsic to the wallet and never supplied by the caller.
+  const crypto::secret_key& gateway_skey = get_account().get_keys().m_view_secret_key;
   crypto::public_key gateway_id{};
   if (!crypto::secret_key_to_public_key(gateway_skey, gateway_id) || !crypto::check_key(gateway_id))
   {
-    if (reason) *reason = "invalid gateway secret key: does not yield a valid public key";
+    if (reason) *reason = "wallet view key does not yield a valid gateway id";
     return {};
   }
+  if (out_gateway_id) *out_gateway_id = gateway_id;
 
   // The owner key must be valid for whichever of the three types was supplied.
   // This MUST match consensus (master_nodes::is_valid_gateway_owner_key): the

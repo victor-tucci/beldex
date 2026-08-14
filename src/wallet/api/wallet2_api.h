@@ -922,7 +922,8 @@ struct Wallet
     /*!
      * \brief createGatewayRegisterTransaction creates an HF22 gateway-address
      *        registration transaction.
-     * \param gateway_secret      64-character hex secret key for the gateway id.
+     *        The gateway id is this wallet's view public key; the registration is
+     *        self-signed with the wallet's view secret key, so it is not a parameter.
      * \param owner_key_type      "schnorr", "eth", or "eddsa".
      * \param owner_key           Hex public key for the selected owner key type.
      * \param meta_info           Optional on-chain descriptor metadata.
@@ -933,7 +934,6 @@ struct Wallet
      *                            commit() to relay it.
      */
     virtual PendingTransaction *createGatewayRegisterTransaction(
-                                                  const std::string& gateway_secret,
                                                   const std::string& owner_key_type,
                                                   const std::string& owner_key,
                                                   const std::string& meta_info = {},

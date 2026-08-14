@@ -792,7 +792,7 @@ namespace cryptonote
       return false;
     }
     const crypto::hash msg = gateway_input_message(nettype, tx);
-    if (!verify_gateway_owner_signature(owner_key, owner_sig, msg))
+    if (!verify_gateway_signature(owner_key, owner_sig, msg))
     {
       LOG_ERROR("gateway withdraw finalize: owner signature does not verify");
       return false;
@@ -949,12 +949,12 @@ namespace cryptonote
 
     // Verify each signature against its OWN domain-separated message; a sig valid
     // for one must not be accepted for the other.
-    if (!verify_gateway_owner_signature(current_owner_key, input_sig, gateway_input_message(nettype, tx)))
+    if (!verify_gateway_signature(current_owner_key, input_sig, gateway_input_message(nettype, tx)))
     {
       LOG_ERROR("gateway update finalize: input signature does not verify");
       return false;
     }
-    if (!verify_gateway_owner_signature(current_owner_key, ownership_sig, gateway_ownership_message(nettype, tx)))
+    if (!verify_gateway_signature(current_owner_key, ownership_sig, gateway_ownership_message(nettype, tx)))
     {
       LOG_ERROR("gateway update finalize: ownership proof does not verify");
       return false;

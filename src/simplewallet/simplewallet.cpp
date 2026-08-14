@@ -257,7 +257,7 @@ namespace
   const char* USAGE_PRINT_LOCKED_STAKES("print_locked_stakes [key_images]");
 
   const char* USAGE_BNS_BUY_MAPPING("bns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] [eth=<value>] <name>");
-  const char* USAGE_REGISTER_GATEWAY_ADDRESS("register_gateway_address [index=<N1>[,<N2>,...]] [<priority>] <gateway_secret_hex> <owner_type: schnorr|eth|eddsa> <owner_key_hex> [meta...]");
+  const char* USAGE_REGISTER_GATEWAY_ADDRESS("register_gateway_address [index=<N1>[,<N2>,...]] [<priority>] <owner_type: schnorr|eth|eddsa> <owner_key_hex> [meta...]");
   const char* USAGE_BNS_RENEW_MAPPING("bns_renew_mapping [index=<N1>[,<N2>,...]] [<priority>] [years=1y|2y|5y|10y] <name>");
   const char* USAGE_BNS_UPDATE_MAPPING("bns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [owner=<value>] [backup_owner=<value>] [bchat_id=<value>] [belnet_id=<value>] [address=<value>] [eth=<value>] [signature=<hex_signature>] <name>");
 
@@ -3142,7 +3142,7 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
   m_cmd_binder.set_handler("register_gateway_address",
                            [this](const auto& x) { return register_gateway_address(x); },
                            tr(USAGE_REGISTER_GATEWAY_ADDRESS),
-                           tr("Register a gateway address (HF22). Burns the registration fee and stores the owner key on-chain. The gateway id is derived from <gateway_secret_hex> and the tx is self-signed with it to prove control of the id. Args: <gateway_secret_hex> <owner_type> <owner_key_hex> [meta]."));
+                           tr("Register a gateway address (HF22). Burns the registration fee and stores the owner key on-chain. The gateway id is this wallet's view public key and the tx is self-signed with the wallet's view secret key to prove control of the id. Args: <owner_type> <owner_key_hex> [meta]."));
 
   m_cmd_binder.set_handler("bns_renew_mapping",
                            [this](const auto& x) { return bns_renew_mapping(x); },
@@ -6914,46 +6914,35 @@ bool simple_wallet::register_gateway_address(std::vector<std::string> args)
   std::set<uint32_t> subaddr_indices = {};
   if (!parse_subaddr_indices_and_priority(*m_wallet, args, subaddr_indices, priority, m_current_subaddress_account)) return false;
 
-  if (args.size() < 3)
+  if (args.size() < 2)
   {
     PRINT_USAGE(USAGE_REGISTER_GATEWAY_ADDRESS);
     return true;
   }
 
-  // The gateway id is derived from its secret key; the registration is
-  // self-signed with that secret to prove control of the id (F2).
-  crypto::secret_key gateway_skey;
-  if (!tools::hex_to_type(args[0], gateway_skey))
-  {
-    fail_msg_writer() << tr("Invalid gateway secret key (expected 64-char hex)");
-    return true;
-  }
-  crypto::public_key gateway_id;
-  if (!crypto::secret_key_to_public_key(gateway_skey, gateway_id))
-  {
-    fail_msg_writer() << tr("Invalid gateway secret key: does not yield a valid public key");
-    return true;
-  }
+  // The gateway id is this wallet's view public key (sourced inside
+  // create_gateway_register_tx); it is not taken from the user.
+  const crypto::public_key gateway_id = m_wallet->get_account().get_keys().m_account_address.m_view_public_key;
 
   // Owner key: one of the three supported types.
-  const std::string& owner_type = args[1];
+  const std::string& owner_type = args[0];
   cryptonote::gateway_owner_key_v owner_key;
   if (owner_type == "schnorr" || owner_type == "ed25519")
   {
     crypto::public_key pk;
-    if (!tools::hex_to_type(args[2], pk)) { fail_msg_writer() << tr("Invalid schnorr owner key (expected 64-char hex)"); return true; }
+    if (!tools::hex_to_type(args[1], pk)) { fail_msg_writer() << tr("Invalid schnorr owner key (expected 64-char hex)"); return true; }
     owner_key = pk;
   }
   else if (owner_type == "eth")
   {
     crypto::eth_public_key pk;
-    if (!tools::hex_to_type(args[2], pk)) { fail_msg_writer() << tr("Invalid eth owner key (expected 66-char hex / 33-byte compressed secp256k1)"); return true; }
+    if (!tools::hex_to_type(args[1], pk)) { fail_msg_writer() << tr("Invalid eth owner key (expected 66-char hex / 33-byte compressed secp256k1)"); return true; }
     owner_key = pk;
   }
   else if (owner_type == "eddsa")
   {
     crypto::eddsa_public_key pk;
-    if (!tools::hex_to_type(args[2], pk)) { fail_msg_writer() << tr("Invalid eddsa owner key (expected 64-char hex)"); return true; }
+    if (!tools::hex_to_type(args[1], pk)) { fail_msg_writer() << tr("Invalid eddsa owner key (expected 64-char hex)"); return true; }
     owner_key = pk;
   }
   else
@@ -6961,7 +6950,7 @@ bool simple_wallet::register_gateway_address(std::vector<std::string> args)
     fail_msg_writer() << tr("owner_type must be one of: schnorr, eth, eddsa");
     return true;
   }
-  std::string meta = args.size() > 3 ? tools::join(" ", args.begin() + 3, args.end()) : std::string{};
+  std::string meta = args.size() > 2 ? tools::join(" ", args.begin() + 2, args.end()) : std::string{};
   if (meta.size() >= 2 && meta.front() == '"' && meta.back() == '"')
     meta = meta.substr(1, meta.size() - 2);
 
@@ -6970,7 +6959,7 @@ bool simple_wallet::register_gateway_address(std::vector<std::string> args)
   std::vector<tools::wallet2::pending_tx> ptx_vector;
   try
   {
-    ptx_vector = m_wallet->create_gateway_register_tx(gateway_skey, owner_key, meta, &reason, priority, m_current_subaddress_account, subaddr_indices);
+    ptx_vector = m_wallet->create_gateway_register_tx(owner_key, meta, &reason, priority, m_current_subaddress_account, subaddr_indices);
     if (ptx_vector.empty())
     {
       fail_msg_writer() << reason;
@@ -6989,7 +6978,7 @@ bool simple_wallet::register_gateway_address(std::vector<std::string> args)
     fmt::print(fmt::format(tr("Gateway addr: {}\n"), gateway_address));
     fmt::print(fmt::format(tr("Gateway id  : {}\n"), tools::type_to_hex(gateway_id)));
     fmt::print(fmt::format(tr("Owner type  : {}\n"), owner_type));
-    fmt::print(fmt::format(tr("Owner key   : {}\n"), args[2]));
+    fmt::print(fmt::format(tr("Owner key   : {}\n"), args[1]));
     fmt::print(fmt::format(tr("Meta        : {}\n"), meta.empty() ? "(none)" : meta));
     fmt::print(fmt::format(tr("Fee burned  : {}\n"), print_money(cryptonote::GATEWAY_ADDRESS_REGISTRATION_FEE)));
     if (!confirm_and_send_tx(dsts, ptx_vector, priority == tools::tx_priority_flash))

@@ -2011,7 +2011,6 @@ PendingTransaction *WalletImpl::createBnsTransaction(std::string& owner, std::st
 
 EXPORT
 PendingTransaction *WalletImpl::createGatewayRegisterTransaction(
-    const std::string& gateway_secret,
     const std::string& owner_key_type,
     const std::string& owner_key_hex,
     const std::string& meta_info,
@@ -2025,12 +2024,8 @@ PendingTransaction *WalletImpl::createGatewayRegisterTransaction(
     bool refresh_paused = false;
 
     do {
-        crypto::secret_key gateway_skey;
-        if (!tools::hex_to_type(gateway_secret, gateway_skey)) {
-            setStatusError(tr("Invalid gateway secret key: expected 64 hexadecimal characters"));
-            break;
-        }
-
+        // The gateway id is the wallet's own view public key (sourced inside
+        // create_gateway_register_tx); it is not supplied by the caller.
         if (meta_info.size() > cryptonote::GATEWAY_DESCRIPTOR_MAX_META_INFO_SIZE) {
             setStatusError(
                 tr("Gateway meta information exceeds the maximum size of ") +
@@ -2082,7 +2077,6 @@ PendingTransaction *WalletImpl::createGatewayRegisterTransaction(
         try {
             std::string reason;
             transaction->m_pending_tx = w->create_gateway_register_tx(
-                gateway_skey,
                 owner_key,
                 meta_info,
                 &reason,

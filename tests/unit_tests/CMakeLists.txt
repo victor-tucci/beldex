@@ -92,6 +92,7 @@ add_executable(unit_tests
   gateway_address_prefix.cpp
   gateway_withdrawal.cpp
   gateway_bridge_memo.cpp
+  gateway_update.cpp
   aligned.cpp)
 
 target_link_libraries(unit_tests
@@ -142,7 +143,8 @@ add_executable(gateway_tests
   gateway_bridge_memo.cpp
   gateway_eddsa.cpp
   gateway_eth.cpp
-  gateway_withdrawal.cpp)
+  gateway_withdrawal.cpp
+  gateway_update.cpp)
 target_link_libraries(gateway_tests
   PRIVATE
     ringct

@@ -29,12 +29,22 @@ void store_gateway_account(BlockchainDB& db, const crypto::public_key& gateway_a
 // True if the owner key is well-formed for its variant type.
 bool is_valid_gateway_owner_key(const gateway_owner_key_v& owner_key);
 
-// Verify a gateway owner signature over `msg`, dispatching on the stored owner
-// key variant and requiring the matching signature alternative (native Schnorr /
-// secp256k1 ETH ECDSA / RFC-8032 EdDSA).
-bool verify_gateway_owner_signature(const gateway_owner_key_v& owner_key,
-                                    const gateway_owner_sig_v& sig,
-                                    const crypto::hash& msg);
+// Verify a gateway signature over `msg`, dispatching on the key variant and
+// requiring the matching signature alternative (native Schnorr / secp256k1 ETH
+// ECDSA / RFC-8032 EdDSA).
+//
+// `authorizing_key` is deliberately NOT called owner_key: which key authorizes a
+// gateway signature depends on what is being authorized.
+//   - withdrawal input signature -> the latest descriptor's owner_key
+//   - update ownership proof     -> the latest descriptor's owner_key
+//   - register ownership proof   -> the gateway ID ITSELF (address_id), proving
+//                                   the registrant controls the id it is claiming
+//                                   (F2); no owner key is involved there yet.
+// The gateway_owner_key_v type is reused for the id in that last case because a
+// gateway id is a native ed25519 key, i.e. the variant's first alternative.
+bool verify_gateway_signature(const gateway_owner_key_v& authorizing_key,
+                              const gateway_owner_sig_v& sig,
+                              const crypto::hash& msg);
 
 // Domain-separated message an update tx's ownership proof signs:
 //   H(GW_OWNERSHIP || genesis_hash || tx_prefix_hash). The prefix hash (not the

@@ -3273,12 +3273,8 @@ namespace {
     require_open();
     GATEWAY_REGISTER_ADDRESS::response res{};
 
-    // The gateway id is derived from its secret key, and the registration is
-    // self-signed with that secret to prove control of the id (F2).
-    crypto::secret_key gateway_skey;
-    if (!tools::hex_to_type(req.gateway_secret, gateway_skey))
-      throw wallet_rpc_error{error_code::WRONG_KEY, "Invalid gateway_secret (expected 64-char hex)"};
-
+    // The gateway id is this wallet's view public key (sourced inside
+    // create_gateway_register_tx); it is not taken from the request.
     cryptonote::gateway_owner_key_v owner_key;
     if (req.owner_key_type == "schnorr" || req.owner_key_type == "ed25519")
     {
@@ -3306,7 +3302,7 @@ namespace {
 
     std::string reason;
     std::vector<wallet2::pending_tx> ptx_vector =
-        m_wallet->create_gateway_register_tx(gateway_skey, owner_key, req.meta_info, &reason,
+        m_wallet->create_gateway_register_tx(owner_key, req.meta_info, &reason,
                                              req.priority, req.account_index, req.subaddr_indices);
     if (ptx_vector.empty())
       throw wallet_rpc_error{error_code::TX_NOT_POSSIBLE, "Failed to create gateway registration transaction: " + reason};
