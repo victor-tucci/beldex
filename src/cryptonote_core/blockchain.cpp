@@ -3313,7 +3313,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       }
     }
 
-    if(tx.type == txtype::deploy_new_token)
+    if(tx.type == txtype::register_private_token)
     {
       // Initial registration of a new token requires an amount-commitment proof binding the declared total supply to the output commitments,
       // but does not require an ownership proof since the token is not yet owned by anyone.
@@ -3851,7 +3851,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     const bool has_pt_content =
         !tx.token_proofs.empty() || !tx.zc_sig.empty() ||
         tx.has_zarcanum_inputs() || tx.has_zarcanum_outputs() ||
-        tx.type == txtype::deploy_new_token || tx.type == txtype::mint_token ||
+        tx.type == txtype::register_private_token || tx.type == txtype::mint_token ||
         tx.type == txtype::burn_token || tx.type == txtype::update_token;
     if (hf_version >= feature::PRIVATE_TOKENS && has_pt_content)
     {
@@ -3924,7 +3924,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         return false;
       }
     }
-    else if (tx.type == txtype::deploy_new_token || tx.type == txtype::mint_token || tx.type == txtype::update_token)
+    else if (tx.type == txtype::register_private_token || tx.type == txtype::mint_token || tx.type == txtype::update_token)
     {
       cryptonote::tx_extra_token_descriptor_operation op;
       size_t skip = 0;
@@ -4841,9 +4841,9 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
           return false;
         }
 
-        if (tx.type != txtype::deploy_new_token && tx.type != txtype::mint_token && tx.type != txtype::update_token && tx.type != txtype::burn_token)
+        if (tx.type != txtype::register_private_token && tx.type != txtype::mint_token && tx.type != txtype::update_token && tx.type != txtype::burn_token)
         {
-          MERROR_VER("Token operation found in tx type " << tx.type << " but only deploy_new_token, mint_token, update_token, burn_token are allowed");
+          MERROR_VER("Token operation found in tx type " << tx.type << " but only register_private_token, mint_token, update_token, burn_token are allowed");
           bvc.m_verifivation_failed = true;
           return_tx_to_pool(txs);
           return false;
