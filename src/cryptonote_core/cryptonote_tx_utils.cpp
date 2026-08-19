@@ -999,7 +999,7 @@ namespace cryptonote
         }
         else
         {
-          tx.output_unlock_times.push_back(unlock_time); // for now, all non-change have same unlock time
+          tx.output_unlock_times.push_back(dst_entr.unlock_time ? dst_entr.unlock_time : unlock_time);
         }
       }
 

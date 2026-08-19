@@ -843,6 +843,7 @@ namespace tools::wallet_rpc {
     uint64_t block_height;                      // Block height the transfer occurred on
     bool frozen;                                // If the output has been intentionally frozen by the user, i.e. unspendable.
     bool unlocked;                              // If the TX is spendable yet
+    uint64_t unlock_time;                       // Per-output unlock height/timestamp for this transfer.
 
     KV_MAP_SERIALIZABLE
   };

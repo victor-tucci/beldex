@@ -239,7 +239,7 @@ namespace
       if (td.m_txid != txid) continue;
       if (subaddr_index && td.m_subaddr_index != *subaddr_index) continue;
       if (td.m_amount != amount) continue;
-      if (unlock_time && td.m_tx.unlock_time != *unlock_time) continue;
+      if (unlock_time && td.m_tx.get_unlock_time(td.m_internal_output_index) != *unlock_time) continue;
       if (td.m_token_id == crypto::null_tid) continue;
 
       received_token_info result{};
@@ -5547,7 +5547,7 @@ bool simple_wallet::show_incoming_transfers(const std::vector<std::string>& args
         std::string verbose_string;
         if (verbose)
           verbose_string = fmt::format("{:16s}{:22s}", tr("pubkey"), tr("key image"));
-        message_writer() << fmt::format("{:>21s}{:>8s}{:>12s}{:>8s}{:>16s}{:>34s}{:>46s}    {}", tr("amount"), tr("spent"), tr("unlocked"), tr("ringct"), tr("global_index"), tr("tx_id"), tr("addr_index"), verbose_string);
+        message_writer() << fmt::format("{:>21s}{:>8s}{:>12s}{:>16s}{:>8s}{:>16s}{:>34s}{:>46s}    {}", tr("amount"), tr("spent"), tr("unlocked"), tr("unlock_time"), tr("ringct"), tr("global_index"), tr("tx_id"), tr("addr_index"), verbose_string);
       }
       std::string extra_string;
       if (verbose)
@@ -5565,11 +5565,13 @@ bool simple_wallet::show_incoming_transfers(const std::vector<std::string>& args
         const std::pair<std::string, std::string> line = show_outputs_line(heights, blockchain_height, idx);
         extra_string += std::string("\n    ") + tr("Used at heights: ") + line.first + "\n    " + line.second;
       }
-      message_writer(td.m_spent ? epee::console_color_magenta : epee::console_color_green, false) << boost::format("%21s%8s%12s%8s%16u%68s%8u%s") %
-                                                                                                         format_received_amount(*m_wallet, td.m_txid, td.m_subaddr_index, td.amount(), td.m_tx.unlock_time) %
+      const uint64_t output_unlock_time = td.m_tx.get_unlock_time(td.m_internal_output_index);
+      message_writer(td.m_spent ? epee::console_color_magenta : epee::console_color_green, false) << boost::format("%21s%8s%12s%16u%8s%16u%68s%8u%s") %
+                                                                                                         format_received_amount(*m_wallet, td.m_txid, td.m_subaddr_index, td.amount(), output_unlock_time) %
                                                                                                          (td.m_spent ? tr("T") : tr("F")) %
                                                                                                          (m_wallet->frozen(td) ? tr("[frozen]") : m_wallet->is_transfer_unlocked(td) ? tr("unlocked")
                                                                                                                                                                                      : tr("locked")) %
+                                                                                                         output_unlock_time %
                                                                                                          (td.is_rct() ? tr("RingCT") : tr("-")) %
                                                                                                          td.m_global_output_index %
                                                                                                          td.m_txid %

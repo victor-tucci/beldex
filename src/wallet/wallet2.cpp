@@ -10570,7 +10570,27 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
 
   // calculate total amount being sent to all destinations
   // throw if total amount overflows uint64_t
-  if(!(tx_params.tx_type == txtype::register_private_token || tx_params.tx_type == txtype::mint_token))
+  if(tx_params.tx_type == txtype::register_private_token)
+  {
+    for(auto& dt: dsts)
+    {
+      THROW_WALLET_EXCEPTION_IF(0 == dt.amount && !dt.is_zarcanum(), error::zero_destination);
+      if(!dt.is_zarcanum())
+      {
+        needed_money += dt.amount;
+        LOG_PRINT_L2("transfer: adding native " << print_money(dt.amount) << ", for a total of " << print_money(needed_money));
+        THROW_WALLET_EXCEPTION_IF(needed_money < dt.amount, error::tx_sum_overflow, dsts, fee, m_nettype);
+      }
+    }
+  }
+  else if (tx_params.tx_type == txtype::mint_token)
+  {
+    for (auto& dt : dsts)
+    {
+      THROW_WALLET_EXCEPTION_IF(!dt.is_zarcanum(), error::wallet_internal_error, "mint_token transactions must only contain token destinations");
+    }
+  }
+  else
   {
     for(auto& dt: dsts)
     {
@@ -11743,11 +11763,32 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
     MINFO("create_private_token_registration_tx: amount " << dest.amount << ", is_subaddress " << dest.is_subaddress << ", token_id " << dest.token_id);
   }
 
+  std::string err, err2;
+  const uint64_t blockchain_height = std::max(get_daemon_blockchain_height(err),
+                                             get_daemon_blockchain_target_height(err2));
+  THROW_WALLET_EXCEPTION_IF(!err.empty() || !err2.empty(), error::wallet_internal_error,
+      std::string(ERR_MSG_NETWORK_HEIGHT_QUERY_FAILED) + (err.empty() ? err2 : err));
+
+  cryptonote::tx_destination_entry collateral_dest;
+  collateral_dest.addr = get_subaddress({subaddr_account, 0});
+  collateral_dest.amount = tokens::REGISTRATION_COLLATERAL_AMOUNT;
+  collateral_dest.is_subaddress = subaddr_account != 0;
+  collateral_dest.token_id = crypto::null_tid;
+
+  const uint64_t collateral_unlock_height = blockchain_height + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS;
+  collateral_dest.unlock_time = collateral_unlock_height;
+  dsts.push_back(collateral_dest);
+
+  MINFO("create_private_token_registration_tx: locking "
+        << print_money(tokens::REGISTRATION_COLLATERAL_AMOUNT)
+        << " collateral until block " << collateral_unlock_height
+        << " (" << tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS << " blocks)");
+
   auto hf_ver = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::register_private_token, priority, tokens::burn_needed(*hf_ver, cryptonote::token_descriptor_operation_type::register_token));
+      *hf_ver, txtype::register_private_token, priority);
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11848,8 +11889,12 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   // check the type is token register or not
   bool const is_token_register_tx = (tx_params.tx_type == txtype::register_private_token);
     LOG_PRINT_L0("is_token_register_tx:" << is_token_register_tx);
-  if (is_token_register_tx)  {
-    THROW_WALLET_EXCEPTION_IF(dsts.size() != cryptonote::MIN_TOKEN_MINT_OUTPUTS, error::wallet_internal_error, "Token register txs must have exactly " + std::to_string(cryptonote::MIN_TOKEN_MINT_OUTPUTS) + " destinations set, has: " + std::to_string(dsts.size()));
+  if (is_token_register_tx)
+  {
+    const size_t zc_outputs = std::count_if(dsts.begin(), dsts.end(), [](const auto& d) { return d.is_zarcanum(); });
+    THROW_WALLET_EXCEPTION_IF(zc_outputs != cryptonote::MIN_TOKEN_MINT_OUTPUTS, error::wallet_internal_error,
+        "Token register txs must have exactly " + std::to_string(cryptonote::MIN_TOKEN_MINT_OUTPUTS) +
+        " zarcanum destinations set, has: " + std::to_string(zc_outputs));
   }
 
   bool const is_token_mint_tx = (tx_params.tx_type == txtype::mint_token);
@@ -12020,15 +12065,23 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   // throw if total amount overflows uint64_t
   needed_money = 0;
 
-  if(is_token_register_tx || is_token_mint_tx)
+  if(is_token_register_tx)
   {
     for(auto& dt: dsts)
     {
-      token_needed_money[dt.token_id] += dt.amount;
-      LOG_PRINT_L2("transfer: adding " << print_money(dt.amount) << ", for a total of " << print_money (token_needed_money[dt.token_id]));
-      THROW_WALLET_EXCEPTION_IF(token_needed_money[dt.token_id] < dt.amount, error::tx_sum_overflow, dsts, 0, m_nettype);
+      if (dt.token_id == crypto::null_tid)
+      {
+        needed_money += dt.amount;
+        LOG_PRINT_L2("transfer: adding native " << print_money(dt.amount) << ", for a total of " << print_money(needed_money));
+        THROW_WALLET_EXCEPTION_IF(needed_money < dt.amount, error::tx_sum_overflow, dsts, 0, m_nettype);
+      }
     }
-  } else {
+  }
+  else if(is_token_mint_tx)
+  {
+    LOG_PRINT_L2("mint_token tx: minted token outputs do not require wallet token inputs");
+  }
+  else {
     for(auto& dt: dsts)
     {
       THROW_WALLET_EXCEPTION_IF(0 == dt.amount && !(is_bns_tx || is_burn_tx || is_token_update_tx), error::zero_destination);

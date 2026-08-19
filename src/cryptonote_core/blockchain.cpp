@@ -3946,6 +3946,30 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           return false;
         }
       }
+
+      if (tx.type == txtype::register_private_token)
+      {
+        const uint64_t min_collateral_unlock_height = get_current_blockchain_height() + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS;
+        bool has_locked_native_collateral_output = false;
+
+        for (size_t out_index = 0; out_index < tx.vout.size(); ++out_index)
+        {
+          if (std::holds_alternative<txout_to_key>(tx.vout[out_index].target) &&
+              tx.get_unlock_time(out_index) >= min_collateral_unlock_height)
+          {
+            has_locked_native_collateral_output = true;
+            break;
+          }
+        }
+
+        if (!has_locked_native_collateral_output)
+        {
+          tvc.m_verbose_error = "Token registration requires a locked native collateral output for " +
+                                std::to_string(tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS) + " blocks";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+      }
     }
   }
   }

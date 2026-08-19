@@ -655,17 +655,12 @@ namespace tools
       // HF21: aggregate per-token balances from ZC transfer details
       {
         std::map<crypto::token_id, uint64_t> token_total, token_unlocked;
-        const uint64_t blockchain_height = m_wallet->get_blockchain_current_height();
         for (const auto& td : transfers)
         {
           if (!td.is_zarcanum() || td.m_spent) continue;
           if (!req.all_accounts && td.m_subaddr_index.major != req.account_index) continue;
           if (!req.address_indices.empty() && req.address_indices.count(td.m_subaddr_index.minor) == 0) continue;
-          const uint64_t unlock_time = td.m_tx.unlock_time;
-          const bool unlocked = (unlock_time == 0) ||
-              (unlock_time < cryptonote::MAX_BLOCK_NUMBER
-                  ? blockchain_height >= unlock_time
-                  : (uint64_t)std::time(nullptr) >= unlock_time);
+          const bool unlocked = m_wallet->is_transfer_unlocked(td);
           token_total[td.m_token_id] += td.m_amount;
           if (unlocked) token_unlocked[td.m_token_id] += td.m_amount;
         }
@@ -739,11 +734,7 @@ namespace tools
           {
             if (!td.is_zarcanum() || td.m_spent) continue;
             if (td.m_subaddr_index != index) continue;
-            const uint64_t unlock_time = td.m_tx.unlock_time;
-            const bool unlocked = (unlock_time == 0) ||
-                (unlock_time < cryptonote::MAX_BLOCK_NUMBER
-                    ? blockchain_height >= unlock_time
-                    : (uint64_t)std::time(nullptr) >= unlock_time);
+            const bool unlocked = m_wallet->is_transfer_unlocked(td);
             subaddr_token_total[td.m_token_id] += td.m_amount;
             if (unlocked) subaddr_token_unlocked[td.m_token_id] += td.m_amount;
           }
@@ -1936,6 +1927,7 @@ namespace tools
         rpc_transfers.block_height = td.m_block_height;
         rpc_transfers.frozen       = td.m_frozen;
         rpc_transfers.unlocked     = m_wallet->is_transfer_unlocked(td);
+        rpc_transfers.unlock_time  = td.m_tx.get_unlock_time(td.m_internal_output_index);
       }
     }
 

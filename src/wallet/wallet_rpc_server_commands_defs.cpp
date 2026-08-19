@@ -480,6 +480,7 @@ KV_SERIALIZE_MAP_CODE_BEGIN(transfer_details)
   KV_SERIALIZE(block_height)
   KV_SERIALIZE(frozen)
   KV_SERIALIZE(unlocked)
+  KV_SERIALIZE(unlock_time)
 KV_SERIALIZE_MAP_CODE_END()
 
 
