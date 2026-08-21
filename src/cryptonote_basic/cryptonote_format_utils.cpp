@@ -992,6 +992,19 @@ namespace cryptonote
     return result;
   }
   //---------------------------------------------------------------
+  bool get_collateral_lock_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_collateral_lock& lock)
+  {
+    return get_field_from_tx_extra(tx_extra, lock);
+  }
+  //---------------------------------------------------------------
+  bool add_collateral_lock_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_collateral_lock& lock)
+  {
+    tx_extra_field field = lock;
+    bool result = add_tx_extra_field_to_tx_extra(tx_extra, field);
+    CHECK_AND_NO_ASSERT_MES_L1(result, false, "failed to serialize tx extra collateral lock");
+    return result;
+  }
+  //---------------------------------------------------------------
   bool add_token_descriptor_operation_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_token_descriptor_operation& op)
   {
     tx_extra_field field = op;
