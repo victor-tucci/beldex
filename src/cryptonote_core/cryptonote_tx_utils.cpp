@@ -606,7 +606,7 @@ namespace cryptonote
     }
 
     // HF21: multiple distinct private tokens (plus native BDX) are allowed
-    // in one tx. The zc_balance_proof stays sound because the residual commitment
+    // in one tx. The zy_balance_proof stays sound because the residual commitment
     // P = sum_in_C - sum_out_C expands to
     //   Σ_token token_id_a*(Σin_a - Σout_a)  +  secret_x*X  +  (mask delta)*G,
     // the mask delta is forced to zero by the input-mask fixup below, and the
@@ -619,18 +619,18 @@ namespace cryptonote
     //
     // Sanity check only: every private-token destination must be backed by a
     // spent source of the SAME token (mints add their outputs via deploy/mint,
-    // which take a different path and carry no zc sources here). Without a
+    // which take a different path and carry no zy sources here). Without a
     // matching source the per-output surjection would fail downstream anyway;
     // catching it here gives a clearer error.
     if (tx_params.tx_type != txtype::register_private_token && tx_params.tx_type != txtype::mint_token)
     {
       std::set<crypto::token_id> source_token_ids;
       for (const auto& s : sources)
-        if (s.is_zarcanum())
+        if (s.is_zyphora())
           source_token_ids.insert(s.token_id);
       for (const auto& d : destinations)
       {
-        if (!d.is_zarcanum())
+        if (!d.is_zyphora())
           continue;
         if (source_token_ids.find(d.token_id) == source_token_ids.end())
         {
@@ -759,11 +759,11 @@ namespace cryptonote
     };
     std::vector<input_generation_context_data> in_contexts;
 
-    // HF21: data needed to generate each zarcanum input's ZC_sig, deferred
+    // HF21: data needed to generate each zyphora input's ZY_sig, deferred
     // until the tx prefix hash is known (the ring signature message). Sized
     // and indexed in parallel with sources/tx.vin/in_contexts so it survives
     // the input-sorting permutation below unchanged.
-    struct zc_sig_pending_data
+    struct zy_sig_pending_data
     {
       rct::keyV ring_P, ring_A, ring_T; // stealth addrs, amount commitments, blinded token ids
       rct::key spend_secret;            // p
@@ -776,7 +776,7 @@ namespace cryptonote
       rct::key real_r;            // real spent output's own token-id blinding scalar (for balance-proof X-term)
       unsigned int real_index;
     };
-    std::vector<std::optional<zc_sig_pending_data>> zc_pending(sources.size());
+    std::vector<std::optional<zy_sig_pending_data>> zy_pending(sources.size());
 
     uint64_t summary_inputs_money = 0;
     //fill inputs
@@ -789,9 +789,9 @@ namespace cryptonote
         LOG_ERROR("real_output index (" << src_entr.real_output << ")bigger than output_keys.size()=" << src_entr.outputs.size());
         return false;
       }
-      // Zarcanum input amounts are token-denominated, not BDX -- they must
+      // Zyphora input amounts are token-denominated, not BDX -- they must
       // not be mixed into the native money balance check below.
-      if (!src_entr.is_zarcanum())
+      if (!src_entr.is_zyphora())
         summary_inputs_money += src_entr.amount;
 
       //key_derivation recv_derivation;
@@ -816,11 +816,11 @@ namespace cryptonote
         return false;
       }
 
-      if (src_entr.is_zarcanum())
+      if (src_entr.is_zyphora())
       {
         // This output's token-id blinding secret r (T = token_id + r*X) was
-        // already derived once at receive/scan time (decode_zarcanum_output,
-        // using the same zarcanum_derivation_to_scalar(derivation, output_index,
+        // already derived once at receive/scan time (decode_zyphora_output,
+        // using the same zyphora_derivation_to_scalar(derivation, output_index,
         // "token_blind") computation) and cached in transfer_details::m_token_mask,
         // carried here via tx_source_entry::token_mask. Reuse it instead of
         // re-deriving, mirroring Zano's cache-at-scan-time design.
@@ -849,7 +849,7 @@ namespace cryptonote
         sc_sub(f.bytes, src_entr.mask.bytes, pseudo_amount_mask.bytes);
         sc_sub(t.bytes, rct::zero().bytes, pseudo_token_r.bytes);
 
-        zc_sig_pending_data pending{};
+        zy_sig_pending_data pending{};
         pending.ring_P.reserve(src_entr.outputs.size());
         pending.ring_A.reserve(src_entr.outputs.size());
         pending.ring_T.reserve(src_entr.ring_blinded_token_ids.size());
@@ -869,15 +869,15 @@ namespace cryptonote
         pending.pseudo_amount_mask = pseudo_amount_mask;
         pending.real_r      = real_r;
         pending.real_index = static_cast<unsigned int>(src_entr.real_output);
-        zc_pending[idx] = std::move(pending);
+        zy_pending[idx] = std::move(pending);
 
-        txin_zc_input input_zc;
-        input_zc.k_image = msout ? rct::rct2ki(src_entr.multisig_kLRki.ki) : img;
+        txin_zy_input input_zy;
+        input_zy.k_image = msout ? rct::rct2ki(src_entr.multisig_kLRki.ki) : img;
         
         for (const tx_source_entry::output_entry& out_entry : src_entr.outputs)
-          input_zc.key_offsets.push_back(out_entry.first);
-        input_zc.key_offsets = absolute_output_offsets_to_relative(input_zc.key_offsets);
-        tx.vin.push_back(input_zc);
+          input_zy.key_offsets.push_back(out_entry.first);
+        input_zy.key_offsets = absolute_output_offsets_to_relative(input_zy.key_offsets);
+        tx.vin.push_back(input_zy);
         continue;
       }
 
@@ -901,8 +901,8 @@ namespace cryptonote
 
     // sort ins by their key image
     auto vin_key_image = [](const txin_v& in) -> const crypto::key_image& {
-      if (const auto* zc = std::get_if<txin_zc_input>(&in))
-        return zc->k_image;
+      if (const auto* zy = std::get_if<txin_zy_input>(&in))
+        return zy->k_image;
       return var::get<txin_to_key>(in).k_image;
     };
     std::vector<size_t> ins_order(sources.size());
@@ -917,7 +917,7 @@ namespace cryptonote
       std::swap(tx.vin[i0], tx.vin[i1]);
       std::swap(in_contexts[i0], in_contexts[i1]);
       std::swap(sources[i0], sources[i1]);
-      std::swap(zc_pending[i0], zc_pending[i1]);
+      std::swap(zy_pending[i0], zy_pending[i1]);
     });
 
     // figure out if we need to make additional tx pubkeys
@@ -926,21 +926,21 @@ namespace cryptonote
     account_public_address single_dest_subaddress;
     classify_addresses(destinations, change_addr, num_stdaddresses, num_subaddresses, single_dest_subaddress);
 
-    // HF21: the zc_balance_proof binds itself to tx_key.sec against the
+    // HF21: the zy_balance_proof binds itself to tx_key.sec against the
     // *plain* relation tx_pub_key == tx_key.sec*G (see double_schnorr_sig_s).
     // The R=s*D compression below breaks that relation (R becomes
     // tx_key.sec*D instead), which a third-party verifier has no way to
     // check since D is the recipient's private subaddress. So any tx
     // carrying private-token content must keep the plain R=tx_key*G
     // form.
-    bool tx_has_zarcanum_content =
+    bool tx_has_zyphora_content =
         tx_params.tx_type == txtype::register_private_token ||
         tx_params.tx_type == txtype::mint_token ||
-        std::any_of(sources.begin(), sources.end(), [](const tx_source_entry& s) { return s.is_zarcanum(); }) ||
-        std::any_of(destinations.begin(), destinations.end(), [](const tx_destination_entry& d) { return d.is_zarcanum(); });
+        std::any_of(sources.begin(), sources.end(), [](const tx_source_entry& s) { return s.is_zyphora(); }) ||
+        std::any_of(destinations.begin(), destinations.end(), [](const tx_destination_entry& d) { return d.is_zyphora(); });
 
     // if this is a single-destination transfer to a subaddress, we set the tx pubkey to R=s*D
-    if (num_stdaddresses == 0 && num_subaddresses == 1 && !tx_has_zarcanum_content)
+    if (num_stdaddresses == 0 && num_subaddresses == 1 && !tx_has_zyphora_content)
     {
       txkey_pub = rct::rct2pk(hwdev.scalarmultKey(rct::pk2rct(single_dest_subaddress.m_spend_public_key), rct::sk2rct(tx_key)));
     }
@@ -964,11 +964,11 @@ namespace cryptonote
     //fill outputs
     size_t output_index = 0;
 
-    // HF21: per-output blinding data for zarcanum outputs, needed later to
+    // HF21: per-output blinding data for zyphora outputs, needed later to
     // generate each output's token surjection proof (BGE). Indexed in parallel
     // with destinations/tx.vout (1:1, in order -- no extra outputs are added
     // after this loop).
-    struct zc_out_pending_data
+    struct zy_out_pending_data
     {
       rct::key token_id_rct;       // plaintext token id point (known to sender only)
       rct::key blind_r;            // s_j such that T = token_id_rct + blind_r*X
@@ -976,7 +976,7 @@ namespace cryptonote
       rct::key amount_mask;        // mask used in this output's amount commitment (for balance proof)
       rct::key amount_commitment;  // C = amount*T + amount_mask*G
     };
-    std::vector<std::optional<zc_out_pending_data>> zc_out_pending(destinations.size());
+    std::vector<std::optional<zy_out_pending_data>> zy_out_pending(destinations.size());
 
     tx_extra_tx_key_image_proofs key_image_proofs;
     bool found_change_already = false;
@@ -1024,12 +1024,12 @@ namespace cryptonote
       }
 
       tx_out out;
-      if (dst_entr.is_zarcanum() && tx_params.hf_version >= feature::PRIVATE_TOKENS)
+      if (dst_entr.is_zyphora() && tx_params.hf_version >= feature::PRIVATE_TOKENS)
       {
         LOG_PRINT_L0("Constructing private token output");
         // ── HF21: private token output ──────────────────────────────────
         // stealth_address is already out_eph_public_key (derived above)
-        tx_out_zarcanum zout;
+        tx_out_zyphora zout;
         zout.stealth_address = out_eph_public_key;
 
         // Derive blinding scalars for this output index
@@ -1040,7 +1040,7 @@ namespace cryptonote
         LOG_PRINT_L0("Key derivation for output done");
 
         // Blinded token ID:  T = token_id + r*X
-        rct::key r = zarcanum_derivation_to_scalar(derivation, output_index, "token_blind");
+        rct::key r = zyphora_derivation_to_scalar(derivation, output_index, "token_blind");
         rct::key rX = rct::scalarmultX(r);
         const rct::key& token_id_rct = rct::tid2rct(dst_entr.token_id);
         rct::key T;
@@ -1055,13 +1055,13 @@ namespace cryptonote
         // the recovered blinding scalar, so the CLSAG_GGX layer-1 (mask)
         // relation cancels cleanly. Mirrors Zano's
         // currency_format_utils.cpp:2456 (source_amount_commitment formula).
-        rct::key mask = zarcanum_derivation_to_scalar(derivation, output_index, "amount_mask");
+        rct::key mask = zyphora_derivation_to_scalar(derivation, output_index, "amount_mask");
         rct::key amount_commitment = rct::commitToken(mask, T, dst_entr.amount);
         zout.amount_commitment = rct::rct2pk(amount_commitment);
         LOG_PRINT_L0("Amount commitment done");
 
         // Encrypted amount
-        rct::key enc_key = zarcanum_derivation_to_scalar(derivation, output_index, "enc_amount");
+        rct::key enc_key = zyphora_derivation_to_scalar(derivation, output_index, "enc_amount");
         uint64_t enc_mask_64;
         memcpy(&enc_mask_64, enc_key.bytes, sizeof(uint64_t));
         zout.encrypted_amount = dst_entr.amount ^ enc_mask_64;
@@ -1070,18 +1070,18 @@ namespace cryptonote
         zout.version  = 0;
         zout.mix_attr = 0;
 
-        out.amount = 0;   // plaintext amount is always 0 for ZC outputs
+        out.amount = 0;   // plaintext amount is always 0 for ZY outputs
         out.target = zout;
 
         // Stash this output's token-id blinding data for surjection-proof
         // (BGE) generation once the tx prefix hash is known, below.
-        zc_out_pending_data out_pending{};
+        zy_out_pending_data out_pending{};
         out_pending.token_id_rct      = token_id_rct;
         out_pending.blind_r           = r;
         out_pending.T                 = T;
         out_pending.amount_mask       = mask;
         out_pending.amount_commitment = amount_commitment;
-        zc_out_pending[output_index] = std::move(out_pending);
+        zy_out_pending[output_index] = std::move(out_pending);
       }
       else
       {
@@ -1097,8 +1097,8 @@ namespace cryptonote
 
       // In mint transaction, we are creating new coins, so we don't need to add the amount to the summary_outs_money
       // In deploy transaction, we are creating a new token, so we don't need to add the amount to the summary_outs_money
-      // Zarcanum destination amounts are token-denominated, not BDX, and must not be mixed into the native money balance check.
-      if(tx.type != txtype::register_private_token && tx.type != txtype::mint_token && !dst_entr.is_zarcanum())
+      // Zyphora destination amounts are token-denominated, not BDX, and must not be mixed into the native money balance check.
+      if(tx.type != txtype::register_private_token && tx.type != txtype::mint_token && !dst_entr.is_zyphora())
         summary_outs_money += dst_entr.amount;
     }
     CHECK_AND_ASSERT_MES(additional_tx_public_keys.size() == additional_tx_keys.size(), false, "Internal error creating additional public keys");
@@ -1117,7 +1117,7 @@ namespace cryptonote
     // ── HF21: token amount-commitment binding (deploy + mint + burn) ─────────
     // Bind the publicly-declared token amount to a Pedersen commitment carried
     // in the TDO. C is set to literally equal the sum of the actual minted
-    // zarcanum outputs' real commitments (each built as amount*T_j + mask*G,
+    // zyphora outputs' real commitments (each built as amount*T_j + mask*G,
     // T_j = token_id + r_j*X -- see rct::commitToken), so the on-chain
     // "outputs sum to C" check is trivially satisfied by construction.  The
     // matching composition_proof (generated below over the tx prefix hash)
@@ -1159,7 +1159,7 @@ namespace cryptonote
       // C is the TDO amount commitment.
       //
       // deploy/mint (mint): C is set to literally equal the sum of the actual
-      // minted zarcanum outputs' real commitments (each amount_j*T_j + mask_j*G,
+      // minted zyphora outputs' real commitments (each amount_j*T_j + mask_j*G,
       // T_j = token_id + r_j*X), so the on-chain "outputs sum to C" check is
       // satisfied by construction.  We also track the (mask, secret_x) opening
       // of C - declared_amount*token_id for the composition_proof below:
@@ -1170,7 +1170,7 @@ namespace cryptonote
       // burn_token: nothing is emitted to outputs, so C is built directly as
       // declared_amount*token_id + mask*G with a fresh random mask (no per-output
       // blinded token ids => no X-component, so aop_secret_x stays zero).  The
-      // zc_balance_proof below subtracts this same commitment from the spend
+      // zy_balance_proof below subtracts this same commitment from the spend
       // equation, proving the declared amount was destroyed.
       rct::key commitment_full = rct::identity();
       if (tx.type == txtype::burn_token)
@@ -1188,9 +1188,9 @@ namespace cryptonote
           size_t out_idx = 0;
           for (const auto& d : destinations)
           {
-            if (d.is_zarcanum() && zc_out_pending[out_idx])
+            if (d.is_zyphora() && zy_out_pending[out_idx])
             {
-              const auto& op = *zc_out_pending[out_idx];
+              const auto& op = *zy_out_pending[out_idx];
               sc_add(sum_masks.bytes, sum_masks.bytes, op.amount_mask.bytes);
               rct::key r_amount;
               sc_mul(r_amount.bytes, op.blind_r.bytes, rct::d2h(d.amount).bytes);
@@ -1321,14 +1321,14 @@ namespace cryptonote
           uint64_t amount_in = 0, amount_out = 0;
           rct::ctkeyV inSk;
           inSk.reserve(sources.size());
-          // HF21: zarcanum sources are excluded from the native genRctSimple
-          // arrays below -- they're proven by their own ZC_sig instead, and
+          // HF21: zyphora sources are excluded from the native genRctSimple
+          // arrays below -- they're proven by their own ZY_sig instead, and
           // their amounts are token-denominated, not BDX. native_source_indices
           // maps a "native-only" position back to its real sources/tx.vin index.
           std::vector<size_t> native_source_indices;
           native_source_indices.reserve(sources.size());
           for (size_t i = 0; i < sources.size(); ++i)
-            if (!sources[i].is_zarcanum())
+            if (!sources[i].is_zyphora())
               native_source_indices.push_back(i);
           // mixRing indexing is done the other way round for simple
           rct::ctkeyM mixRing(use_simple_rct ? native_source_indices.size() : n_total_outs);
@@ -1354,9 +1354,9 @@ namespace cryptonote
               }
           }
           for (size_t i = 0; i < tx.vout.size(); ++i) {
-              // tx_out_zarcanum outputs carry their own commitments and are
+              // tx_out_zyphora outputs carry their own commitments and are
               // not included in the legacy RCT dest_keys / outamounts vectors.
-              if (std::holds_alternative<tx_out_zarcanum>(tx.vout[i].target))
+              if (std::holds_alternative<tx_out_zyphora>(tx.vout[i].target))
                 continue;
               CHECK_AND_ASSERT_MES(std::holds_alternative<txout_to_key>(tx.vout[i].target), false,
                   "Unsupported output type for native RingCT");
@@ -1382,9 +1382,9 @@ namespace cryptonote
         }
         else {
             // Non-simple rct requires a single shared ring across all inputs,
-            // which is incompatible with mixing in zarcanum sources (proven
-            // separately via ZC_sig); this path is only reachable when there
-            // are no zarcanum sources at all (use_simple_rct forced true otherwise).
+            // which is incompatible with mixing in zyphora sources (proven
+            // separately via ZY_sig); this path is only reachable when there
+            // are no zyphora sources at all (use_simple_rct forced true otherwise).
             for (size_t i = 0; i < sources.size(); ++i) {
                 mixRing[i].resize(sources[i].outputs.size());
                 for (size_t n = 0; n < sources[i].outputs.size(); ++n) {
@@ -1413,7 +1413,7 @@ namespace cryptonote
 
           // zero out all amounts to mask rct outputs, real amounts are now encrypted
           for (size_t i = 0; i < tx.vin.size(); ++i) {
-              if (sources[i].rct && !sources[i].is_zarcanum())
+              if (sources[i].rct && !sources[i].is_zyphora())
                   var::get<txin_to_key>(tx.vin[i]).amount = 0;
           }
           for (size_t i = 0; i < tx.vout.size(); ++i)
@@ -1446,36 +1446,36 @@ namespace cryptonote
           }
 
           // ── HF21: force the input-side mask delta to zero ───────────────────
-          // Pick one zarcanum input (if any) and recompute its pseudo-output
+          // Pick one zyphora input (if any) and recompute its pseudo-output
           // mask deterministically so that
-          //   sum(pseudo_out masks) == sum(new zarcanum output masks)
+          //   sum(pseudo_out masks) == sum(new zyphora output masks)
           // exactly, with no free/random residual left over. Output masks
           // can't be adjusted this way (they're derivation-bound so the
           // recipient can independently recompute them while scanning), so
           // this must happen on the pseudo-output side, which has no such
-          // constraint. Mirrors Zano's generate_ZC_sig
+          // constraint. Mirrors Zano's generate_ZY_sig
           // (currency_format_utils.cpp:2461-2472): forcing this G-component
           // to zero lets the balance proof below be a plain two-leg Schnorr
           // (secret_x over X, tx_key.sec over G) instead of a more complex
           // joint (mask, secret_x) representation proof.
           {
             size_t balancing_idx = SIZE_MAX;
-            for (size_t i = 0; i < zc_pending.size(); ++i)
-              if (zc_pending[i]) { balancing_idx = i; break; }
+            for (size_t i = 0; i < zy_pending.size(); ++i)
+              if (zy_pending[i]) { balancing_idx = i; break; }
 
             if (balancing_idx != SIZE_MAX)
             {
               rct::key sum_out_masks = rct::zero();
-              for (const auto& op : zc_out_pending)
+              for (const auto& op : zy_out_pending)
                 if (op)
                   sc_add(sum_out_masks.bytes, sum_out_masks.bytes, op->amount_mask.bytes);
 
               rct::key sum_other_in_masks = rct::zero();
-              for (size_t i = 0; i < zc_pending.size(); ++i)
+              for (size_t i = 0; i < zy_pending.size(); ++i)
               {
-                if (!zc_pending[i] || i == balancing_idx)
+                if (!zy_pending[i] || i == balancing_idx)
                   continue;
-                sc_add(sum_other_in_masks.bytes, sum_other_in_masks.bytes, zc_pending[i]->pseudo_amount_mask.bytes);
+                sc_add(sum_other_in_masks.bytes, sum_other_in_masks.bytes, zy_pending[i]->pseudo_amount_mask.bytes);
               }
 
               rct::key new_pseudo_mask;
@@ -1489,7 +1489,7 @@ namespace cryptonote
               if (tx.type == txtype::burn_token)
                 sc_add(new_pseudo_mask.bytes, new_pseudo_mask.bytes, aop_mask.bytes);
 
-              auto& bp = *zc_pending[balancing_idx];
+              auto& bp = *zy_pending[balancing_idx];
               // real_mask = old_pseudo_mask + old_f  (since f = real_mask - pseudo_mask)
               rct::key real_mask;
               sc_add(real_mask.bytes, bp.pseudo_amount_mask.bytes, bp.amount_mask_diff.bytes);
@@ -1506,12 +1506,12 @@ namespace cryptonote
               bp.pseudo_out_amount_commitment = new_pseudo_A;
 
               // The recomputed pseudo-out commitment is carried solely in the
-              // ZC_sig, built below from this updated zc_pending entry -- there
+              // ZY_sig, built below from this updated zy_pending entry -- there
               // is no on-chain input field left to keep in sync.
             }
           }
 
-          // HF21: shared binding message for ZC_sig and token surjection
+          // HF21: shared binding message for ZY_sig and token surjection
           // proofs. Must match rct::verTokenProofs on the consensus side
           // bit-for-bit -- it recomputes this same value from the finalized
           // tx (vin/vout/rct_signatures) plus each input's resolved ring,
@@ -1528,33 +1528,33 @@ namespace cryptonote
 
           if (!zero_secret_key)
           {
-            // ── HF21: ZC_sig generation for zarcanum inputs ──────────────────────
+            // ── HF21: ZY_sig generation for zyphora inputs ──────────────────────
             // Deferred until now since the ring signature message depends on
-            // the finalized tx. zc_pending is index-aligned with the final
-          // tx.vin order, so the resulting ZC_sigs come out in the same
-          // relative order as their zarcanum inputs (matching
+            // the finalized tx. zy_pending is index-aligned with the final
+          // tx.vin order, so the resulting ZY_sigs come out in the same
+          // relative order as their zyphora inputs (matching
           // verTokenProofs's matching convention).
-          for (size_t i = 0; i < zc_pending.size(); ++i)
+          for (size_t i = 0; i < zy_pending.size(); ++i)
           {
-            if (!zc_pending[i])
+            if (!zy_pending[i])
               continue;
-            const auto& p = *zc_pending[i];
-            rct::ZC_sig zc_sig = rct::genZCSig(token_proof_message, p.ring_P, p.ring_A, p.ring_T,
+            const auto& p = *zy_pending[i];
+            rct::ZY_sig zy_sig = rct::genZYSig(token_proof_message, p.ring_P, p.ring_A, p.ring_T,
                                                p.spend_secret, p.amount_mask_diff, p.token_mask_diff,
                                                p.pseudo_out_amount_commitment, p.pseudo_out_blinded_token_id,
                                                p.real_index);
-            // ZC_sig lives under the tx's signatures (tx.zc_sig), not in
-            // token_proofs -- see transaction::zc_sig (cryptonote_basic.h).
-            tx.zc_sig.push_back(std::move(zc_sig));
+            // ZY_sig lives under the tx's signatures (tx.zy_sig), not in
+            // token_proofs -- see transaction::zy_sig (cryptonote_basic.h).
+            tx.zy_sig.push_back(std::move(zy_sig));
           }
 
-          // ── HF21: token surjection proof (BGE) for zarcanum outputs ─────────
-          // Proves each zarcanum output's blinded_token_id is a valid blinding
+          // ── HF21: token surjection proof (BGE) for zyphora outputs ─────────
+          // Proves each zyphora output's blinded_token_id is a valid blinding
           // of one of the tx's legitimate token sources, without revealing which
           // one -- this is what stops a tx from "minting" an arbitrary token.
           //
-          // Ring members (one BGE proof per zc output, hidden real index):
-          //   - every spent zc input's pseudo-blinded token id (T^p_i), and
+          // Ring members (one BGE proof per zy output, hidden real index):
+          //   - every spent zy input's pseudo-blinded token id (T^p_i), and
           //   - for register_private_token/mint_token, the token-descriptor-operation's
           //     own token id H_tdo as a single extra ring member (mirrors Zano's
           //     generate_token_surjection_proof_hf6 "token emission" ring member,
@@ -1566,29 +1566,29 @@ namespace cryptonote
           //     per-output surjection closes that hole.
           //
           // Native coin (txin_to_key/txout_to_key) never carries an token id
-          // (is_zarcanum() is `token_id != null_tid`), so native fee/change
+          // (is_zyphora() is `token_id != null_tid`), so native fee/change
           // inputs never need a ring slot here.
           {
-            bool any_zc_outputs = false;
-            for (const auto& op : zc_out_pending)
-              if (op) { any_zc_outputs = true; break; }
+            bool any_zy_outputs = false;
+            for (const auto& op : zy_out_pending)
+              if (op) { any_zy_outputs = true; break; }
 
-            // Compact ring: one entry per zc input, in source order, plus a
+            // Compact ring: one entry per zy input, in source order, plus a
             // mapping from sources[] index back to ring[] index.
             rct::keyV ring;
             std::vector<size_t> source_to_ring_index(sources.size(), SIZE_MAX);
             for (size_t i = 0; i < sources.size(); ++i)
             {
-              if (!zc_pending[i])
+              if (!zy_pending[i])
                 continue;
               source_to_ring_index[i] = ring.size();
-              ring.push_back(zc_pending[i]->pseudo_out_blinded_token_id);
+              ring.push_back(zy_pending[i]->pseudo_out_blinded_token_id);
             }
 
             // Token-emission ring member: H_tdo (the plain mint token id point,
             // no X offset). Appended last so verTokenProofs can reconstruct it
-            // at the same index (it likewise appends H_tdo after the zc-input
-            // pseudo-outs). For a pure mint with no zc input this is the only
+            // at the same index (it likewise appends H_tdo after the zy-input
+            // pseudo-outs). For a pure mint with no zy input this is the only
             // ring member.
             size_t mint_ring_index = SIZE_MAX;
             if (aop_required && aop_token_id != crypto::null_tid)
@@ -1597,17 +1597,17 @@ namespace cryptonote
               ring.push_back(rct::tid2rct(aop_token_id));
             }
 
-            if (!ring.empty() && any_zc_outputs)
+            if (!ring.empty() && any_zy_outputs)
             {
-              rct::zc_token_surjection_proof asp{};
-              for (size_t j = 0; j < zc_out_pending.size(); ++j)
+              rct::zy_token_surjection_proof asp{};
+              for (size_t j = 0; j < zy_out_pending.size(); ++j)
               {
-                if (!zc_out_pending[j])
+                if (!zy_out_pending[j])
                   continue;
-                const auto& out_p = zc_out_pending[j].value();
+                const auto& out_p = zy_out_pending[j].value();
 
                 // Find which legitimate token source matches this output's token
-                // id: first the spent zc inputs, then the token-emission member.
+                // id: first the spent zy inputs, then the token-emission member.
                 size_t real_index = SIZE_MAX;
                 rct::key r;
                 for (size_t i = 0; i < sources.size(); ++i)
@@ -1622,7 +1622,7 @@ namespace cryptonote
                     // ring[real_index] == pseudo_T_i == token_id + (real_r_i+pseudo_r_i)*X,
                     // since pseudo_T_i is now built as an offset from T_real, not raw token_id).
                     rct::key real_plus_pseudo_r;
-                    sc_add(real_plus_pseudo_r.bytes, zc_pending[i]->real_r.bytes, zc_pending[i]->pseudo_token_r.bytes);
+                    sc_add(real_plus_pseudo_r.bytes, zy_pending[i]->real_r.bytes, zy_pending[i]->pseudo_token_r.bytes);
                     sc_sub(r.bytes, out_p.blind_r.bytes, real_plus_pseudo_r.bytes);
                     break;
                   }
@@ -1636,7 +1636,7 @@ namespace cryptonote
                   r = out_p.blind_r;
                 }
                 CHECK_AND_ASSERT_MES(real_index != SIZE_MAX, false,
-                  "surjection proof: output #" << j << "'s token id is neither among the spent zc inputs nor the minted token");
+                  "surjection proof: output #" << j << "'s token id is neither among the spent zy inputs nor the minted token");
 
                 crypto::BGE_proof_s bge{};
                 if (!crypto::generate_BGE_proof(token_proof_message, ring, out_p.T, r, real_index, bge))
@@ -1662,32 +1662,32 @@ namespace cryptonote
           // Proves sum(input amount commitments) - sum(output amount
           // commitments) opens to a zero amount, i.e. nothing was minted or
           // destroyed by this spend. Required by verTokenProofs whenever the
-          // tx has any zc input. Commitments are built as C = amount*T + mask*G
+          // tx has any zy input. Commitments are built as C = amount*T + mask*G
           // with T a per-input/per-output blinded token id (T = token_id +
           // r*X, see rct::commitToken). The balancing-mask fixup above already
           // forced the mask/G-component of this residual to exactly zero, so
           // what's left is purely the X-component:
           //   secret_x = Σ_inputs(real_r_i * amount_i) - Σ_outputs(r_j * amount_j)
           // (each input's real_r_i is the SAME blinding scalar used to build
-          // its pseudo_out_amount_commitment -- see T_real in the zc input
+          // its pseudo_out_amount_commitment -- see T_real in the zy input
           // loop above; each output's r_j is its own token-id blinding scalar).
           // generate_double_schnorr_sig binds knowledge of secret_x (over X)
           // *and* knowledge of tx_key.sec (against tx_pub_key, over G) under
           // one challenge, so the proof can't be detached from this specific
-          // transaction (tx_has_zarcanum_content above guarantees tx_pub_key
+          // transaction (tx_has_zyphora_content above guarantees tx_pub_key
           // == tx_key.sec*G here, never the R=s*D compressed form).
           {
-            bool has_zc_inputs = false;
-            for (const auto& p : zc_pending)
-              if (p) { has_zc_inputs = true; break; }
+            bool has_zy_inputs = false;
+            for (const auto& p : zy_pending)
+              if (p) { has_zy_inputs = true; break; }
 
-            if (has_zc_inputs)
+            if (has_zy_inputs)
             {
               rct::key sum_in_C = rct::zero();
               rct::key secret_x_in = rct::zero();
-              for (size_t i = 0; i < zc_pending.size(); ++i)
+              for (size_t i = 0; i < zy_pending.size(); ++i)
               {
-                const auto& p = zc_pending[i];
+                const auto& p = zy_pending[i];
                 if (!p)
                   continue;
                 rct::addKeys(sum_in_C, sum_in_C, p->pseudo_out_amount_commitment);
@@ -1698,9 +1698,9 @@ namespace cryptonote
 
               rct::key sum_out_C = rct::zero();
               rct::key secret_x_out = rct::zero();
-              for (size_t j = 0; j < zc_out_pending.size(); ++j)
+              for (size_t j = 0; j < zy_out_pending.size(); ++j)
               {
-                const auto& op = zc_out_pending[j];
+                const auto& op = zy_out_pending[j];
                 if (!op)
                   continue;
                 rct::addKeys(sum_out_C, sum_out_C, op->amount_commitment);
@@ -1724,12 +1724,12 @@ namespace cryptonote
                 rct::subKeys(P, P, aop_commitment);
               }
 
-              rct::zc_balance_proof bal{};
+              rct::zy_balance_proof bal{};
               bal.P = P;
               if (!crypto::generate_double_schnorr_sig(token_proof_message, P, secret_x,
                                                         rct::pk2rct(txkey_pub), rct::sk2rct(tx_key), bal.dss))
               {
-                LOG_ERROR("Failed to generate zc_balance_proof");
+                LOG_ERROR("Failed to generate zy_balance_proof");
                 return false;
               }
               tx.token_proofs.push_back(std::move(bal));
@@ -1741,14 +1741,14 @@ namespace cryptonote
           // or past 2^64 (wrapping mod the curve order) -- the balance proof
           // above only checks conservation, not range, so it can't catch this
           // on its own. See token_proofs.h's vector_ug_aggregation_proof_s for
-          // the full design (adapted from Zano's zc_outs_range_proof).
+          // the full design (adapted from Zano's zy_outs_range_proof).
           {
             rct::keyV amounts, real_masks, aux_masks, real_commitments, tags;
-            for (size_t j = 0; j < zc_out_pending.size(); ++j)
+            for (size_t j = 0; j < zy_out_pending.size(); ++j)
             {
-              if (!zc_out_pending[j])
+              if (!zy_out_pending[j])
                 continue;
-              const auto& out_p = zc_out_pending[j].value();
+              const auto& out_p = zy_out_pending[j].value();
               amounts.push_back(rct::d2h(destinations[j].amount));
               real_masks.push_back(out_p.amount_mask);
               aux_masks.push_back(rct::skGen());
@@ -1770,12 +1770,12 @@ namespace cryptonote
               for (size_t j = 0; j < amounts.size(); ++j)
                 aux_commitments[j] = rct::scalarmult8(bpp.V[j]);
 
-              rct::zc_outs_range_proof range_proof{};
+              rct::zy_outs_range_proof range_proof{};
               if (!crypto::generate_vector_ug_aggregation_proof(token_proof_message, amounts, real_masks, aux_masks,
                                                                 real_commitments, aux_commitments, tags,
                                                                 range_proof.aggregation_proof))
               {
-                LOG_ERROR("Failed to generate zc_outs_range_proof aggregation proof");
+                LOG_ERROR("Failed to generate zy_outs_range_proof aggregation proof");
                 return false;
               }
               range_proof.bpp = std::move(bpp);
@@ -1827,16 +1827,16 @@ namespace cryptonote
 
           memwipe(inSk.data(), inSk.size() * sizeof(rct::ctkey));
 
-          // outSk only covers the native (non-zarcanum) RingCT outputs:
-          // tx_out_zarcanum outputs carry their own commitments/masks and are
+          // outSk only covers the native (non-zyphora) RingCT outputs:
+          // tx_out_zyphora outputs carry their own commitments/masks and are
           // skipped when building dest_keys/outamounts above, so they never
           // enter outSk. Compare against the native output count, not the full
           // tx.vout size (which also includes private-token outputs).
           size_t native_out_count = 0;
           for (const auto& o : tx.vout)
-            if (!std::holds_alternative<tx_out_zarcanum>(o.target))
+            if (!std::holds_alternative<tx_out_zyphora>(o.target))
               ++native_out_count;
-          CHECK_AND_ASSERT_MES(native_out_count == outSk.size(), false, "outSk size does not match native (non-zarcanum) vout count");
+          CHECK_AND_ASSERT_MES(native_out_count == outSk.size(), false, "outSk size does not match native (non-zyphora) vout count");
 
           MCINFO("construct_tx",
                  "transaction_created: " << get_transaction_hash(tx) << "\n" << obj_to_json_str(tx) << "\n");

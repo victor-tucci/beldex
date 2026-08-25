@@ -369,7 +369,7 @@ bool verify_double_schnorr_sig(const rct::key&              msg,
 //   - Uses rct::key instead of Zano's scalar_t / point_t
 //   - Uses Beldex's ge_* low-level ops for point arithmetic
 //   - Hash via keccak / hash_to_scalar_varargs instead of Zano's hash_helper_t
-//   - Zarcanum's c_point_X replaced with rct::scalarmultX()
+//   - Zyphora's c_point_X replaced with rct::scalarmultX()
 //   - Premultiplication by 1/8 for on-chain storage (Beldex convention)
 
 // Compute the BGE challenge from context + ring + commitments
@@ -768,7 +768,7 @@ bool verify_BGE_proof(const rct::key&    context_hash,
 // Vector HG aggregation proof
 // ---------------------------------------------------------------------------
 //
-// Adapted from Zano's vector_UG_aggregation_proof (src/crypto/zarcanum.cpp).
+// Adapted from Zano's vector_UG_aggregation_proof (src/crypto/zyphora.cpp).
 // See token_proofs.h for the proof's purpose and the Beldex-specific
 // adaptations: a fixed `tags[j]` per tx instead of Zano's per-output blinded
 // token tag, and the existing rct::H (rather than a dedicated new generator)

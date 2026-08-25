@@ -745,7 +745,7 @@ private:
     uint64_t balance_all(bool strict) const;
     uint64_t unlocked_balance_all(bool strict, uint64_t *blocks_to_unlock = NULL, uint64_t *time_to_unlock = NULL) const;
 
-    // HF21: per-token balances — maps token_id → total amount held in unspent ZC outputs
+    // HF21: per-token balances — maps token_id → total amount held in unspent ZY outputs
     std::unordered_map<crypto::token_id, uint64_t> token_balances(uint32_t subaddr_index_major, bool strict) const;
     void transfer_selected_rct(std::vector<cryptonote::tx_destination_entry> dsts, const std::vector<size_t>& selected_transfers, size_t fake_outputs_count,
       std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
@@ -774,7 +774,7 @@ private:
     std::vector<pending_tx> create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::beldex_construct_tx_params &tx_params, const unique_index_container& subtract_fee_from_outputs = {});     // pass subaddr_indices by value on purpose
 
     // HF21: build a register_private_token or mint_token transaction.
-    // Automatically pads ZC destinations with self-sends to reach
+    // Automatically pads ZY destinations with self-sends to reach
     // MIN_TOKEN_MINT_OUTPUTS so the blockchain fan-out rule passes.
     std::vector<pending_tx> create_private_token_registration_tx(
         std::vector<cryptonote::tx_destination_entry> dsts,
@@ -964,10 +964,10 @@ private:
         {
           const transfer_details &td = m_transfers[i];
           const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
-          if (std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+          if (std::holds_alternative<cryptonote::tx_out_zyphora>(out.target))
           {
-            // Zarcanum outputs are indexed by stealth_address, not a plain pubkey.
-            m_pub_keys.emplace(var::get<cryptonote::tx_out_zarcanum>(out.target).stealth_address, i);
+            // Zyphora outputs are indexed by stealth_address, not a plain pubkey.
+            m_pub_keys.emplace(var::get<cryptonote::tx_out_zyphora>(out.target).stealth_address, i);
           }
           else
           {

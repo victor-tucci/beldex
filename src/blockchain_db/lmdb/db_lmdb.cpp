@@ -1144,12 +1144,12 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   CURSOR(output_txs)
   CURSOR(output_amounts)
 
-  // Private token outputs (tx_out_zarcanum) always have amount == 0 on-chain
+  // Private token outputs (tx_out_zyphora) always have amount == 0 on-chain
   // and carry their own commitment; they are stored with stealth_address as pubkey.
-  const bool is_zarcanum = std::holds_alternative<tx_out_zarcanum>(tx_output.target);
-  if (!is_zarcanum && !std::holds_alternative<txout_to_key>(tx_output.target))
-    throw0(DB_ERROR("Wrong output type: expected txout_to_key or tx_out_zarcanum"));
-  if (!is_zarcanum && tx_output.amount == 0 && !commitment)
+  const bool is_zyphora = std::holds_alternative<tx_out_zyphora>(tx_output.target);
+  if (!is_zyphora && !std::holds_alternative<txout_to_key>(tx_output.target))
+    throw0(DB_ERROR("Wrong output type: expected txout_to_key or tx_out_zyphora"));
+  if (!is_zyphora && tx_output.amount == 0 && !commitment)
     throw0(DB_ERROR("RCT output without commitment"));
 
   outtx ot = {m_num_outputs, tx_hash, local_index};
@@ -1176,10 +1176,10 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   else
     ok.amount_index = 0;
   ok.output_id = m_num_outputs;
-  if (is_zarcanum)
+  if (is_zyphora)
   {
     // Store stealth_address as the lookup key; commitment comes from the output itself.
-    const auto& zout = var::get<tx_out_zarcanum>(tx_output.target);
+    const auto& zout = var::get<tx_out_zyphora>(tx_output.target);
     ok.data.pubkey = zout.stealth_address;
     ok.data.unlock_time = unlock_time;
     ok.data.height = m_height;
@@ -6121,7 +6121,7 @@ void BlockchainLMDB::migrate_7_8()
   // which lives in the rct (amount==0) records of m_output_amounts. That table
   // is MDB_DUPFIXED, so all dups under a key must share one size; we therefore
   // rebuild the rct dup-list at the new record size via a temp table. Native /
-  // legacy outputs get null_tid; private-token (zarcanum) outputs get their
+  // legacy outputs get null_tid; private-token (zyphora) outputs get their
   // real blinded id, recovered by a forward scan that reproduces the exact
   // output_id assignment order (per block: miner_tx, then txs in tx_hashes
   // order, each vout ascending — see BlockchainDB::add_block).
@@ -6144,7 +6144,7 @@ void BlockchainLMDB::migrate_7_8()
   };
 #pragma pack(pop)
 
-  // No private-token (zarcanum) outputs exist on chain at this migration,
+  // No private-token (zyphora) outputs exist on chain at this migration,
   // so there is nothing to preserve - every output gets null_tid below. The old
   // full-chain scan that built an output_id -> blinded_token_id map was therefore
   // pure overhead and has been removed.

@@ -205,7 +205,7 @@ bool verify_BGE_proof(const rct::key&  context_hash,
 
 // ── 4. Vector HG aggregation proof ──────────────────────────────────────────
 //
-// Adapted from Zano's vector_UG_aggregation_proof (src/crypto/zarcanum.cpp).
+// Adapted from Zano's vector_UG_aggregation_proof (src/crypto/zyphora.cpp).
 // Binds each output's real amount commitment E_j = amount_j*tag_j + mask_j*G
 // to an auxiliary commitment E'_j = amount_j*H + y'_j*G that the existing,
 // unmodified Bulletproof+ engine can range-prove directly (it already uses
@@ -228,7 +228,7 @@ bool verify_BGE_proof(const rct::key&  context_hash,
 // token-id-based proofs already depend on.
 struct vector_ug_aggregation_proof_s
 {
-    rct::keyV amount_commitments_for_rp_aggregation; // E'_j, one per ZC output, premultiplied by 1/8
+    rct::keyV amount_commitments_for_rp_aggregation; // E'_j, one per ZY output, premultiplied by 1/8
     rct::keyV y0s; // response scalars (knowledge of amount_j)
     rct::keyV y1s; // response scalars (knowledge of mask_j + w*y'_j)
     rct::key  c;   // common Fiat-Shamir challenge
@@ -243,7 +243,7 @@ struct vector_ug_aggregation_proof_s
 
 // Generate a vector HG aggregation proof.
 //   context_hash : binds proof to the transaction (e.g. the HF21 token proof message)
-//   amounts      : amount_j for each ZC output (the prover's secret)
+//   amounts      : amount_j for each ZY output (the prover's secret)
 //   real_masks   : mask_j used in each output's real amount commitment
 //   aux_masks    : y'_j used in each output's auxiliary commitment E'_j
 //   real_commitments : E_j, the outputs' real amount commitments

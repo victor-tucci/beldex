@@ -29,7 +29,7 @@ namespace
 // (a 2-generator Schnorr over the tx prefix hash -- the X-component arises
 // because the minted outputs' real commitments are built on their own
 // blinded token ids T_j = token_id + r_j*X, see rct::commitToken), and that
-// the zarcanum output commitments sum to C. Adapted from Zano
+// the zyphora output commitments sum to C. Adapted from Zano
 // validate_token_operation_amount_commitment.
 bool verify_token_amount_commitment(const transaction& tx,
                                     const tx_extra_token_descriptor_operation& op,
@@ -83,36 +83,36 @@ bool verify_token_amount_commitment(const transaction& tx,
   }
 
   // For deploy/mint, tie the TDO commitment to the actual minted outputs: the
-  // sum of the zarcanum output commitments must equal the TDO
+  // sum of the zyphora output commitments must equal the TDO
   // amount_commitment. Combined with the composition_proof above (which fixes
   // C = declared_amount·token_id + sum_masks·G + secret_x·X), this forces
   // sum(output amounts) == declared_amount, so an issuer cannot declare a
   // small supply while minting outputs worth more.
   //
   // Burns intentionally destroy the declared amount rather than materializing
-  // it as outputs, so their TDO commitment is consumed by the zc_balance_proof
+  // it as outputs, so their TDO commitment is consumed by the zy_balance_proof
   // instead of being matched against sum(outputs).
   if (op.operation_type == token_descriptor_operation_type::burn_token)
     return true;
 
   rct::key sum_out = rct::identity();
-  bool saw_zc_out = false;
+  bool saw_zy_out = false;
   for (const auto& o : tx.vout)
   {
-    if (const auto* z = std::get_if<tx_out_zarcanum>(&o.target))
+    if (const auto* z = std::get_if<tx_out_zyphora>(&o.target))
     {
       rct::addKeys(sum_out, sum_out, rct::pk2rct(z->amount_commitment));
-      saw_zc_out = true;
+      saw_zy_out = true;
     }
   }
-  if (!saw_zc_out)
+  if (!saw_zy_out)
   {
-    reason = "token operation has no zarcanum outputs to back the declared amount";
+    reason = "token operation has no zyphora outputs to back the declared amount";
     return false;
   }
   if (!rct::equalKeys(sum_out, C))
   {
-    reason = "zarcanum output commitments do not sum to the declared amount commitment";
+    reason = "zyphora output commitments do not sum to the declared amount commitment";
     return false;
   }
 
@@ -124,12 +124,12 @@ void set_reason(std::string* reason, std::string value)
   if (reason) *reason = std::move(value);
 }
 
-// Count tx_out_zarcanum outputs in a transaction.
-size_t count_zarcanum_outputs(const transaction& tx)
+// Count tx_out_zyphora outputs in a transaction.
+size_t count_zyphora_outputs(const transaction& tx)
 {
   size_t n = 0;
   for (const auto& out : tx.vout)
-    if (std::holds_alternative<tx_out_zarcanum>(out.target))
+    if (std::holds_alternative<tx_out_zyphora>(out.target))
       ++n;
   return n;
 }
@@ -416,9 +416,9 @@ bool validate_tx_token_operations_against_db(
   bool saw_token_op = false;
   crypto::token_id tx_token_id = crypto::null_tid;
 
-  // Count zarcanum outputs once — checked per mint/register op below.
-  const size_t zc_out_count = (hf_version >= feature::PRIVATE_TOKENS)
-                              ? count_zarcanum_outputs(tx)
+  // Count zyphora outputs once — checked per mint/register op below.
+  const size_t zy_out_count = (hf_version >= feature::PRIVATE_TOKENS)
+                              ? count_zyphora_outputs(tx)
                               : 0;
 
   while (get_token_descriptor_operation_from_tx_extra(tx.extra, op, op_index++))
@@ -440,7 +440,7 @@ bool validate_tx_token_operations_against_db(
     }
 
     // ── Mandatory fan-out: deploy and mint must create >= MIN_TOKEN_MINT_OUTPUTS
-    // tx_out_zarcanum outputs so that ring members exist from the first block.
+    // tx_out_zyphora outputs so that ring members exist from the first block.
     // The wallet auto-generates self-sends to reach this minimum.
     if (hf_version >= feature::PRIVATE_TOKENS)
     {
@@ -451,12 +451,12 @@ bool validate_tx_token_operations_against_db(
 
       if (is_deploy_with_supply)
       {
-        if (zc_out_count < MIN_TOKEN_MINT_OUTPUTS)
+        if (zy_out_count < MIN_TOKEN_MINT_OUTPUTS)
         {
           reason = "deploy tx must have at least " +
                    std::to_string(MIN_TOKEN_MINT_OUTPUTS) +
-                   " tx_out_zarcanum outputs (got " +
-                   std::to_string(zc_out_count) +
+                   " tx_out_zyphora outputs (got " +
+                   std::to_string(zy_out_count) +
                    "); wallet must auto-generate self-sends to reach this minimum";
           return false;
         }

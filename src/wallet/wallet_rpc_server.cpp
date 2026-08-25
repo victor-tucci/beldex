@@ -652,12 +652,12 @@ namespace tools
       std::vector<wallet::transfer_details> transfers;
       m_wallet->get_transfers(transfers);
       std::map<crypto::token_id, std::string> token_tickers;
-      // HF21: aggregate per-token balances from ZC transfer details
+      // HF21: aggregate per-token balances from ZY transfer details
       {
         std::map<crypto::token_id, uint64_t> token_total, token_unlocked;
         for (const auto& td : transfers)
         {
-          if (!td.is_zarcanum() || td.m_spent) continue;
+          if (!td.is_zyphora() || td.m_spent) continue;
           if (!req.all_accounts && td.m_subaddr_index.major != req.account_index) continue;
           if (!req.address_indices.empty() && req.address_indices.count(td.m_subaddr_index.minor) == 0) continue;
           const bool unlocked = m_wallet->is_transfer_unlocked(td);
@@ -710,7 +710,7 @@ namespace tools
           // HF21: track token subaddresses
           for (const auto& td : transfers)
           {
-            if (td.is_zarcanum() && !td.m_spent && td.m_subaddr_index.major == account_index)
+            if (td.is_zyphora() && !td.m_spent && td.m_subaddr_index.major == account_index)
               address_indices.insert(td.m_subaddr_index.minor);
           }
         }
@@ -732,7 +732,7 @@ namespace tools
           const uint64_t blockchain_height = m_wallet->get_blockchain_current_height();
           for (const auto& td : transfers)
           {
-            if (!td.is_zarcanum() || td.m_spent) continue;
+            if (!td.is_zyphora() || td.m_spent) continue;
             if (td.m_subaddr_index != index) continue;
             const bool unlocked = m_wallet->is_transfer_unlocked(td);
             subaddr_token_total[td.m_token_id] += td.m_amount;
@@ -1114,7 +1114,7 @@ namespace tools
     // amounts_by_dest, and the caller knows which token each is from its request.
     uint64_t amount = 0;
     for (const auto &dest: ptx.dests)
-      if (!dest.is_zarcanum())
+      if (!dest.is_zyphora())
         amount += dest.amount;
     return amount;
   }
@@ -1158,7 +1158,7 @@ namespace tools
       fill(amounts_by_dest, abd);
 
       // add spent key images. HF21: a private-token transfer spends both
-      // native txin_to_key inputs (fee/change) and txin_zc_input inputs (the
+      // native txin_to_key inputs (fee/change) and txin_zy_input inputs (the
       // token), so accept either -- both carry a k_image. Mirrors wallet2.cpp's
       // all_known_txin_type collection.
       tools::wallet_rpc::key_image_list key_image_list;
@@ -1169,9 +1169,9 @@ namespace tools
           key_image_list.key_images.push_back(tools::type_to_hex(std::get<cryptonote::txin_to_key>(s_e).k_image));
           return true;
         }
-        else if (std::holds_alternative<cryptonote::txin_zc_input>(s_e))
+        else if (std::holds_alternative<cryptonote::txin_zy_input>(s_e))
         {
-          key_image_list.key_images.push_back(tools::type_to_hex(std::get<cryptonote::txin_zc_input>(s_e).k_image));
+          key_image_list.key_images.push_back(tools::type_to_hex(std::get<cryptonote::txin_zy_input>(s_e).k_image));
           return true;
         }
         return false;

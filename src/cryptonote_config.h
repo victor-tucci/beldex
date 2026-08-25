@@ -59,15 +59,15 @@ inline constexpr size_t   TX_BULLETPROOF_PLUS_MAX_OUTPUTS      = 16;
 
 // ── Private token ring design (HF21+) ─────────────────────────────────
 //
-// Zarcanum inputs (spending a tx_out_zarcanum) use the SAME output_amounts[0]
+// Zyphora inputs (spending a tx_out_zyphora) use the SAME output_amounts[0]
 // pool as native BDX RingCT outputs for decoy selection.  Both BDX RCT outputs
-// (txout_to_key) and private token outputs (tx_out_zarcanum) store
+// (txout_to_key) and private token outputs (tx_out_zyphora) store
 // tx_out.amount == 0 on-chain, so they live in the same LMDB bucket.
 //
 // The CLSAG ring is 1-layer (key only):
 //   - BDX decoy  → ring member pubkey = txout_to_key.key
-//   - ZC decoy   → ring member pubkey = tx_out_zarcanum.stealth_address
-//   - ZC real    → ring member pubkey = tx_out_zarcanum.stealth_address
+//   - ZY decoy   → ring member pubkey = tx_out_zyphora.stealth_address
+//   - ZY real    → ring member pubkey = tx_out_zyphora.stealth_address
 //
 // Amount balance and token integrity are proven separately:
 //   - Balance:   linear_composition_proof  (proves tx balances in G and X)
@@ -81,15 +81,15 @@ inline constexpr size_t TOKEN_RING_SIZE = TX_OUTPUT_DECOYS; // same as BDX
 // ── Mandatory fan-out for deploy / mint transactions (HF21+) ───────────────
 //
 // Every register_private_token or mint_token transaction MUST produce at least
-// MIN_TOKEN_MINT_OUTPUTS tx_out_zarcanum outputs.
+// MIN_TOKEN_MINT_OUTPUTS tx_out_zyphora outputs.
 //
 // Why: even though the ring draws from the shared BDX pool, we want
-// dedicated ZC ring members for future token-specific BGE proofs.
+// dedicated ZY ring members for future token-specific BGE proofs.
 // The wallet auto-generates self-send outputs (to its own subaddresses)
 // to reach this minimum whenever the user's destinations fall short.
 //
 // Value = TX_OUTPUT_DECOYS + 1 = 10: guarantees a full ring of 9 decoys
-// + 1 real is always achievable using only prior ZC outputs of the same
+// + 1 real is always achievable using only prior ZY outputs of the same
 // token, independent of the BDX pool.
 inline constexpr size_t MIN_TOKEN_MINT_OUTPUTS = TX_OUTPUT_DECOYS + 1; // 10
 inline constexpr uint64_t PUBLIC_ADDRESS_TEXTBLOB_VER          = 0;
@@ -154,7 +154,7 @@ namespace hashkey {
   inline constexpr std::string_view CLSAG_ROUND = "CLSAG_round"sv;
   inline constexpr std::string_view CLSAG_AGG_0 = "CLSAG_agg_0"sv;
   inline constexpr std::string_view CLSAG_AGG_1 = "CLSAG_agg_1"sv;
-  // 3-layer CLSAG-GGX (zarcanum ZC_sig): layer 0 = stealth address (G),
+  // 3-layer CLSAG-GGX (zyphora ZY_sig): layer 0 = stealth address (G),
   // layer 1 = amount commitment (G), layer 2 = blinded token id (X).
   inline constexpr std::string_view CLSAG_GGX_ROUND = "CLSAG_GGX_round"sv;
   inline constexpr std::string_view CLSAG_GGX_AGG_0 = "CLSAG_GGX_agg_0"sv;

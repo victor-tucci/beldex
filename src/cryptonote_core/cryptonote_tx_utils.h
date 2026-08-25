@@ -149,10 +149,10 @@ namespace cryptonote
     crypto::token_id token_id = crypto::null_tid;
     rct::key token_mask = rct::zero();  // real output's token-id blinding mask (transfer_details::m_token_mask)
     // Blinded token ids of the ring, parallel to `outputs` (same index correspondence).
-    // Only populated/used when is_zarcanum() is true.
+    // Only populated/used when is_zyphora() is true.
     std::vector<crypto::token_id> ring_blinded_token_ids;
 
-    bool is_zarcanum() const { return token_id != crypto::null_tid; }
+    bool is_zyphora() const { return token_id != crypto::null_tid; }
 
     void push_output(uint64_t idx, const crypto::public_key &k, uint64_t amount) { outputs.push_back(std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::zeroCommit(amount)}))); }
 
@@ -190,7 +190,7 @@ namespace cryptonote
     tx_destination_entry(uint64_t a, const account_public_address &ad, bool is_subaddress) : amount(a), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
     tx_destination_entry(const std::string &o, uint64_t a, const account_public_address &ad, bool is_subaddress) : original(o), amount(a), addr(ad), is_subaddress(is_subaddress), is_integrated(false) { }
 
-    bool is_zarcanum() const { return token_id != crypto::null_tid; }
+    bool is_zyphora() const { return token_id != crypto::null_tid; }
 
     bool operator==(const tx_destination_entry& other) const
     {
