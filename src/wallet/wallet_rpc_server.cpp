@@ -1107,7 +1107,7 @@ namespace tools
   static uint64_t total_amount(const wallet::pending_tx &ptx)
   {
     // HF21: only sum NATIVE (BDX) destinations. A tx may carry destinations of
-    // different kinds (BDX and/or one private token), whose atomic units
+    // different kinds (BDX and/or one privacy token), whose atomic units
     // are NOT comparable, so summing them into one number is meaningless (e.g.
     // 10 token-atoms + 10 BDX-atoms != 10000000010 of anything). Per-destination
     // amounts -- including token destinations -- are still reported in
@@ -1157,7 +1157,7 @@ namespace tools
         abd.amounts.push_back(dst.amount);
       fill(amounts_by_dest, abd);
 
-      // add spent key images. HF21: a private-token transfer spends both
+      // add spent key images. HF21: a privacy-token transfer spends both
       // native txin_to_key inputs (fee/change) and txin_zy_input inputs (the
       // token), so accept either -- both carry a k_image. Mirrors wallet2.cpp's
       // all_known_txin_type collection.
@@ -3829,11 +3829,11 @@ namespace {
     m_stop = true;
   }
 
-  // HF21: register a new private token
-  REGISTER_PRIVATE_TOKEN::response wallet_rpc_server::invoke(REGISTER_PRIVATE_TOKEN::request&& req)
+  // HF21: register a new privacy token
+  REGISTER_PRIVACY_TOKEN::response wallet_rpc_server::invoke(REGISTER_PRIVACY_TOKEN::request&& req)
   {
     require_open();
-    REGISTER_PRIVATE_TOKEN::response res{};
+    REGISTER_PRIVACY_TOKEN::response res{};
 
     // 1. Validate request
     if (req.json_string.empty())
@@ -3886,7 +3886,7 @@ namespace {
 
     // 9. Create transaction
     std::set<uint32_t> subaddr_indices = req.subaddr_indices;
-    auto ptx_vector = m_wallet->create_private_token_registration_tx(
+    auto ptx_vector = m_wallet->create_privacy_token_registration_tx(
         dsts, token_id, cryptonote::TX_OUTPUT_DECOYS, req.priority, extra,
         req.account_index, subaddr_indices);
 
@@ -3988,7 +3988,7 @@ namespace {
     return res;
   }
 
-  // HF21: Mint additional tokens for an existing private token
+  // HF21: Mint additional tokens for an existing privacy token
   MINT_TOKEN::response wallet_rpc_server::invoke(MINT_TOKEN::request&& req)
   {
     require_open();
@@ -4038,7 +4038,7 @@ namespace {
     return res;
   }
 
-  // HF21: Burn supply from an existing private token
+  // HF21: Burn supply from an existing privacy token
   BURN_TOKEN::response wallet_rpc_server::invoke(BURN_TOKEN::request&& req)
   {
     require_open();
@@ -4087,7 +4087,7 @@ namespace {
     return res;
   }
 
-  // HF21: Update an existing private token metadata
+  // HF21: Update an existing privacy token metadata
   UPDATE_TOKEN::response wallet_rpc_server::invoke(UPDATE_TOKEN::request&& req)
   {
     require_open();

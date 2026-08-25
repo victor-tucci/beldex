@@ -1036,7 +1036,7 @@ namespace cryptonote
   {
     for(const auto& in: tx.vin)
     {
-      // Private token input (HF21+): proven via its own ZY_sig/token
+      // Privacy token input (HF21+): proven via its own ZY_sig/token
       // proofs rather than a plaintext amount, so it's exempt from the
       // legacy txin_to_key-only restriction here.
       if (std::holds_alternative<txin_zy_input>(in))
@@ -1066,7 +1066,7 @@ namespace cryptonote
     {
       if (std::holds_alternative<tx_out_zyphora>(out.target))
       {
-        // Private token output (HF21+): stealth_address must be a valid key.
+        // Privacy token output (HF21+): stealth_address must be a valid key.
         const auto& zout = var::get<tx_out_zyphora>(out.target);
         CHECK_AND_ASSERT_MES(check_key(zout.stealth_address), false,
           "invalid stealth_address in tx_out_zyphora, tx id=" << get_transaction_hash(tx));
@@ -1111,7 +1111,7 @@ namespace cryptonote
     uint64_t money = 0;
     for(const auto& in: tx.vin)
     {
-      // Private token inputs carry no plaintext amount (it's hidden in
+      // Privacy token inputs carry no plaintext amount (it's hidden in
       // the commitment, conserved separately by the token balance proof),
       // so they don't participate in this native-money overflow check.
       if (std::holds_alternative<txin_zy_input>(in))

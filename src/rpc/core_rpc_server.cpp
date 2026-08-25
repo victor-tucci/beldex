@@ -3739,7 +3739,7 @@ namespace cryptonote::rpc {
     value_decrypt.response["status"] = STATUS_OK;
   }
 
-  // ── HF21 Private Token RPC handlers ─────────────────────────────────
+  // ── HF21 Privacy Token RPC handlers ─────────────────────────────────
 
   void core_rpc_server::invoke(GET_TOKEN_INFO& req_resp, rpc_context /*context*/)
   {

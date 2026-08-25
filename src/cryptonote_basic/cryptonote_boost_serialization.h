@@ -114,7 +114,7 @@ namespace boost
     a & x.hash;
   }
 
-  // HF21: private token output
+  // HF21: privacy token output
   template <class Archive>
   inline void serialize(Archive &a, cryptonote::tx_out_zyphora &x, const boost::serialization::version_type ver)
   {

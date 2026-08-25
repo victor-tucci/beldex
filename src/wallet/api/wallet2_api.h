@@ -926,7 +926,7 @@ struct Wallet
                                                     uint32_t subaddr_account = 0,
                                                     std::set<uint32_t> subaddr_indices = {}) = 0;
     /*!
-     * \brief registerPrivateTokenTransaction creates a register_private_token transaction from a descriptor json string
+     * \brief registerPrivacyTokenTransaction creates a register_privacy_token transaction from a descriptor json string
      * \param descriptor_json   serialized token descriptor json
      * \param token_id          computed token id for the registration request
      * \param subaddr_account   subaddress account from which native fee inputs are taken
@@ -935,7 +935,7 @@ struct Wallet
      * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
      *                          after object returned
      */
-    virtual PendingTransaction* registerPrivateTokenTransaction(const std::string& descriptor_json,
+    virtual PendingTransaction* registerPrivacyTokenTransaction(const std::string& descriptor_json,
                                                     std::string& token_id,
                                                     uint32_t priority = 0,
                                                     uint32_t subaddr_account = 0,

@@ -25,7 +25,7 @@
 #include "serialization/serialization.h" // BEGIN_SERIALIZE_OBJECT, FIELD
 
 // ---------------------------------------------------------------------------
-// Private-token zero-knowledge proof primitives (HF21+)
+// Privacy-token zero-knowledge proof primitives (HF21+)
 //
 // Three proof types, in dependency order:
 //
@@ -111,7 +111,7 @@ bool verify_linear_composition_proof(const rct::key&                    msg,
 // Proves knowledge of TWO independent scalars (s0, s1) such that
 // P0 = s0*X  and  P1 = s1*G, under one shared Fiat-Shamir challenge.
 //
-// Used to bind the private-token transfer balance proof (P0 = the
+// Used to bind the privacy-token transfer balance proof (P0 = the
 // balance residual, s0 = secret_x) to the transaction's own keypair
 // (P1 = tx_pub_key, s1 = tx_key.sec) -- so a balance proof can't be detached
 // from / replayed against a transaction it wasn't actually generated for.
@@ -213,7 +213,7 @@ bool verify_BGE_proof(const rct::key&  context_hash,
 // avoids touching that shared, consensus-critical code at all). real_tags_j
 // varies per output in Zano (a per-output blinded token tag); in Beldex it's
 // the same plaintext token_id for every output in a tx, since one tx may
-// only touch one private token -- a valid specialization of the same
+// only touch one privacy token -- a valid specialization of the same
 // proof.
 //
 // For a random public weight w = Hs(m, {E_j}, {E'_j}), proves knowledge of

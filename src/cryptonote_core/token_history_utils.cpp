@@ -407,7 +407,7 @@ bool validate_tx_token_operations_against_db(
     std::string& reason,
     hf hf_version)
 {
-  if (hf_version < feature::PRIVATE_TOKENS)
+  if (hf_version < feature::PRIVACY_TOKENS)
     return true;
 
   size_t op_index = 0;
@@ -417,7 +417,7 @@ bool validate_tx_token_operations_against_db(
   crypto::token_id tx_token_id = crypto::null_tid;
 
   // Count zyphora outputs once — checked per mint/register op below.
-  const size_t zy_out_count = (hf_version >= feature::PRIVATE_TOKENS)
+  const size_t zy_out_count = (hf_version >= feature::PRIVACY_TOKENS)
                               ? count_zyphora_outputs(tx)
                               : 0;
 
@@ -425,10 +425,10 @@ bool validate_tx_token_operations_against_db(
   {
     saw_token_op = true;
 
-    if (tx.type != txtype::register_private_token && tx.type != txtype::mint_token &&
+    if (tx.type != txtype::register_privacy_token && tx.type != txtype::mint_token &&
         tx.type != txtype::update_token && tx.type != txtype::burn_token)
     {
-      reason = "token descriptor operation is only allowed in register_private_token, mint_token, update_token or burn_token transactions";
+      reason = "token descriptor operation is only allowed in register_privacy_token, mint_token, update_token or burn_token transactions";
       return false;
     }
 
@@ -442,7 +442,7 @@ bool validate_tx_token_operations_against_db(
     // ── Mandatory fan-out: deploy and mint must create >= MIN_TOKEN_MINT_OUTPUTS
     // tx_out_zyphora outputs so that ring members exist from the first block.
     // The wallet auto-generates self-sends to reach this minimum.
-    if (hf_version >= feature::PRIVATE_TOKENS)
+    if (hf_version >= feature::PRIVACY_TOKENS)
     {
       const bool is_deploy_with_supply =
           (op.operation_type == token_descriptor_operation_type::register_token) &&
@@ -530,7 +530,7 @@ bool validate_tx_token_operations_against_db(
     }
   }
 
-  if ((tx.type == txtype::register_private_token || tx.type == txtype::mint_token || tx.type == txtype::update_token) && !saw_token_op)
+  if ((tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token || tx.type == txtype::update_token) && !saw_token_op)
   {
     reason = "deploy/mint/update transaction must include at least one token descriptor operation";
     return false;

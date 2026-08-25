@@ -60,7 +60,7 @@ struct transfer_details
   std::vector<multisig_info> m_multisig_info; // one per other participant
   std::vector<std::pair<uint64_t, crypto::hash>> m_uses;
 
-  // Private token (HF21+). null_tid = native BDX (txout_to_key).
+  // Privacy token (HF21+). null_tid = native BDX (txout_to_key).
   crypto::token_id m_token_id = crypto::null_tid;
   // Amount blinding mask for the token commitment (needed to build pseudo-out when spending).
   rct::key m_token_mask = rct::zero();

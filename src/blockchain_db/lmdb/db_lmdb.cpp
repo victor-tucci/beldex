@@ -65,7 +65,7 @@ enum struct lmdb_version
     v5,     // alt_block_data_1_t => alt_block_data_t: Alt block data has boolean for if the block was checkpointed
     v6,     // remigrate quorum_signature struct due to alignment change
     v7,     // rebuild the checkpoint table because v6 update in-place made MDB_LAST not give us the newest checkpoint
-    v8,     // add token history table and blinded_token_id output metadata for private token ring filtering
+    v8,     // add token history table and blinded_token_id output metadata for privacy token ring filtering
     _count
 };
 
@@ -1144,7 +1144,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   CURSOR(output_txs)
   CURSOR(output_amounts)
 
-  // Private token outputs (tx_out_zyphora) always have amount == 0 on-chain
+  // Privacy token outputs (tx_out_zyphora) always have amount == 0 on-chain
   // and carry their own commitment; they are stored with stealth_address as pubkey.
   const bool is_zyphora = std::holds_alternative<tx_out_zyphora>(tx_output.target);
   if (!is_zyphora && !std::holds_alternative<txout_to_key>(tx_output.target))
@@ -1208,7 +1208,7 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
       throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
 
-  // HF21: for private token outputs, also record in the per-token index
+  // HF21: for privacy token outputs, also record in the per-token index
   // so the wallet can enumerate all outputs of a specific token for BGE ring.
   // The plaintext token_id is populated by append_tokens_from_transactions()
   // which runs after block acceptance and has access to tx.extra.
@@ -6121,7 +6121,7 @@ void BlockchainLMDB::migrate_7_8()
   // which lives in the rct (amount==0) records of m_output_amounts. That table
   // is MDB_DUPFIXED, so all dups under a key must share one size; we therefore
   // rebuild the rct dup-list at the new record size via a temp table. Native /
-  // legacy outputs get null_tid; private-token (zyphora) outputs get their
+  // legacy outputs get null_tid; privacy-token (zyphora) outputs get their
   // real blinded id, recovered by a forward scan that reproduces the exact
   // output_id assignment order (per block: miner_tx, then txs in tx_hashes
   // order, each vout ascending — see BlockchainDB::add_block).
@@ -6144,7 +6144,7 @@ void BlockchainLMDB::migrate_7_8()
   };
 #pragma pack(pop)
 
-  // No private-token (zyphora) outputs exist on chain at this migration,
+  // No privacy-token (zyphora) outputs exist on chain at this migration,
   // so there is nothing to preserve - every output gets null_tid below. The old
   // full-chain scan that built an output_id -> blinded_token_id map was therefore
   // pure overhead and has been removed.
@@ -6194,7 +6194,7 @@ void BlockchainLMDB::migrate_7_8()
         nk.data.unlock_time = old->data.unlock_time;
         nk.data.height = old->data.height;
         nk.data.commitment = old->data.commitment;
-        // No private-token outputs exist yet at this migration, so every
+        // No privacy-token outputs exist yet at this migration, so every
         // record gets the null blinded token id.
         nk.data.blinded_token_id = crypto::null_tid;
         MDB_val nv{sizeof(outkey), &nk};

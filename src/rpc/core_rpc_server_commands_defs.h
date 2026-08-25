@@ -2639,10 +2639,10 @@ namespace cryptonote::rpc {
     }request;
   };
 
-  // ── HF21 Private Token RPC endpoints ──────────────────────────────────
+  // ── HF21 Privacy Token RPC endpoints ──────────────────────────────────
 
   /// RPC: daemon/get_token_info
-  /// Returns the current state of a registered private token.
+  /// Returns the current state of a registered privacy token.
   /// Input:  token_id (hex-encoded 32-byte public key)
   /// Output: ticker, full_name, owner, current_supply, total_max_supply,
   ///         decimal_point, operation_count

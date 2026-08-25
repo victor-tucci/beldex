@@ -445,7 +445,7 @@ namespace
     
   const char* USAGE_COIN_BURN("coin_burn [index=<N1>[,<N2>,...]] [<priority>] <burn=amount | txid>");
 
-  const char* USAGE_REGISTER_PRIVATE_TOKEN("register_private_token [index=<N1>[,<N2>,...]] [<priority>] <json_filename>");
+  const char* USAGE_REGISTER_PRIVACY_TOKEN("register_privacy_token [index=<N1>[,<N2>,...]] [<priority>] <json_filename>");
   const char* USAGE_TOKENS_BY_OWNER("tokens_by_owner [<owner_address_or_spend_public_key>]");
   const char* USAGE_MINT_TOKEN("mint_token [index=<N1>[,<N2>,...]] [<priority>] <token_id> <amount>");
   const char* USAGE_BURN_TOKEN("burn_token [index=<N1>[,<N2>,...]] [<priority>] <token_id> <amount>");
@@ -3358,11 +3358,11 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
                            tr(USAGE_COIN_BURN),
                            tr(tools::wallet_rpc::COIN_BURN::description));
 
-  // HF21: private token commands
-  m_cmd_binder.set_handler("register_private_token",
-                           [this](const auto& x) { return register_private_token(x); },
-                           tr(USAGE_REGISTER_PRIVATE_TOKEN),
-                           tr("Register a new private token. Provide a JSON file with: ticker, full_name, total_max_supply, current_supply, decimal_point, meta_info."));
+  // HF21: privacy token commands
+  m_cmd_binder.set_handler("register_privacy_token",
+                           [this](const auto& x) { return register_privacy_token(x); },
+                           tr(USAGE_REGISTER_PRIVACY_TOKEN),
+                           tr("Register a new privacy token. Provide a JSON file with: ticker, full_name, total_max_supply, current_supply, decimal_point, meta_info."));
 
   m_cmd_binder.set_handler("tokens_by_owner",
                            [this](const auto& x) { return tokens_by_owner(x); },
@@ -3377,7 +3377,7 @@ Pending or Failed: "failed"|"pending",  "out", Lock, Checkpointed, Time, Amount*
   m_cmd_binder.set_handler("burn_token",
                            [this](const auto& x) { return burn_token(x); },
                            tr(USAGE_BURN_TOKEN),
-                           tr("Publicly burn supply from an existing private token."));
+                           tr("Publicly burn supply from an existing privacy token."));
 
   m_cmd_binder.set_handler("update_token",
                            [this](const auto& x) { return update_token(x); },
@@ -5354,7 +5354,7 @@ bool simple_wallet::show_balance_unlocked(bool detailed)
     const auto token_unlocked_bals = m_wallet->token_balances(m_current_subaddress_account, true);
     if (!token_bals.empty())
     {
-      success_msg_writer() << tr("Private token balances:");
+      success_msg_writer() << tr("Privacy token balances:");
       for (const auto& [token_id, amount] : token_bals)
       {
         const std::string token_hex = tools::type_to_hex(token_id);
@@ -7947,7 +7947,7 @@ bool simple_wallet::tokens_by_owner(const std::vector<std::string>& args_)
   return true;
 }
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::register_private_token(const std::vector<std::string>& args_)
+bool simple_wallet::register_privacy_token(const std::vector<std::string>& args_)
 {
   if (!try_connect_to_daemon())
     return false;
@@ -7960,7 +7960,7 @@ bool simple_wallet::register_private_token(const std::vector<std::string>& args_
 
   if (args.size() != 1)
   {
-    PRINT_USAGE(USAGE_REGISTER_PRIVATE_TOKEN);
+    PRINT_USAGE(USAGE_REGISTER_PRIVACY_TOKEN);
     return false;
   }
 
@@ -8022,8 +8022,8 @@ bool simple_wallet::register_private_token(const std::vector<std::string>& args_
       dsts.push_back(dest);
     }
 
-    // Use create_private_token_registration_tx which auto-pads to MIN_TOKEN_MINT_OUTPUTS
-    auto ptx_vector = m_wallet->create_private_token_registration_tx(
+    // Use create_privacy_token_registration_tx which auto-pads to MIN_TOKEN_MINT_OUTPUTS
+    auto ptx_vector = m_wallet->create_privacy_token_registration_tx(
         dsts, token_id, cryptonote::TX_OUTPUT_DECOYS, priority, extra,
         m_current_subaddress_account, subaddr_indices);
 

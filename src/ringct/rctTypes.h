@@ -183,7 +183,7 @@ namespace rct {
         END_SERIALIZE()
     };
 
-    // 3-layer CLSAG over (G, G, X) for spending a tx_out_zyphora (HF21+ private tokens).
+    // 3-layer CLSAG over (G, G, X) for spending a tx_out_zyphora (HF21+ privacy tokens).
     // Layer 0 (G): stealth address ownership.
     // Layer 1 (G): amount-commitment difference vs. the pseudo-output is a commitment to 0.
     // Layer 2 (X): blinded-token-id difference vs. the pseudo-output is a commitment to 0.
@@ -704,7 +704,7 @@ VARIANT_TAG(rct::BulletproofPlus, "rct_bulletproof_plus", 0xa0);
 // both rct::key (defined above) and crypto::*_proof_s (defined in token_proofs.h).
 namespace rct {
 
-    // ── Private token proof wrappers (HF21+) ────────────────────────────
+    // ── Privacy token proof wrappers (HF21+) ────────────────────────────
     // Embedded in transaction::token_proofs.
 
     struct zy_token_surjection_proof
@@ -790,7 +790,7 @@ namespace rct {
     >;
 
     // HF21: transaction signature variant, modeled on Zano's signature_v.
-    // Currently the only alternative is ZY_sig (private-token input
+    // Currently the only alternative is ZY_sig (privacy-token input
     // signatures); wrapping it in a variant makes each element serialize under
     // its own "ZY_sig" tag inside the tx "signatures" array (transaction::zy_sig),
     // matching Zano's `"signatures": [ { "ZY_sig": {...} } ]` shape. Add further

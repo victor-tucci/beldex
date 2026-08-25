@@ -145,7 +145,7 @@ namespace cryptonote
     rct::key mask;                      //ringct amount mask
     rct::multisig_kLRki multisig_kLRki; //multisig info
 
-    // Private token (HF21+). null_tid = native BDX input (txin_to_key).
+    // Privacy token (HF21+). null_tid = native BDX input (txin_to_key).
     crypto::token_id token_id = crypto::null_tid;
     rct::key token_mask = rct::zero();  // real output's token-id blinding mask (transfer_details::m_token_mask)
     // Blinded token ids of the ring, parallel to `outputs` (same index correspondence).
@@ -182,7 +182,7 @@ namespace cryptonote
     account_public_address addr;        // Destination Address
     bool is_subaddress;
     bool is_integrated;
-    // Private token (HF21+). null_pkey = native BDX output (txout_to_key).
+    // Privacy token (HF21+). null_pkey = native BDX output (txout_to_key).
     crypto::token_id token_id = crypto::null_tid;
     uint64_t unlock_time = 0;
 

@@ -173,7 +173,7 @@ namespace cryptonote
   bool add_token_descriptor_operation_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_token_descriptor_operation& op);
   bool get_token_descriptor_operation_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_token_descriptor_operation& op, size_t skip = 0);
   bool is_out_to_acc(const account_keys& acc, const txout_to_key& out_key, const crypto::public_key& tx_pub_key, const std::vector<crypto::public_key>& additional_tx_public_keys, size_t output_index);
-  // Overload for private token outputs (HF21+): checks stealth_address match.
+  // Overload for privacy token outputs (HF21+): checks stealth_address match.
   bool is_out_to_acc(const account_keys& acc, const tx_out_zyphora& zout, const crypto::public_key& tx_pub_key, size_t output_index);
 
   // HF21: domain-separated scalar derivation for zyphora output fields.

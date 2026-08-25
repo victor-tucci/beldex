@@ -57,11 +57,11 @@ inline constexpr uint64_t TX_OUTPUT_DECOYS                     = 9;
 inline constexpr size_t   TX_BULLETPROOF_MAX_OUTPUTS           = 16;
 inline constexpr size_t   TX_BULLETPROOF_PLUS_MAX_OUTPUTS      = 16;
 
-// ── Private token ring design (HF21+) ─────────────────────────────────
+// ── Privacy token ring design (HF21+) ─────────────────────────────────
 //
 // Zyphora inputs (spending a tx_out_zyphora) use the SAME output_amounts[0]
 // pool as native BDX RingCT outputs for decoy selection.  Both BDX RCT outputs
-// (txout_to_key) and private token outputs (tx_out_zyphora) store
+// (txout_to_key) and privacy token outputs (tx_out_zyphora) store
 // tx_out.amount == 0 on-chain, so they live in the same LMDB bucket.
 //
 // The CLSAG ring is 1-layer (key only):
@@ -80,7 +80,7 @@ inline constexpr size_t TOKEN_RING_SIZE = TX_OUTPUT_DECOYS; // same as BDX
 
 // ── Mandatory fan-out for deploy / mint transactions (HF21+) ───────────────
 //
-// Every register_private_token or mint_token transaction MUST produce at least
+// Every register_privacy_token or mint_token transaction MUST produce at least
 // MIN_TOKEN_MINT_OUTPUTS tx_out_zyphora outputs.
 //
 // Why: even though the ring draws from the shared BDX pool, we want
@@ -247,7 +247,7 @@ enum class hf : uint8_t
     hf18_bns,
     hf19_enhance_bns, // provided EVM address in BNS
     hf20_bulletproof_plus,
-    hf21_private_tokens, // Private custom token transfers
+    hf21_privacy_tokens, // Private custom token transfers
 
     _next,
     none = 0
@@ -279,7 +279,7 @@ namespace feature {
   constexpr auto CLSAG                        = hf::hf15_flash;
   constexpr auto PROOF_BTENC                  = hf::hf18_bns;
   constexpr auto BULLETPROOF_PLUS             = hf::hf20_bulletproof_plus;
-  constexpr auto PRIVATE_TOKENS               = hf::hf21_private_tokens;
+  constexpr auto PRIVACY_TOKENS               = hf::hf21_privacy_tokens;
 }
 
 enum network_type : uint8_t

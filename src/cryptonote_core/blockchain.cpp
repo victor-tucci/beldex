@@ -293,7 +293,7 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_to_key& tx_in_to_key, vi
   return true;
 }
 //------------------------------------------------------------------
-// HF21: private token (zyphora) analogue of scan_outputkeys_for_indexes.
+// HF21: privacy token (zyphora) analogue of scan_outputkeys_for_indexes.
 // Zyphora outputs live in the same amount=0 bucket as native rct outputs;
 // the visitor additionally receives each ring member's blinded_token_id so
 // callers can build the token-id ring needed by ZY_sig verification.
@@ -814,7 +814,7 @@ block Blockchain::pop_block_from_blockchain()
     throw;
   }
 
-  if (popped_hf >= feature::PRIVATE_TOKENS)
+  if (popped_hf >= feature::PRIVACY_TOKENS)
   {
     std::string rewind_reason;
     CHECK_AND_ASSERT_THROW_MES(
@@ -3271,13 +3271,13 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
     }
   }
   
-  // HF21: private token output proof checks
+  // HF21: privacy token output proof checks
   //
   // Registration-style token deploys create new token outputs from tx.extra and
   // do not have prior token inputs to prove membership/balance against.  The
   // spend-style ZY proof bundle is only required for transactions that are not
   // initial token registrations.
-  if (hf_version >= feature::PRIVATE_TOKENS &&
+  if (hf_version >= feature::PRIVACY_TOKENS &&
       (tx.has_zyphora_outputs() || tx.type == txtype::burn_token))
   {
     if (tx.type == txtype::mint_token)
@@ -3313,7 +3313,7 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
       }
     }
 
-    if(tx.type == txtype::register_private_token)
+    if(tx.type == txtype::register_privacy_token)
     {
       // Initial registration of a new token requires an amount-commitment proof binding the declared total supply to the output commitments,
       // but does not require an ownership proof since the token is not yet owned by anyone.
@@ -3378,11 +3378,11 @@ bool Blockchain::expand_transaction_2(transaction &tx, const crypto::hash &tx_pr
   // message - hash of the transaction prefix
   rv.message = rct::hash2rct(tx_prefix_hash);
 
-  // HF21: private token (zyphora) inputs are proven by a separate ZY_sig
+  // HF21: privacy token (zyphora) inputs are proven by a separate ZY_sig
   // (CLSAG-GGX) and never participate in the native CLSAG/MG array below, so
   // they're excluded here. native_vin_indices maps a "native-only" position
   // (0..native count) back to its real tx.vin index, preserving relative order.
-  // For tx versions/rct types that predate private tokens, this is simply
+  // For tx versions/rct types that predate privacy tokens, this is simply
   // the identity mapping (no txin_zy_input can appear in such a tx).
   std::vector<size_t> native_vin_indices;
   native_vin_indices.reserve(tx.vin.size());
@@ -3577,7 +3577,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           return false;
         }
 
-        // Private token inputs cannot be master node stakes; no master node checks apply.
+        // Privacy token inputs cannot be master node stakes; no master node checks apply.
         continue;
       }
 
@@ -3699,7 +3699,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     case rct::RCTType::BulletproofPlus:
     {
       // check all this, either reconstructed (so should really pass), or not.
-      // Private token (zyphora) inputs are excluded here -- they're not
+      // Privacy token (zyphora) inputs are excluded here -- they're not
       // part of the native CLSAG/MG array, and are checked separately via
       // verTokenProofs/ZY_sig instead.
       {
@@ -3763,7 +3763,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      if (!rct::verRctNonSemanticsSimple(rv, hf_version >= feature::PRIVATE_TOKENS))
+      if (!rct::verRctNonSemanticsSimple(rv, hf_version >= feature::PRIVACY_TOKENS))
       {
         MERROR_VER("Failed to check ringct signatures!");
         tvc.m_verbose_error = "ringct non-semantics verification failed";
@@ -3823,7 +3823,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      if (!rct::verRct(rv, false, hf_version >= feature::PRIVATE_TOKENS))
+      if (!rct::verRct(rv, false, hf_version >= feature::PRIVACY_TOKENS))
       {
         MERROR_VER("Failed to check ringct signatures!");
         return false;
@@ -3835,9 +3835,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       return false;
     }
 
-    // HF21: verify ZY_sig / token proofs for any private token tx.
+    // HF21: verify ZY_sig / token proofs for any privacy token tx.
     //
-    // CRITICAL: this gate must trigger on STRUCTURAL private-token content
+    // CRITICAL: this gate must trigger on STRUCTURAL privacy-token content
     // (zy inputs/outputs, token-op tx types), NOT merely on token_proofs being
     // non-empty. verTokenProofs is the sole place ZY_sig, surjection, balance
     // and range proofs are verified AND the sole place their PRESENCE is
@@ -3851,9 +3851,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     const bool has_pt_content =
         !tx.token_proofs.empty() || !tx.zy_sig.empty() ||
         tx.has_zyphora_inputs() || tx.has_zyphora_outputs() ||
-        tx.type == txtype::register_private_token || tx.type == txtype::mint_token ||
+        tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token ||
         tx.type == txtype::burn_token || tx.type == txtype::update_token;
-    if (hf_version >= feature::PRIVATE_TOKENS && has_pt_content)
+    if (hf_version >= feature::PRIVACY_TOKENS && has_pt_content)
     {
       std::vector<rct::keyV> token_id_rings(tx.vin.size());
       for (size_t n = 0; n < tx.vin.size(); ++n)
@@ -3924,7 +3924,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         return false;
       }
     }
-    else if (tx.type == txtype::register_private_token || tx.type == txtype::mint_token || tx.type == txtype::update_token)
+    else if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token || tx.type == txtype::update_token)
     {
       cryptonote::tx_extra_token_descriptor_operation op;
       size_t skip = 0;
@@ -3947,7 +3947,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      if (tx.type == txtype::register_private_token)
+      if (tx.type == txtype::register_privacy_token)
       {
         const uint64_t min_collateral_unlock_height = get_current_blockchain_height() + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS;
         bool has_locked_native_collateral_output = false;
@@ -4148,7 +4148,7 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
     assert(hi == 0);
     lo /= 5;
 
-    if (version >= hf::hf21_private_tokens)
+    if (version >= hf::hf21_privacy_tokens)
       fees.second = FEE_PER_OUTPUT_V21;
     else if(version >= hf::hf17_POS)
       fees.second = FEE_PER_OUTPUT_V17;
@@ -4344,7 +4344,7 @@ bool Blockchain::check_tx_input(const txin_to_key& txin, const crypto::hash& tx_
   return true;
 }
 //------------------------------------------------------------------
-// HF21: private token (zyphora) analogue of check_tx_input.
+// HF21: privacy token (zyphora) analogue of check_tx_input.
 bool Blockchain::check_tx_input_zy(const txin_zy_input& txin, const crypto::hash& tx_prefix_hash, std::vector<rct::ctkey> &output_keys, std::vector<crypto::token_id> &output_blinded_token_ids, uint64_t* pmax_related_block_height)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
@@ -4865,9 +4865,9 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
           return false;
         }
 
-        if (tx.type != txtype::register_private_token && tx.type != txtype::mint_token && tx.type != txtype::update_token && tx.type != txtype::burn_token)
+        if (tx.type != txtype::register_privacy_token && tx.type != txtype::mint_token && tx.type != txtype::update_token && tx.type != txtype::burn_token)
         {
-          MERROR_VER("Token operation found in tx type " << tx.type << " but only register_private_token, mint_token, update_token, burn_token are allowed");
+          MERROR_VER("Token operation found in tx type " << tx.type << " but only register_privacy_token, mint_token, update_token, burn_token are allowed");
           bvc.m_verifivation_failed = true;
           return_tx_to_pool(txs);
           return false;
@@ -5029,7 +5029,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   const hf blk_hf = get_network_version(new_height - 1);
 
   // Persist validated token operations once block/tx acceptance has succeeded.
-  if (blk_hf >= feature::PRIVATE_TOKENS)
+  if (blk_hf >= feature::PRIVACY_TOKENS)
   {
     try
     {
@@ -5051,7 +5051,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   // This feeds the BGE surjection ring for future token transfers.
   if (get_current_blockchain_height() >= 1)
   {
-    if (blk_hf >= feature::PRIVATE_TOKENS)
+    if (blk_hf >= feature::PRIVACY_TOKENS)
     {
       try
       {

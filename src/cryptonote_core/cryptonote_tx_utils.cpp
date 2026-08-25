@@ -605,7 +605,7 @@ namespace cryptonote
       return false;
     }
 
-    // HF21: multiple distinct private tokens (plus native BDX) are allowed
+    // HF21: multiple distinct privacy tokens (plus native BDX) are allowed
     // in one tx. The zy_balance_proof stays sound because the residual commitment
     // P = sum_in_C - sum_out_C expands to
     //   Σ_token token_id_a*(Σin_a - Σout_a)  +  secret_x*X  +  (mask delta)*G,
@@ -617,12 +617,12 @@ namespace cryptonote
     // by its OWN blinded_token_id, and verTokenProofs explicitly permits mixed
     // token ids -- so no single-token restriction is needed here.
     //
-    // Sanity check only: every private-token destination must be backed by a
+    // Sanity check only: every privacy-token destination must be backed by a
     // spent source of the SAME token (mints add their outputs via deploy/mint,
     // which take a different path and carry no zy sources here). Without a
     // matching source the per-output surjection would fail downstream anyway;
     // catching it here gives a clearer error.
-    if (tx_params.tx_type != txtype::register_private_token && tx_params.tx_type != txtype::mint_token)
+    if (tx_params.tx_type != txtype::register_privacy_token && tx_params.tx_type != txtype::mint_token)
     {
       std::set<crypto::token_id> source_token_ids;
       for (const auto& s : sources)
@@ -634,7 +634,7 @@ namespace cryptonote
           continue;
         if (source_token_ids.find(d.token_id) == source_token_ids.end())
         {
-          LOG_ERROR("Cannot construct tx: destination targets private token "
+          LOG_ERROR("Cannot construct tx: destination targets privacy token "
                     << d.token_id << " but no spent source provides it");
           return false;
         }
@@ -931,10 +931,10 @@ namespace cryptonote
     // The R=s*D compression below breaks that relation (R becomes
     // tx_key.sec*D instead), which a third-party verifier has no way to
     // check since D is the recipient's private subaddress. So any tx
-    // carrying private-token content must keep the plain R=tx_key*G
+    // carrying privacy-token content must keep the plain R=tx_key*G
     // form.
     bool tx_has_zyphora_content =
-        tx_params.tx_type == txtype::register_private_token ||
+        tx_params.tx_type == txtype::register_privacy_token ||
         tx_params.tx_type == txtype::mint_token ||
         std::any_of(sources.begin(), sources.end(), [](const tx_source_entry& s) { return s.is_zyphora(); }) ||
         std::any_of(destinations.begin(), destinations.end(), [](const tx_destination_entry& d) { return d.is_zyphora(); });
@@ -1024,10 +1024,10 @@ namespace cryptonote
       }
 
       tx_out out;
-      if (dst_entr.is_zyphora() && tx_params.hf_version >= feature::PRIVATE_TOKENS)
+      if (dst_entr.is_zyphora() && tx_params.hf_version >= feature::PRIVACY_TOKENS)
       {
-        LOG_PRINT_L0("Constructing private token output");
-        // ── HF21: private token output ──────────────────────────────────
+        LOG_PRINT_L0("Constructing privacy token output");
+        // ── HF21: privacy token output ──────────────────────────────────
         // stealth_address is already out_eph_public_key (derived above)
         tx_out_zyphora zout;
         zout.stealth_address = out_eph_public_key;
@@ -1098,7 +1098,7 @@ namespace cryptonote
       // In mint transaction, we are creating new coins, so we don't need to add the amount to the summary_outs_money
       // In deploy transaction, we are creating a new token, so we don't need to add the amount to the summary_outs_money
       // Zyphora destination amounts are token-denominated, not BDX, and must not be mixed into the native money balance check.
-      if(tx.type != txtype::register_private_token && tx.type != txtype::mint_token && !dst_entr.is_zyphora())
+      if(tx.type != txtype::register_privacy_token && tx.type != txtype::mint_token && !dst_entr.is_zyphora())
         summary_outs_money += dst_entr.amount;
     }
     CHECK_AND_ASSERT_MES(additional_tx_public_keys.size() == additional_tx_keys.size(), false, "Internal error creating additional public keys");
@@ -1134,7 +1134,7 @@ namespace cryptonote
     rct::key aop_secret_x   = rct::zero();
     rct::key aop_commitment = rct::zero(); // full TDO amount commitment C (used by the burn balance proof)
     crypto::token_id aop_token_id = crypto::null_tid; // mint token id, used as the surjection ring member
-    if (tx.type == txtype::register_private_token || tx.type == txtype::mint_token || tx.type == txtype::burn_token)
+    if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token || tx.type == txtype::burn_token)
     {
       tx_extra_token_descriptor_operation tdo{};
       if (!get_token_descriptor_operation_from_tx_extra(tx.extra, tdo))
@@ -1145,7 +1145,7 @@ namespace cryptonote
 
       uint64_t declared_amount = 0;
       crypto::token_id token_id = crypto::null_tid;
-      if (tx.type == txtype::register_private_token)
+      if (tx.type == txtype::register_privacy_token)
       {
         declared_amount = tdo.descriptor.current_supply;
         token_id        = get_or_calculate_token_id(tdo);
@@ -1435,7 +1435,7 @@ namespace cryptonote
                                                     outamounts,
                                                     amount_in - amount_out, mixRing, native_amount_keys, msout ? &kLRki : NULL,
                                                     msout, index, outSk, rct_config, hwdev,
-                                                    tx_params.hf_version >= feature::PRIVATE_TOKENS);
+                                                    tx_params.hf_version >= feature::PRIVACY_TOKENS);
           }
           else {
               LOG_PRINT_L2("genRct");
@@ -1555,7 +1555,7 @@ namespace cryptonote
           //
           // Ring members (one BGE proof per zy output, hidden real index):
           //   - every spent zy input's pseudo-blinded token id (T^p_i), and
-          //   - for register_private_token/mint_token, the token-descriptor-operation's
+          //   - for register_privacy_token/mint_token, the token-descriptor-operation's
           //     own token id H_tdo as a single extra ring member (mirrors Zano's
           //     generate_token_surjection_proof_hf6 "token emission" ring member,
           //     ogc.ao_token_id_pt). Without this, a multi-output mint could bind
@@ -1799,7 +1799,7 @@ namespace cryptonote
             aop.flags = 1; // composition_proof present
             tx.token_proofs.push_back(std::move(aop));
             MINFO("Attached token amount-commitment proof for "
-                  << (tx.type == txtype::register_private_token ? "deploy"
+                  << (tx.type == txtype::register_privacy_token ? "deploy"
                       : tx.type == txtype::mint_token ? "mint" : "burn")
                   << " tx");
           }
@@ -1831,7 +1831,7 @@ namespace cryptonote
           // tx_out_zyphora outputs carry their own commitments/masks and are
           // skipped when building dest_keys/outamounts above, so they never
           // enter outSk. Compare against the native output count, not the full
-          // tx.vout size (which also includes private-token outputs).
+          // tx.vout size (which also includes privacy-token outputs).
           size_t native_out_count = 0;
           for (const auto& o : tx.vout)
             if (!std::holds_alternative<tx_out_zyphora>(o.target))

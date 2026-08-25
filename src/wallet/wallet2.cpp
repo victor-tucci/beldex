@@ -1803,7 +1803,7 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
     }
   }
 
-  // ── HF21: private token output path ─────────────────────────────────
+  // ── HF21: privacy token output path ─────────────────────────────────
   if (std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[vout_index].target))
   {
     const auto& zout = var::get<cryptonote::tx_out_zyphora>(tx.vout[vout_index].target);
@@ -2210,7 +2210,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
               expand_subaddresses(tx_scan_info[o].received->index);
             if (std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[o].target))
             {
-              // HF21 private token output
+              // HF21 privacy token output
               td.m_mask       = tx_scan_info[o].mask;
               td.m_rct        = true;
               td.m_token_id   = tx_scan_info[o].token_id;
@@ -2981,7 +2981,7 @@ void wallet2::process_parsed_blocks(uint64_t start_height, const std::vector<cry
 
       // Determine the pubkey for ownership check.
       // txout_to_key  → use .key (BDX)
-      // tx_out_zyphora → use .stealth_address (HF21 private token)
+      // tx_out_zyphora → use .stealth_address (HF21 privacy token)
       // Other types (txout_to_script etc.) → skip
       const crypto::public_key *key_ptr = nullptr;
       if (std::holds_alternative<cryptonote::txout_to_key>(o.target))
@@ -8288,7 +8288,7 @@ byte_and_output_fees wallet2::get_dynamic_base_fee_estimate() const
   if (m_node_rpc_proxy.get_dynamic_base_fee_estimate(FEE_ESTIMATE_GRACE_BLOCKS, fees))
     return fees;
 
-  if(use_fork_rules(hf::hf21_private_tokens))
+  if(use_fork_rules(hf::hf21_privacy_tokens))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V21}; 
   else if(use_fork_rules(hf::hf17_POS))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V17}; 
@@ -10570,7 +10570,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
 
   // calculate total amount being sent to all destinations
   // throw if total amount overflows uint64_t
-  if(tx_params.tx_type == txtype::register_private_token)
+  if(tx_params.tx_type == txtype::register_privacy_token)
   {
     for(auto& dt: dsts)
     {
@@ -11715,12 +11715,12 @@ bool wallet2::light_wallet_key_image_is_ours(const crypto::key_image& key_image,
 // This system allows for sending (almost) the entire balance, since it does
 // not generate spurious change in all txes, thus decreasing the instantaneous
 // usable balance.
-// ── HF21: create_private_token_registration_tx ─────────────────────────────────────────────
-// Build a register_private_token or mint_token transaction.
+// ── HF21: create_privacy_token_registration_tx ─────────────────────────────────────────────
+// Build a register_privacy_token or mint_token transaction.
 // Pads ZY destinations with self-sends to own subaddress[0] to reach
 // MIN_TOKEN_MINT_OUTPUTS, satisfying the blockchain fan-out rule and
 // immediately creating ring members for future spends of the new token.
-std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
+std::vector<wallet2::pending_tx> wallet2::create_privacy_token_registration_tx(
     std::vector<cryptonote::tx_destination_entry> dsts,
     const crypto::token_id& token_id,
     const size_t fake_outs_count,
@@ -11753,14 +11753,14 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
       dsts.push_back(dummy);
     }
 
-    MINFO("create_private_token_registration_tx: added " << needed
+    MINFO("create_privacy_token_registration_tx: added " << needed
           << " self-send outputs to reach MIN_TOKEN_MINT_OUTPUTS ("
           << cryptonote::MIN_TOKEN_MINT_OUTPUTS << ")");
   }
 
   for(auto dest: dsts)
   {
-    MINFO("create_private_token_registration_tx: amount " << dest.amount << ", is_subaddress " << dest.is_subaddress << ", token_id " << dest.token_id);
+    MINFO("create_privacy_token_registration_tx: amount " << dest.amount << ", is_subaddress " << dest.is_subaddress << ", token_id " << dest.token_id);
   }
 
   std::string err, err2;
@@ -11779,7 +11779,7 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
   collateral_dest.unlock_time = collateral_unlock_height;
   dsts.push_back(collateral_dest);
 
-  MINFO("create_private_token_registration_tx: locking "
+  MINFO("create_privacy_token_registration_tx: locking "
         << print_money(tokens::REGISTRATION_COLLATERAL_AMOUNT)
         << " collateral until block " << collateral_unlock_height
         << " (" << tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS << " blocks)");
@@ -11788,7 +11788,7 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::register_private_token, priority);
+      *hf_ver, txtype::register_privacy_token, priority);
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11887,7 +11887,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   }
 
   // check the type is token register or not
-  bool const is_token_register_tx = (tx_params.tx_type == txtype::register_private_token);
+  bool const is_token_register_tx = (tx_params.tx_type == txtype::register_privacy_token);
     LOG_PRINT_L0("is_token_register_tx:" << is_token_register_tx);
   if (is_token_register_tx)
   {
@@ -12169,7 +12169,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     THROW_WALLET_EXCEPTION_IF(total_needed_money > unlocked_balance_subtotal || min_fee + fixed_fee > unlocked_balance_subtotal, error::not_enough_unlocked_money,
         unlocked_balance_subtotal, needed_money, 0);
     
-    // For register_private_token we mint the token in this transaction, so only the native
+    // For register_privacy_token we mint the token in this transaction, so only the native
     // balance used to pay fees needs to exist in the wallet.
     if (!is_token_register_tx && !is_token_mint_tx)
     {
@@ -15778,7 +15778,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
       // create outgoing payment
       process_outgoing(*spent_txid, spent_tx, e["block_height"], e["block_timestamp"], tx_money_spent_in_ins, tx_money_got_in_outs, subaddr_account, subaddr_indices);
 
-      // HF21: If this transaction spent private tokens, deduce the amount
+      // HF21: If this transaction spent privacy tokens, deduce the amount
       // sent to others (spent - change) and populate a fake destination entry
       // so the wallet correctly tracks the token transfer amount.
       if (!token_spent.empty())
