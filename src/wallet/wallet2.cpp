@@ -11790,6 +11790,10 @@ std::vector<wallet2::pending_tx> wallet2::create_privacy_token_registration_tx(
   beldex_construct_tx_params tx_params = wallet2::construct_params(
       *hf_ver, txtype::register_privacy_token, priority);
 
+  // NOTE: the tx_extra collateral lock is written during tx construction
+  // (construct_tx_with_tx_key), which is the first point where the collateral
+  // output's blinding mask exists and the last point where tx.extra can still
+  // change before the prefix hash is signed.
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
                                subaddr_indices, tx_params);

@@ -1411,6 +1411,44 @@ namespace cryptonote
               }
           }
 
+          // ── HF21: open the registration collateral output to consensus ──────
+          // A register_private_token tx locks a native collateral output instead
+          // of burning anything, but its amount is hidden in a Pedersen
+          // commitment that a validator cannot open. Publish the amount together
+          // with that output's blinding mask so the daemon can recompute the
+          // commitment and check it. The collateral is the sole native output
+          // carrying a non-zero unlock time (change and ordinary outputs are
+          // unlocked). This has to run here: the mask depends on amount_keys,
+          // which only exist after the output loop above, and tx.extra must be
+          // final before the prefix hash below is signed.
+          if (tx.type == txtype::register_private_token)
+          {
+              size_t collateral_index = tx.vout.size();
+              for (size_t i = 0; i < tx.vout.size(); ++i)
+              {
+                  if (!std::holds_alternative<txout_to_key>(tx.vout[i].target) || tx.get_unlock_time(i) == 0)
+                      continue;
+                  CHECK_AND_ASSERT_MES(collateral_index == tx.vout.size(), false,
+                      "register_private_token tx must have exactly one locked native collateral output");
+                  collateral_index = i;
+              }
+              CHECK_AND_ASSERT_MES(collateral_index < tx.vout.size(), false,
+                  "register_private_token tx is missing its locked native collateral output");
+              CHECK_AND_ASSERT_MES(collateral_index < amount_keys.size(), false,
+                  "Missing amount key for the collateral output");
+
+              tx_extra_collateral_lock collateral_lock{};
+              collateral_lock.amount       = tx.vout[collateral_index].amount; // still plaintext, zeroed just below
+              collateral_lock.mask         = rct::genCommitmentMask(amount_keys[collateral_index]);
+              collateral_lock.output_index = static_cast<uint8_t>(collateral_index);
+
+              remove_field_from_tx_extra<tx_extra_collateral_lock>(tx.extra);
+              if (!add_collateral_lock_to_tx_extra(tx.extra, collateral_lock)) {
+                  LOG_ERROR("failed to add collateral lock to tx extra");
+                  return false;
+              }
+          }
+
           // zero out all amounts to mask rct outputs, real amounts are now encrypted
           for (size_t i = 0; i < tx.vin.size(); ++i) {
               if (sources[i].rct && !sources[i].is_zyphora())

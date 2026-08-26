@@ -3950,12 +3950,44 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
       if (tx.type == txtype::register_privacy_token)
       {
         const uint64_t min_collateral_unlock_height = get_current_blockchain_height() + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS;
+
+        cryptonote::tx_extra_collateral_lock coll_lock;
+        if (!cryptonote::get_collateral_lock_from_tx_extra(tx.extra, coll_lock))
+        {
+          tvc.m_verbose_error = "Token registration missing tx_extra_collateral_lock";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+
+        if (coll_lock.amount < tokens::REGISTRATION_COLLATERAL_AMOUNT)
+        {
+          tvc.m_verbose_error = "Token registration collateral " + std::to_string(coll_lock.amount) +
+                                " is below minimum " + std::to_string(tokens::REGISTRATION_COLLATERAL_AMOUNT);
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+
+        // Recompute the commitment the declared amount and mask imply. A declared
+        // amount the output does not actually hold cannot reproduce the
+        // commitment that is on chain, so this is what binds the two.
+        const rct::key expected_commitment = rct::commit(coll_lock.amount, coll_lock.mask);
         bool has_locked_native_collateral_output = false;
 
+        // tx_out_zarcanum outputs carry their own commitments and are skipped when
+        // the native RingCT vectors are built, so outPk is indexed by the native
+        // outputs alone -- not by tx.vout index.
+        size_t rct_index = 0;
         for (size_t out_index = 0; out_index < tx.vout.size(); ++out_index)
         {
-          if (std::holds_alternative<txout_to_key>(tx.vout[out_index].target) &&
-              tx.get_unlock_time(out_index) >= min_collateral_unlock_height)
+          if (!std::holds_alternative<txout_to_key>(tx.vout[out_index].target))
+            continue;
+
+          const size_t out_rct_index = rct_index++;
+          if (tx.get_unlock_time(out_index) < min_collateral_unlock_height)
+            continue;
+
+          if (out_rct_index < tx.rct_signatures.outPk.size() &&
+              tx.rct_signatures.outPk[out_rct_index].mask == expected_commitment)
           {
             has_locked_native_collateral_output = true;
             break;
@@ -3964,7 +3996,9 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
         if (!has_locked_native_collateral_output)
         {
-          tvc.m_verbose_error = "Token registration requires a locked native collateral output for " +
+          tvc.m_verbose_error = "Token registration requires a locked collateral output of at least " +
+                                std::to_string(tokens::REGISTRATION_COLLATERAL_AMOUNT) +
+                                " whose commitment matches the declared amount, locked for " +
                                 std::to_string(tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS) + " blocks";
           MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
           return false;

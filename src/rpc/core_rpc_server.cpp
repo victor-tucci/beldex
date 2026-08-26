@@ -706,6 +706,7 @@ namespace cryptonote::rpc {
       void operator()(const tx_extra_merge_mining_tag& x) { set("mm_depth", x.depth); set("mm_root", x.merkle_root); }
       void operator()(const tx_extra_additional_pub_keys& x) { set("additional_pubkeys", x.data); }
       void operator()(const tx_extra_burn& x) { set("burn_amount", x.amount); }
+      void operator()(const tx_extra_collateral_lock& x) { set("collateral_amount", x.amount); set("collateral_output_index", x.output_index); }
       static const char* token_op_type_name(token_descriptor_operation_type type) {
         switch (type)
         {
