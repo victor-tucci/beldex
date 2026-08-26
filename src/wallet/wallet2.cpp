@@ -1692,7 +1692,7 @@ void wallet2::check_acc_out_precomp(const tx_out &o, const crypto::key_derivatio
   crypto::public_key out_key;
   if (const auto* tx_key = std::get_if<txout_to_key>(&o.target))
     out_key = tx_key->key;
-  else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&o.target))
+  else if (const auto* zarc = std::get_if<cryptonote::tx_out_zyphora>(&o.target))
     out_key = zarc->stealth_address;
   else
   {
@@ -1739,8 +1739,8 @@ void wallet2::check_acc_out_precomp_once(const tx_out &o, const crypto::key_deri
     already_seen = true;
 }
 //----------------------------------------------------------------------------------------------------
-// HF21: in a mixed tx (native + tx_out_zarcanum outputs), the native rct
-// ecdhInfo/outPk arrays are COMPACTED to non-zarcanum outputs, so a native
+// HF21: in a mixed tx (native + tx_out_zyphora outputs), the native rct
+// ecdhInfo/outPk arrays are COMPACTED to non-zyphora outputs, so a native
 // output's slot in those arrays (rct_index) differs from its position in
 // tx.vout (vout_index). The amount-encryption key, however, is derived by the
 // sender from the VOUT index (generate_output_ephemeral_keys / amount_keys are
@@ -1803,28 +1803,28 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
     }
   }
 
-  // ── HF21: private token output path ─────────────────────────────────
-  if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[vout_index].target))
+  // ── HF21: privacy token output path ─────────────────────────────────
+  if (std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[vout_index].target))
   {
-    const auto& zout = var::get<cryptonote::tx_out_zarcanum>(tx.vout[vout_index].target);
+    const auto& zout = var::get<cryptonote::tx_out_zyphora>(tx.vout[vout_index].target);
 
     uint64_t amount = 0;
     crypto::token_id token_id{};
     rct::key amount_mask{}, token_blinding_mask{};
 
-    bool decoded = cryptonote::decode_zarcanum_output(
+    bool decoded = cryptonote::decode_zyphora_output(
         m_account.get_keys(), zout,
         tx_scan_info.received->derivation, vout_index,
         amount, token_id, amount_mask, token_blinding_mask);
 
     if (!decoded)
     {
-      MERROR("Failed to decode zarcanum output at index " << vout_index);
+      MERROR("Failed to decode zyphora output at index " << vout_index);
       tx_scan_info.error = true;
       return;
     }
 
-    // Zero-value Zarcanum outputs can be created intentionally as deploy/mint
+    // Zero-value Zyphora outputs can be created intentionally as deploy/mint
     // padding placeholders. They are not spendable funds, so skip them quietly.
     if (amount == 0)
       return;
@@ -1837,7 +1837,7 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
         tx_scan_info.in_ephemeral, tx_scan_info.ki,
         m_account.get_device());
     THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error,
-        "Failed to generate key image for zarcanum output");
+        "Failed to generate key image for zyphora output");
 
     tx_scan_info.money_transfered = amount;
     tx_scan_info.mask             = amount_mask;
@@ -1880,12 +1880,12 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
   THROW_WALLET_EXCEPTION_IF(std::find(outs.begin(), outs.end(), vout_index) != outs.end(), error::wallet_internal_error, "Same output cannot be added twice");
   if (tx_scan_info.money_transfered == 0 && !miner_tx)
   {
-    // HF21: native rct ecdhInfo/outPk are compacted to non-zarcanum outputs
-    // (tx_out_zarcanum carry their own commitment), so decodeRct must be
+    // HF21: native rct ecdhInfo/outPk are compacted to non-zyphora outputs
+    // (tx_out_zyphora carry their own commitment), so decodeRct must be
     // indexed by the native-output position, not the vout index.
     size_t rct_index = 0;
     for (size_t k = 0; k < vout_index; ++k)
-      if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
+      if (!std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[k].target))
         ++rct_index;
     tx_scan_info.money_transfered = tools::decodeRct(tx.rct_signatures, tx_scan_info.received->derivation, vout_index, rct_index, tx_scan_info.mask, m_account.get_device());
   }
@@ -2208,9 +2208,9 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
             td.m_subaddr_index = tx_scan_info[o].received->index;
             if (should_expand(tx_scan_info[o].received->index))
               expand_subaddresses(tx_scan_info[o].received->index);
-            if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[o].target))
+            if (std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[o].target))
             {
-              // HF21 private token output
+              // HF21 privacy token output
               td.m_mask       = tx_scan_info[o].mask;
               td.m_rct        = true;
               td.m_token_id   = tx_scan_info[o].token_id;
@@ -2447,8 +2447,8 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
   for(auto& in: tx.vin)
   {
     const bool is_native_input = std::holds_alternative<cryptonote::txin_to_key>(in);
-    const bool is_zc_input = std::holds_alternative<cryptonote::txin_zc_input>(in);
-    if (!is_native_input && !is_zc_input)
+    const bool is_zy_input = std::holds_alternative<cryptonote::txin_zy_input>(in);
+    if (!is_native_input && !is_zy_input)
       continue;
     auto it = m_key_images.find(get_input_key_image(in));
     if(it != m_key_images.end())
@@ -2766,8 +2766,8 @@ void wallet2::process_outgoing(const crypto::hash &txid, const cryptonote::trans
   {
     if (const auto* txin = std::get_if<cryptonote::txin_to_key>(&in))
       entry.first->second.m_rings.push_back(std::make_pair(txin->k_image, txin->key_offsets));
-    else if (const auto* zc_in = std::get_if<cryptonote::txin_zc_input>(&in))
-      entry.first->second.m_rings.push_back(std::make_pair(zc_in->k_image, zc_in->key_offsets));
+    else if (const auto* zy_in = std::get_if<cryptonote::txin_zy_input>(&in))
+      entry.first->second.m_rings.push_back(std::make_pair(zy_in->k_image, zy_in->key_offsets));
   }
   entry.first->second.m_block_height = height;
   entry.first->second.m_timestamp = ts;
@@ -2981,13 +2981,13 @@ void wallet2::process_parsed_blocks(uint64_t start_height, const std::vector<cry
 
       // Determine the pubkey for ownership check.
       // txout_to_key  → use .key (BDX)
-      // tx_out_zarcanum → use .stealth_address (HF21 private token)
+      // tx_out_zyphora → use .stealth_address (HF21 privacy token)
       // Other types (txout_to_script etc.) → skip
       const crypto::public_key *key_ptr = nullptr;
       if (std::holds_alternative<cryptonote::txout_to_key>(o.target))
         key_ptr = &var::get<cryptonote::txout_to_key>(o.target).key;
-      else if (std::holds_alternative<cryptonote::tx_out_zarcanum>(o.target))
-        key_ptr = &var::get<cryptonote::tx_out_zarcanum>(o.target).stealth_address;
+      else if (std::holds_alternative<cryptonote::tx_out_zyphora>(o.target))
+        key_ptr = &var::get<cryptonote::tx_out_zyphora>(o.target).stealth_address;
 
       if (!key_ptr)
         continue;
@@ -6347,7 +6347,7 @@ wallet2::token_balances(uint32_t subaddr_index_major, bool strict) const
   for (const auto& td : m_transfers)
   {
     if (td.m_spent)    continue;
-    if (!td.is_zarcanum()) continue;
+    if (!td.is_zyphora()) continue;
     if (td.m_token_id == crypto::null_tid) continue;
     if (td.m_subaddr_index.major != subaddr_index_major) continue;
     if (strict && !is_transfer_unlocked(td)) continue;
@@ -6459,18 +6459,18 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
     }
   }
 
-  bool has_any_zarcanum_dest = false;
+  bool has_any_zyphora_dest = false;
   for (const auto& d : pd.m_dests) {
-    if (d.is_zarcanum()) {
-      has_any_zarcanum_dest = true;
+    if (d.is_zyphora()) {
+      has_any_zyphora_dest = true;
       break;
     }
   }
 
   for (const auto &d: pd.m_dests) {
-    crypto::token_id actual_token_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.token_id : deduced_token_id;
-    bool is_zarcanum = actual_token_id != crypto::null_tid;
-    if (d.amount == 0 && is_zarcanum)
+    crypto::token_id actual_token_id = (d.is_zyphora() || has_any_zyphora_dest) ? d.token_id : deduced_token_id;
+    bool is_zyphora = actual_token_id != crypto::null_tid;
+    if (d.amount == 0 && is_zyphora)
       continue;
     if (d.addr == cryptonote::null_address)
       continue;
@@ -6478,7 +6478,7 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
     auto& td = result.destinations.back();
     td.amount = d.amount;
     td.address = d.address(nettype(), pd.m_payment_id);
-    if (is_zarcanum)
+    if (is_zyphora)
       td.token_id = tools::type_to_hex(actual_token_id);
   }
 
@@ -6515,7 +6515,7 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
     crypto::token_id first_actual_token_id = crypto::null_tid;
     for (const auto& d : pd.m_dests)
     {
-      crypto::token_id actual_token_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.token_id : deduced_token_id;
+      crypto::token_id actual_token_id = (d.is_zyphora() || has_any_zyphora_dest) ? d.token_id : deduced_token_id;
       if (actual_token_id != crypto::null_tid)
       {
         first_actual_token_id = actual_token_id;
@@ -6530,7 +6530,7 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
         result.amount = 0;
         for (const auto& d : pd.m_dests)
         {
-          crypto::token_id actual_token_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.token_id : deduced_token_id;
+          crypto::token_id actual_token_id = (d.is_zyphora() || has_any_zyphora_dest) ? d.token_id : deduced_token_id;
           if (actual_token_id == first_actual_token_id)
             result.amount += d.amount;
         }
@@ -6589,18 +6589,18 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
     }
   }
 
-  bool has_any_zarcanum_dest = false;
+  bool has_any_zyphora_dest = false;
   for (const auto& d : pd.m_dests) {
-    if (d.is_zarcanum()) {
-      has_any_zarcanum_dest = true;
+    if (d.is_zyphora()) {
+      has_any_zyphora_dest = true;
       break;
     }
   }
 
   for (const auto &d: pd.m_dests) {
-    crypto::token_id actual_token_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.token_id : deduced_token_id;
-    bool is_zarcanum = actual_token_id != crypto::null_tid;
-    if (d.amount == 0 && is_zarcanum)
+    crypto::token_id actual_token_id = (d.is_zyphora() || has_any_zyphora_dest) ? d.token_id : deduced_token_id;
+    bool is_zyphora = actual_token_id != crypto::null_tid;
+    if (d.amount == 0 && is_zyphora)
       continue;
     if (d.addr == cryptonote::null_address)
       continue;
@@ -6608,7 +6608,7 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
     auto& td = result.destinations.back();
     td.amount = d.amount;
     td.address = d.address(nettype(), pd.m_payment_id);
-    if (is_zarcanum)
+    if (is_zyphora)
       td.token_id = tools::type_to_hex(actual_token_id);
   }
 
@@ -6646,7 +6646,7 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
     crypto::token_id first_actual_token_id = crypto::null_tid;
     for (const auto& d : pd.m_dests)
     {
-      crypto::token_id actual_token_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.token_id : deduced_token_id;
+      crypto::token_id actual_token_id = (d.is_zyphora() || has_any_zyphora_dest) ? d.token_id : deduced_token_id;
       if (actual_token_id != crypto::null_tid)
       {
         first_actual_token_id = actual_token_id;
@@ -6661,7 +6661,7 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
         result.amount = 0;
         for (const auto& d : pd.m_dests)
         {
-          crypto::token_id actual_token_id = (d.is_zarcanum() || has_any_zarcanum_dest) ? d.token_id : deduced_token_id;
+          crypto::token_id actual_token_id = (d.is_zyphora() || has_any_zyphora_dest) ? d.token_id : deduced_token_id;
           if (actual_token_id == first_actual_token_id)
             result.amount += d.amount;
         }
@@ -7366,7 +7366,7 @@ void wallet2::add_unconfirmed_tx(const cryptonote::transaction& tx, uint64_t amo
   utd.m_amount_out = 0;
   for (const auto &d: dests)
   {
-    if (!d.is_zarcanum())
+    if (!d.is_zyphora())
       utd.m_amount_out += d.amount;
   }
   utd.m_amount_out += change_amount; // dests does not contain change
@@ -7384,8 +7384,8 @@ void wallet2::add_unconfirmed_tx(const cryptonote::transaction& tx, uint64_t amo
   {
     if (const auto* txin = std::get_if<cryptonote::txin_to_key>(&in))
       utd.m_rings.push_back(std::make_pair(txin->k_image, txin->key_offsets));
-    else if (const auto* zc_in = std::get_if<cryptonote::txin_zc_input>(&in))
-      utd.m_rings.push_back(std::make_pair(zc_in->k_image, zc_in->key_offsets));
+    else if (const auto* zy_in = std::get_if<cryptonote::txin_zy_input>(&in))
+      utd.m_rings.push_back(std::make_pair(zy_in->k_image, zy_in->key_offsets));
   }
 }
 
@@ -7469,7 +7469,7 @@ void wallet2::commit_tx(pending_tx& ptx, bool flash)
     dests = ptx.dests;
     for(size_t idx: ptx.selected_transfers)
     {
-      if (!m_transfers[idx].is_zarcanum())
+      if (!m_transfers[idx].is_zyphora())
         amount_in += m_transfers[idx].amount();
     }
   }
@@ -7680,9 +7680,9 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
         key_images << in->k_image << ' ';
         return true;
       }
-      if (const auto* in_zc = std::get_if<txin_zc_input>(&s_e))
+      if (const auto* in_zy = std::get_if<txin_zy_input>(&s_e))
       {
-        key_images << in_zc->k_image << ' ';
+        key_images << in_zy->k_image << ' ';
         return true;
       }
       return false;
@@ -7749,13 +7749,13 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
     for (size_t i = 0; i < tx.vout.size(); ++i)
     {
       if (!std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target) &&
-          !std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[i].target))
+          !std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[i].target))
         continue;
       crypto::public_key out_key;
       if (std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target))
         out_key = var::get<cryptonote::txout_to_key>(tx.vout[i].target).key;
       else
-        out_key = var::get<cryptonote::tx_out_zarcanum>(tx.vout[i].target).stealth_address;
+        out_key = var::get<cryptonote::tx_out_zyphora>(tx.vout[i].target).stealth_address;
       // if this output is back to this wallet, we can calculate its key image already
       if (!is_out_to_acc_precomp(m_subaddresses, out_key, derivation, additional_derivations, i, hwdev))
         continue;
@@ -8288,7 +8288,7 @@ byte_and_output_fees wallet2::get_dynamic_base_fee_estimate() const
   if (m_node_rpc_proxy.get_dynamic_base_fee_estimate(FEE_ESTIMATE_GRACE_BLOCKS, fees))
     return fees;
 
-  if(use_fork_rules(hf::hf21_private_tokens))
+  if(use_fork_rules(hf::hf21_privacy_tokens))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V21}; 
   else if(use_fork_rules(hf::hf17_POS))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V17}; 
@@ -9873,7 +9873,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       {
         if (m_transfers[idx].is_rct())
         {
-          if (m_transfers[idx].is_zarcanum())
+          if (m_transfers[idx].is_zyphora())
           {
             needs_token_rct_distribution = true;
             max_token_rct_index = std::max(max_token_rct_index, m_transfers[idx].m_global_output_index);
@@ -10097,7 +10097,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       }
       else
       {
-        const bool spending_token = td.is_zarcanum();
+        const bool spending_token = td.is_zyphora();
         auto *picker = spending_token ? gamma_token_picker.get() : gamma_native_picker.get();
         THROW_WALLET_EXCEPTION_IF(!picker, error::wallet_internal_error, "No gamma picker for spend type");
         num_outs = picker->get_num_rct_outs();
@@ -10107,7 +10107,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       }
 
       // Convenience ref to the per-type output_indices for the rct path (bucket rank → real global index).
-      const std::vector<uint64_t> &bucket_indices = !use_histogram && td.is_zarcanum()
+      const std::vector<uint64_t> &bucket_indices = !use_histogram && td.is_zyphora()
           ? token_output_indices : native_output_indices;
 
       // how many fake outs to draw on a pre-fork distribution
@@ -10238,7 +10238,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
           if (amount == 0 && has_rct_distribution)
           {
             // Use the per-type gamma picker; translate bucket rank → real global index via output_indices.
-            const bool spending_token = td.is_zarcanum();
+            const bool spending_token = td.is_zyphora();
             auto *picker  = spending_token ? gamma_token_picker.get()  : gamma_native_picker.get();
             const auto &indices = spending_token ? token_output_indices : native_output_indices;
             THROW_WALLET_EXCEPTION_IF(!picker, error::wallet_internal_error, "No gamma picker for spend type");
@@ -10395,21 +10395,21 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       outs.push_back(std::vector<get_outs_entry>());
       outs.back().reserve(fake_outputs_count + 1);
 
-      // HF21: For ZC outputs the commitment is C = amount*T + mask*G
+      // HF21: For ZY outputs the commitment is C = amount*T + mask*G
       // (T = blinded_token_id), stored directly in amount_commitment. For BDX
       // use the standard formula.
-      const rct::key mask = td.is_zarcanum()
-          ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+      const rct::key mask = td.is_zyphora()
+          ? rct::pk2rct(var::get<cryptonote::tx_out_zyphora>(
                 td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
           : (td.is_rct() ? rct::commit(td.amount(), td.m_mask)
                          : rct::zeroCommit(td.amount()));
 
-      // The public key used in the ring: stealth_address for ZC, .key for BDX.
+      // The public key used in the ring: stealth_address for ZY, .key for BDX.
       const crypto::public_key real_out_key = td.get_public_key();
 
       // The real output's own blinded token id (null for native outputs).
-      const crypto::token_id real_out_blinded_token_id = td.is_zarcanum()
-          ? var::get<cryptonote::tx_out_zarcanum>(
+      const crypto::token_id real_out_blinded_token_id = td.is_zyphora()
+          ? var::get<cryptonote::tx_out_zyphora>(
                 td.m_tx.vout[td.m_internal_output_index].target).blinded_token_id
           : crypto::null_tid;
 
@@ -10429,7 +10429,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       bool use_histogram = amount != 0 || !has_rct_distribution;
       if (!use_histogram)
       {
-        const bool spending_token = td.is_zarcanum();
+        const bool spending_token = td.is_zyphora();
         auto *picker = spending_token ? gamma_token_picker.get() : gamma_native_picker.get();
         THROW_WALLET_EXCEPTION_IF(!picker, error::wallet_internal_error, "No gamma picker for spend type");
         num_outs = picker->get_num_rct_outs();
@@ -10445,7 +10445,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       {
         size_t i = base + n;
         if (get_outputs[i].index == td.m_global_output_index)
-          if (got_outs[i].key == real_out_key)  // handles both txout_to_key and tx_out_zarcanum
+          if (got_outs[i].key == real_out_key)  // handles both txout_to_key and tx_out_zyphora
             if (got_outs[i].mask == mask)
             {
               real_out_found = true;
@@ -10523,14 +10523,14 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     {
       const transfer_details &td = m_transfers[idx];
       std::vector<get_outs_entry> v;
-      // HF21: ZC outputs use stored amount_commitment; BDX uses standard formula.
-      const rct::key mask = td.is_zarcanum()
-          ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+      // HF21: ZY outputs use stored amount_commitment; BDX uses standard formula.
+      const rct::key mask = td.is_zyphora()
+          ? rct::pk2rct(var::get<cryptonote::tx_out_zyphora>(
                 td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
           : (td.is_rct() ? rct::commit(td.amount(), td.m_mask)
                          : rct::zeroCommit(td.amount()));
-      const crypto::token_id blinded_token_id = td.is_zarcanum()
-          ? var::get<cryptonote::tx_out_zarcanum>(
+      const crypto::token_id blinded_token_id = td.is_zyphora()
+          ? var::get<cryptonote::tx_out_zyphora>(
                 td.m_tx.vout[td.m_internal_output_index].target).blinded_token_id
           : crypto::null_tid;
       v.push_back(std::make_tuple(td.m_global_output_index, td.get_public_key(), mask, blinded_token_id));
@@ -10570,12 +10570,12 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
 
   // calculate total amount being sent to all destinations
   // throw if total amount overflows uint64_t
-  if(tx_params.tx_type == txtype::register_private_token)
+  if(tx_params.tx_type == txtype::register_privacy_token)
   {
     for(auto& dt: dsts)
     {
-      THROW_WALLET_EXCEPTION_IF(0 == dt.amount && !dt.is_zarcanum(), error::zero_destination);
-      if(!dt.is_zarcanum())
+      THROW_WALLET_EXCEPTION_IF(0 == dt.amount && !dt.is_zyphora(), error::zero_destination);
+      if(!dt.is_zyphora())
       {
         needed_money += dt.amount;
         LOG_PRINT_L2("transfer: adding native " << print_money(dt.amount) << ", for a total of " << print_money(needed_money));
@@ -10587,7 +10587,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   {
     for (auto& dt : dsts)
     {
-      THROW_WALLET_EXCEPTION_IF(!dt.is_zarcanum(), error::wallet_internal_error, "mint_token transactions must only contain token destinations");
+      THROW_WALLET_EXCEPTION_IF(!dt.is_zyphora(), error::wallet_internal_error, "mint_token transactions must only contain token destinations");
     }
   }
   else
@@ -10595,7 +10595,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     for(auto& dt: dsts)
     {
       THROW_WALLET_EXCEPTION_IF(0 == dt.amount && tx_params.tx_type != txtype::beldex_name_system && tx_params.tx_type != txtype::coin_burn && tx_params.tx_type != txtype::update_token && tx_params.tx_type != txtype::burn_token, error::zero_destination);
-      if(!dt.is_zarcanum())
+      if(!dt.is_zyphora())
       {
         needed_money += dt.amount;
         LOG_PRINT_L2("transfer: adding " << print_money(dt.amount) << ", for a total of " << print_money (needed_money));
@@ -10685,7 +10685,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     transfer_details const &td = m_transfers[transfer_idx];
     has_rct                   |= td.is_rct();
 
-    if(!td.is_zarcanum())
+    if(!td.is_zyphora())
       found_money += td.amount();
     else
       found_tokens[td.get_token_id()] += td.amount();
@@ -10752,14 +10752,14 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     tx_output_entry real_oe;
     real_oe.first = td.m_global_output_index;
     real_oe.second.dest = rct::pk2rct(td.get_public_key());
-    real_oe.second.mask = td.is_zarcanum()
-        ? rct::pk2rct(var::get<cryptonote::tx_out_zarcanum>(
+    real_oe.second.mask = td.is_zyphora()
+        ? rct::pk2rct(var::get<cryptonote::tx_out_zyphora>(
               td.m_tx.vout[td.m_internal_output_index].target).amount_commitment)
         : rct::commit(td.amount(), td.m_mask);
     const size_t real_output_pos = it_to_replace - src.outputs.begin();
     *it_to_replace = real_oe;
-    src.ring_blinded_token_ids[real_output_pos] = td.is_zarcanum()
-        ? var::get<cryptonote::tx_out_zarcanum>(
+    src.ring_blinded_token_ids[real_output_pos] = td.is_zyphora()
+        ? var::get<cryptonote::tx_out_zyphora>(
               td.m_tx.vout[td.m_internal_output_index].target).blinded_token_id
         : crypto::null_tid;
     src.real_out_tx_key = get_tx_pub_key_from_extra(td.m_tx, td.m_pk_index);
@@ -10976,9 +10976,9 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
       key_images << in->k_image << ' ';
       return true;
     }
-    if (const auto* in_zc = std::get_if<txin_zc_input>(&s_e))
+    if (const auto* in_zy = std::get_if<txin_zy_input>(&s_e))
     {
-      key_images << in_zc->k_image << ' ';
+      key_images << in_zy->k_image << ' ';
       return true;
     }
     return false;
@@ -11033,7 +11033,7 @@ std::vector<size_t> wallet2::pick_preferred_rct_inputs(uint64_t needed_money, ui
   for (size_t i = 0; i < m_transfers.size(); ++i)
   {
     const transfer_details& td = m_transfers[i];
-    if (!is_spent(td, false) && !td.m_frozen && td.is_rct() && td.amount() >= needed_money && is_transfer_unlocked(td) && td.m_subaddr_index.major == subaddr_account && subaddr_indices.count(td.m_subaddr_index.minor) == 1 && !td.is_zarcanum())
+    if (!is_spent(td, false) && !td.m_frozen && td.is_rct() && td.amount() >= needed_money && is_transfer_unlocked(td) && td.m_subaddr_index.major == subaddr_account && subaddr_indices.count(td.m_subaddr_index.minor) == 1 && !td.is_zyphora())
     {
       if (td.amount() > m_ignore_outputs_above || td.amount() < m_ignore_outputs_below)
       {
@@ -11053,7 +11053,7 @@ std::vector<size_t> wallet2::pick_preferred_rct_inputs(uint64_t needed_money, ui
   for (size_t i = 0; i < m_transfers.size(); ++i)
   {
     const transfer_details& td = m_transfers[i];
-    if (!is_spent(td, false) && !td.m_frozen && !td.m_key_image_partial && td.is_rct() && is_transfer_unlocked(td) && td.m_subaddr_index.major == subaddr_account && subaddr_indices.count(td.m_subaddr_index.minor) == 1 && !td.is_zarcanum())
+    if (!is_spent(td, false) && !td.m_frozen && !td.m_key_image_partial && td.is_rct() && is_transfer_unlocked(td) && td.m_subaddr_index.major == subaddr_account && subaddr_indices.count(td.m_subaddr_index.minor) == 1 && !td.is_zyphora())
     {
       if (td.amount() > m_ignore_outputs_above || td.amount() < m_ignore_outputs_below)
       {
@@ -11069,7 +11069,7 @@ std::vector<size_t> wallet2::pick_preferred_rct_inputs(uint64_t needed_money, ui
           MDEBUG("Ignoring output " << j << " of amount " << print_money(td2.amount()) << " which is outside prescribed range [" << print_money(m_ignore_outputs_below) << ", " << print_money(m_ignore_outputs_above) << "]");
           continue;
         }
-        if (!is_spent(td2, false) && !td2.m_frozen && !td.m_key_image_partial && td2.is_rct() && td.amount() + td2.amount() >= needed_money && is_transfer_unlocked(td2) && td2.m_subaddr_index == td.m_subaddr_index && !td.is_zarcanum() && !td2.is_zarcanum())
+        if (!is_spent(td2, false) && !td2.m_frozen && !td.m_key_image_partial && td2.is_rct() && td.amount() + td2.amount() >= needed_money && is_transfer_unlocked(td2) && td2.m_subaddr_index == td.m_subaddr_index && !td.is_zyphora() && !td2.is_zyphora())
         {
           // update our picks if those outputs are less related than any we
           // already found. If the same, don't update, and oldest suitable outputs
@@ -11715,12 +11715,12 @@ bool wallet2::light_wallet_key_image_is_ours(const crypto::key_image& key_image,
 // This system allows for sending (almost) the entire balance, since it does
 // not generate spurious change in all txes, thus decreasing the instantaneous
 // usable balance.
-// ── HF21: create_private_token_registration_tx ─────────────────────────────────────────────
-// Build a register_private_token or mint_token transaction.
-// Pads ZC destinations with self-sends to own subaddress[0] to reach
+// ── HF21: create_privacy_token_registration_tx ─────────────────────────────────────────────
+// Build a register_privacy_token or mint_token transaction.
+// Pads ZY destinations with self-sends to own subaddress[0] to reach
 // MIN_TOKEN_MINT_OUTPUTS, satisfying the blockchain fan-out rule and
 // immediately creating ring members for future spends of the new token.
-std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
+std::vector<wallet2::pending_tx> wallet2::create_privacy_token_registration_tx(
     std::vector<cryptonote::tx_destination_entry> dsts,
     const crypto::token_id& token_id,
     const size_t fake_outs_count,
@@ -11729,19 +11729,19 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
     uint32_t subaddr_account,
     std::set<uint32_t> subaddr_indices)
 {
-  // Count how many ZC outputs are in the caller-supplied destinations.
-  size_t zc_count = 0;
+  // Count how many ZY outputs are in the caller-supplied destinations.
+  size_t zy_count = 0;
   for (const auto& d : dsts)
-    if (d.is_zarcanum()) ++zc_count;
+    if (d.is_zyphora()) ++zy_count;
 
   // Pad with zero-value self-sends until we reach the minimum.
   // Each dummy output goes to our own primary address so the wallet
   // receives and tracks them as legitimate ring-member candidates.
-  if (zc_count < cryptonote::MIN_TOKEN_MINT_OUTPUTS)
+  if (zy_count < cryptonote::MIN_TOKEN_MINT_OUTPUTS)
   {
     const cryptonote::account_public_address self_addr =
         m_account.get_keys().m_account_address;
-    const size_t needed = cryptonote::MIN_TOKEN_MINT_OUTPUTS - zc_count;
+    const size_t needed = cryptonote::MIN_TOKEN_MINT_OUTPUTS - zy_count;
 
     for (size_t i = 0; i < needed; ++i)
     {
@@ -11753,14 +11753,14 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
       dsts.push_back(dummy);
     }
 
-    MINFO("create_private_token_registration_tx: added " << needed
+    MINFO("create_privacy_token_registration_tx: added " << needed
           << " self-send outputs to reach MIN_TOKEN_MINT_OUTPUTS ("
           << cryptonote::MIN_TOKEN_MINT_OUTPUTS << ")");
   }
 
   for(auto dest: dsts)
   {
-    MINFO("create_private_token_registration_tx: amount " << dest.amount << ", is_subaddress " << dest.is_subaddress << ", token_id " << dest.token_id);
+    MINFO("create_privacy_token_registration_tx: amount " << dest.amount << ", is_subaddress " << dest.is_subaddress << ", token_id " << dest.token_id);
   }
 
   std::string err, err2;
@@ -11779,7 +11779,7 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
   collateral_dest.unlock_time = collateral_unlock_height;
   dsts.push_back(collateral_dest);
 
-  MINFO("create_private_token_registration_tx: locking "
+  MINFO("create_privacy_token_registration_tx: locking "
         << print_money(tokens::REGISTRATION_COLLATERAL_AMOUNT)
         << " collateral until block " << collateral_unlock_height
         << " (" << tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS << " blocks)");
@@ -11788,7 +11788,7 @@ std::vector<wallet2::pending_tx> wallet2::create_private_token_registration_tx(
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::register_private_token, priority);
+      *hf_ver, txtype::register_privacy_token, priority);
 
   return create_transactions_2(dsts, fake_outs_count, 0 /*unlock_time*/,
                                priority, extra, subaddr_account,
@@ -11887,14 +11887,14 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
   }
 
   // check the type is token register or not
-  bool const is_token_register_tx = (tx_params.tx_type == txtype::register_private_token);
+  bool const is_token_register_tx = (tx_params.tx_type == txtype::register_privacy_token);
     LOG_PRINT_L0("is_token_register_tx:" << is_token_register_tx);
   if (is_token_register_tx)
   {
-    const size_t zc_outputs = std::count_if(dsts.begin(), dsts.end(), [](const auto& d) { return d.is_zarcanum(); });
-    THROW_WALLET_EXCEPTION_IF(zc_outputs != cryptonote::MIN_TOKEN_MINT_OUTPUTS, error::wallet_internal_error,
+    const size_t zy_outputs = std::count_if(dsts.begin(), dsts.end(), [](const auto& d) { return d.is_zyphora(); });
+    THROW_WALLET_EXCEPTION_IF(zy_outputs != cryptonote::MIN_TOKEN_MINT_OUTPUTS, error::wallet_internal_error,
         "Token register txs must have exactly " + std::to_string(cryptonote::MIN_TOKEN_MINT_OUTPUTS) +
-        " zarcanum destinations set, has: " + std::to_string(zc_outputs));
+        " zyphora destinations set, has: " + std::to_string(zy_outputs));
   }
 
   bool const is_token_mint_tx = (tx_params.tx_type == txtype::mint_token);
@@ -12169,7 +12169,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     THROW_WALLET_EXCEPTION_IF(total_needed_money > unlocked_balance_subtotal || min_fee + fixed_fee > unlocked_balance_subtotal, error::not_enough_unlocked_money,
         unlocked_balance_subtotal, needed_money, 0);
     
-    // For register_private_token we mint the token in this transaction, so only the native
+    // For register_privacy_token we mint the token in this transaction, so only the native
     // balance used to pay fees needs to exist in the wallet.
     if (!is_token_register_tx && !is_token_mint_tx)
     {
@@ -12826,7 +12826,7 @@ bool wallet2::sanity_check(const std::vector<wallet2::pending_tx> &ptx_vector, s
   for (size_t i = 0; i < dsts.size(); ++i)
   {
     const cryptonote::tx_destination_entry& d = dsts[i];
-    if(d.is_zarcanum())
+    if(d.is_zyphora())
       continue;
     const bool dest_is_subtractable = subtract_fee_from_outputs.count(i);
     const uint64_t fee_deduction = dest_is_subtractable ? subtractable_fee_deduction : 0;
@@ -14164,9 +14164,9 @@ std::string wallet2::get_spend_proof(const crypto::hash &txid, std::string_view 
     const auto& target = in_td.m_tx.vout[in_td.m_internal_output_index].target;
     if (const auto* tx_key = std::get_if<txout_to_key>(&target))
       in_tx_out_pkey_ptr = &tx_key->key;
-    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&target))
+    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zyphora>(&target))
       in_tx_out_pkey_ptr = &zarc->stealth_address;
-    THROW_WALLET_EXCEPTION_IF(!in_tx_out_pkey_ptr, error::wallet_internal_error, "Output is not txout_to_key or tx_out_zarcanum");
+    THROW_WALLET_EXCEPTION_IF(!in_tx_out_pkey_ptr, error::wallet_internal_error, "Output is not txout_to_key or tx_out_zyphora");
     const crypto::public_key in_tx_pub_key = get_tx_pub_key_from_extra(in_td.m_tx, in_td.m_pk_index);
     const std::vector<crypto::public_key> in_additionakl_tx_pub_keys = get_additional_tx_pub_keys_from_extra(in_td.m_tx);
     keypair in_ephemeral;
@@ -14340,7 +14340,7 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
 {
   received = 0;
 
-  // HF21: tx_out_zarcanum outputs are not present in the native rct
+  // HF21: tx_out_zyphora outputs are not present in the native rct
   // ecdhInfo/outPk arrays (they carry their own commitment). Those arrays are
   // compacted to native (txout_to_key) outputs, so index them by the
   // native-output position, not the vout position n. (mirrors expand_transaction_1)
@@ -14348,12 +14348,12 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
   for (size_t n = 0; n < tx.vout.size(); ++n)
   {
     const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[n].target));
-    const cryptonote::tx_out_zarcanum* const out_zarcanum = std::get_if<cryptonote::tx_out_zarcanum>(std::addressof(tx.vout[n].target));
+    const cryptonote::tx_out_zyphora* const out_zyphora = std::get_if<cryptonote::tx_out_zyphora>(std::addressof(tx.vout[n].target));
 
-    if (!out_key && !out_zarcanum)
+    if (!out_key && !out_zyphora)
       continue;
 
-    crypto::public_key target_stealth_address = out_key ? out_key->key : out_zarcanum->stealth_address;
+    crypto::public_key target_stealth_address = out_key ? out_key->key : out_zyphora->stealth_address;
 
     crypto::public_key derived_out_key;
     bool r = crypto::derive_public_key(derivation, n, address.m_spend_public_key, derived_out_key);
@@ -14371,12 +14371,12 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
     if (found)
     {
       uint64_t amount;
-      if (out_zarcanum)
+      if (out_zyphora)
       {
         crypto::token_id token_id{};
         rct::key amount_mask{}, token_blinding_mask{};
-        bool decoded = cryptonote::decode_zarcanum_output(
-                 m_account.get_keys(), *out_zarcanum, found_derivation, n,
+        bool decoded = cryptonote::decode_zyphora_output(
+                 m_account.get_keys(), *out_zyphora, found_derivation, n,
                  amount, token_id, amount_mask, token_blinding_mask);
         if (decoded)
           token_received[token_id] += amount;
@@ -14906,8 +14906,8 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
     crypto::public_key out_key_pub = crypto::null_pkey;
     if (const cryptonote::txout_to_key* ok = std::get_if<cryptonote::txout_to_key>(&tx.vout[proof.index_in_tx].target))
       out_key_pub = ok->key;
-    else if (const cryptonote::tx_out_zarcanum* zc = std::get_if<cryptonote::tx_out_zarcanum>(&tx.vout[proof.index_in_tx].target))
-      out_key_pub = zc->stealth_address;
+    else if (const cryptonote::tx_out_zyphora* zy = std::get_if<cryptonote::tx_out_zyphora>(&tx.vout[proof.index_in_tx].target))
+      out_key_pub = zy->stealth_address;
     
     THROW_WALLET_EXCEPTION_IF(out_key_pub == crypto::null_pkey, error::wallet_internal_error, "Output key wasn't found");
 
@@ -14976,26 +14976,26 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       // decode rct
       crypto::secret_key shared_secret;
       crypto::derivation_to_scalar(derivation, proof.index_in_tx, shared_secret);
-      // HF21: native rct ecdhInfo is compacted to non-zarcanum outputs; index
+      // HF21: native rct ecdhInfo is compacted to non-zyphora outputs; index
       // it by the native-output position, not the vout index.
       size_t rct_index = 0;
       for (size_t k = 0; k < proof.index_in_tx; ++k)
-        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[k].target))
+        if (!std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[k].target))
           ++rct_index;
       rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[rct_index];
       rct::ecdhDecode(ecdh_info, rct::sk2rct(shared_secret), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
       amount = rct::h2d(ecdh_info.amount);
     }
-    else if (std::holds_alternative<cryptonote::tx_out_zarcanum>(tx.vout[proof.index_in_tx].target))
+    else if (std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[proof.index_in_tx].target))
     {
-      const auto& zout = std::get<cryptonote::tx_out_zarcanum>(tx.vout[proof.index_in_tx].target);
-      rct::key r = cryptonote::zarcanum_derivation_to_scalar(derivation, proof.index_in_tx, "token_blind");
+      const auto& zout = std::get<cryptonote::tx_out_zyphora>(tx.vout[proof.index_in_tx].target);
+      rct::key r = cryptonote::zyphora_derivation_to_scalar(derivation, proof.index_in_tx, "token_blind");
       rct::key rX = rct::scalarmultX(r);
       rct::key token_id_rct;
       rct::subKeys(token_id_rct, rct::tid2rct(zout.blinded_token_id), rX);
       token_id = reinterpret_cast<const crypto::token_id&>(rct::rct2pk(token_id_rct));
 
-      rct::key enc_mask = cryptonote::zarcanum_derivation_to_scalar(derivation, proof.index_in_tx, "enc_amount");
+      rct::key enc_mask = cryptonote::zyphora_derivation_to_scalar(derivation, proof.index_in_tx, "enc_amount");
       uint64_t enc_mask_64;
       memcpy(&enc_mask_64, enc_mask.bytes, sizeof(uint64_t));
       amount = zout.encrypted_amount ^ enc_mask_64;
@@ -15396,9 +15396,9 @@ std::pair<size_t, std::vector<std::pair<crypto::key_image, crypto::signature>>> 
     const crypto::public_key* pkey_ptr = nullptr;
     if (const auto* tx_key = std::get_if<txout_to_key>(&out.target))
       pkey_ptr = &tx_key->key;
-    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&out.target))
+    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zyphora>(&out.target))
       pkey_ptr = &zarc->stealth_address;
-    THROW_WALLET_EXCEPTION_IF(!pkey_ptr, error::wallet_internal_error, "Output is not txout_to_key or tx_out_zarcanum");
+    THROW_WALLET_EXCEPTION_IF(!pkey_ptr, error::wallet_internal_error, "Output is not txout_to_key or tx_out_zyphora");
     const auto pkey = *pkey_ptr;
 
     crypto::public_key tx_pub_key;
@@ -15523,9 +15523,9 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
     const crypto::public_key* pkey_ptr = nullptr;
     if (const auto* tx_key = std::get_if<txout_to_key>(&out.target))
       pkey_ptr = &tx_key->key;
-    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zarcanum>(&out.target))
+    else if (const auto* zarc = std::get_if<cryptonote::tx_out_zyphora>(&out.target))
       pkey_ptr = &zarc->stealth_address;
-    THROW_WALLET_EXCEPTION_IF(!pkey_ptr, error::wallet_internal_error, "Non txout_to_key or tx_out_zarcanum output found");
+    THROW_WALLET_EXCEPTION_IF(!pkey_ptr, error::wallet_internal_error, "Non txout_to_key or tx_out_zyphora output found");
     const auto& pkey = *pkey_ptr;
 
     std::string const key_image_str = tools::type_to_hex(key_image);
@@ -15593,7 +15593,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
   {
     for (const cryptonote::txin_v& in : td.m_tx.vin)
     {
-      if (std::holds_alternative<cryptonote::txin_to_key>(in) || std::holds_alternative<cryptonote::txin_zc_input>(in))
+      if (std::holds_alternative<cryptonote::txin_to_key>(in) || std::holds_alternative<cryptonote::txin_zy_input>(in))
         spent_key_images.insert(std::make_pair(get_input_key_image(in), td.m_txid));
     }
   }
@@ -15687,7 +15687,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
         THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key derivation");
       }
       size_t output_index = 0;
-      // HF21: native rct arrays are compacted to non-zarcanum outputs; track a
+      // HF21: native rct arrays are compacted to non-zyphora outputs; track a
       // separate index for decodeRct (advances only for native outputs).
       size_t rct_index = 0;
       bool miner_tx = cryptonote::is_coinbase(spent_tx);
@@ -15700,13 +15700,13 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
         {
           if (tx_scan_info.money_transfered == 0 && !miner_tx)
           {
-            if (std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+            if (std::holds_alternative<cryptonote::tx_out_zyphora>(out.target))
             {
-              const auto& zout = std::get<cryptonote::tx_out_zarcanum>(out.target);
+              const auto& zout = std::get<cryptonote::tx_out_zyphora>(out.target);
               uint64_t amount = 0;
               crypto::token_id token_id{};
               rct::key amount_mask{}, token_blinding_mask{};
-              bool decoded = cryptonote::decode_zarcanum_output(
+              bool decoded = cryptonote::decode_zyphora_output(
                   keys, zout, tx_scan_info.received->derivation, output_index,
                   amount, token_id, amount_mask, token_blinding_mask);
               if (decoded)
@@ -15729,7 +15729,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
           else
             token_received[tx_scan_info.token_id] += tx_scan_info.money_transfered;
         }
-        if (!std::holds_alternative<cryptonote::tx_out_zarcanum>(out.target))
+        if (!std::holds_alternative<cryptonote::tx_out_zyphora>(out.target))
           ++rct_index;
         ++output_index;
       }
@@ -15741,8 +15741,8 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
       for (const cryptonote::txin_v& in : spent_tx.vin)
       {
         const bool is_native_input = std::holds_alternative<cryptonote::txin_to_key>(in);
-        const bool is_zc_input = std::holds_alternative<cryptonote::txin_zc_input>(in);
-        if (!is_native_input && !is_zc_input)
+        const bool is_zy_input = std::holds_alternative<cryptonote::txin_zy_input>(in);
+        if (!is_native_input && !is_zy_input)
           continue;
         auto it = m_key_images.find(get_input_key_image(in));
         if (it != m_key_images.end())
@@ -15778,7 +15778,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
       // create outgoing payment
       process_outgoing(*spent_txid, spent_tx, e["block_height"], e["block_timestamp"], tx_money_spent_in_ins, tx_money_got_in_outs, subaddr_account, subaddr_indices);
 
-      // HF21: If this transaction spent private tokens, deduce the amount
+      // HF21: If this transaction spent privacy tokens, deduce the amount
       // sent to others (spent - change) and populate a fake destination entry
       // so the wallet correctly tracks the token transfer amount.
       if (!token_spent.empty())
@@ -16022,14 +16022,14 @@ size_t wallet2::import_outputs(const std::pair<size_t, std::vector<tools::wallet
     const std::vector<crypto::public_key> additional_tx_pub_keys = get_additional_tx_pub_keys_from_extra(td.m_tx);
 
     THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target) &&
-                              !std::holds_alternative<cryptonote::tx_out_zarcanum>(td.m_tx.vout[td.m_internal_output_index].target),
+                              !std::holds_alternative<cryptonote::tx_out_zyphora>(td.m_tx.vout[td.m_internal_output_index].target),
         error::wallet_internal_error, "Unsupported output type");
     
     crypto::public_key out_key;
     if (std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target))
       out_key = var::get<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key;
     else
-      out_key = var::get<cryptonote::tx_out_zarcanum>(td.m_tx.vout[td.m_internal_output_index].target).stealth_address;
+      out_key = var::get<cryptonote::tx_out_zyphora>(td.m_tx.vout[td.m_internal_output_index].target).stealth_address;
     bool r = cryptonote::generate_key_image_helper(m_account.get_keys(), m_subaddresses, out_key, tx_pub_key, additional_tx_pub_keys, td.m_internal_output_index, in_ephemeral, td.m_key_image, m_account.get_device());
     THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key image");
     if (should_expand(td.m_subaddr_index))

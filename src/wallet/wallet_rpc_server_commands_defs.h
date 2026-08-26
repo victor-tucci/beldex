@@ -138,7 +138,7 @@ namespace tools::wallet_rpc {
       std::vector<per_subaddress_info> per_subaddress; // Balance information for each subaddress in an account.
       uint64_t blocks_to_unlock;                       // The number of blocks remaining for the balance to unlock
       uint64_t   time_to_unlock;                       // Timestamp of expected unlock
-      // HF21: per-token balances (empty for wallets with no private token outputs)
+      // HF21: per-token balances (empty for wallets with no privacy token outputs)
       std::vector<token_balance_entry> token_balances;
 
       KV_MAP_SERIALIZABLE
@@ -2612,12 +2612,12 @@ This command is only required if the open wallet is one of the owners of a BNS r
     };
   };
 
-  // HF21: Register a new private token on-chain.
-  struct REGISTER_PRIVATE_TOKEN : RESTRICTED
+  // HF21: Register a new privacy token on-chain.
+  struct REGISTER_PRIVACY_TOKEN : RESTRICTED
   {
-    static constexpr auto names() { return NAMES("register_private_token"); }
+    static constexpr auto names() { return NAMES("register_privacy_token"); }
     static constexpr const char* description =
-        "Register a new private token. Pass a JSON descriptor containing: "
+        "Register a new privacy token. Pass a JSON descriptor containing: "
         "ticker, full_name, total_max_supply, current_supply, decimal_point, meta_info.";
 
     struct request
@@ -2676,7 +2676,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     };
   };
 
-  // HF21: Mint additional tokens for an existing private token.
+  // HF21: Mint additional tokens for an existing privacy token.
   struct MINT_TOKEN : RESTRICTED
   {
     static constexpr auto names() { return NAMES("mint_token"); }
@@ -2707,7 +2707,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     };
   };
 
-  // HF21: Burn supply from an existing private token.
+  // HF21: Burn supply from an existing privacy token.
   struct BURN_TOKEN : RESTRICTED
   {
     static constexpr auto names() { return NAMES("burn_token"); }
@@ -2738,7 +2738,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     };
   };
 
-  // HF21: Update an existing private token metadata.
+  // HF21: Update an existing privacy token metadata.
   struct UPDATE_TOKEN : RESTRICTED
   {
     static constexpr auto names() { return NAMES("update_token"); }
@@ -2875,7 +2875,7 @@ This command is only required if the open wallet is one of the owners of a BNS r
     BNS_DECRYPT_VALUE,
     BNS_ENCRYPT_VALUE,
     COIN_BURN,
-    REGISTER_PRIVATE_TOKEN,
+    REGISTER_PRIVACY_TOKEN,
     GET_OWNED_TOKENS,
     MINT_TOKEN,
     BURN_TOKEN,

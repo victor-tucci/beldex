@@ -161,7 +161,7 @@ constexpr uint64_t burn_needed(cryptonote::hf hf_version, cryptonote::token_desc
 
   switch (static_cast<uint8_t>(op_type))
   {
-    case 1: // register_token (register_private_token)
+    case 1: // register_token (register_privacy_token)
       return 0; // Registration uses locked collateral instead of burning BDX.
     case 2: // mint_token
       return basic_fee / 2;  // Slightly low (e.g. 50 BDX)

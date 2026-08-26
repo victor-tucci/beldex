@@ -2034,7 +2034,7 @@ PendingTransaction *WalletImpl::createSweepAllTransaction(std::optional<std::str
 }
 
 EXPORT
-PendingTransaction *WalletImpl::registerPrivateTokenTransaction(const std::string& descriptor_json, std::string& token_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
+PendingTransaction *WalletImpl::registerPrivacyTokenTransaction(const std::string& descriptor_json, std::string& token_id, uint32_t priority, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices)
 {
     clearStatus();
     pauseRefresh();
@@ -2096,7 +2096,7 @@ PendingTransaction *WalletImpl::registerPrivateTokenTransaction(const std::strin
         }
 
         try {
-            transaction->m_pending_tx = w->create_private_token_registration_tx(
+            transaction->m_pending_tx = w->create_privacy_token_registration_tx(
                     dsts,
                     computed_token_id,
                     cryptonote::TX_OUTPUT_DECOYS,

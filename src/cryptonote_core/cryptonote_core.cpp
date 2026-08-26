@@ -1627,7 +1627,7 @@ namespace cryptonote
     if (tx.version >= txversion::v2_ringct)
     {
       const size_t native_outputs = std::count_if(tx.vout.begin(), tx.vout.end(), [](const tx_out& out) {
-        return !std::holds_alternative<tx_out_zarcanum>(out.target);
+        return !std::holds_alternative<tx_out_zyphora>(out.target);
       });
       if (tx.rct_signatures.outPk.size() != native_outputs)
       {
@@ -1904,8 +1904,8 @@ namespace cryptonote
       const std::vector<uint64_t>* key_offsets = nullptr;
       if (const auto* tokey_in = std::get_if<txin_to_key>(&in))
         key_offsets = &tokey_in->key_offsets;
-      else if (const auto* zc_in = std::get_if<txin_zc_input>(&in))
-        key_offsets = &zc_in->key_offsets;
+      else if (const auto* zy_in = std::get_if<txin_zy_input>(&in))
+        key_offsets = &zy_in->key_offsets;
       else
         return false;
 
