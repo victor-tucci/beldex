@@ -2195,6 +2195,17 @@ namespace master_nodes
   {
     std::lock_guard lock(m_mn_mutex);
 
+    // Nothing to unwind if the list is already at or behind the revert point. Blockchain::init()
+    // runs the detach hooks at the current tip on every start -- not because anything detached, but
+    // to drive the subsystem rescan -- and the list load() restores always trails the tip, because
+    // store() only serialises up to the short-term cull window. Treating that as a real detach
+    // sends the code below to the previous STORE_LONG_TERM_STATE_INTERVAL boundary and discards
+    // every state since, turning a rescan of ~1k blocks into one of up to 10k. That replay is not
+    // merely slow: it re-verifies state change votes against quorums it must rebuild as it goes,
+    // and one block it cannot re-verify aborts startup outright.
+    if (m_state.height < height)
+      return;
+
     // We are about to move m_state backwards. Whatever is on disk was written for a chain that has
     // now been rolled back -- possibly a different fork at the same height -- so clear the
     // high-water mark, otherwise checkpoint_state()'s guard suppresses every write until the chain
