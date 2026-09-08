@@ -2475,7 +2475,12 @@ namespace master_nodes
     }
 
     expected_vouts_size += block_leader.payouts.size();
-    expected_vouts_size += static_cast<size_t>(cryptonote::height_has_governance_output(m_blockchain.nettype(), hf_version, height));
+    // HF21: a governance output can also appear on a non-interval height when the block
+    // contains register_privacy_token txs (reward_parts.governance_paid > 0 from
+    // registration_governance_fee) -- see Blockchain::validate_miner_transaction's matching gate.
+    expected_vouts_size += static_cast<size_t>(
+        cryptonote::height_has_governance_output(m_blockchain.nettype(), hf_version, height) ||
+        reward_parts.governance_paid > 0);
 
     if (miner_tx.vout.size() != expected_vouts_size)
     {

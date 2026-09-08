@@ -155,6 +155,16 @@ namespace tokens
 inline constexpr uint64_t REGISTRATION_COLLATERAL_AMOUNT = 10'000 * beldex::COIN;
 inline constexpr uint64_t REGISTRATION_COLLATERAL_LOCK_BLOCKS = 2880 * 30 * 6;
 
+// Registration fee, charged in addition to the locked collateral above.
+// REGISTRATION_FEE_BURN_AMOUNT is consensus-enforced (fed into burn_needed()
+// below, checked against total_burn_required in blockchain.cpp).
+// REGISTRATION_FEE_GOVERNANCE_AMOUNT is NOT consensus-enforced -- the daemon
+// does not verify the governance-wallet payment, so it only takes effect for
+// wallets that build the tx via create_privacy_token_registration_tx.
+inline constexpr uint64_t REGISTRATION_FEE_AMOUNT            = 1'000 * beldex::COIN;
+inline constexpr uint64_t REGISTRATION_FEE_BURN_AMOUNT       = REGISTRATION_FEE_AMOUNT / 2;
+inline constexpr uint64_t REGISTRATION_FEE_GOVERNANCE_AMOUNT = REGISTRATION_FEE_AMOUNT - REGISTRATION_FEE_BURN_AMOUNT;
+
 constexpr uint64_t burn_needed(cryptonote::hf hf_version, cryptonote::token_descriptor_operation_type op_type)
 {
   uint64_t basic_fee = 100 * beldex::COIN; 
@@ -162,7 +172,11 @@ constexpr uint64_t burn_needed(cryptonote::hf hf_version, cryptonote::token_desc
   switch (static_cast<uint8_t>(op_type))
   {
     case 1: // register_token (register_privacy_token)
-      return 0; // Registration uses locked collateral instead of burning BDX.
+      // Half of REGISTRATION_FEE_AMOUNT; the other half (REGISTRATION_FEE_GOVERNANCE_AMOUNT)
+      // is paid to the governance wallet but is wallet-side only, not consensus-enforced
+      // (see REGISTRATION_FEE_AMOUNT comment above). This burn portion IS consensus-enforced,
+      // via this function feeding blockchain.cpp's total_burn_required check.
+      return REGISTRATION_FEE_BURN_AMOUNT;
     case 2: // mint_token
       return basic_fee / 2;  // Slightly low (e.g. 50 BDX)
     case 3: // update_token

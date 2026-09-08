@@ -11787,8 +11787,22 @@ std::vector<wallet2::pending_tx> wallet2::create_privacy_token_registration_tx(
   auto hf_ver = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
+
+  // Registration fee, consensus-enforced (HF21): half of REGISTRATION_FEE_AMOUNT is burned via
+  // tx_params.burn_fixed, the other half via tx_params.governance_fee_fixed. Neither is a wallet
+  // destination -- the daemon carves the governance half out of this block's fee pool and pays
+  // it to the governance wallet in the SAME block's coinbase (see
+  // beldex_miner_tx_context::registration_governance_fee / get_beldex_block_reward), using the
+  // same deterministic-key mechanism as normal governance rewards. This only works because the
+  // amount is a fixed protocol constant for every registration -- see
+  // blockchain.cpp's register_privacy_token fee check.
+  MINFO("create_privacy_token_registration_tx: registration fee — burning "
+        << print_money(tokens::REGISTRATION_FEE_BURN_AMOUNT) << " and paying "
+        << print_money(tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT) << " to the governance wallet");
+
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::register_privacy_token, priority);
+      *hf_ver, txtype::register_privacy_token, priority, tokens::REGISTRATION_FEE_BURN_AMOUNT);
+  tx_params.governance_fee_fixed = tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT;
 
   // NOTE: the tx_extra collateral lock is written during tx construction
   // (construct_tx_with_tx_key), which is the first point where the collateral
@@ -12053,6 +12067,10 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     fixed_fee += burn_fixed;
     THROW_WALLET_EXCEPTION_IF(burn_percent > fee_percent, error::wallet_internal_error, "invalid burn fees: cannot burn more than the tx fee");
   }
+  // HF21: governance_fee_fixed has no tx_extra representation (unlike burn_fixed) and is always
+  // a plain fixed amount, so it doesn't need the swap-out/restore dance above -- just fold it
+  // into the required fee everywhere fixed_fee gets computed.
+  fixed_fee += tx_params.governance_fee_fixed;
 
   // throw if attempting a transaction with no destinations
   THROW_WALLET_EXCEPTION_IF(dsts.empty(), error::zero_destination);

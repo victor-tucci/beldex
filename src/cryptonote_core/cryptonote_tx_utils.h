@@ -84,6 +84,12 @@ namespace cryptonote
     account_public_address miner_block_producer;
     master_nodes::payout  block_leader;         // Winner from the Master Node queuing in the Master Node List.
     uint64_t               batched_governance;   // NOTE: 0 until hardfork v10, then use blockchain::calc_batched_governance_reward
+
+    // HF21: sum of REGISTRATION_FEE_GOVERNANCE_AMOUNT over every register_privacy_token tx
+    // included in this block. Unlike batched_governance (paid only at
+    // GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS), this is paid out in the SAME block as the
+    // registration txs that earmarked it -- see get_beldex_block_reward.
+    uint64_t               registration_governance_fee = 0;
   };
 
   bool construct_miner_tx(
@@ -121,6 +127,7 @@ namespace cryptonote
     uint64_t                 height;
     uint64_t                 fee;
     uint64_t                 batched_governance;   // Optional: 0 hardfork v10, then must be calculated using blockchain::calc_batched_governance_reward
+    uint64_t                 registration_governance_fee = 0; // HF21: see beldex_miner_tx_context::registration_governance_fee
     std::vector<master_nodes::payout_entry> block_leader_payouts = {master_nodes::null_payout_entry};
   };
 
@@ -237,6 +244,12 @@ namespace cryptonote
     // allow these amounts to be burned).
     uint64_t burn_fixed   = 0; // atomic units
     uint64_t burn_percent = 0; // 123 = 1.23x base fee.
+    // HF21: additional required fee (atomic units) that is NOT recorded as burned in tx_extra --
+    // used for the register_privacy_token governance payment, which the daemon carves out of the
+    // block's fee pool and pays to the governance wallet in the same block's coinbase (see
+    // beldex_miner_tx_context::registration_governance_fee). Adds directly to the tx's required
+    // fee wherever burn_fixed does, without touching tx_extra_burn's declared amount.
+    uint64_t governance_fee_fixed = 0; // atomic units
     // Token burn metadata. These fields are only meaningful for txtype::burn_token;
     // native BDX burn amounts continue to use burn_fixed/burn_percent above.
     crypto::token_id burn_token_id = crypto::null_tid;

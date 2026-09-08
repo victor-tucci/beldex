@@ -1369,7 +1369,7 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
 }
 //------------------------------------------------------------------
 // This function validates the miner transaction reward
-bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version)
+bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version, uint64_t registration_governance_fee)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   //validate reward
@@ -1396,6 +1396,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   block_reward_context.fee                       = fee;
   block_reward_context.height                    = height;
   block_reward_context.testnet_override          = nettype() == network_type::TESTNET && height < 386000;
+  block_reward_context.registration_governance_fee = registration_governance_fee;
   if (!calc_batched_governance_reward(height, block_reward_context.batched_governance))
   {
     MERROR_VER("Failed to calculate batched governance reward");
@@ -1421,7 +1422,13 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     }
   }
 
-  if (already_generated_coins != 0 && block_has_governance_output(nettype(), b))
+  // HF21: also verify the governance output whenever registration_governance_fee makes
+  // reward_parts.governance_paid non-zero on a block that isn't otherwise a batched-payout
+  // height (block_has_governance_output is interval-only) -- without this, a block producer
+  // could simply omit the governance output on a non-interval block and keep a registration's
+  // governance fee as ordinary miner fee instead; the only other check on this money is the
+  // "coinbase spends too much" ceiling below, which doesn't fail on UNDER-paying governance.
+  if (already_generated_coins != 0 && (block_has_governance_output(nettype(), b) || reward_parts.governance_paid > 0))
   {
     if (version >= hf::hf17_POS && reward_parts.governance_paid == 0)
     {
@@ -1663,7 +1670,8 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
 
   size_t txs_weight;
   uint64_t fee;
-  if (!m_tx_pool.fill_block_template(b, median_weight, already_generated_coins, txs_weight, fee, expected_reward, b.major_version, height))
+  uint64_t registration_governance_fee;
+  if (!m_tx_pool.fill_block_template(b, median_weight, already_generated_coins, txs_weight, fee, expected_reward, b.major_version, height, registration_governance_fee))
   {
     return false;
   }
@@ -1679,6 +1687,7 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
       info.is_miner
           ? beldex_miner_tx_context::miner_block(m_nettype, info.miner_address, m_master_node_list.get_block_leader())
           : beldex_miner_tx_context::POS_block(m_nettype, info.master_node_payout, m_master_node_list.get_block_leader());
+  miner_tx_context.registration_governance_fee = registration_governance_fee;
   if (!calc_batched_governance_reward(height, miner_tx_context.batched_governance))
   {
     LOG_ERROR("Failed to calculate batched governance reward");
@@ -3973,7 +3982,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         const rct::key expected_commitment = rct::commit(coll_lock.amount, coll_lock.mask);
         bool has_locked_native_collateral_output = false;
 
-        // tx_out_zarcanum outputs carry their own commitments and are skipped when
+        // tx_out_zyphora outputs carry their own commitments and are skipped when
         // the native RingCT vectors are built, so outPk is indexed by the native
         // outputs alone -- not by tx.vout index.
         size_t rct_index = 0;
@@ -4000,6 +4009,26 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
                                 std::to_string(tokens::REGISTRATION_COLLATERAL_AMOUNT) +
                                 " whose commitment matches the declared amount, locked for " +
                                 std::to_string(tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS) + " blocks";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+
+        // HF21: the governance carve-out is paid out of this block's fee POOL, and the pool
+        // receives the NET fee -- gross txnFee minus the burned amount (see get_tx_miner_fee,
+        // which does `fee -= min(fee, burned)`). Validating the GROSS fee here is not enough:
+        // the sender controls the split, so an attacker can declare almost the whole fee as
+        // burned -- passing a gross check while leaving the pool too empty to fund the carve-out.
+        // get_beldex_block_reward then fails and block production HALTS on an otherwise-valid tx.
+        // So require the NET fee (what actually reaches the pool) to cover the governance payment.
+        const uint64_t fee  = tx.rct_signatures.txnFee;
+        const uint64_t burn = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
+        const uint64_t net_fee = fee - burn;
+        if (net_fee < tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT)
+        {
+          tvc.m_verbose_error = "Token registration net fee (" + std::to_string(net_fee) +
+                                " = fee " + std::to_string(fee) + " - burn " + std::to_string(burn) +
+                                ") is below the required governance payment " +
+                                std::to_string(tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT);
           MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
           return false;
         }
@@ -4780,6 +4809,10 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   key_images_container keys;
 
   uint64_t fee_summary = 0;
+  // HF21: sum of REGISTRATION_FEE_GOVERNANCE_AMOUNT over this block's register_privacy_token
+  // txs -- fed into validate_miner_transaction() below to confirm the coinbase pays it out to
+  // the governance wallet (see beldex_miner_tx_context::registration_governance_fee).
+  uint64_t registration_governance_fee_summary = 0;
   auto t_checktx = 0ns;
   auto t_exists = 0ns;
   auto t_pool = 0ns;
@@ -4935,6 +4968,8 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     }
 
     fee_summary += fee;
+    if (tx.type == txtype::register_privacy_token)
+      registration_governance_fee_summary += tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT;
     cumulative_block_weight += tx_weight;
   }
 
@@ -4943,7 +4978,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   auto vmt = std::chrono::steady_clock::now();
   uint64_t base_reward = 0;
   uint64_t already_generated_coins = chain_height ? m_db->get_block_already_generated_coins(chain_height - 1) : 0;
-  if(!validate_miner_transaction(bl, cumulative_block_weight, fee_summary, base_reward, already_generated_coins, get_network_version()))
+  if(!validate_miner_transaction(bl, cumulative_block_weight, fee_summary, base_reward, already_generated_coins, get_network_version(), registration_governance_fee_summary))
   {
     MGINFO_RED("Block " << (chain_height - 1) << " with id: " << id << " has incorrect miner transaction");
     bvc.m_verifivation_failed = true;

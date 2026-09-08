@@ -302,6 +302,7 @@ namespace cryptonote
       block_reward_context.height                    = height;
       block_reward_context.block_leader_payouts      = miner_tx_context.block_leader.payouts;
       block_reward_context.batched_governance        = miner_tx_context.batched_governance;
+      block_reward_context.registration_governance_fee = miner_tx_context.registration_governance_fee;
 
     block_reward_parts reward_parts{};
     if(!get_beldex_block_reward(median_weight, current_block_weight, already_generated_coins, hard_fork_version, reward_parts, block_reward_context))
@@ -524,6 +525,15 @@ namespace cryptonote
         ? beldex_context.batched_governance
         : result.governance_due;
 
+    // HF21: registration_governance_fee is carved out of this block's fee pool (not the
+    // block-subsidy-derived governance_due/governance_paid above) and paid to governance in the
+    // SAME block, on top of whatever the normal batched schedule pays this block (often 0).
+    // Added to governance_paid here; subtracted from miner_fee below once miner_fee's own
+    // (post-penalty) value is known, with a hard failure rather than a saturating subtraction --
+    // silently capping the subtraction would let governance_paid include money that was never
+    // actually deducted from the miner's share, inflating the block's total payout.
+    result.governance_paid += beldex_context.registration_governance_fee;
+
     uint64_t const master_node_reward = master_node_reward_formula(result.original_base_reward, hard_fork_version);
     if (hard_fork_version < hf::hf17_POS)
     {
@@ -548,6 +558,20 @@ namespace cryptonote
         uint64_t const penalty = base_reward_unpenalized - base_reward;
         result.miner_fee = penalty >= beldex_context.fee ? 0 : beldex_context.fee - penalty;
       }
+
+      // HF21: redirect registration_governance_fee away from the block producer's fee share --
+      // it was already added to result.governance_paid above, so keeping it in miner_fee too
+      // would pay it out twice. blockchain.cpp requires each register_privacy_token tx's own fee
+      // to cover its contribution, so this should never fail in practice; a hard failure here
+      // (rather than a saturating subtraction) avoids ever paying governance more than was
+      // actually deducted from the miner's share.
+      if (beldex_context.registration_governance_fee > result.miner_fee)
+      {
+        MERROR("registration_governance_fee (" << beldex_context.registration_governance_fee
+            << ") exceeds available miner fee (" << result.miner_fee << ") after penalty");
+        return false;
+      }
+      result.miner_fee -= beldex_context.registration_governance_fee;
 
       // In HF16, the block producer changes between the Miner and Master Node
       // depending on the state of the Master Node network. The producer is no
@@ -1412,7 +1436,7 @@ namespace cryptonote
           }
 
           // ── HF21: open the registration collateral output to consensus ──────
-          // A register_private_token tx locks a native collateral output instead
+          // A register_privacy_token tx locks a native collateral output instead
           // of burning anything, but its amount is hidden in a Pedersen
           // commitment that a validator cannot open. Publish the amount together
           // with that output's blinding mask so the daemon can recompute the
@@ -1421,7 +1445,7 @@ namespace cryptonote
           // unlocked). This has to run here: the mask depends on amount_keys,
           // which only exist after the output loop above, and tx.extra must be
           // final before the prefix hash below is signed.
-          if (tx.type == txtype::register_private_token)
+          if (tx.type == txtype::register_privacy_token)
           {
               size_t collateral_index = tx.vout.size();
               for (size_t i = 0; i < tx.vout.size(); ++i)
@@ -1429,11 +1453,11 @@ namespace cryptonote
                   if (!std::holds_alternative<txout_to_key>(tx.vout[i].target) || tx.get_unlock_time(i) == 0)
                       continue;
                   CHECK_AND_ASSERT_MES(collateral_index == tx.vout.size(), false,
-                      "register_private_token tx must have exactly one locked native collateral output");
+                      "register_privacy_token tx must have exactly one locked native collateral output");
                   collateral_index = i;
               }
               CHECK_AND_ASSERT_MES(collateral_index < tx.vout.size(), false,
-                  "register_private_token tx is missing its locked native collateral output");
+                  "register_privacy_token tx is missing its locked native collateral output");
               CHECK_AND_ASSERT_MES(collateral_index < amount_keys.size(), false,
                   "Missing amount key for the collateral output");
 
