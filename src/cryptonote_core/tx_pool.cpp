@@ -36,6 +36,7 @@
 #include "common/util.h"
 #include "tx_pool.h"
 #include "cryptonote_tx_utils.h"
+#include "beldex_economy.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_config.h"
@@ -1716,12 +1717,13 @@ end:
   }
   //---------------------------------------------------------------------------------
   //TODO: investigate whether boolean return is appropriate
-  bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &raw_fee, uint64_t &expected_reward, hf version, uint64_t height)
+  bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &raw_fee, uint64_t &expected_reward, hf version, uint64_t height, uint64_t &registration_governance_fee)
   {
     auto locks = tools::unique_locks(m_transactions_lock, m_blockchain);
 
     total_weight         = 0;
     raw_fee              = 0;
+    registration_governance_fee = 0;
     uint64_t best_reward = 0;
     {
       // NOTE: Calculate base line empty block reward
@@ -1863,6 +1865,13 @@ end:
       bl.tx_hashes.push_back(sorted_it.second);
       total_weight += meta.weight;
       raw_fee      += meta.fee;
+      // HF21: accumulated for the FINAL block reward computation only -- the speculative
+      // next_reward_parts estimate above intentionally doesn't account for this yet (it would
+      // require parsing tx to know its type before the reward pre-check runs), so it only
+      // affects fee-maximizing candidate ordering slightly, not the final constructed block's
+      // correctness. construct_miner_tx/get_beldex_block_reward apply the real value below.
+      if (tx.type == txtype::register_privacy_token)
+        registration_governance_fee += tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT;
       net_fee       = next_reward_parts.miner_fee;
       best_reward   = next_reward;
       append_key_images(k_images, tx);
