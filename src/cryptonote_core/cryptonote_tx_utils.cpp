@@ -37,6 +37,7 @@
 #include "common/hex.h"
 #include "cryptonote_tx_utils.h"
 #include "cryptonote_config.h"
+#include "beldex_economy.h"
 #include "blockchain.h"
 #include "cryptonote_basic/miner.h"
 #include "cryptonote_basic/tx_extra.h"
@@ -302,6 +303,7 @@ namespace cryptonote
       block_reward_context.height                    = height;
       block_reward_context.block_leader_payouts      = miner_tx_context.block_leader.payouts;
       block_reward_context.batched_governance        = miner_tx_context.batched_governance;
+      block_reward_context.registration_governance_fee = miner_tx_context.registration_governance_fee;
 
     block_reward_parts reward_parts{};
     if(!get_beldex_block_reward(median_weight, current_block_weight, already_generated_coins, hard_fork_version, reward_parts, block_reward_context))
@@ -524,6 +526,10 @@ namespace cryptonote
         ? beldex_context.batched_governance
         : result.governance_due;
 
+    const uint64_t registration_governance_fee =
+        hard_fork_version >= feature::PRIVACY_TOKENS ? beldex_context.registration_governance_fee : 0;
+    result.governance_paid += registration_governance_fee;
+
     uint64_t const master_node_reward = master_node_reward_formula(result.original_base_reward, hard_fork_version);
     if (hard_fork_version < hf::hf17_POS)
     {
@@ -548,6 +554,13 @@ namespace cryptonote
         uint64_t const penalty = base_reward_unpenalized - base_reward;
         result.miner_fee = penalty >= beldex_context.fee ? 0 : beldex_context.fee - penalty;
       }
+      if (registration_governance_fee > result.miner_fee)
+      {
+        MERROR("registration_governance_fee (" << registration_governance_fee
+            << ") exceeds available miner fee (" << result.miner_fee << ") after penalty");
+        return false;
+      }
+      result.miner_fee -= registration_governance_fee;
 
       // In HF16, the block producer changes between the Miner and Master Node
       // depending on the state of the Master Node network. The producer is no
@@ -1412,7 +1425,7 @@ namespace cryptonote
           }
 
           // ── HF21: open the registration collateral output to consensus ──────
-          // A register_private_token tx locks a native collateral output instead
+          // A register_privacy_token tx locks a native collateral output instead
           // of burning anything, but its amount is hidden in a Pedersen
           // commitment that a validator cannot open. Publish the amount together
           // with that output's blinding mask so the daemon can recompute the
@@ -1421,19 +1434,23 @@ namespace cryptonote
           // unlocked). This has to run here: the mask depends on amount_keys,
           // which only exist after the output loop above, and tx.extra must be
           // final before the prefix hash below is signed.
-          if (tx.type == txtype::register_private_token)
+          if (tx.type == txtype::register_privacy_token)
           {
               size_t collateral_index = tx.vout.size();
               for (size_t i = 0; i < tx.vout.size(); ++i)
               {
-                  if (!std::holds_alternative<txout_to_key>(tx.vout[i].target) || tx.get_unlock_time(i) == 0)
+                  if (!std::holds_alternative<txout_to_key>(tx.vout[i].target))
                       continue;
-                  CHECK_AND_ASSERT_MES(collateral_index == tx.vout.size(), false,
-                      "register_private_token tx must have exactly one locked native collateral output");
+                  if (tx.get_unlock_time(i) == 0 || tx.get_unlock_time(i) >= cryptonote::MAX_BLOCK_NUMBER)
+                      continue; // must be locked, and locked by BLOCK HEIGHT (see C-1)
+                  if (tx.vout[i].amount < tokens::REGISTRATION_COLLATERAL_AMOUNT)
+                      continue;
                   collateral_index = i;
+                  break;
               }
               CHECK_AND_ASSERT_MES(collateral_index < tx.vout.size(), false,
-                  "register_private_token tx is missing its locked native collateral output");
+                  "register_privacy_token tx is missing its height-locked native collateral output of at least "
+                      << tokens::REGISTRATION_COLLATERAL_AMOUNT);
               CHECK_AND_ASSERT_MES(collateral_index < amount_keys.size(), false,
                   "Missing amount key for the collateral output");
 

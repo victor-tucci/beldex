@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "cryptonote_basic/token_descriptor_operation_utils.h"
+#include "cryptonote_basic/token_descriptor.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_config.h"
 #include "serialization/binary_utils.h"
@@ -237,6 +238,11 @@ bool validate_token_descriptor_operation(const tx_extra_token_descriptor_operati
         reason = "register_token operation requires descriptor field";
         return false;
       }
+      if (op.field_is_set(token_field_token_id))
+      {
+        reason = "register_token must not carry an explicit token_id; it is derived from the descriptor";
+        return false;
+      }
       break;
 
     case token_descriptor_operation_type::mint_token:
@@ -295,6 +301,8 @@ bool apply_token_operation_to_state(
         return reject("register_token for existing token");
       if (!op.field_is_set(token_field_descriptor))
         return reject("register_token missing descriptor");
+      if (op.field_is_set(token_field_token_id))
+        return reject("register_token must not carry an explicit token_id; it is derived from the descriptor");
 
       const auto& d = op.descriptor;
       if (d.ticker.empty())
@@ -305,6 +313,12 @@ bool apply_token_operation_to_state(
         return reject("token owner must not be null");
       if (d.current_supply > d.total_max_supply)
         return reject("current_supply exceeds total_max_supply");
+
+      {
+        std::string descriptor_error;
+        if (!validate_token_descriptor_for_registration(d, descriptor_error))
+          return reject("register_token descriptor rejected: " + descriptor_error);
+      }
 
       state.exists = true;
       state.descriptor = d;
@@ -363,6 +377,14 @@ bool apply_token_operation_to_state(
         return reject("update_token cannot modify full_name");
       if (d.decimal_point != state.descriptor.decimal_point)
         return reject("update_token cannot modify decimal_point");
+      if (d.version != state.descriptor.version)
+        return reject("update_token cannot modify descriptor version");
+
+      {
+        std::string descriptor_error;
+        if (!validate_token_descriptor_for_registration(d, descriptor_error))
+          return reject("update_token descriptor rejected: " + descriptor_error);
+      }
 
       state.descriptor = d;
       return true;

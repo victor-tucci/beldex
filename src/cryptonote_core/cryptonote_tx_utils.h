@@ -84,6 +84,7 @@ namespace cryptonote
     account_public_address miner_block_producer;
     master_nodes::payout  block_leader;         // Winner from the Master Node queuing in the Master Node List.
     uint64_t               batched_governance;   // NOTE: 0 until hardfork v10, then use blockchain::calc_batched_governance_reward
+    uint64_t               registration_governance_fee = 0;
   };
 
   bool construct_miner_tx(
@@ -121,6 +122,7 @@ namespace cryptonote
     uint64_t                 height;
     uint64_t                 fee;
     uint64_t                 batched_governance;   // Optional: 0 hardfork v10, then must be calculated using blockchain::calc_batched_governance_reward
+    uint64_t                 registration_governance_fee = 0; // HF21: see beldex_miner_tx_context::registration_governance_fee
     std::vector<master_nodes::payout_entry> block_leader_payouts = {master_nodes::null_payout_entry};
   };
 
@@ -237,6 +239,7 @@ namespace cryptonote
     // allow these amounts to be burned).
     uint64_t burn_fixed   = 0; // atomic units
     uint64_t burn_percent = 0; // 123 = 1.23x base fee.
+    uint64_t governance_fee_fixed = 0; // atomic units
     // Token burn metadata. These fields are only meaningful for txtype::burn_token;
     // native BDX burn amounts continue to use burn_fixed/burn_percent above.
     crypto::token_id burn_token_id = crypto::null_tid;

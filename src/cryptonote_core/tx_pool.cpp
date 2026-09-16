@@ -30,12 +30,15 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <algorithm>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
 #include "common/util.h"
 #include "tx_pool.h"
 #include "cryptonote_tx_utils.h"
+#include "beldex_economy.h"
+#include "cryptonote_basic/token_descriptor_operation_utils.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_config.h"
@@ -1716,12 +1719,13 @@ end:
   }
   //---------------------------------------------------------------------------------
   //TODO: investigate whether boolean return is appropriate
-  bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &raw_fee, uint64_t &expected_reward, hf version, uint64_t height)
+  bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &raw_fee, uint64_t &expected_reward, hf version, uint64_t height, uint64_t &registration_governance_fee, bool exclude_token_registrations)
   {
     auto locks = tools::unique_locks(m_transactions_lock, m_blockchain);
 
     total_weight         = 0;
     raw_fee              = 0;
+    registration_governance_fee = 0;
     uint64_t best_reward = 0;
     {
       // NOTE: Calculate base line empty block reward
@@ -1745,6 +1749,7 @@ end:
     // (otherwise the *block* will fail but validation won't, because validation here won't see the
     // earlier tx has having taken effect, but the block addition will).
     std::unordered_set<crypto::hash> bns_buys;
+    std::unordered_set<crypto::token_id> token_registrations;
   
     LOG_PRINT_L2("Filling block template, median weight " << median_weight << ", " << m_txs_by_fee_and_receive_time.size() << " txes in the pool");
 
@@ -1762,6 +1767,8 @@ end:
         continue;
       }
       LOG_PRINT_L2("Considering " << sorted_it.second << ", weight " << meta.weight << ", current block weight " << total_weight << "/" << max_total_weight << ", current reward " << print_money(best_reward));
+      std::optional<crypto::hash> pending_bns_buy;
+      std::vector<crypto::token_id> pending_token_ids;
 
       // Can not exceed maximum block weight
       if (max_total_weight < total_weight + meta.weight)
@@ -1770,38 +1777,10 @@ end:
         continue;
       }
 
-      // NOTE: Calculate the next block reward for the block producer
-      beldex_block_reward_context next_block_reward_context = {};
-      next_block_reward_context.height                    = height;
-      next_block_reward_context.fee                       = raw_fee + meta.fee;
-
-      block_reward_parts next_reward_parts           = {};
-      if(!get_beldex_block_reward(median_weight, total_weight + meta.weight, already_generated_coins, version, next_reward_parts, next_block_reward_context))
-      {
-        LOG_PRINT_L2("Block reward calculation bug");
-        return false;
-      }
-
-      // NOTE: Use the net fee for comparison (after penalty is applied).
-      // After HF16, penalty is applied on the miner fee. Before, penalty is
-      // applied on the base reward.
-      if (version >= hf::hf17_POS)
-      {
-        next_reward = next_reward_parts.miner_fee;
-      }
-      else
-      {
-        next_reward = next_reward_parts.base_miner + next_reward_parts.miner_fee;
-        assert(next_reward_parts.miner_fee == raw_fee + meta.fee);
-      }
-
-      // If we're getting lower reward tx, don't include this TX
-      if (next_reward < best_reward)
-      {
-        LOG_PRINT_L2("  would decrease reward to " << print_money(next_reward));
-        continue;
-      }
-
+      // NOTE: the transaction has to be fetched and parsed BEFORE the block reward is
+      // computed: from HF21 a register_privacy_token tx diverts part of the block's miner fee
+      // to governance, so the reward calculation is wrong unless we already know whether this
+      // candidate is one.
       cryptonote::blobdata txblob = m_blockchain.get_txpool_tx_blob(sorted_it.second);
       cryptonote::transaction tx;
 
@@ -1852,17 +1831,87 @@ end:
         // (one of the two will just get delayed for a block), and perfectly figuring out
         // whether two might conflict is complicated enough that it's not worth doing here.
         cryptonote::tx_extra_beldex_name_system bns;
-        if (cryptonote::get_field_from_tx_extra(tx.extra, bns) && bns.is_buying() &&
-          !bns_buys.emplace(bns.name_hash).second) {
-
-          LOG_PRINT_L2("  conflicting BNS buy in mempool");
+        if (cryptonote::get_field_from_tx_extra(tx.extra, bns) && bns.is_buying()) {
+          if (bns_buys.count(bns.name_hash)) {
+            LOG_PRINT_L2("  conflicting BNS buy in mempool");
+            continue;
+          }
+          pending_bns_buy = bns.name_hash;
+        }
+      }
+      const bool is_token_registration =
+          tx.type == txtype::register_privacy_token && version >= feature::PRIVACY_TOKENS;
+      if (is_token_registration && exclude_token_registrations)
+      {
+        LOG_PRINT_L2("  token registrations excluded from this template");
+        continue;
+      }
+      if (is_token_registration)
+      {
+        cryptonote::tx_extra_token_descriptor_operation tdo{};
+        size_t tdo_index = 0;
+        bool conflicting = false;
+        while (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo, tdo_index++))
+        {
+          const crypto::token_id tid = cryptonote::get_or_calculate_token_id(tdo);
+          if (token_registrations.count(tid))
+          {
+            conflicting = true;
+            break;
+          }
+          pending_token_ids.push_back(tid);
+        }
+        if (conflicting)
+        {
+          LOG_PRINT_L2("  conflicting token registration in mempool");
           continue;
         }
+      }
+
+      // NOTE: Calculate the next block reward for the block producer
+      beldex_block_reward_context next_block_reward_context = {};
+      next_block_reward_context.height                    = height;
+      next_block_reward_context.fee                       = raw_fee + meta.fee;
+      const uint64_t candidate_registration_governance_fee =
+          registration_governance_fee +
+          (is_token_registration ? tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT : 0);
+      next_block_reward_context.registration_governance_fee = candidate_registration_governance_fee;
+      const size_t reward_weight = total_weight + meta.weight +
+          (candidate_registration_governance_fee ? COINBASE_BLOB_RESERVED_SIZE : 0);
+
+      block_reward_parts next_reward_parts           = {};
+      if(!get_beldex_block_reward(median_weight, reward_weight, already_generated_coins, version, next_reward_parts, next_block_reward_context))
+      {
+        LOG_PRINT_L2("  block reward calculation rejected this tx (insufficient fee for the "
+                     "governance carve-out, or block reward calculation bug); skipping");
+        continue;
+      }
+
+      if (version >= hf::hf17_POS)
+      {
+        next_reward = next_reward_parts.miner_fee;
+      }
+      else
+      {
+        next_reward = next_reward_parts.base_miner + next_reward_parts.miner_fee;
+        assert(next_reward_parts.miner_fee == raw_fee + meta.fee);
+      }
+
+      // If we're getting lower reward tx, don't include this TX
+      if (next_reward < best_reward)
+      {
+        LOG_PRINT_L2("  would decrease reward to " << print_money(next_reward));
+        continue;
       }
 
       bl.tx_hashes.push_back(sorted_it.second);
       total_weight += meta.weight;
       raw_fee      += meta.fee;
+      registration_governance_fee = candidate_registration_governance_fee;
+      if (pending_bns_buy)
+        bns_buys.insert(*pending_bns_buy);
+      for (const auto &tid : pending_token_ids)
+        token_registrations.insert(tid);
       net_fee       = next_reward_parts.miner_fee;
       best_reward   = next_reward;
       append_key_images(k_images, tx);

@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <stdexcept>
 #include "ringct/rctTypes.h"       // rct::key, rct::keyV
 #include "serialization/serialization.h" // BEGIN_SERIALIZE_OBJECT, FIELD
 
@@ -177,6 +178,8 @@ struct BGE_proof_s
       FIELD(f)
       FIELD(y)
       FIELD(z)
+      if (Pk.empty() || f.size() != Pk.size() * 3)
+        throw std::runtime_error("Bad BGE_proof_s serialization");
     END_SERIALIZE()
 };
 
@@ -238,6 +241,10 @@ struct vector_ug_aggregation_proof_s
       FIELD(y0s)
       FIELD(y1s)
       FIELD(c)
+      if (amount_commitments_for_rp_aggregation.empty() ||
+          y0s.size() != amount_commitments_for_rp_aggregation.size() ||
+          y1s.size() != amount_commitments_for_rp_aggregation.size())
+        throw std::runtime_error("Bad vector_ug_aggregation_proof_s serialization");
     END_SERIALIZE()
 };
 

@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <vector>
 #include <cstdint>
+#include <stdexcept>
 #include <sodium/crypto_verify_32.h>
 
 extern "C" {
@@ -203,6 +204,8 @@ namespace rct {
             // FIELD(I) - not serialized, it can be reconstructed
             FIELD(D)
             FIELD(E)
+            if (s_g.empty() || s_g.size() != s_x.size())
+              throw std::runtime_error("Bad clsag_ggx serialization");
         END_SERIALIZE()
     };
 
@@ -710,7 +713,11 @@ namespace rct {
     struct zy_token_surjection_proof
     {
       std::vector<crypto::BGE_proof_s> bge_proofs; // one per ZY output
-      BEGIN_SERIALIZE_OBJECT() FIELD(bge_proofs) END_SERIALIZE()
+      BEGIN_SERIALIZE_OBJECT() 
+      FIELD(bge_proofs)
+        if (bge_proofs.empty())
+          throw std::runtime_error("Bad zy_token_surjection_proof serialization");
+      END_SERIALIZE()
     };
 
     struct zy_balance_proof

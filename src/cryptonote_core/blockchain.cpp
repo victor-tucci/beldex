@@ -1369,7 +1369,7 @@ bool Blockchain::prevalidate_miner_transaction(const block& b, uint64_t height, 
 }
 //------------------------------------------------------------------
 // This function validates the miner transaction reward
-bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version)
+bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_block_weight, uint64_t fee, uint64_t& base_reward, uint64_t already_generated_coins, hf version, uint64_t registration_governance_fee)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   //validate reward
@@ -1396,6 +1396,7 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
   block_reward_context.fee                       = fee;
   block_reward_context.height                    = height;
   block_reward_context.testnet_override          = nettype() == network_type::TESTNET && height < 386000;
+  block_reward_context.registration_governance_fee = registration_governance_fee;
   if (!calc_batched_governance_reward(height, block_reward_context.batched_governance))
   {
     MERROR_VER("Failed to calculate batched governance reward");
@@ -1421,7 +1422,10 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     }
   }
 
-  if (already_generated_coins != 0 && block_has_governance_output(nettype(), b))
+  const bool privacy_tokens_active = version >= feature::PRIVACY_TOKENS;
+  if (already_generated_coins != 0 &&
+      (block_has_governance_output(nettype(), b) ||
+       (privacy_tokens_active && registration_governance_fee > 0)))
   {
     if (version >= hf::hf17_POS && reward_parts.governance_paid == 0)
     {
@@ -1465,8 +1469,10 @@ bool Blockchain::validate_miner_transaction(const block& b, size_t cumulative_bl
     return false;
   }
 
-  CHECK_AND_ASSERT_MES(money_in_use >= reward_parts.miner_fee, false, "base reward calculation bug");
-  base_reward = money_in_use - reward_parts.miner_fee;
+  uint64_t const recycled_fee =
+      reward_parts.miner_fee + (privacy_tokens_active ? registration_governance_fee : 0);
+  CHECK_AND_ASSERT_MES(money_in_use >= recycled_fee, false, "base reward calculation bug");
+  base_reward = money_in_use - recycled_fee;
 
   return true;
 }
@@ -1660,97 +1666,140 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
   }
 
   CHECK_AND_ASSERT_MES(diffic, false, "difficulty overhead.");
-
-  size_t txs_weight;
-  uint64_t fee;
-  if (!m_tx_pool.fill_block_template(b, median_weight, already_generated_coins, txs_weight, fee, expected_reward, b.major_version, height))
+  bool built = false;
+  for (int attempt = 0; attempt < 2 && !built; ++attempt)
   {
-    return false;
-  }
-  pool_cookie = m_tx_pool.cookie();
+    const bool exclude_token_registrations = attempt == 1;
+    const bool ok = [&]() -> bool {
+      b.tx_hashes.clear();
 
-  /*
-   two-phase miner transaction generation: we don't know exact block weight until we prepare block, but we don't know reward until we know
-   block weight, so first miner transaction generated with fake amount of money, and with phase we know think we know expected block weight
-   */
-  //make blocks coin-base tx looks close to real coinbase tx to get truthful blob weight
-  auto hf_version = b.major_version;
-  auto miner_tx_context =
-      info.is_miner
-          ? beldex_miner_tx_context::miner_block(m_nettype, info.miner_address, m_master_node_list.get_block_leader())
-          : beldex_miner_tx_context::POS_block(m_nettype, info.master_node_payout, m_master_node_list.get_block_leader());
-  if (!calc_batched_governance_reward(height, miner_tx_context.batched_governance))
-  {
-    LOG_ERROR("Failed to calculate batched governance reward");
-    return false;
-  }
-
-    crypto::signature security_signature;
-    if ((hf_version >= hf::hf12_security_signature) && info.is_miner){
-        crypto::hash hash = cryptonote::make_security_hash_from(height,
-                                                                b);
-        const std::string skey_string = "1720bda28f39942427bee804dc626cf54ba80f23d82bf173c474785652ac5d0f";
-        crypto::secret_key skey;
-        tools::hex_to_type(skey_string,skey);
-        const std::string pkey_string = "7e709e81ac9c04d2b1704db8dd331db037b570f5e901f6dbc1fe3a98bf2fa9e1";
-
-        crypto::public_key pkey;
-        tools::hex_to_type(pkey_string,pkey);
-        LOG_PRINT_L1("Miner pubkey is " << tools::type_to_hex(pkey));
-
-        crypto::generate_signature(hash, pkey, skey, security_signature);
-        LOG_PRINT_L1("height: " << height << " prev_id:" << b.prev_id << " hash:" << hash << " security_signature:"
-                                << security_signature << " pkey:" << pkey << " diffic:" << diffic);
-        if (!crypto::check_signature(hash, pkey, security_signature)) {
-            LOG_PRINT_L1("wrong signature in construct_miner_tx");
-        } else {
-            LOG_PRINT_L1("correct signature in construct_miner_tx");
-        }
-    }
-
-  bool r = construct_miner_tx(height, median_weight, already_generated_coins, txs_weight, fee, b.miner_tx, miner_tx_context, ex_nonce, hf_version, security_signature);
-
-  CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, first chance");
-  size_t cumulative_weight = txs_weight + get_transaction_weight(b.miner_tx);
-  for (size_t try_count = 0; try_count != 10; ++try_count)
-  {
-    r = construct_miner_tx(height, median_weight, already_generated_coins, cumulative_weight, fee, b.miner_tx, miner_tx_context, ex_nonce, hf_version, security_signature);
-
-    CHECK_AND_ASSERT_MES(r, false, "Failed to construct miner tx, second chance");
-    size_t coinbase_weight = get_transaction_weight(b.miner_tx);
-    if (coinbase_weight > cumulative_weight - txs_weight)
-    {
-      cumulative_weight = txs_weight + coinbase_weight;
-      continue;
-    }
-
-    if (coinbase_weight < cumulative_weight - txs_weight)
-    {
-      size_t delta = cumulative_weight - txs_weight - coinbase_weight;
-      b.miner_tx.extra.insert(b.miner_tx.extra.end(), delta, 0);
-      //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
-      if (cumulative_weight != txs_weight + get_transaction_weight(b.miner_tx))
+      size_t txs_weight;
+      uint64_t fee;
+      uint64_t registration_governance_fee = 0;
+      if (!m_tx_pool.fill_block_template(b, median_weight, already_generated_coins, txs_weight, fee, expected_reward, b.major_version, height, registration_governance_fee, exclude_token_registrations))
       {
-        CHECK_AND_ASSERT_MES(cumulative_weight + 1 == txs_weight + get_transaction_weight(b.miner_tx), false, "unexpected case: cumulative_weight=" << cumulative_weight << " + 1 is not equal txs_cumulative_weight=" << txs_weight << " + get_transaction_weight(b.miner_tx)=" << get_transaction_weight(b.miner_tx));
-        b.miner_tx.extra.resize(b.miner_tx.extra.size() - 1);
-        if (cumulative_weight != txs_weight + get_transaction_weight(b.miner_tx))
+        return false;
+      }
+
+      // defence in depth: if the coinbase cannot be built while paying the registration
+      // carve-out, drop the registrations and build a block without them. Returning false here
+      // stops this node producing ANY block, and since every node runs the same code that is a
+      // network-wide halt -- always the worst available outcome.
+      const bool can_drop_registrations = !exclude_token_registrations && registration_governance_fee > 0;
+      pool_cookie = m_tx_pool.cookie();
+
+      /*
+       two-phase miner transaction generation: we don't know exact block weight until we prepare block, but we don't know reward until we know
+       block weight, so first miner transaction generated with fake amount of money, and with phase we know think we know expected block weight
+       */
+      //make blocks coin-base tx looks close to real coinbase tx to get truthful blob weight
+      auto hf_version = b.major_version;
+      auto miner_tx_context =
+          info.is_miner
+              ? beldex_miner_tx_context::miner_block(m_nettype, info.miner_address, m_master_node_list.get_block_leader())
+              : beldex_miner_tx_context::POS_block(m_nettype, info.master_node_payout, m_master_node_list.get_block_leader());
+      miner_tx_context.registration_governance_fee = registration_governance_fee;
+      if (!calc_batched_governance_reward(height, miner_tx_context.batched_governance))
+      {
+        LOG_ERROR("Failed to calculate batched governance reward");
+        return false;
+      }
+
+        crypto::signature security_signature;
+        if ((hf_version >= hf::hf12_security_signature) && info.is_miner){
+            crypto::hash hash = cryptonote::make_security_hash_from(height,
+                                                                    b);
+            const std::string skey_string = "1720bda28f39942427bee804dc626cf54ba80f23d82bf173c474785652ac5d0f";
+            crypto::secret_key skey;
+            tools::hex_to_type(skey_string,skey);
+            const std::string pkey_string = "7e709e81ac9c04d2b1704db8dd331db037b570f5e901f6dbc1fe3a98bf2fa9e1";
+
+            crypto::public_key pkey;
+            tools::hex_to_type(pkey_string,pkey);
+            LOG_PRINT_L1("Miner pubkey is " << tools::type_to_hex(pkey));
+
+            crypto::generate_signature(hash, pkey, skey, security_signature);
+            LOG_PRINT_L1("height: " << height << " prev_id:" << b.prev_id << " hash:" << hash << " security_signature:"
+                                    << security_signature << " pkey:" << pkey << " diffic:" << diffic);
+            if (!crypto::check_signature(hash, pkey, security_signature)) {
+                LOG_PRINT_L1("wrong signature in construct_miner_tx");
+            } else {
+                LOG_PRINT_L1("correct signature in construct_miner_tx");
+            }
+        }
+
+      bool r = construct_miner_tx(height, median_weight, already_generated_coins, txs_weight, fee, b.miner_tx, miner_tx_context, ex_nonce, hf_version, security_signature);
+
+      if (!r)
+      {
+        if (can_drop_registrations)
         {
-          //fuck, not lucky, -1 makes varint-counter size smaller, in that case we continue to grow with cumulative_weight
-          MDEBUG("Miner tx creation has no luck with delta_extra size = " << delta << " and " << delta - 1);
-          cumulative_weight += delta - 1;
+          MWARNING("Failed to construct miner tx (first chance) with a registration governance fee of "
+                   << print_money(registration_governance_fee) << "; rebuilding the template without token registrations");
+          return true;
+        }
+        MERROR("Failed to construct miner tx, first chance");
+        return false;
+      }
+      size_t cumulative_weight = txs_weight + get_transaction_weight(b.miner_tx);
+      for (size_t try_count = 0; try_count != 10; ++try_count)
+      {
+        r = construct_miner_tx(height, median_weight, already_generated_coins, cumulative_weight, fee, b.miner_tx, miner_tx_context, ex_nonce, hf_version, security_signature);
+
+        if (!r)
+        {
+          if (can_drop_registrations)
+          {
+            MWARNING("Failed to construct miner tx (second chance) with a registration governance fee of "
+                     << print_money(registration_governance_fee) << "; rebuilding the template without token registrations");
+            return true;
+          }
+          MERROR("Failed to construct miner tx, second chance");
+          return false;
+        }
+        size_t coinbase_weight = get_transaction_weight(b.miner_tx);
+        if (coinbase_weight > cumulative_weight - txs_weight)
+        {
+          cumulative_weight = txs_weight + coinbase_weight;
           continue;
         }
-        MDEBUG("Setting extra for block: " << b.miner_tx.extra.size() << ", try_count=" << try_count);
-      }
-    }
-    CHECK_AND_ASSERT_MES(cumulative_weight == txs_weight + get_transaction_weight(b.miner_tx), false, "unexpected case: cumulative_weight=" << cumulative_weight << " is not equal txs_cumulative_weight=" << txs_weight << " + get_transaction_weight(b.miner_tx)=" << get_transaction_weight(b.miner_tx));
 
-    if (!from_block)
-      cache_block_template(b, info.miner_address, ex_nonce, diffic, height, expected_reward, pool_cookie);
-    return true;
+        if (coinbase_weight < cumulative_weight - txs_weight)
+        {
+          size_t delta = cumulative_weight - txs_weight - coinbase_weight;
+          b.miner_tx.extra.insert(b.miner_tx.extra.end(), delta, 0);
+          //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
+          if (cumulative_weight != txs_weight + get_transaction_weight(b.miner_tx))
+          {
+            CHECK_AND_ASSERT_MES(cumulative_weight + 1 == txs_weight + get_transaction_weight(b.miner_tx), false, "unexpected case: cumulative_weight=" << cumulative_weight << " + 1 is not equal txs_cumulative_weight=" << txs_weight << " + get_transaction_weight(b.miner_tx)=" << get_transaction_weight(b.miner_tx));
+            b.miner_tx.extra.resize(b.miner_tx.extra.size() - 1);
+            if (cumulative_weight != txs_weight + get_transaction_weight(b.miner_tx))
+            {
+              //fuck, not lucky, -1 makes varint-counter size smaller, in that case we continue to grow with cumulative_weight
+              MDEBUG("Miner tx creation has no luck with delta_extra size = " << delta << " and " << delta - 1);
+              cumulative_weight += delta - 1;
+              continue;
+            }
+            MDEBUG("Setting extra for block: " << b.miner_tx.extra.size() << ", try_count=" << try_count);
+          }
+        }
+        CHECK_AND_ASSERT_MES(cumulative_weight == txs_weight + get_transaction_weight(b.miner_tx), false, "unexpected case: cumulative_weight=" << cumulative_weight << " is not equal txs_cumulative_weight=" << txs_weight << " + get_transaction_weight(b.miner_tx)=" << get_transaction_weight(b.miner_tx));
+
+        if (!from_block)
+          cache_block_template(b, info.miner_address, ex_nonce, diffic, height, expected_reward, pool_cookie);
+        built = true;
+        return true;
+      }
+      LOG_ERROR("Failed to create_block_template with " << 10 << " tries");
+      if (can_drop_registrations)
+        return true;
+      return false;
+    }();
+    if (!ok)
+      return false;
   }
-  LOG_ERROR("Failed to create_block_template with " << 10 << " tries");
-  return false;
+
+  return built;
 }
 //------------------------------------------------------------------
 bool Blockchain::create_miner_block_template(block& b, const crypto::hash *from_block, const account_public_address& miner_address, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce)
@@ -3018,6 +3067,11 @@ bool Blockchain::check_for_double_spend(const transaction& tx, key_images_contai
       auto r = keys_this_block.insert(in.k_image);
       return r.second && !m_db->has_key_image(in.k_image);
     }
+    else if constexpr (std::is_same_v<T, txin_zy_input>)
+    {
+      auto r = keys_this_block.insert(in.k_image);
+      return r.second && !m_db->has_key_image(in.k_image);
+    }
     else if constexpr (std::is_same_v<T, txin_gen>)
       return true;
     else // txin_to_script*
@@ -3938,9 +3992,14 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         const uint64_t burn = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
         const uint64_t fee  = tx.rct_signatures.txnFee;
 
-        if (burn < total_burn_required || burn > fee)
+        const bool burn_mismatch = (tx.type == txtype::register_privacy_token)
+                                     ? (burn != total_burn_required)
+                                     : (burn < total_burn_required);
+        if (burn_mismatch || burn > fee)
         {
-          tvc.m_verbose_error = "Token transaction requires burning " + std::to_string(total_burn_required) + 
+          tvc.m_verbose_error = "Token transaction requires burning " +
+                                std::string(tx.type == txtype::register_privacy_token ? "exactly " : "at least ") +
+                                std::to_string(total_burn_required) +
                                 " but burned " + std::to_string(burn) + " (fee: " + std::to_string(fee) + ")";
           MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
           return false;
@@ -3949,7 +4008,16 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
       if (tx.type == txtype::register_privacy_token)
       {
-        const uint64_t min_collateral_unlock_height = get_current_blockchain_height() + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS;
+        if (hf_version < feature::PRIVACY_TOKENS)
+        {
+          tvc.m_verbose_error = "privacy token registration is not available before the privacy-token hardfork";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+        const uint64_t chain_height = get_current_blockchain_height();
+        const uint64_t min_collateral_unlock_height =
+            chain_height + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS -
+            tokens::REGISTRATION_COLLATERAL_LOCK_TOLERANCE_BLOCKS;
 
         cryptonote::tx_extra_collateral_lock coll_lock;
         if (!cryptonote::get_collateral_lock_from_tx_extra(tx.extra, coll_lock))
@@ -3967,39 +4035,72 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           return false;
         }
 
-        // Recompute the commitment the declared amount and mask imply. A declared
-        // amount the output does not actually hold cannot reproduce the
-        // commitment that is on chain, so this is what binds the two.
-        const rct::key expected_commitment = rct::commit(coll_lock.amount, coll_lock.mask);
-        bool has_locked_native_collateral_output = false;
-
-        // tx_out_zarcanum outputs carry their own commitments and are skipped when
-        // the native RingCT vectors are built, so outPk is indexed by the native
-        // outputs alone -- not by tx.vout index.
-        size_t rct_index = 0;
-        for (size_t out_index = 0; out_index < tx.vout.size(); ++out_index)
+        // HF21 : validate the collateral output AT the index the tx declares, instead of
+        // rescanning every output for one that happens to match. output_index was serialized
+        // and RPC-exposed but never checked, so the index wallets and explorers were shown
+        // could disagree with the output consensus actually accepted.
+        if (coll_lock.output_index >= tx.vout.size())
         {
-          if (!std::holds_alternative<txout_to_key>(tx.vout[out_index].target))
-            continue;
-
-          const size_t out_rct_index = rct_index++;
-          if (tx.get_unlock_time(out_index) < min_collateral_unlock_height)
-            continue;
-
-          if (out_rct_index < tx.rct_signatures.outPk.size() &&
-              tx.rct_signatures.outPk[out_rct_index].mask == expected_commitment)
-          {
-            has_locked_native_collateral_output = true;
-            break;
-          }
+          tvc.m_verbose_error = "Token registration collateral output_index " +
+                                std::to_string(coll_lock.output_index) + " is out of range (vout size " +
+                                std::to_string(tx.vout.size()) + ")";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
         }
 
-        if (!has_locked_native_collateral_output)
+        const size_t collateral_index = coll_lock.output_index;
+        if (!std::holds_alternative<txout_to_key>(tx.vout[collateral_index].target))
+        {
+          tvc.m_verbose_error = "Token registration collateral output must be a native output";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+
+        // tx_out_zyphora outputs carry their own commitments and are skipped when the native
+        // RingCT vectors are built, so outPk is indexed by the native outputs alone -- not by
+        // tx.vout index.
+        size_t collateral_rct_index = 0;
+        for (size_t i = 0; i < collateral_index; ++i)
+        {
+          if (std::holds_alternative<txout_to_key>(tx.vout[i].target))
+            ++collateral_rct_index;
+        }
+
+        const uint64_t collateral_unlock_time = tx.get_unlock_time(collateral_index);
+        if (!(collateral_unlock_time < cryptonote::MAX_BLOCK_NUMBER &&
+              collateral_unlock_time >= min_collateral_unlock_height))
+        {
+          tvc.m_verbose_error = "Token registration collateral output must be locked by block height, until at least " +
+                                std::to_string(min_collateral_unlock_height) + " (declared unlock time " +
+                                std::to_string(collateral_unlock_time) + ")";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+
+        // Recompute the commitment the declared amount and mask imply. A declared amount the
+        // output does not actually hold cannot reproduce the commitment that is on chain, so
+        // this is what binds the two.
+        const rct::key expected_commitment = rct::commit(coll_lock.amount, coll_lock.mask);
+        if (collateral_rct_index >= tx.rct_signatures.outPk.size() ||
+            tx.rct_signatures.outPk[collateral_rct_index].mask != expected_commitment)
         {
           tvc.m_verbose_error = "Token registration requires a locked collateral output of at least " +
                                 std::to_string(tokens::REGISTRATION_COLLATERAL_AMOUNT) +
                                 " whose commitment matches the declared amount, locked for " +
                                 std::to_string(tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS) + " blocks";
+          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
+          return false;
+        }
+        const uint64_t burned    = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
+        const uint64_t tx_fee    = tx.rct_signatures.txnFee;
+        const uint64_t miner_fee = tx_fee >= burned ? tx_fee - burned : 0;
+        if (miner_fee < tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT)
+        {
+          tvc.m_verbose_error = "Token registration requires a miner fee (fee minus burn) of at least " +
+                                std::to_string(tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT) +
+                                " to fund the governance payment, but the miner fee was " +
+                                std::to_string(miner_fee) + " (fee " + std::to_string(tx_fee) +
+                                ", burned " + std::to_string(burned) + ")";
           MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
           return false;
         }
@@ -4780,6 +4881,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   key_images_container keys;
 
   uint64_t fee_summary = 0;
+  uint64_t registration_governance_fee_summary = 0;
   auto t_checktx = 0ns;
   auto t_exists = 0ns;
   auto t_pool = 0ns;
@@ -4935,6 +5037,8 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     }
 
     fee_summary += fee;
+    if (tx.type == txtype::register_privacy_token && get_network_version() >= feature::PRIVACY_TOKENS)
+      registration_governance_fee_summary += tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT;
     cumulative_block_weight += tx_weight;
   }
 
@@ -4943,7 +5047,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   auto vmt = std::chrono::steady_clock::now();
   uint64_t base_reward = 0;
   uint64_t already_generated_coins = chain_height ? m_db->get_block_already_generated_coins(chain_height - 1) : 0;
-  if(!validate_miner_transaction(bl, cumulative_block_weight, fee_summary, base_reward, already_generated_coins, get_network_version()))
+  if(!validate_miner_transaction(bl, cumulative_block_weight, fee_summary, base_reward, already_generated_coins, get_network_version(), registration_governance_fee_summary))
   {
     MGINFO_RED("Block " << (chain_height - 1) << " with id: " << id << " has incorrect miner transaction");
     bvc.m_verifivation_failed = true;

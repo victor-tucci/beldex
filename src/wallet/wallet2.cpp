@@ -6429,6 +6429,7 @@ wallet::transfer_view wallet2::wallet2::make_transfer_view(const crypto::hash &t
   result.timestamp = pd.m_timestamp;
   result.unlock_time = pd.m_unlock_time;
   result.locked = !is_transfer_unlocked(pd.m_unlock_time, pd.m_block_height, false);
+  result.lock_msg = result.locked ? "locked" : "unlocked";
   result.fee = pd.m_amount_in - pd.m_amount_out;
   uint64_t change = pd.m_change == (uint64_t)-1 ? 0 : pd.m_change; // change may not be known
   result.amount = pd.m_amount_in - change - result.fee;
@@ -6562,6 +6563,7 @@ wallet::transfer_view wallet2::make_transfer_view(const crypto::hash &txid, cons
   result.amount = pd.m_amount_in - pd.m_change - result.fee;
   result.unlock_time = pd.m_tx.unlock_time;
   result.locked = true;
+  result.lock_msg = "locked";
   result.note = get_tx_note(txid);
 
   crypto::token_id deduced_token_id = crypto::null_tid;
@@ -6736,6 +6738,7 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   std::list<std::pair<crypto::hash, tools::wallet2::confirmed_transfer_details>> out;
   std::list<std::pair<crypto::hash, tools::wallet2::unconfirmed_transfer_details>> pending_or_failed;
   std::list<std::pair<crypto::hash, tools::wallet2::pool_payment_details>> pool;
+  const bool include_token_creation_as_in = args.in && !args.out;
 
   MDEBUG("Getting transfers of type(s) " << (args.in ? "in " : "") << (args.out ? "out " : "") << (args.pending ? "pending " : "") << (args.failed ? "failed " : "")
       << (args.pool ? "pool " : "") << " for heights in [" << args.min_height << "," << args.max_height << "]");
@@ -6747,7 +6750,7 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
     size += in.size();
   }
 
-  if (args.out || args.stake)
+  if (args.out || args.stake || include_token_creation_as_in)
   {
     get_payments_out(out, args.min_height, args.max_height, account_index, args.subaddr_indices);
     size += out.size();
@@ -6787,7 +6790,11 @@ void wallet2::get_transfers(get_transfers_args_t args, std::vector<wallet::trans
   }
   for (const auto &o : out)
   {
-    bool add_entry = true;
+    const bool is_token_creation = o.second.m_pay_type == wallet::pay_type::register_token ||
+                                   o.second.m_pay_type == wallet::pay_type::mint_token;
+    bool add_entry = args.out || args.stake;
+    if (include_token_creation_as_in && is_token_creation)
+      add_entry = true;
     if (args.stake && args_count == 1)
       add_entry = o.second.m_pay_type == wallet::pay_type::stake;
     if (args.bns && args_count == 1)
@@ -11787,8 +11794,17 @@ std::vector<wallet2::pending_tx> wallet2::create_privacy_token_registration_tx(
   auto hf_ver = get_hard_fork_version();
   THROW_WALLET_EXCEPTION_IF(!hf_ver, error::wallet_internal_error,
       "Failed to get hard fork version from daemon");
+  THROW_WALLET_EXCEPTION_IF(priority == tools::tx_priority_flash, error::wallet_internal_error,
+      "Privacy token registration cannot use flash priority: the registration burn is fixed by consensus");
+  MINFO("create_privacy_token_registration_tx: registration fee - burning "
+        << print_money(tokens::REGISTRATION_FEE_BURN_AMOUNT) << " and paying "
+        << print_money(tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT)
+        << " to the governance wallet");
+
   beldex_construct_tx_params tx_params = wallet2::construct_params(
-      *hf_ver, txtype::register_privacy_token, priority);
+      *hf_ver, txtype::register_privacy_token, priority,
+      tokens::REGISTRATION_FEE_BURN_AMOUNT);
+  tx_params.governance_fee_fixed = tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT;
 
   // NOTE: the tx_extra collateral lock is written during tx construction
   // (construct_tx_with_tx_key), which is the first point where the collateral
@@ -12053,6 +12069,7 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryp
     fixed_fee += burn_fixed;
     THROW_WALLET_EXCEPTION_IF(burn_percent > fee_percent, error::wallet_internal_error, "invalid burn fees: cannot burn more than the tx fee");
   }
+  fixed_fee += tx_params.governance_fee_fixed;
 
   // throw if attempting a transaction with no destinations
   THROW_WALLET_EXCEPTION_IF(dsts.empty(), error::zero_destination);

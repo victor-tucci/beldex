@@ -8010,6 +8010,27 @@ bool simple_wallet::register_privacy_token(const std::vector<std::string>& args_
                               << tr("  Initial supply: ") << print_token_amount(descriptor.current_supply, descriptor.decimal_point) << "\n"
                               << tr("  Max supply: ") << print_token_amount(descriptor.total_max_supply, descriptor.decimal_point);
 
+    // L-2: the confirmation prompt showed none of what this actually costs. State the
+    // collateral lock (amount, duration and the height it unlocks at) and the registration
+    // fee explicitly, before confirm_and_send_tx asks the user to approve the spend.
+    {
+      std::string height_err;
+      const uint64_t bc_height = m_wallet->get_daemon_blockchain_height(height_err);
+      success_msg_writer() << tr("\nThis registration will also:\n")
+                           << tr("  Lock collateral: ") << print_money(tokens::REGISTRATION_COLLATERAL_AMOUNT)
+                           << tr(" BDX for ") << tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS << tr(" blocks")
+                           << (height_err.empty()
+                                 ? std::string{" (unlocks at block ~"} +
+                                       std::to_string(bc_height + tokens::REGISTRATION_COLLATERAL_LOCK_BLOCKS) + ")"
+                                 : std::string{})
+                           << "\n"
+                           << tr("  Registration fee: ") << print_money(tokens::REGISTRATION_FEE_AMOUNT)
+                           << tr(" BDX (") << print_money(tokens::REGISTRATION_FEE_BURN_AMOUNT)
+                           << tr(" burned, ") << print_money(tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT)
+                           << tr(" to the governance wallet), on top of the network tx fee\n")
+                           << tr("  The locked collateral is returned to you when it unlocks; the fee is not.");
+    }
+
     // Create destination with initial supply - will be minted immediately to wallet
     std::vector<cryptonote::tx_destination_entry> dsts;
     if (descriptor.current_supply > 0)
@@ -10023,6 +10044,73 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
     if (transfer.type == "failed")
       color = epee::console_color_red;
 
+    std::vector<uint32_t> subaddr_minors;
+    std::transform(transfer.subaddr_indices.begin(), transfer.subaddr_indices.end(), std::back_inserter(subaddr_minors),
+        [](const auto& index) { return index.minor; });
+
+    auto format_destination = [&](const auto& output) {
+      std::string destination;
+      if (transfer.pay_type == wallet::pay_type::in ||
+          transfer.pay_type == wallet::pay_type::governance ||
+          transfer.pay_type == wallet::pay_type::master_node ||
+          transfer.pay_type == wallet::pay_type::bns ||
+          transfer.pay_type == wallet::pay_type::miner)
+        destination += output.address.substr(0, 6);
+      else
+        destination += output.address;
+
+      destination += ":" + format_amount_with_token_id(*m_wallet, output.amount, output.token_id);
+      return destination;
+    };
+
+    auto output_lock_msg = [&](const auto& output) {
+      crypto::token_id output_token_id = crypto::null_tid;
+      if (!output.token_id.empty())
+        tools::hex_to_type(output.token_id, output_token_id);
+
+      for (size_t i = 0; i < m_wallet->get_num_transfer_details(); ++i)
+      {
+        const auto& td = m_wallet->get_transfer_details(i);
+        if (td.m_txid != transfer.hash)
+          continue;
+        if (td.amount() != output.amount)
+          continue;
+        if (td.m_token_id != output_token_id)
+          continue;
+        return m_wallet->frozen(td) ? std::string{tr("[frozen]")} :
+            m_wallet->is_transfer_unlocked(td) ? std::string{"unlocked"} : std::string{"locked"};
+      }
+
+      return transfer.lock_msg;
+    };
+
+    auto print_transfer_line = [&](const std::string& amount, const std::string& lock_msg, uint64_t fee, const std::string& destinations) {
+      message_writer(color, false) << fmt::format("{:<8.8} {:<10.10} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}"
+        , (transfer.type.size() ? transfer.type : (transfer.height == 0 && transfer.flash_mempool) ? "flash" : std::to_string(transfer.height))
+        , wallet::pay_type_string(transfer.pay_type)
+        , lock_msg
+        , (transfer.checkpointed ? "checkpointed" : transfer.was_flash ? "flash" : "no")
+        , tools::get_human_readable_timestamp(transfer.timestamp)
+        , amount
+        , tools::type_to_hex(transfer.hash)
+        , transfer.payment_id
+        , print_money(fee)
+        , destinations
+        , tools::join(", ", subaddr_minors)
+        , transfer.note);
+    };
+
+    if ((transfer.pay_type == wallet::pay_type::register_token || transfer.pay_type == wallet::pay_type::mint_token) && transfer.destinations.size() > 1)
+    {
+      bool first = true;
+      for (const auto& output : transfer.destinations)
+      {
+        print_transfer_line(format_amount_with_token_id(*m_wallet, output.amount, output.token_id), output_lock_msg(output), first ? transfer.fee : 0, format_destination(output));
+        first = false;
+      }
+      continue;
+    }
+
     std::string destinations = "-";
     if (!transfer.destinations.empty())
     {
@@ -10032,39 +10120,13 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
         if (!destinations.empty())
           destinations += ", ";
 
-        if (transfer.pay_type == wallet::pay_type::in ||
-            transfer.pay_type == wallet::pay_type::governance ||
-            transfer.pay_type == wallet::pay_type::master_node ||
-            transfer.pay_type == wallet::pay_type::bns ||
-            transfer.pay_type == wallet::pay_type::miner)
-          destinations += output.address.substr(0, 6);
-        else if (transfer.pay_type == wallet::pay_type::coin_burn || transfer.pay_type == wallet::pay_type::burn_token || transfer.pay_type == wallet::pay_type::update_token){
+        if (transfer.pay_type == wallet::pay_type::coin_burn || transfer.pay_type == wallet::pay_type::burn_token || transfer.pay_type == wallet::pay_type::update_token){
             destinations = "-"; continue;}
-        else
-          destinations += output.address;
-
-        destinations += ":" + format_amount_with_token_id(*m_wallet, output.amount, output.token_id);
+        destinations += format_destination(output);
       }
     }
 
-
-    std::vector<uint32_t> subaddr_minors;
-    std::transform(transfer.subaddr_indices.begin(), transfer.subaddr_indices.end(), std::back_inserter(subaddr_minors),
-        [](const auto& index) { return index.minor; });
-
-    message_writer(color, false) << fmt::format("{:<8.8} {:<10.10} {:<8.8} {:<12.12} {:<16.16} {:<20.20} {:64} {:16} {:<14.14} {} {} - {}"
-      , (transfer.type.size() ? transfer.type : (transfer.height == 0 && transfer.flash_mempool) ? "flash" : std::to_string(transfer.height))
-      , wallet::pay_type_string(transfer.pay_type)
-      , transfer.lock_msg
-      , (transfer.checkpointed ? "checkpointed" : transfer.was_flash ? "flash" : "no")
-      , tools::get_human_readable_timestamp(transfer.timestamp)
-      , format_amount_with_token_id(*m_wallet, transfer.amount, transfer.token_id)
-      , tools::type_to_hex(transfer.hash)
-      , transfer.payment_id
-      , print_money(transfer.fee)
-      , destinations
-      , tools::join(", ", subaddr_minors)
-      , transfer.note);
+    print_transfer_line(format_amount_with_token_id(*m_wallet, transfer.amount, transfer.token_id), transfer.lock_msg, transfer.fee, destinations);
   }
 
   return true;
