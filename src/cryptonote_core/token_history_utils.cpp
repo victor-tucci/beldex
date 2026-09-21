@@ -93,7 +93,7 @@ bool verify_token_amount_commitment(const transaction& tx,
   // Burns intentionally destroy the declared amount rather than materializing
   // it as outputs, so their TDO commitment is consumed by the zy_balance_proof
   // instead of being matched against sum(outputs).
-  if (op.operation_type == token_descriptor_operation_type::burn_token)
+  if (op.operation_type == token_descriptor_operation_type::burn_token && tx.type == txtype::burn_token)
     return true;
 
   rct::key sum_out = rct::identity();
@@ -452,6 +452,59 @@ bool validate_tx_token_operations_against_db(
     {
       reason = "token descriptor operation is only allowed in register_privacy_token, mint_token, update_token or burn_token transactions";
       return false;
+    }
+
+    // ── F0 fix: tx.type and the descriptor operation_type MUST be the matching
+    // pair. Consensus rules were historically split across the two fields -- some
+    // keyed on tx.type (surjection ring membership, proof presence), others on
+    // op.operation_type (ownership, "outputs sum to commitment", supply update) --
+    // with nothing forcing them to agree. A mint_token-typed tx carrying a
+    // burn_token op could therefore gain minting power (from tx.type) while
+    // skipping the ownership and conservation checks (which the burn op waives),
+    // letting anyone mint arbitrary amounts of any token. Enforce the bijection
+    // up front so the two fields can never disagree.
+    {
+      bool type_matches = false;
+      switch (op.operation_type)
+      {
+        case token_descriptor_operation_type::register_token: type_matches = (tx.type == txtype::register_privacy_token); break;
+        case token_descriptor_operation_type::mint_token:     type_matches = (tx.type == txtype::mint_token);             break;
+        case token_descriptor_operation_type::update_token:   type_matches = (tx.type == txtype::update_token);           break;
+        case token_descriptor_operation_type::burn_token:     type_matches = (tx.type == txtype::burn_token);             break;
+        default:                                              type_matches = false;                                      break;
+      }
+      if (!type_matches)
+      {
+        reason = "tx.type does not match the token descriptor operation_type (cross-typed token operation rejected)";
+        return false;
+      }
+    }
+
+    // ── F0 fix: exactly one token descriptor operation per token transaction.
+    // verTokenProofs only ever reads the first TDO, so a second TDO could apply a
+    // state change (e.g. a second burn decrementing supply again) that no proof
+    // covers. op_index has already been incremented by the while-condition, so it
+    // equals 1 on the first operation, 2 on the second, etc.
+    if (op_index > 1)
+    {
+      reason = "a token transaction must carry exactly one token descriptor operation";
+      return false;
+    }
+
+    // ── F0 fix: a burn must actually spend token inputs. The balance-proof gate
+    // is keyed on the ZY input count, so a burn with zero ZY inputs bypasses
+    // conservation entirely; such a burn is also semantically meaningless.
+    if (op.operation_type == token_descriptor_operation_type::burn_token)
+    {
+      size_t zy_input_count = 0;
+      for (const auto& in : tx.vin)
+        if (std::holds_alternative<txin_zy_input>(in))
+          ++zy_input_count;
+      if (zy_input_count == 0)
+      {
+        reason = "burn_token transaction must spend at least one privacy-token (ZY) input";
+        return false;
+      }
     }
 
     std::string op_reason;
