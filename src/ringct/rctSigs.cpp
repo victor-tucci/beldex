@@ -1889,6 +1889,7 @@ namespace rct {
                         const std::vector<rct::keyV>& token_id_rings,
                         std::string& reason)
     {
+      try {
         // ── 0. Prevalidate the proof set is well-formed ──────────────────────
         // token_proofs is a self-describing serialized vector, so serialization
         // constrains neither WHICH proofs appear nor how many. Reject duplicates
@@ -2373,6 +2374,17 @@ namespace rct {
         }
 
         return true;
+      }
+      catch (const std::exception& e)
+      {
+        reason = std::string("token proof verification threw: ") + e.what();
+        return false;
+      }
+      catch (...)
+      {
+        reason = "token proof verification threw an unknown exception";
+        return false;
+      }
     }
 
     // ── HF21: CLSAG-GGX (3-layer CLSAG over G, G, X) ──────────────────────────
