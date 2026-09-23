@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -216,6 +217,46 @@ namespace cryptonote
         if (data.name_hash == pool_data.name_hash)
         {
           LOG_PRINT_L1("New TX: " << get_transaction_hash(tx) << ", has TX: " << get_transaction_hash(pool_tx) << " from the pool that is requesting the same BNS entry already.");
+          return true;
+        }
+      }
+    }
+    else if (tx.type == txtype::mint_token)
+    {
+      // At most one mint_token tx per token_id may sit in the pool at a time:
+      // two mints of the same token can each individually validate against
+      // committed DB state (check_tx_inputs never sees the other), but if
+      // both land in the same block the second one can push current_supply
+      // over total_max_supply -- a check that only runs cumulatively at
+      // block-add time (Blockchain::handle_block_to_main_chain), so the
+      // whole block would be built then rejected. Same rationale as the BNS
+      // buy check above; see also token_ops_this_block in fill_block_template
+      // for the (reorg-proof) check that fully closes this at block-build time.
+      cryptonote::tx_extra_token_descriptor_operation data{};
+      if (!cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, data))
+      {
+        MERROR("Could not get token descriptor operation from tx: " << get_transaction_hash(tx) << ", tx to add is possibly invalid, rejecting");
+        return true;
+      }
+      const crypto::token_id token_id = cryptonote::get_or_calculate_token_id(data);
+
+      std::vector<transaction> pool_txs;
+      get_transactions(pool_txs);
+      for (const transaction& pool_tx : pool_txs)
+      {
+        if (pool_tx.type != tx.type)
+          continue;
+
+        cryptonote::tx_extra_token_descriptor_operation pool_data{};
+        if (!cryptonote::get_token_descriptor_operation_from_tx_extra(pool_tx.extra, pool_data))
+        {
+          LOG_PRINT_L1("Could not get token descriptor operation from tx: " << get_transaction_hash(tx) << ", possibly corrupt tx in the pool");
+          return true;
+        }
+
+        if (token_id == cryptonote::get_or_calculate_token_id(pool_data))
+        {
+          LOG_PRINT_L1("New TX: " << get_transaction_hash(tx) << ", has TX: " << get_transaction_hash(pool_tx) << " from the pool that is already minting the same token_id.");
           return true;
         }
       }
@@ -1749,7 +1790,16 @@ end:
     // (otherwise the *block* will fail but validation won't, because validation here won't see the
     // earlier tx has having taken effect, but the block addition will).
     std::unordered_set<crypto::hash> bns_buys;
-    std::unordered_set<crypto::token_id> token_registrations;
+    // Same problem, same fix, for token descriptor operations: at most one
+    // register/mint/update/burn op per token_id can go into a single block,
+    // because Blockchain::handle_block_to_main_chain applies them cumulatively
+    // (pending_token_states) and a second op on the same token_id would see
+    // state the per-tx check_tx_inputs validation never saw (e.g. two mints
+    // that individually validate against committed DB state but together
+    // exceed total_max_supply). Deliberately keyed on token_id only, not on
+    // op type, since ANY second op on the same token_id in one block hits the
+    // same cumulative-state gap.
+    std::unordered_set<crypto::token_id> token_ops_this_block;
   
     LOG_PRINT_L2("Filling block template, median weight " << median_weight << ", " << m_txs_by_fee_and_receive_time.size() << " txes in the pool");
 
@@ -1846,7 +1896,13 @@ end:
         LOG_PRINT_L2("  token registrations excluded from this template");
         continue;
       }
-      if (is_token_registration)
+
+      const bool is_token_tx =
+          version >= feature::PRIVACY_TOKENS &&
+          (is_token_registration || tx.type == txtype::mint_token ||
+           tx.type == txtype::update_token || tx.type == txtype::burn_token);
+
+      if (is_token_tx)
       {
         cryptonote::tx_extra_token_descriptor_operation tdo{};
         size_t tdo_index = 0;
@@ -1854,7 +1910,7 @@ end:
         while (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo, tdo_index++))
         {
           const crypto::token_id tid = cryptonote::get_or_calculate_token_id(tdo);
-          if (token_registrations.count(tid))
+          if (token_ops_this_block.count(tid))
           {
             conflicting = true;
             break;
@@ -1863,7 +1919,7 @@ end:
         }
         if (conflicting)
         {
-          LOG_PRINT_L2("  conflicting token registration in mempool");
+          LOG_PRINT_L2("  conflicting token operation (same token_id already in this block) in mempool");
           continue;
         }
       }
@@ -1911,7 +1967,7 @@ end:
       if (pending_bns_buy)
         bns_buys.insert(*pending_bns_buy);
       for (const auto &tid : pending_token_ids)
-        token_registrations.insert(tid);
+        token_ops_this_block.insert(tid);
       net_fee       = next_reward_parts.miner_fee;
       best_reward   = next_reward;
       append_key_images(k_images, tx);
