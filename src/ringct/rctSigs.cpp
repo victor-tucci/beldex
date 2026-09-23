@@ -1281,7 +1281,7 @@ namespace rct {
     //RCT simple    
     //for post-rct only
     rctSig genRctSimple(const key &message, const ctkeyV & inSk, const keyV & destinations, const std::vector<xmr_amount> &inamounts, const std::vector<xmr_amount> &outamounts, xmr_amount txnFee, const ctkeyM & mixRing, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, const std::vector<unsigned int> & index, ctkeyV &outSk, const RCTConfig &rct_config, hw::device &hwdev, bool hash_bulletproof_plus) {
-        LOG_PRINT_L0("genRctSimple called with " << inSk.size() << " inputs, " << amount_keys.size() << " amount_keys, " << destinations.size() << " outputs, mixin " << mixRing.size() << ", index[0] " << (index.empty() ? 0 : index[0]) << ", kLRki " << (kLRki ? kLRki->size() : 0) << ", msout " << (msout ? 1 : 0));
+        MTRACE("genRctSimple called with " << inSk.size() << " inputs, " << amount_keys.size() << " amount_keys, " << destinations.size() << " outputs, mixin " << mixRing.size() << ", kLRki " << (kLRki ? kLRki->size() : 0) << ", msout " << (msout ? 1 : 0));
         const bool bulletproof_or_plus = rct_config.range_proof_type > RangeProofType::Borromean;
         CHECK_AND_ASSERT_THROW_MES(inamounts.size() > 0, "Empty inamounts");
         CHECK_AND_ASSERT_THROW_MES(inamounts.size() == inSk.size(), "Different number of inamounts/inSk");
@@ -2503,7 +2503,7 @@ namespace rct {
         sc_mulsub(sig.s_g[l].bytes, w_sec_g.bytes, c.bytes, alpha_g.bytes); // s_g[l] = alpha_g - c*w_sec_g
         sc_mulsub(sig.s_x[l].bytes, w_sec_x.bytes, c.bytes, alpha_x.bytes); // s_x[l] = alpha_x - c*w_sec_x
 
-        MWARNING("CLSAG_GGX_Gen: n=" << n << " l=" << l << " message=" << message
+        MTRACE("CLSAG_GGX_Gen: n=" << n << " message=" << message
                  << " mu_P=" << mu_P << " mu_A=" << mu_A << " mu_T=" << mu_T
                  << " I=" << sig.I << " D=" << sig.D << " E=" << sig.E << " c1=" << sig.c1);
 
