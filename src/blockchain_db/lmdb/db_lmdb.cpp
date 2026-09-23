@@ -4483,8 +4483,8 @@ bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_heig
         continue;
     }
     const uint64_t height = ok->data.height;
-    if (to_height > 0 && height > to_height)
-      break;
+    if (output_type == output_distribution_type::token && to_height > 0 && height > to_height)
+     break;
     if (height >= from_height)
     {
       distribution[height - from_height]++;
@@ -4493,6 +4493,10 @@ bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_heig
     }
     else
       base++;
+    // Preserve the pre-token native cumulative tail: count the first output
+    // above to_height before stopping. RPC callers trim the tail separately.
+    if (to_height > 0 && height > to_height)
+      break;
   }
 
   distribution[0] += base;

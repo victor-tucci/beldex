@@ -372,17 +372,21 @@ bool verify_double_schnorr_sig(const rct::key&              msg,
 //   - Zyphora's c_point_X replaced with rct::scalarmultX()
 //   - Premultiplication by 1/8 for on-chain storage (Beldex convention)
 
-// Compute the BGE challenge from context + ring + commitments
+// Bind the BGE challenge to the protocol, public statement, and commitments.
 static rct::key bge_challenge(const rct::key&  context_hash,
                                const rct::keyV& ring,
+                               const rct::key&  T,
                                const rct::key&  A,
                                const rct::key&  B,
                                const rct::keyV& Pk)
 {
-    // Concatenate: context_hash || ring[0..n-1] || A || B || Pk[0..m-1]
+    // Concatenate the fixed domain tag (without NUL), context_hash, ring, T,
+    // A, B, and Pk. All keys use their 32-byte encodings.
+    static constexpr char domain[] = "BELDEX_BGE_V1";
     std::vector<uint8_t> buf;
-    const size_t total = 1 + ring.size() + 2 + Pk.size();
-    buf.reserve(total * 32);
+    const size_t total = 1 + ring.size() + 1 + 2 + Pk.size();
+    buf.reserve(sizeof(domain) - 1 + total * 32);
+    buf.insert(buf.end(), domain, domain + sizeof(domain) - 1);
 
     auto push = [&](const rct::key& k){
         buf.insert(buf.end(), k.bytes, k.bytes + 32);
@@ -390,6 +394,7 @@ static rct::key bge_challenge(const rct::key&  context_hash,
 
     push(context_hash);
     for (const auto& r : ring) push(r);
+    push(T);
     push(A);
     push(B);
     for (const auto& pk : Pk) push(pk);
@@ -584,7 +589,7 @@ bool generate_BGE_proof(const rct::key&  context_hash,
     out.B = scalarmult_inv8(B_acc);
 
     // ── Fiat-Shamir challenge ────────────────────────────────────────────────
-    rct::key x = bge_challenge(context_hash, ring, out.A, out.B, out.Pk);
+    rct::key x = bge_challenge(context_hash, ring, T, out.A, out.B, out.Pk);
 
     // ── Response scalars f[j*(n-1) + (i-1)] for i in [1, n-1] ──────────────
     out.f.resize(m * (n - 1));
@@ -662,7 +667,7 @@ bool verify_BGE_proof(const rct::key&    context_hash,
     if (sig.f.size() != m * (n - 1)) return false;
 
     // ── Recompute challenge ──────────────────────────────────────────────────
-    rct::key x = bge_challenge(context_hash, ring, sig.A, sig.B, sig.Pk);
+    rct::key x = bge_challenge(context_hash, ring, T, sig.A, sig.B, sig.Pk);
 
     // ── f0[j] = x - sum_{i=1}^{n-1} f[j,i] ─────────────────────────────────
     std::vector<rct::key> f0(m);

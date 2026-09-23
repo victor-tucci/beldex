@@ -1039,7 +1039,7 @@ namespace cryptonote
       tx_out out;
       if (dst_entr.is_zyphora() && tx_params.hf_version >= feature::PRIVACY_TOKENS)
       {
-        LOG_PRINT_L0("Constructing privacy token output");
+        MTRACE("Constructing privacy token output");
         // ── HF21: privacy token output ──────────────────────────────────
         // stealth_address is already out_eph_public_key (derived above)
         tx_out_zyphora zout;
@@ -1050,7 +1050,7 @@ namespace cryptonote
         bool use_additional = need_additional_txkeys && dst_entr.is_subaddress;
         const crypto::secret_key& derivation_tx_key = use_additional ? additional_tx_keys[output_index] : tx_key;
         hwdev.generate_key_derivation(dst_entr.addr.m_view_public_key, derivation_tx_key, derivation);
-        LOG_PRINT_L0("Key derivation for output done");
+        MTRACE("Key derivation for output done");
 
         // Blinded token ID:  T = token_id + r*X
         rct::key r = zyphora_derivation_to_scalar(derivation, output_index, "token_blind");
@@ -1059,7 +1059,7 @@ namespace cryptonote
         rct::key T;
         rct::addKeys(T, token_id_rct, rX);
         zout.blinded_token_id = rct::rct2tid(T);
-        LOG_PRINT_L0("Blinded token ID done");
+        MTRACE("Blinded token ID done");
 
         // Amount commitment:  C = amount * T + mask * G
         // Uses this output's OWN blinded token id T (not the plaintext
@@ -1071,14 +1071,14 @@ namespace cryptonote
         rct::key mask = zyphora_derivation_to_scalar(derivation, output_index, "amount_mask");
         rct::key amount_commitment = rct::commitToken(mask, T, dst_entr.amount);
         zout.amount_commitment = rct::rct2pk(amount_commitment);
-        LOG_PRINT_L0("Amount commitment done");
+        MTRACE("Amount commitment done");
 
         // Encrypted amount
         rct::key enc_key = zyphora_derivation_to_scalar(derivation, output_index, "enc_amount");
         uint64_t enc_mask_64;
         memcpy(&enc_mask_64, enc_key.bytes, sizeof(uint64_t));
         zout.encrypted_amount = dst_entr.amount ^ enc_mask_64;
-        LOG_PRINT_L0("Encrypted amount done");
+        MTRACE("Encrypted amount done");
 
         zout.version  = 0;
         zout.mix_attr = 0;
@@ -1699,9 +1699,8 @@ namespace cryptonote
                   LOG_ERROR("Failed to generate BGE surjection proof for output #" << j);
                   return false;
                 }
-                MWARNING("BGE_Gen: output=" << j << " message=" << token_proof_message
+                MTRACE("BGE_Gen: output=" << j << " message=" << token_proof_message
                          << " ring_size=" << ring.size()
-                         << " real_index=" << real_index
                          << " ring0=" << ring.front()
                          << " T=" << out_p.T
                          << " A=" << bge.A
