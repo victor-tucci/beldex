@@ -23,6 +23,7 @@
 #include <vector>
 #include <stdexcept>
 #include "ringct/rctTypes.h"       // rct::key, rct::keyV
+#include "crypto/crypto-ops.h"     // sc_check (canonical-scalar validation at parse time)
 #include "serialization/serialization.h" // BEGIN_SERIALIZE_OBJECT, FIELD
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,8 @@ struct schnorr_sig_s
     BEGIN_SERIALIZE_OBJECT()
       FIELD(y)
       FIELD(c)
+      if (sc_check(y.bytes) != 0 || sc_check(c.bytes) != 0)
+        throw std::runtime_error("Bad schnorr_sig_s serialization (non-canonical scalar)");
     END_SERIALIZE()
 };
 
@@ -93,6 +96,8 @@ struct linear_composition_proof_s
       FIELD(y0)
       FIELD(y1)
       FIELD(c)
+      if (sc_check(y0.bytes) != 0 || sc_check(y1.bytes) != 0 || sc_check(c.bytes) != 0)
+        throw std::runtime_error("Bad linear_composition_proof_s serialization (non-canonical scalar)");
     END_SERIALIZE()
 };
 
@@ -135,6 +140,8 @@ struct double_schnorr_sig_s
       FIELD(y0)
       FIELD(y1)
       FIELD(c)
+      if (sc_check(y0.bytes) != 0 || sc_check(y1.bytes) != 0 || sc_check(c.bytes) != 0)
+        throw std::runtime_error("Bad double_schnorr_sig_s serialization (non-canonical scalar)");
     END_SERIALIZE()
 };
 
@@ -180,6 +187,11 @@ struct BGE_proof_s
       FIELD(z)
       if (Pk.empty() || f.size() != Pk.size() * 3)
         throw std::runtime_error("Bad BGE_proof_s serialization");
+      if (sc_check(y.bytes) != 0 || sc_check(z.bytes) != 0)
+        throw std::runtime_error("Bad BGE_proof_s serialization (non-canonical scalar)");
+      for (const auto& fi : f)
+        if (sc_check(fi.bytes) != 0)
+          throw std::runtime_error("Bad BGE_proof_s serialization (non-canonical f scalar)");
     END_SERIALIZE()
 };
 
@@ -245,6 +257,14 @@ struct vector_ug_aggregation_proof_s
           y0s.size() != amount_commitments_for_rp_aggregation.size() ||
           y1s.size() != amount_commitments_for_rp_aggregation.size())
         throw std::runtime_error("Bad vector_ug_aggregation_proof_s serialization");
+      if (sc_check(c.bytes) != 0)
+        throw std::runtime_error("Bad vector_ug_aggregation_proof_s serialization (non-canonical c)");
+      for (const auto& s : y0s)
+        if (sc_check(s.bytes) != 0)
+          throw std::runtime_error("Bad vector_ug_aggregation_proof_s serialization (non-canonical y0s)");
+      for (const auto& s : y1s)
+        if (sc_check(s.bytes) != 0)
+          throw std::runtime_error("Bad vector_ug_aggregation_proof_s serialization (non-canonical y1s)");
     END_SERIALIZE()
 };
 

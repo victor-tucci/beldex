@@ -1889,6 +1889,7 @@ namespace rct {
                         const std::vector<rct::keyV>& token_id_rings,
                         std::string& reason)
     {
+      try {
         // ── 0. Prevalidate the proof set is well-formed ──────────────────────
         // token_proofs is a self-describing serialized vector, so serialization
         // constrains neither WHICH proofs appear nor how many. Reject duplicates
@@ -1952,6 +1953,33 @@ namespace rct {
             {
                 reason = "token_operation_ownership_proof present on a tx that is not mint/update";
                 return false;
+            }
+
+            {
+                cryptonote::tx_extra_token_descriptor_operation tdo{};
+                if (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo, 0))
+                {
+                    cryptonote::tx_extra_token_descriptor_operation tdo2{};
+                    if (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, tdo2, 1))
+                    {
+                        reason = "a token transaction must carry exactly one token descriptor operation";
+                        return false;
+                    }
+                    bool type_matches = false;
+                    switch (tdo.operation_type)
+                    {
+                        case cryptonote::token_descriptor_operation_type::register_token: type_matches = (tx.type == cryptonote::txtype::register_privacy_token); break;
+                        case cryptonote::token_descriptor_operation_type::mint_token:     type_matches = (tx.type == cryptonote::txtype::mint_token);             break;
+                        case cryptonote::token_descriptor_operation_type::update_token:   type_matches = (tx.type == cryptonote::txtype::update_token);           break;
+                        case cryptonote::token_descriptor_operation_type::burn_token:     type_matches = (tx.type == cryptonote::txtype::burn_token);             break;
+                        default:                                                          type_matches = false;                                                   break;
+                    }
+                    if (!type_matches)
+                    {
+                        reason = "tx.type does not match the token descriptor operation_type (cross-typed token operation rejected)";
+                        return false;
+                    }
+                }
             }
         }
 
@@ -2346,6 +2374,17 @@ namespace rct {
         }
 
         return true;
+      }
+      catch (const std::exception& e)
+      {
+        reason = std::string("token proof verification threw: ") + e.what();
+        return false;
+      }
+      catch (...)
+      {
+        reason = "token proof verification threw an unknown exception";
+        return false;
+      }
     }
 
     // ── HF21: CLSAG-GGX (3-layer CLSAG over G, G, X) ──────────────────────────

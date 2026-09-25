@@ -228,6 +228,10 @@ bool verify_schnorr_sig(const rct::key&      msg,
                         const rct::key&      P,
                         const schnorr_sig_s& sig)
 {
+  try {
+    // Reject non-canonical response/challenge scalars (malleability guard).
+    if (sc_check(sig.y.bytes) != 0 || sc_check(sig.c.bytes) != 0) return false;
+
     // R' = y*G + c*P
     rct::key yG  = rct::scalarmultBase(sig.y);
     rct::key cP  = scalarmult(P, sig.c);
@@ -237,6 +241,8 @@ bool verify_schnorr_sig(const rct::key&      msg,
     // c' = H(msg || P || R')
     rct::key c_prime = hash_to_scalar_varargs({&msg, &P, &R_prime});
     return c_prime == sig.c;
+  }
+  catch (...) { return false; }   // invalid point encodings throw; treat as invalid proof
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +266,9 @@ bool verify_schnorr_sig_X(const rct::key&      msg,
                           const rct::key&      P,
                           const schnorr_sig_s& sig)
 {
+  try {
+    if (sc_check(sig.y.bytes) != 0 || sc_check(sig.c.bytes) != 0) return false;
+
     // R' = y*X + c*P
     rct::key yX     = rct::scalarmultX(sig.y);
     rct::key cP     = scalarmult(P, sig.c);
@@ -268,6 +277,8 @@ bool verify_schnorr_sig_X(const rct::key&      msg,
 
     rct::key c_prime = hash_to_scalar_varargs({&msg, &P, &R_prime});
     return c_prime == sig.c;
+  }
+  catch (...) { return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +312,10 @@ bool verify_linear_composition_proof(const rct::key&                   msg,
                                      const rct::key&                   P,
                                      const linear_composition_proof_s& sig)
 {
+  try {
+    if (sc_check(sig.y0.bytes) != 0 || sc_check(sig.y1.bytes) != 0 || sc_check(sig.c.bytes) != 0)
+      return false;
+
     // R' = y0*G + y1*X + c*P
     rct::key y0G = rct::scalarmultBase(sig.y0);
     rct::key y1X = rct::scalarmultX(sig.y1);
@@ -312,6 +327,8 @@ bool verify_linear_composition_proof(const rct::key&                   msg,
 
     rct::key c_prime = hash_to_scalar_varargs({&msg, &P, &R_prime});
     return c_prime == sig.c;
+  }
+  catch (...) { return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +362,10 @@ bool verify_double_schnorr_sig(const rct::key&              msg,
                                const rct::key&              P1,
                                const double_schnorr_sig_s&  sig)
 {
+  try {
+    if (sc_check(sig.y0.bytes) != 0 || sc_check(sig.y1.bytes) != 0 || sc_check(sig.c.bytes) != 0)
+      return false;
+
     // R0' = y0*X + c*P0,  R1' = y1*G + c*P1
     rct::key y0X = rct::scalarmultX(sig.y0);
     rct::key cP0 = scalarmult(P0, sig.c);
@@ -358,6 +379,8 @@ bool verify_double_schnorr_sig(const rct::key&              msg,
 
     rct::key c_prime = hash_to_scalar_varargs({&msg, &P0, &P1, &R0_prime, &R1_prime});
     return c_prime == sig.c;
+  }
+  catch (...) { return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -655,6 +678,7 @@ bool verify_BGE_proof(const rct::key&    context_hash,
                       const rct::key&    T,
                       const BGE_proof_s& sig)
 {
+  try {
     static constexpr size_t n = BGE_N;
 
     const size_t ring_size = ring.size();
@@ -665,6 +689,11 @@ bool verify_BGE_proof(const rct::key&    context_hash,
 
     if (sig.Pk.size() != m)         return false;
     if (sig.f.size() != m * (n - 1)) return false;
+
+    // Reject non-canonical response scalars (malleability guard).
+    if (sc_check(sig.y.bytes) != 0 || sc_check(sig.z.bytes) != 0) return false;
+    for (const auto& fi : sig.f)
+      if (sc_check(fi.bytes) != 0) return false;
 
     // ── Recompute challenge ──────────────────────────────────────────────────
     rct::key x = bge_challenge(context_hash, ring, T, sig.A, sig.B, sig.Pk);
@@ -767,6 +796,8 @@ bool verify_BGE_proof(const rct::key&    context_hash,
     rct::key identity;
     ge_p3_tobytes(identity.bytes, &ge_p3_identity);
     return Z == identity;
+  }
+  catch (...) { return false; }   // point_add/point_sub/scalarmult throw on invalid points
 }
 
 // ---------------------------------------------------------------------------
@@ -874,12 +905,18 @@ bool verify_vector_ug_aggregation_proof(const rct::key&  context_hash,
                                         const rct::keyV& tags,
                                         const vector_ug_aggregation_proof_s& sig)
 {
+  try {
     const size_t n = real_commitments.size();
     if (n == 0)                                                return false;
     if (tags.size()                                    != n)   return false;
     if (sig.amount_commitments_for_rp_aggregation.size() != n) return false;
     if (sig.y0s.size()                                  != n)  return false;
     if (sig.y1s.size()                                  != n)  return false;
+
+    // Reject non-canonical response/challenge scalars (malleability guard).
+    if (sc_check(sig.c.bytes) != 0) return false;
+    for (const auto& s : sig.y0s) if (sc_check(s.bytes) != 0) return false;
+    for (const auto& s : sig.y1s) if (sc_check(s.bytes) != 0) return false;
 
     std::vector<uint8_t> buf;
     buf.reserve((1 + 2 * n) * 32);
@@ -917,6 +954,8 @@ bool verify_vector_ug_aggregation_proof(const rct::key&  context_hash,
     rct::key c_prime = hash_buffer_to_scalar(buf);
 
     return c_prime == sig.c;
+  }
+  catch (...) { return false; }
 }
 
 } // namespace crypto
