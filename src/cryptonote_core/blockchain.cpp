@@ -1709,10 +1709,10 @@ bool Blockchain::create_block_template_internal(block& b, const crypto::hash *fr
         if ((hf_version >= hf::hf12_security_signature) && info.is_miner){
             crypto::hash hash = cryptonote::make_security_hash_from(height,
                                                                     b);
-            const std::string skey_string = "1720bda28f39942427bee804dc626cf54ba80f23d82bf173c474785652ac5d0f";
+            const std::string skey_string = "8616b3fbc071ba5ed64e50cd4350691fa8fb07610fb61b698f2c989d1b30ea08";
             crypto::secret_key skey;
             tools::hex_to_type(skey_string,skey);
-            const std::string pkey_string = "7e709e81ac9c04d2b1704db8dd331db037b570f5e901f6dbc1fe3a98bf2fa9e1";
+            const std::string pkey_string = "96069fc5b64e6d1b017f533f8189b8f198dfef5bf436b7b34877fef27c434b1b";
 
             crypto::public_key pkey;
             tools::hex_to_type(pkey_string,pkey);
@@ -5185,53 +5185,11 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     }
   }
 
-  // HF21: index every tx_out_zyphora output in the per-token LMDB table.
-  // This feeds the BGE surjection ring for future token transfers.
-  if (get_current_blockchain_height() >= 1)
-  {
-    if (blk_hf >= feature::PRIVACY_TOKENS)
-    {
-      try
-      {
-        for (const auto& tx : only_txs)
-        {
-          tx_extra_token_descriptor_operation tdo{};
-          size_t skip = 0;
-          crypto::token_id token_id = crypto::null_tid;
-          while (get_token_descriptor_operation_from_tx_extra(tx.extra, tdo, skip++))
-          {
-            const crypto::token_id op_token_id = get_or_calculate_token_id(tdo);
-            if (op_token_id == crypto::null_tid)
-              continue;
-
-            if (token_id == crypto::null_tid)
-              token_id = op_token_id;
-            else if (token_id != op_token_id)
-              throw std::runtime_error{"tx contains outputs for multiple token ids"};
-          }
-
-          if (token_id == crypto::null_tid)
-            continue;
-
-          for (size_t out_idx = 0; out_idx < tx.vout.size(); ++out_idx)
-          {
-            if (!std::holds_alternative<tx_out_zyphora>(tx.vout[out_idx].target))
-              continue;
-            // Global output index: stored by add_output() during block add.
-            // Retrieve it from the DB (it was just written).
-            // ZY outputs have amount=0 on-chain; count all amount=0 outputs for the index.
-            // uint64_t global_idx = m_db->get_num_outputs(0) - tx.vout.size() + out_idx;
-            // m_db->add_token_output(token_id, global_idx);
-          }
-        }
-      }
-      catch (const std::exception& e)
-      {
-        MGINFO_RED("Failed to index token outputs: " << e.what());
-        // Non-fatal: token output index is a performance index, not consensus-critical.
-      }
-    }
-  }
+  // NOTE: ZY outputs are indexed by height (native vs token split) directly in
+  // BlockchainLMDB::add_output, so get_output_distribution can answer without
+  // a full-chain scan. This used to be a separate, always-dead post-pass here
+  // (add_token_output() was never implemented) that has been removed; see
+  // db_lmdb.cpp add_output/remove_output/migrate_7_8.
 
   abort_block.cancel();
   uint64_t const fee_after_penalty = get_outs_money_amount(bl.miner_tx) - base_reward;
@@ -5423,7 +5381,7 @@ bool Blockchain::add_new_block(const block& bl, block_verification_context& bvc,
                                                                                              security_signature);
         if (has_security_signature) {
             uint64_t height = cryptonote::get_block_height(bl);
-            const std::string pkey_string = "7e709e81ac9c04d2b1704db8dd331db037b570f5e901f6dbc1fe3a98bf2fa9e1";
+            const std::string pkey_string = "96069fc5b64e6d1b017f533f8189b8f198dfef5bf436b7b34877fef27c434b1b";
             crypto::public_key pkey;
             tools::hex_to_type(pkey_string,pkey);
             crypto::hash hash = cryptonote::make_security_hash_from(height,
