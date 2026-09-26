@@ -259,8 +259,10 @@ const char* const LMDB_MASTER_NODE_LATEST = "master_node_proofs"; // contains th
 
 const char* const LMDB_PROPERTIES = "properties";
 const char* const LMDB_TOKEN_HISTORIES = "token_histories";
+const char* const LMDB_NATIVE_OUTPUT_HEIGHTS = "native_output_heights"; // height -> amount_index, for non-token amount==0 outputs
+const char* const LMDB_ZY_OUTPUT_HEIGHTS = "zy_output_heights";         // height -> amount_index, for tx_out_zyphora outputs
 
-constexpr unsigned int LMDB_DB_COUNT = 24; // Should agree with the number of db's above
+constexpr unsigned int LMDB_DB_COUNT = 26; // Should agree with the number of db's above
 
 const char zerokey[8] = {0};
 const MDB_val zerokval = { sizeof(zerokey), (void *)zerokey };
@@ -404,6 +406,8 @@ void setup_rcursor(const MDB_dbi& db, MDB_cursor*& cursor, MDB_txn* txn, bool* r
 #define m_cur_hf_versions	m_cursors->hf_versions
 #define m_cur_properties	m_cursors->properties
 #define m_cur_token_histories	m_cursors->token_histories
+#define m_cur_native_output_heights	m_cursors->native_output_heights
+#define m_cur_zy_output_heights	m_cursors->zy_output_heights
 
 namespace cryptonote
 {
@@ -1143,6 +1147,8 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
 
   CURSOR(output_txs)
   CURSOR(output_amounts)
+  CURSOR(native_output_heights)
+  CURSOR(zy_output_heights)
 
   // Privacy token outputs (tx_out_zyphora) always have amount == 0 on-chain
   // and carry their own commitment; they are stored with stealth_address as pubkey.
@@ -1208,13 +1214,18 @@ uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,
   if ((result = mdb_cursor_put(m_cur_output_amounts, &val_amount, &data, MDB_APPENDDUP)))
       throw0(DB_ERROR(lmdb_error("Failed to add output pubkey to db transaction: ", result).c_str()));
 
-  // HF21: for privacy token outputs, also record in the per-token index
-  // so the wallet can enumerate all outputs of a specific token for BGE ring.
-  // The plaintext token_id is populated by append_tokens_from_transactions()
-  // which runs after block acceptance and has access to tx.extra.
-  // Here we only need the global output index to be stored; token_id is stored
-  // by the caller that knows the tx context (see blockchain.cpp add_block path).
-  // Therefore: add_token_output() is called from blockchain.cpp, not here.
+  // Index amount==0 outputs (native rct and privacy-token alike) by height,
+  // so get_output_distribution can seek a height range instead of scanning
+  // every amount==0 row in the chain. Split into two tables so each cursor
+  // scan is pure signal -- no per-row type filtering needed on read.
+  if (tx_output.amount == 0)
+  {
+    MDB_val_set(hk, m_height);
+    MDB_val_set(hv, ok.amount_index);
+    MDB_cursor *height_cursor = is_zyphora ? m_cur_zy_output_heights : m_cur_native_output_heights;
+    if ((result = mdb_cursor_put(height_cursor, &hk, &hv, MDB_APPENDDUP)))
+      throw0(DB_ERROR(lmdb_error("Failed to add output height index: ", result).c_str()));
+  }
 
   return ok.amount_index;
 }
@@ -1272,6 +1283,8 @@ void BlockchainLMDB::remove_output(const uint64_t amount, const uint64_t& out_in
   mdb_txn_cursors *m_cursors = &m_wcursors;
   CURSOR(output_amounts);
   CURSOR(output_txs);
+  CURSOR(native_output_heights);
+  CURSOR(zy_output_heights);
 
   MDB_val_set(k, amount);
   MDB_val_set(v, out_index);
@@ -1281,6 +1294,24 @@ void BlockchainLMDB::remove_output(const uint64_t amount, const uint64_t& out_in
     throw1(OUTPUT_DNE("Attempting to get an output index by amount and amount index, but amount not found"));
   else if (result)
     throw0(DB_ERROR(lmdb_error("DB error attempting to get an output", result).c_str()));
+
+  // amount==0 rows are always stored at full outkey size (see add_output), so
+  // it's safe to read the extra fields here to keep the height index in sync.
+  if (amount == 0)
+  {
+    const outkey *full_ok = (const outkey *)v.mv_data;
+    const uint64_t out_height = full_ok->data.height;
+    const bool out_is_zyphora = full_ok->data.blinded_token_id != crypto::null_tid;
+
+    MDB_val_set(hk, out_height);
+    MDB_val_set(hv, out_index);
+    MDB_cursor *height_cursor = out_is_zyphora ? m_cur_zy_output_heights : m_cur_native_output_heights;
+    auto hresult = mdb_cursor_get(height_cursor, &hk, &hv, MDB_GET_BOTH);
+    if (hresult)
+      throw0(DB_ERROR(lmdb_error("Failed to find output height index entry to remove: ", hresult).c_str()));
+    if ((hresult = mdb_cursor_del(height_cursor, 0)))
+      throw0(DB_ERROR(lmdb_error("Failed to delete output height index entry: ", hresult).c_str()));
+  }
 
   const pre_rct_outkey *ok = (const pre_rct_outkey *)v.mv_data;
   MDB_val_set(otxk, ok->output_id);
@@ -1560,6 +1591,8 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
 
   lmdb_db_open(txn, LMDB_MASTER_NODE_LATEST, MDB_CREATE, m_master_node_proofs, "Failed to open db handle for m_master_node_proofs");
   lmdb_db_open(txn, LMDB_TOKEN_HISTORIES, MDB_CREATE, m_token_histories, "Failed to open db handle for m_token_histories");
+  lmdb_db_open(txn, LMDB_NATIVE_OUTPUT_HEIGHTS, MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED | MDB_CREATE, m_native_output_heights, "Failed to open db handle for m_native_output_heights");
+  lmdb_db_open(txn, LMDB_ZY_OUTPUT_HEIGHTS, MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED | MDB_CREATE, m_zy_output_heights, "Failed to open db handle for m_zy_output_heights");
 
   lmdb_db_open(txn, LMDB_PROPERTIES, MDB_CREATE, m_properties, "Failed to open db handle for m_properties");
 
@@ -1571,6 +1604,8 @@ void BlockchainLMDB::open(const fs::path& filename, cryptonote::network_type net
   mdb_set_dupsort(txn, m_output_txs, compare_uint64);
   mdb_set_dupsort(txn, m_output_blacklist, compare_uint64);
   mdb_set_dupsort(txn, m_block_info, compare_uint64);
+  mdb_set_dupsort(txn, m_native_output_heights, compare_uint64);
+  mdb_set_dupsort(txn, m_zy_output_heights, compare_uint64);
   if (!(mdb_flags & MDB_RDONLY))
     mdb_set_dupsort(txn, m_txs_prunable_tip, compare_uint64);
   mdb_set_compare(txn, m_txs_prunable, compare_uint64);
@@ -1746,6 +1781,10 @@ void BlockchainLMDB::reset()
     throw0(DB_ERROR(lmdb_error("Failed to drop m_master_node_data: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_token_histories, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_token_histories: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_native_output_heights, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_native_output_heights: ", result).c_str()));
+  if (auto result = mdb_drop(txn, m_zy_output_heights, 0))
+    throw0(DB_ERROR(lmdb_error("Failed to drop m_zy_output_heights: ", result).c_str()));
   if (auto result = mdb_drop(txn, m_properties, 0))
     throw0(DB_ERROR(lmdb_error("Failed to drop m_properties: ", result).c_str()));
 
@@ -4452,7 +4491,6 @@ bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_heig
   check_open();
 
   TXN_PREFIX_RDONLY();
-  RCURSOR(output_amounts);
 
   distribution.clear();
   if (output_indices)
@@ -4462,41 +4500,81 @@ bool BlockchainLMDB::get_output_distribution(uint64_t amount, uint64_t from_heig
     return false;
   distribution.resize(db_height - from_height, 0);
 
-  bool fret = true;
-  MDB_val_set(k, amount);
-  MDB_val v;
-  MDB_cursor_op op = MDB_SET;
   base = 0;
-  while (1)
+
+  if (amount == 0)
   {
-    int ret = mdb_cursor_get(m_cur_output_amounts, &k, &v, op);
-    op = MDB_NEXT_DUP;
-    if (ret == MDB_NOTFOUND)
-      break;
-    if (ret)
-      throw0(DB_ERROR("Failed to enumerate outputs"));
-    const outkey *ok = (const outkey *)v.mv_data;
-    if (amount == 0)
+    // Both native and token amount==0 outputs are indexed by height in a
+    // dedicated table each, so this walks only the matching subset instead
+    // of scanning every amount==0 row in the chain (see add_output /
+    // migrate_7_8 for how these tables are populated).
+    const bool want_token = output_type == output_distribution_type::token;
+    RCURSOR(native_output_heights);
+    RCURSOR(zy_output_heights);
+    MDB_cursor *cur = want_token ? m_cur_zy_output_heights : m_cur_native_output_heights;
+
+    MDB_val k, v;
+    MDB_cursor_op op = MDB_FIRST;
+    while (1)
     {
-      const bool output_is_token = ok->data.blinded_token_id != crypto::null_tid;
-      if ((output_type == output_distribution_type::token) != output_is_token)
+      int ret = mdb_cursor_get(cur, &k, &v, op);
+      if (ret == MDB_NOTFOUND)
+        break;
+      if (ret)
+        throw0(DB_ERROR("Failed to enumerate output height index"));
+
+      const uint64_t out_height = *(const uint64_t *)k.mv_data;
+
+      if (out_height < from_height)
+      {
+        // Not in the requested range -- we only need how many outputs
+        // existed at this height, not which ones, so fold in the whole
+        // dup-count for this key in one call instead of visiting each entry.
+        mdb_size_t count = 0;
+        if (mdb_cursor_count(cur, &count))
+          throw0(DB_ERROR("Failed to count output height index entries"));
+        base += count;
+        op = MDB_NEXT_NODUP;
         continue;
-    }
-    const uint64_t height = ok->data.height;
-    if (output_type == output_distribution_type::token && to_height > 0 && height > to_height)
-     break;
-    if (height >= from_height)
-    {
-      distribution[height - from_height]++;
+      }
+
+      if (to_height > 0 && out_height > to_height)
+        break;
+
+      const uint64_t amount_index = *(const uint64_t *)v.mv_data;
+      distribution[out_height - from_height]++;
       if (output_indices)
-        output_indices->push_back(ok->amount_index);
+        output_indices->push_back(amount_index);
+      op = MDB_NEXT;
     }
-    else
-      base++;
-    // Preserve the pre-token native cumulative tail: count the first output
-    // above to_height before stopping. RPC callers trim the tail separately.
-    if (to_height > 0 && height > to_height)
-      break;
+  }
+  else
+  {
+    RCURSOR(output_amounts);
+    MDB_val_set(k, amount);
+    MDB_val v;
+    MDB_cursor_op op = MDB_SET;
+    while (1)
+    {
+      int ret = mdb_cursor_get(m_cur_output_amounts, &k, &v, op);
+      op = MDB_NEXT_DUP;
+      if (ret == MDB_NOTFOUND)
+        break;
+      if (ret)
+        throw0(DB_ERROR("Failed to enumerate outputs"));
+      const outkey *ok = (const outkey *)v.mv_data;
+      const uint64_t out_height = ok->data.height;
+      if (to_height > 0 && out_height > to_height)
+        break;
+      if (out_height >= from_height)
+      {
+        distribution[out_height - from_height]++;
+        if (output_indices)
+          output_indices->push_back(ok->amount_index);
+      }
+      else
+        base++;
+    }
   }
 
   distribution[0] += base;
@@ -6110,7 +6188,7 @@ void BlockchainLMDB::migrate_7_8()
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   const auto migration_started = std::chrono::steady_clock::now();
-  MGINFO_YELLOW("Migrating blockchain from DB version 7 to 8 - adding token history table and blinded_token_id output records; this may take a while:");
+  MGINFO_YELLOW("Migrating blockchain from DB version 7 to 8 - adding token history table, blinded_token_id output records, and the native/token output-by-height indexes; this may take a while:");
 
   {
     mdb_txn_safe txn(false);
@@ -6118,6 +6196,14 @@ void BlockchainLMDB::migrate_7_8()
       throw0(DB_ERROR(lmdb_error("Failed to create a transaction for the db: ", result).c_str()));
 
     lmdb_db_open(txn, LMDB_TOKEN_HISTORIES, MDB_CREATE, m_token_histories, "Failed to open db handle for m_token_histories");
+    // native_output_heights is backfilled below in the same pass that already
+    // walks every output_amounts row. zy_output_heights just needs to exist --
+    // no privacy-token outputs are possible on any chain that is still at v7,
+    // so there is nothing to backfill into it.
+    lmdb_db_open(txn, LMDB_NATIVE_OUTPUT_HEIGHTS, MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED | MDB_CREATE, m_native_output_heights, "Failed to open db handle for m_native_output_heights");
+    lmdb_db_open(txn, LMDB_ZY_OUTPUT_HEIGHTS, MDB_INTEGERKEY | MDB_DUPSORT | MDB_DUPFIXED | MDB_CREATE, m_zy_output_heights, "Failed to open db handle for m_zy_output_heights");
+    mdb_set_dupsort(txn, m_native_output_heights, compare_uint64);
+    mdb_set_dupsort(txn, m_zy_output_heights, compare_uint64);
     txn.commit();
   }
 
@@ -6167,13 +6253,16 @@ void BlockchainLMDB::migrate_7_8()
 
   // 2a. copy old -> tmp, converting rct records
   {
-    MDB_cursor *c_old = nullptr, *c_tmp = nullptr;
+    MDB_cursor *c_old = nullptr, *c_tmp = nullptr, *c_native_heights = nullptr;
 
     if (mdb_cursor_open(txn, m_output_amounts, &c_old))
       throw0(DB_ERROR("migrate_7_8: failed to open old cursor"));
 
     if (mdb_cursor_open(txn, tmp, &c_tmp))
       throw0(DB_ERROR("migrate_7_8: failed to open tmp cursor"));
+
+    if (mdb_cursor_open(txn, m_native_output_heights, &c_native_heights))
+      throw0(DB_ERROR("migrate_7_8: failed to open native output height cursor"));
 
     MDB_val k, v;
 
@@ -6206,6 +6295,14 @@ void BlockchainLMDB::migrate_7_8()
         if (mdb_cursor_put(c_tmp, &k, &nv, MDB_APPENDDUP))
           throw0(DB_ERROR("migrate_7_8: failed to write converted rct output"));
 
+        // Every amount==0 record at this migration is native (see above), so
+        // backfill native_output_heights in the same pass instead of a
+        // second full-table scan later.
+        MDB_val_set(hk, old->data.height);
+        MDB_val_set(hv, old->amount_index);
+        if (mdb_cursor_put(c_native_heights, &hk, &hv, MDB_APPENDDUP))
+          throw0(DB_ERROR("migrate_7_8: failed to write native output height index"));
+
         // MGINFO_MAGENTA("migrate_7_8: converted rct output " << old->output_id << " at amount index " << old->amount_index);
       }
 
@@ -6217,6 +6314,7 @@ void BlockchainLMDB::migrate_7_8()
       }
     }
 
+    mdb_cursor_close(c_native_heights);
     mdb_cursor_close(c_tmp);
     mdb_cursor_close(c_old);
   }
@@ -6249,7 +6347,7 @@ void BlockchainLMDB::migrate_7_8()
         throw0(DB_ERROR("migrate_7_8: failed to copy output back"));
     }
 
-    MGINFO_YELLOW("migrate_7_8: copied outputs back into m_output_amounts");
+    MGINFO_YELLOW("migrate_7_8: copied outputs back into m_output_amounts and backfilled m_native_output_heights");
     mdb_cursor_close(c_new);
     mdb_cursor_close(c_tmp);
   }
