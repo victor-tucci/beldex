@@ -4337,7 +4337,7 @@ byte_and_output_fees Blockchain::get_dynamic_base_fee(uint64_t block_reward, siz
     assert(hi == 0);
     lo /= 5;
 
-    if (version >= hf::hf21_privacy_tokens)
+    if (version >= feature::PRIVACY_TOKENS)
       fees.second = FEE_PER_OUTPUT_V21;
     else if(version >= hf::hf17_POS)
       fees.second = FEE_PER_OUTPUT_V17;

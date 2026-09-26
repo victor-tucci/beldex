@@ -2560,9 +2560,6 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
       }
     }
 
-      }
-    }
-
     if (!pool && (m_track_uses || (m_background_syncing && it == m_key_images.end())) && is_native_input)
     {
       PERF_TIMER(track_uses);
@@ -8822,7 +8819,7 @@ byte_and_output_fees wallet2::get_dynamic_base_fee_estimate() const
   if (m_node_rpc_proxy.get_dynamic_base_fee_estimate(FEE_ESTIMATE_GRACE_BLOCKS, fees))
     return fees;
 
-  if(use_fork_rules(hf::hf21_privacy_tokens))
+  if(use_fork_rules(feature::PRIVACY_TOKENS))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V21}; 
   else if(use_fork_rules(hf::hf17_POS))
     fees = {FEE_PER_BYTE, FEE_PER_OUTPUT_V17}; 
