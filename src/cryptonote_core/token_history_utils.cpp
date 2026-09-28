@@ -423,6 +423,49 @@ bool load_token_state_from_history(
   return true;
 }
 
+bool validate_token_transaction_fees(const transaction& tx, hf hf_version, network_type nettype, std::string& reason)
+{
+  using operation = token_descriptor_operation_type;
+  operation expected = operation::undefined;
+  switch (tx.type)
+  {
+    case txtype::register_privacy_token: expected = operation::register_token; break;
+    case txtype::mint_token: expected = operation::mint_token; break;
+    case txtype::update_token: expected = operation::update_token; break;
+    case txtype::burn_token: expected = operation::burn_token; break;
+    default:
+      reason = "Token fee validation requires a token transaction";
+      return false;
+  }
+
+  tx_extra_token_descriptor_operation op{}, extra_op{};
+  if (!get_token_descriptor_operation_from_tx_extra(tx.extra, op, 0) ||
+      get_token_descriptor_operation_from_tx_extra(tx.extra, extra_op, 1) ||
+      op.operation_type != expected)
+  {
+    reason = "Token fees require exactly one operation matching the transaction type";
+    return false;
+  }
+
+  const auto policy = tokens::fee_for_operation(hf_version, expected, nettype);
+  if (!policy.enabled)
+  {
+    reason = "Token operation is not enabled at this hardfork";
+    return false;
+  }
+  const uint64_t burned = get_burned_amount_from_tx_extra(tx.extra);
+  const uint64_t fee = tx.rct_signatures.txnFee;
+  if (!policy.paid(burned, fee))
+  {
+    reason = "Token transaction requires " + std::string{policy.exact_burn ? "exactly " : "at least "} +
+        std::to_string(policy.burn_amount) + " burned and at least " +
+        std::to_string(policy.governance_amount) + " remaining for governance; declared burn " +
+        std::to_string(burned) + ", transaction fee " + std::to_string(fee);
+    return false;
+  }
+  return true;
+}
+
 bool validate_tx_token_operations_against_db(
     BlockchainDB& db,
     const transaction& tx,
