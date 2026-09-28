@@ -430,7 +430,15 @@ bool validate_tx_token_operations_against_db(
     hf hf_version)
 {
   if (hf_version < feature::PRIVACY_TOKENS)
+  {
+    tx_extra_token_descriptor_operation pre_fork_op{};
+    if (get_token_descriptor_operation_from_tx_extra(tx.extra, pre_fork_op, 0))
+    {
+      reason = "token descriptor operations are not allowed before the privacy-token hard fork";
+      return false;
+    }
     return true;
+  }
 
   size_t op_index = 0;
   tx_extra_token_descriptor_operation op{};
@@ -454,15 +462,6 @@ bool validate_tx_token_operations_against_db(
       return false;
     }
 
-    // ── F0 fix: tx.type and the descriptor operation_type MUST be the matching
-    // pair. Consensus rules were historically split across the two fields -- some
-    // keyed on tx.type (surjection ring membership, proof presence), others on
-    // op.operation_type (ownership, "outputs sum to commitment", supply update) --
-    // with nothing forcing them to agree. A mint_token-typed tx carrying a
-    // burn_token op could therefore gain minting power (from tx.type) while
-    // skipping the ownership and conservation checks (which the burn op waives),
-    // letting anyone mint arbitrary amounts of any token. Enforce the bijection
-    // up front so the two fields can never disagree.
     {
       bool type_matches = false;
       switch (op.operation_type)
@@ -480,20 +479,12 @@ bool validate_tx_token_operations_against_db(
       }
     }
 
-    // ── F0 fix: exactly one token descriptor operation per token transaction.
-    // verTokenProofs only ever reads the first TDO, so a second TDO could apply a
-    // state change (e.g. a second burn decrementing supply again) that no proof
-    // covers. op_index has already been incremented by the while-condition, so it
-    // equals 1 on the first operation, 2 on the second, etc.
     if (op_index > 1)
     {
       reason = "a token transaction must carry exactly one token descriptor operation";
       return false;
     }
 
-    // ── F0 fix: a burn must actually spend token inputs. The balance-proof gate
-    // is keyed on the ZY input count, so a burn with zero ZY inputs bypasses
-    // conservation entirely; such a burn is also semantically meaningless.
     if (op.operation_type == token_descriptor_operation_type::burn_token)
     {
       size_t zy_input_count = 0;

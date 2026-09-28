@@ -3284,6 +3284,12 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   // from v10, allow bulletproofs
   auto height = get_current_blockchain_height();
   const hf hf_version = get_network_version(height);
+  if (hf_version < feature::PRIVACY_TOKENS && tx.has_zyphora_outputs())
+  {
+    MERROR_VER("tx_out_zyphora output present before privacy-token hard fork");
+    tvc.m_invalid_output = true;
+    return false;
+  }
   if (hf_version < hf::hf8) {
     const bool bulletproof = rct::is_rct_bulletproof(tx.rct_signatures.type);
     if (bulletproof || !tx.rct_signatures.p.bulletproofs.empty())
@@ -3618,6 +3624,25 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     {
       if (tvc.m_invalid_version) MERROR_VER("TX Invalid version: " << tx.version << " for hardfork: " << (int)hf_version << " min/max version:  " << min_version << "/" << max_version);
       if (tvc.m_invalid_type)    MERROR_VER("TX Invalid type: " << tx.type << " for hardfork: " << (int)hf_version << " max type: " << max_type);
+      return false;
+    }
+  }
+
+  if (hf_version < feature::PRIVACY_TOKENS && tx_has_privacy_token_content(tx))
+  {
+    MERROR_VER("Privacy-token content present before hard-fork activation in tx " << get_transaction_hash(tx));
+    tvc.m_invalid_input  = true;
+    tvc.m_verbose_error  = "privacy-token content before HF activation";
+    return false;
+  }
+  {
+    const size_t zy_input_count = std::count_if(tx.vin.begin(), tx.vin.end(),
+        [](const txin_v& i){ return std::holds_alternative<txin_zy_input>(i); });
+    if (zy_input_count != tx.zy_sig.size())
+    {
+      MERROR_VER("Tx " << get_transaction_hash(tx) << " has " << zy_input_count
+                 << " zyphora inputs but " << tx.zy_sig.size() << " ZY signatures");
+      tvc.m_invalid_input = true;
       return false;
     }
   }
@@ -5041,6 +5066,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     t_checktx += std::chrono::steady_clock::now() - cc;
 
     // Gather and validate token descriptor operations carried in tx.extra.
+    if (get_network_version() >= feature::PRIVACY_TOKENS)
     {
       size_t op_index = 0;
       tx_extra_token_descriptor_operation op{};
