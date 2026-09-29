@@ -841,6 +841,7 @@ block Blockchain::pop_block_from_blockchain()
   std::vector<transaction> popped_txs;
 
   CHECK_AND_ASSERT_THROW_MES(m_db->height() > 1, "Cannot pop the genesis block");
+  const uint64_t popped_height = m_db->height() - 1; // height of the block being popped (before pop)
   const hf popped_hf = get_network_version(m_db->height() - 1);
 
   try
@@ -864,8 +865,8 @@ block Blockchain::pop_block_from_blockchain()
   {
     std::string rewind_reason;
     CHECK_AND_ASSERT_THROW_MES(
-        rewind_tokens_from_transactions(*m_db, popped_txs, &rewind_reason),
-        "Failed to rewind token history while popping block: " + rewind_reason);
+        rewind_tokens_for_height(*m_db, popped_height, &rewind_reason),
+        "Failed to rewind token state while popping block: " + rewind_reason);
   }
 
   m_bns_db.block_detach(*this, m_db->height());
@@ -5064,7 +5065,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
         if (inserted)
         {
           std::string load_reason;
-          if (!load_token_state_from_history(*m_db, token_id, state_it->second, load_reason))
+          if (!load_token_state(*m_db, token_id, state_it->second, load_reason))
           {
             MERROR_VER("Failed to load existing token state for tx " << tx_id << ": " << load_reason);
             bvc.m_verifivation_failed = true;
@@ -5223,7 +5224,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     {
       std::string append_reason;
       CHECK_AND_ASSERT_MES(
-          append_tokens_from_transactions(*m_db, only_txs, &append_reason),
+          apply_tokens_from_block(*m_db, new_height - 1, only_txs, &append_reason),
           false,
           "Failed to persist token operation(s): " << append_reason);
     }
