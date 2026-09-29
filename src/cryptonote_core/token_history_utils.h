@@ -31,6 +31,8 @@ bool validate_token_descriptor_operation(const tx_extra_token_descriptor_operati
 bool apply_token_operation_to_state(const crypto::token_id& token_id, const tx_extra_token_descriptor_operation& op,
                                     token_consensus_state& state, std::string& reason);
 bool load_token_state_from_history(BlockchainDB& db, const crypto::token_id& token_id, token_consensus_state& state, std::string& reason);
+// Checks token surcharges only; normal network fees and collateral are separate.
+bool validate_token_transaction_fees(const transaction& tx, hf hf_version, network_type nettype, std::string& reason);
 // hf_version gates the HF21 fan-out rule (deploy/mint must produce
 // >= MIN_TOKEN_MINT_OUTPUTS tx_out_zyphora outputs).
 bool validate_tx_token_operations_against_db(BlockchainDB& db, const transaction& tx,

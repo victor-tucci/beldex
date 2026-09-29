@@ -4032,32 +4032,13 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         return false;
       }
     }
-    else if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token || tx.type == txtype::update_token)
+    else if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token ||
+             tx.type == txtype::update_token || tx.type == txtype::burn_token)
     {
-      cryptonote::tx_extra_token_descriptor_operation op;
-      size_t skip = 0;
-      uint64_t total_burn_required = 0;
-      while (cryptonote::get_token_descriptor_operation_from_tx_extra(tx.extra, op, skip++)) {
-        total_burn_required += tokens::burn_needed(hf_version, op.operation_type);
-      }
-      
-      if (total_burn_required > 0)
+      if (!validate_token_transaction_fees(tx, hf_version, m_nettype, tvc.m_verbose_error))
       {
-        const uint64_t burn = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
-        const uint64_t fee  = tx.rct_signatures.txnFee;
-
-        const bool burn_mismatch = (tx.type == txtype::register_privacy_token)
-                                     ? (burn != total_burn_required)
-                                     : (burn < total_burn_required);
-        if (burn_mismatch || burn > fee)
-        {
-          tvc.m_verbose_error = "Token transaction requires burning " +
-                                std::string(tx.type == txtype::register_privacy_token ? "exactly " : "at least ") +
-                                std::to_string(total_burn_required) +
-                                " but burned " + std::to_string(burn) + " (fee: " + std::to_string(fee) + ")";
-          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
-          return false;
-        }
+        MERROR_VER("Failed to validate Token TX fees: " << tvc.m_verbose_error);
+        return false;
       }
 
       if (tx.type == txtype::register_privacy_token)
@@ -4145,19 +4126,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
           return false;
         }
-        const uint64_t burned    = cryptonote::get_burned_amount_from_tx_extra(tx.extra);
-        const uint64_t tx_fee    = tx.rct_signatures.txnFee;
-        const uint64_t miner_fee = tx_fee >= burned ? tx_fee - burned : 0;
-        if (miner_fee < tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT)
-        {
-          tvc.m_verbose_error = "Token registration requires a miner fee (fee minus burn) of at least " +
-                                std::to_string(tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT) +
-                                " to fund the governance payment, but the miner fee was " +
-                                std::to_string(miner_fee) + " (fee " + std::to_string(tx_fee) +
-                                ", burned " + std::to_string(burned) + ")";
-          MERROR_VER("Failed to validate Token TX reason: " << tvc.m_verbose_error);
-          return false;
-        }
+
       }
     }
   }
@@ -5092,7 +5061,8 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
 
     fee_summary += fee;
     if (tx.type == txtype::register_privacy_token && get_network_version() >= feature::PRIVACY_TOKENS)
-      registration_governance_fee_summary += tokens::REGISTRATION_FEE_GOVERNANCE_AMOUNT;
+      registration_governance_fee_summary += tokens::fee_for_operation(
+          get_network_version(), token_descriptor_operation_type::register_token, m_nettype).governance_amount;
     cumulative_block_weight += tx_weight;
   }
 

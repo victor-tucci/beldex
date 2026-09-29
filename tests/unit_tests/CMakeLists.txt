@@ -79,6 +79,7 @@ add_executable(unit_tests
   test_peerlist.cpp
   test_protocol_pack.cpp
   threadpool.cpp
+  token_fees.cpp
   unbound.cpp
   uri.cpp
   varint.cpp
