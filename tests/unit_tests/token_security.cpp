@@ -2,6 +2,8 @@
 #include "gtest/gtest.h"
 #include "blockchain_db/lmdb/db_lmdb.h"
 #include "cryptonote_core/token_history_utils.h"
+#include "serialization/binary_utils.h"
+#include "serialization/string.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/token_descriptor_operation_utils.h"
 #include "ringct/rctSigs.h"
@@ -37,7 +39,10 @@ protected:
     registration.descriptor.owner = rct::rct2pk(rct::scalarmultBase(owner_secret));
     id = get_or_calculate_token_id(registration);
     db_wtxn_guard guard(&db);
-    store_token_history(db, id, {registration});
+    token_consensus_state seed{};
+    std::string seed_reason;
+    ASSERT_TRUE(apply_token_operation_to_state(id, registration, seed, seed_reason)) << seed_reason;
+    static_cast<BlockchainDB&>(db).set_token_history(id, serialization::dump_binary(seed));
     guard.stop();
   }
   void TearDown() override
@@ -161,7 +166,7 @@ TEST_F(TokenSecurity, BurnCannotUseNativeInputsToReduceTokenSupply)
   EXPECT_FALSE(validate(tx, reason));
   EXPECT_NE(reason.find("must spend at least one"), std::string::npos) << reason;
   token_consensus_state state{};
-  ASSERT_TRUE(load_token_state_from_history(db, id, state, reason));
+  ASSERT_TRUE(load_token_state(db, id, state, reason));
   EXPECT_EQ(state.current_supply, 100);
 }
 
