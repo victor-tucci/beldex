@@ -227,16 +227,18 @@ namespace cryptonote
       }
     }
     else if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token ||
-             tx.type == txtype::update_token || tx.type == txtype::burn_token)
+             tx.type == txtype::update_token)
     {
-      // At most one register/mint/update/burn op per token_id may sit in the pool at a
+      // At most one register/mint/update op per token_id may sit in the pool at a
       // time, regardless of which of those op types either tx is: each op individually
       // validates against committed DB state (check_tx_inputs never sees the others pending
       // in the pool), but if two land in the same block they are applied cumulatively
       // (Blockchain::handle_block_to_main_chain / pending_token_states) and can conflict in
       // ways no single-tx check catches (e.g. a mint pushing current_supply over
       // total_max_supply, or a mint going through after an update_token transferred
-      // ownership away from its signer). Same rationale as the BNS branch above.
+      // ownership away from its signer). Same rationale as the BNS branch above. burn_token
+      // is intentionally excluded: it doesn't mutate the descriptor other tokens read
+      // ownership/supply from, so it can safely coexist with a pending op on the same id.
       cryptonote::tx_extra_token_descriptor_operation data{};
       size_t op_index = 0;
       bool saw_token_op = false;
@@ -1029,7 +1031,7 @@ namespace cryptonote
   static bool tx_carries_token_ops(const transaction_prefix &tx)
   {
     return tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token ||
-           tx.type == txtype::update_token || tx.type == txtype::burn_token;
+           tx.type == txtype::update_token;
   }
   //---------------------------------------------------------------------------------
   void tx_memory_pool::index_token_ops(const transaction_prefix &tx, const crypto::hash &txid)
