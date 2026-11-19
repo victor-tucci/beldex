@@ -15594,23 +15594,32 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
       for (size_t k = 0; k < proof.index_in_tx; ++k)
         if (!std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[k].target))
           ++rct_index;
+      THROW_WALLET_EXCEPTION_IF(rct_index >= tx.rct_signatures.ecdhInfo.size() || rct_index >= tx.rct_signatures.outPk.size(),
+        error::wallet_internal_error, "rct index is out of bound");
       rct::ecdhTuple ecdh_info = tx.rct_signatures.ecdhInfo[rct_index];
       rct::ecdhDecode(ecdh_info, rct::sk2rct(shared_secret), tools::equals_any(tx.rct_signatures.type, rct::RCTType::Bulletproof2, rct::RCTType::CLSAG, rct::RCTType::BulletproofPlus));
+      // The decrypted ecdh hint is written by the tx author, who is also the
+      // prover here; only recomputing the on-chain commitment authenticates it.
+      const rct::key C = tx.rct_signatures.outPk[rct_index].mask;
+      rct::key Ctmp;
+      THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.mask.bytes) != 0, error::wallet_internal_error, "Bad ECDH input mask");
+      THROW_WALLET_EXCEPTION_IF(sc_check(ecdh_info.amount.bytes) != 0, error::wallet_internal_error, "Bad ECDH input amount");
+      rct::addKeys2(Ctmp, ecdh_info.mask, ecdh_info.amount, rct::H);
+      THROW_WALLET_EXCEPTION_IF(!rct::equalKeys(C, Ctmp), error::wallet_internal_error,
+        "Decoded amount does not match the output commitment; the reserve proof is misleading");
       amount = rct::h2d(ecdh_info.amount);
     }
     else if (std::holds_alternative<cryptonote::tx_out_zyphora>(tx.vout[proof.index_in_tx].target))
     {
       const auto& zout = std::get<cryptonote::tx_out_zyphora>(tx.vout[proof.index_in_tx].target);
-      rct::key r = cryptonote::zyphora_derivation_to_scalar(derivation, proof.index_in_tx, "token_blind");
-      rct::key rX = rct::scalarmultX(r);
-      rct::key token_id_rct;
-      rct::subKeys(token_id_rct, rct::tid2rct(zout.blinded_token_id), rX);
-      token_id = reinterpret_cast<const crypto::token_id&>(rct::rct2pk(token_id_rct));
-
-      rct::key enc_mask = cryptonote::zyphora_derivation_to_scalar(derivation, proof.index_in_tx, "enc_amount");
-      uint64_t enc_mask_64;
-      memcpy(&enc_mask_64, enc_mask.bytes, sizeof(uint64_t));
-      amount = zout.encrypted_amount ^ enc_mask_64;
+      // The encrypted amount is written by the tx author, who is also the
+      // prover here; decode_zyphora_output recomputes C = amount*T + mask*G
+      // against the on-chain commitment, the only step that authenticates it.
+      rct::key amount_mask{}, token_blinding_mask{};
+      THROW_WALLET_EXCEPTION_IF(!cryptonote::decode_zyphora_output(m_account.get_keys(), zout, derivation,
+          proof.index_in_tx, amount, token_id, amount_mask, token_blinding_mask),
+        error::wallet_internal_error,
+        "Decoded token amount does not match the output commitment; the reserve proof is misleading");
     }
     
     if (token_id == crypto::null_tid)

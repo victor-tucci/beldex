@@ -91,7 +91,7 @@ protected:
   }
   // `verified` models whether the tx passed its input check when it entered
   // the pool; a tx delivered inside a block is stored even when it did not.
-  crypto::hash insert(transaction tx, uint64_t received, bool verified = true)
+  crypto::hash insert(transaction tx, uint64_t received, bool verified = true, bool kept_by_block = true)
   {
     const auto id = get_transaction_hash(tx);
     txpool_tx_meta_t meta{};
@@ -99,8 +99,8 @@ protected:
     meta.weight = 1000;
     meta.receive_time = received;
     meta.relayed = true;
-    // Model transactions restored after a detach; admission dedup is bypassed.
-    meta.kept_by_block = true;
+    // Default models transactions restored after a detach; admission dedup is bypassed.
+    meta.kept_by_block = kept_by_block;
     if (verified)
     {
       meta.max_used_block_height = 0;
@@ -136,7 +136,34 @@ protected:
   }
 };
 
-TEST_F(TokenPool, EverySameTokenPairConflictsIncludingReorgRestores)
+// M10 regression: a pooled token operation that the new block has invalidated
+// must be evicted at that block, releasing the token's pending slot, instead
+// of squatting it for MEMPOOL_TX_LIVETIME (3 days). kept_by_block txs are
+// exempt: they may belong to an alt chain the node could still reorg onto.
+// (The fixture's proof-less ops fail re-validation, standing in for ops that
+// a mined block made permanently stale.)
+TEST_F(TokenPool, StaleTokenOpsAreEvictedOnNewBlockReleasingTheSlot)
+{
+  const auto stale = insert(tx(1, 1, 1), 1, /*verified=*/true, /*kept_by_block=*/false);
+  const auto alt   = insert(tx(1, 2, 2), 2, /*verified=*/true, /*kept_by_block=*/true);
+  ASSERT_EQ(pool.get_transactions_count(), 2);
+  // Both tokens' slots are held before the block arrives.
+  EXPECT_TRUE(tx_pool_test_access::duplicate(pool, tx(2, 1, 3)));
+  EXPECT_TRUE(tx_pool_test_access::duplicate(pool, tx(2, 2, 3)));
+
+  block blk{};
+  blk.major_version = feature::PRIVACY_TOKENS;
+  blk.miner_tx.vin.emplace_back(txin_gen{101});
+  ASSERT_TRUE(pool.on_blockchain_inc(blk));
+
+  // The relayed stale op is gone and token 1's slot is free again...
+  EXPECT_EQ(pool.get_transactions_count(), 1);
+  EXPECT_FALSE(tx_pool_test_access::duplicate(pool, tx(2, 1, 3)));
+  // ...while the kept_by_block op survives and token 2's slot stays held.
+  EXPECT_TRUE(tx_pool_test_access::duplicate(pool, tx(2, 2, 3)));
+}
+
+TEST_F(TokenPool, SameTokenPairsConflictExceptBurnsIncludingReorgRestores)
 {
   for (size_t first = 0; first < 4; ++first)
     for (size_t second = 0; second < 4; ++second)
@@ -145,15 +172,30 @@ TEST_F(TokenPool, EverySameTokenPairConflictsIncludingReorgRestores)
       auto a = insert(tx(first, 1, 1), 1);
       auto b = insert(tx(second, 1, 2), 2);
       auto other = insert(tx(second, 2, 3), 3);
+      // M9: a burn never occupies the token's per-block slot -- it only moves
+      // current_supply, which no other operation reads from its own descriptor
+      // -- so any pair involving a burn coexists in one template. Otherwise a
+      // dust-holder's burns could outbid the owner's mint/update every block.
+      const bool has_burn = first == 3 || second == 3;
       for (size_t attempt = 0; attempt < 2; ++attempt)
       {
         auto result = block_template();
-        ASSERT_EQ(result.tx_hashes.size(), 2);
-        EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), other), 1);
-        EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), a) +
-                  std::count(result.tx_hashes.begin(), result.tx_hashes.end(), b), 1);
+        if (has_burn)
+        {
+          ASSERT_EQ(result.tx_hashes.size(), 3);
+          EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), a), 1);
+          EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), b), 1);
+          EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), other), 1);
+        }
+        else
+        {
+          ASSERT_EQ(result.tx_hashes.size(), 2);
+          EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), other), 1);
+          EXPECT_EQ(std::count(result.tx_hashes.begin(), result.tx_hashes.end(), a) +
+                    std::count(result.tx_hashes.begin(), result.tx_hashes.end(), b), 1);
+        }
       }
-      // Template selection skips the loser; it must not mutate pool contents.
+      // Template selection skips any loser; it must not mutate pool contents.
       EXPECT_EQ(pool.get_transactions_count(), 3);
       clear();
     }

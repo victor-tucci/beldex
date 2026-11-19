@@ -356,8 +356,12 @@ bool apply_token_operation_to_state(
 
       if (d.total_max_supply != state.total_max_supply)
         return reject("update_token cannot modify total_max_supply");
-      if (d.current_supply != state.current_supply)
-        return reject("update_token cannot modify current_supply");
+      // The descriptor's current_supply is deliberately IGNORED here, not
+      // compared (M9): supply moves under the owner's feet -- any holder's
+      // burn landing after the update was built would otherwise invalidate
+      // the pending update, letting a dust burn censor the owner's updates
+      // indefinitely. The update cannot change supply either way: the chain
+      // value is preserved when the descriptor is applied below.
       if (d.ticker != state.descriptor.ticker)
         return reject("update_token cannot modify ticker");
       if (d.full_name != state.descriptor.full_name)
@@ -374,6 +378,9 @@ bool apply_token_operation_to_state(
       }
 
       state.descriptor = d;
+      // Supply is chain-owned: only register/mint/burn move it, never the
+      // owner-supplied descriptor copy in an update.
+      state.descriptor.current_supply = state.current_supply;
       return true;
     }
 

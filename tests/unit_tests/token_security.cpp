@@ -183,6 +183,46 @@ TEST_F(TokenSecurity, BurnCannotUseNativeInputsToReduceTokenSupply)
   EXPECT_EQ(state.current_supply, 100);
 }
 
+// M9 regression: a pending update must not be invalidated by a third party's
+// burn landing first. current_supply is chain-owned: the update's descriptor
+// copy is ignored, never compared, and can never change the chain value.
+TEST_F(TokenSecurity, BurnCannotInvalidatePendingUpdateAndSupplyIsChainOwned)
+{
+  token_consensus_state state{};
+  std::string reason;
+  ASSERT_TRUE(apply_token_operation_to_state(id, registration, state, reason)) << reason;
+
+  // The owner builds an update restating the supply as it was at build time (100)...
+  auto update = registration;
+  update.operation_type = operation::update_token;
+  update.fields |= token_field_token_id;
+  update.token_id = id;
+  update.descriptor.meta_info = "new meta";
+
+  // ...then any holder's dust burn lands first and moves the supply.
+  tx_extra_token_descriptor_operation burn{};
+  burn.operation_type = operation::burn_token;
+  burn.fields = token_field_token_id | token_field_amount;
+  burn.token_id = id;
+  burn.amount = 40;
+  ASSERT_TRUE(apply_token_operation_to_state(id, burn, state, reason)) << reason;
+  EXPECT_EQ(state.current_supply, 60);
+
+  // The now-stale update still applies, and the supply keeps the chain value.
+  ASSERT_TRUE(apply_token_operation_to_state(id, update, state, reason)) << reason;
+  EXPECT_EQ(state.current_supply, 60);
+  EXPECT_EQ(state.descriptor.current_supply, 60);
+  EXPECT_EQ(state.descriptor.meta_info, "new meta");
+
+  // Nor can an update smuggle a supply change in through its descriptor copy.
+  auto inflate = update;
+  inflate.descriptor.meta_info = "inflate";
+  inflate.descriptor.current_supply = 1000;
+  ASSERT_TRUE(apply_token_operation_to_state(id, inflate, state, reason)) << reason;
+  EXPECT_EQ(state.current_supply, 60);
+  EXPECT_EQ(state.descriptor.current_supply, 60);
+}
+
 // The id function itself decides, by operation type, where an id comes from:
 // a register can never choose its own id, and the other operations must name
 // their token explicitly rather than have it re-derived from a descriptor.
@@ -805,5 +845,50 @@ TEST(TokenOutputLimit, PrunedWeightHandlesTokenInputsAndOutputs)
   tx.rct_signatures.outPk.resize(3 + TX_BULLETPROOF_MAX_OUTPUTS);
   EXPECT_NO_THROW(weight = get_pruned_transaction_weight(tx));
   EXPECT_EQ(weight, std::numeric_limits<uint64_t>::max());
+}
+
+// M16 regression: an output's encrypted amount is written by the tx author
+// and is never consensus-checked against the commitment, so any code that
+// credits a decoded amount -- reserve proofs above all, where the author IS
+// the prover -- must recompute C = amount*T + mask*G and compare it to the
+// on-chain commitment. decode_zyphora_output is that shared gate; a hint
+// that disagrees with the commitment must fail it.
+TEST(TokenOutputDecode, ForgedEncryptedAmountFailsTheCommitmentCheck)
+{
+  crypto::key_derivation derivation{};
+  ASSERT_TRUE(crypto::generate_key_derivation(rct::rct2pk(rct::scalarmultBase(rct::d2h(23))),
+      rct::rct2sk(rct::d2h(19)), derivation));
+
+  const size_t index = 1;
+  const uint64_t real_amount = 5;            // what the commitment holds
+  const uint64_t claimed_amount = 1'000'000; // what a dishonest prover reports
+  const rct::key token_id = rct::scalarmultBase(rct::d2h(29));
+
+  // Honest sender-side construction of the output.
+  tx_out_zyphora out{};
+  const rct::key r = zyphora_derivation_to_scalar(derivation, index, "token_blind");
+  rct::key blinded;
+  rct::addKeys(blinded, token_id, rct::scalarmultX(r));
+  out.blinded_token_id = rct::rct2tid(blinded);
+  const rct::key mask = zyphora_derivation_to_scalar(derivation, index, "amount_mask");
+  out.amount_commitment = rct::rct2pk(rct::commitToken(mask, blinded, real_amount));
+  uint64_t enc_mask_64;
+  memcpy(&enc_mask_64, zyphora_derivation_to_scalar(derivation, index, "enc_amount").bytes,
+      sizeof(enc_mask_64));
+  out.encrypted_amount = real_amount ^ enc_mask_64;
+
+  account_keys keys{};
+  uint64_t amount = 0;
+  crypto::token_id decoded_id{};
+  rct::key amount_mask{}, blinding_mask{};
+  ASSERT_TRUE(decode_zyphora_output(keys, out, derivation, index, amount, decoded_id,
+      amount_mask, blinding_mask));
+  EXPECT_EQ(amount, real_amount);
+  EXPECT_EQ(decoded_id, rct::rct2tid(token_id));
+
+  // The forgery: same on-chain commitment, inflated hint.
+  out.encrypted_amount = claimed_amount ^ enc_mask_64;
+  EXPECT_FALSE(decode_zyphora_output(keys, out, derivation, index, amount, decoded_id,
+      amount_mask, blinding_mask));
 }
 } // namespace

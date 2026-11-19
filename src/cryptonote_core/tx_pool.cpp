@@ -40,6 +40,7 @@
 #include "cryptonote_tx_utils.h"
 #include "beldex_economy.h"
 #include "cryptonote_basic/token_descriptor_operation_utils.h"
+#include "cryptonote_core/token_history_utils.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_core/master_node_list.h"
 #include "cryptonote_config.h"
@@ -1601,6 +1602,56 @@ namespace cryptonote
       }
     }
 
+    // M10: token operations are validated against token state at admission and
+    // never re-checked, while each register/mint/update holds its token's
+    // exclusive pending slot (m_pending_token_ops). A block can invalidate a
+    // pooled op forever -- an ownership transfer landing before a pooled mint,
+    // a register beating a competing register, a reorg replaying ops in an
+    // order that no longer applies -- and without eviction the dead op squats
+    // the slot for MEMPOOL_TX_LIVETIME (3 days), blocking the owner's
+    // replacement on this node. Re-validate pooled token ops against the
+    // post-block token state and drop the ones that can no longer apply.
+    // kept_by_block txs are exempt, as in the state-change pruning above: they
+    // may belong to an alt chain the node could still reorg onto.
+    if (blk.major_version >= feature::PRIVACY_TOKENS)
+    {
+      for (const transaction &pool_tx : pool_txs)
+      {
+        if (pool_tx.type != txtype::register_privacy_token && pool_tx.type != txtype::mint_token &&
+            pool_tx.type != txtype::update_token && pool_tx.type != txtype::burn_token)
+          continue;
+
+        crypto::hash tx_hash;
+        if (!get_transaction_hash(pool_tx, tx_hash))
+        {
+          MERROR("Failed to get transaction hash from txpool to re-validate a token operation");
+          continue;
+        }
+
+        txpool_tx_meta_t meta;
+        if (!m_blockchain.get_txpool_tx_meta(tx_hash, meta))
+        {
+          MERROR("Failed to get tx meta from txpool to re-validate a token operation");
+          continue;
+        }
+        if (meta.kept_by_block)
+          continue;
+
+        std::string reason;
+        if (validate_tx_token_operations_against_db(m_blockchain.get_db(), pool_tx, reason, blk.major_version))
+          continue;
+
+        LOG_PRINT_L1("Evicting token operation tx " << tx_hash
+            << " invalidated by the new block, releasing its token's pending slot: " << reason);
+        transaction tx;
+        cryptonote::blobdata blob;
+        size_t tx_weight;
+        uint64_t fee;
+        bool relayed, do_not_relay, double_spend_seen;
+        take_tx(tx_hash, tx, blob, tx_weight, fee, relayed, do_not_relay, double_spend_seen);
+      }
+    }
+
     return true;
   }
   //---------------------------------------------------------------------------------
@@ -2041,10 +2092,17 @@ end:
         continue;
       }
 
+      // burn_token is deliberately NOT part of the per-token block slot (M9):
+      // a burn only moves current_supply, which no other operation reads from
+      // its own descriptor any more (an update's restated supply is ignored),
+      // so burns compose safely with any same-token operation in one block.
+      // Counting them would let any dust-holder outbid the owner's mint or
+      // update for the token's slot every block. Mirrors the pool-admission
+      // dedup, which likewise excludes burns.
       const bool is_token_tx =
           version >= feature::PRIVACY_TOKENS &&
           (is_token_registration || tx.type == txtype::mint_token ||
-           tx.type == txtype::update_token || tx.type == txtype::burn_token);
+           tx.type == txtype::update_token);
 
       if (is_token_tx)
       {
