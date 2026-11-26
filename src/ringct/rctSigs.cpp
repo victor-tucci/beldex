@@ -2270,11 +2270,11 @@ namespace rct {
 
             // Pseudo-out amount commitments live in the ZY_sigs (one per zy
             // input, collected in input order in step 1), not on the inputs.
-            rct::key sum_in_C = rct::zero();
+            rct::key sum_in_C = rct::identity();
             for (const auto* zs : zy_sigs)
                 rct::addKeys(sum_in_C, sum_in_C, zs->pseudo_out_amount_commitment);
 
-            rct::key sum_out_C = rct::zero();
+            rct::key sum_out_C = rct::identity();
             for (const auto& out : tx.vout)
             {
                 if (!std::holds_alternative<cryptonote::tx_out_zyphora>(out.target))
@@ -2283,7 +2283,7 @@ namespace rct {
                 rct::addKeys(sum_out_C, sum_out_C, rct::pk2rct(zout.amount_commitment));
             }
 
-            rct::key expected_P = rct::zero();
+            rct::key expected_P = rct::identity();
             rct::subKeys(expected_P, sum_in_C, sum_out_C);
             if (tx.type == cryptonote::txtype::burn_token)
             {

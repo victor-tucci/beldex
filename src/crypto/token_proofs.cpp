@@ -223,8 +223,10 @@ bool generate_schnorr_sig(const rct::key& msg,
                           const rct::key& s,
                           schnorr_sig_s&  out)
 {
-    // r random, R = r*G
-    rct::key r = rct::skGen();
+    // r random, R = r*G. The nonce must never outlive this call: with the
+    // published (c, y) it gives the secret, s = (r - y) / c.
+    rct::scrubbed_key r;
+    rct::skGen(r);
     rct::key R = rct::scalarmultBase(r);
 
     // c = H(domain || msg || P || R)
@@ -266,7 +268,8 @@ bool generate_schnorr_sig_X(const rct::key& msg,
                              const rct::key& s,
                              schnorr_sig_s&  out)
 {
-    rct::key r = rct::skGen();
+    rct::scrubbed_key r;                // wiped on return, see generate_schnorr_sig
+    rct::skGen(r);
     rct::key R = rct::scalarmultX(r);   // R = r*X
 
     out.c = hash_to_scalar_varargs(DOMAIN_SCHNORR_X, {&msg, &P, &R});
@@ -304,8 +307,9 @@ bool generate_linear_composition_proof(const rct::key&             msg,
                                        linear_composition_proof_s& out)
 {
     // r0, r1 random; R = r0*G + r1*X
-    rct::key r0 = rct::skGen();
-    rct::key r1 = rct::skGen();
+    rct::scrubbed_key r0, r1;
+    rct::skGen(r0);
+    rct::skGen(r1);
     rct::key r0G = rct::scalarmultBase(r0);
     rct::key r1X = rct::scalarmultX(r1);
     rct::key R;
@@ -355,8 +359,9 @@ bool generate_double_schnorr_sig(const rct::key&        msg,
                                  double_schnorr_sig_s&  out)
 {
     // r0, r1 random; R0 = r0*X, R1 = r1*G
-    rct::key r0 = rct::skGen();
-    rct::key r1 = rct::skGen();
+    rct::scrubbed_key r0, r1;
+    rct::skGen(r0);
+    rct::skGen(r1);
     rct::key R0 = rct::scalarmultX(r0);
     rct::key R1 = rct::scalarmultBase(r1);
 
@@ -472,20 +477,20 @@ bool generate_BGE_proof(const rct::key&  context_hash,
     // ── a matrix: m x n, each row sums to zero ──────────────────────────────
     // a[j][i] are random scalars; a[j][0] = -sum(a[j][1..n-1])
     // Stored flat: a_mat[j*n + i]
-    std::vector<rct::key> a_mat(mn, rct::zero());
+    rct::scrubbed_keyV a_mat(mn, rct::zero());
     std::vector<size_t>   l_digits(m); // base-n digits of real_index
 
     size_t l = real_index;
     for (size_t j = 0; j < m; ++j)
     {
-        rct::key row_sum = rct::zero();
+        rct::scrubbed_key row_sum = rct::zero();
         for (size_t i = 1; i < n; ++i)
         {
-            a_mat[j * n + i] = rct::skGen();
+            rct::skGen(a_mat[j * n + i]);
             sc_add(row_sum.bytes, row_sum.bytes, a_mat[j * n + i].bytes);
         }
         // a[j][0] = -sum  (so the row sums to zero mod l)
-        rct::key neg_sum;
+        rct::scrubbed_key neg_sum;
         sc_sub(neg_sum.bytes, rct::zero().bytes, row_sum.bytes);
         a_mat[j * n + 0] = neg_sum;
 
@@ -495,7 +500,7 @@ bool generate_BGE_proof(const rct::key&  context_hash,
 
     // ── polynomial coefficients: m x N matrix ───────────────────────────────
     // coeffs[j * N + i] is the contribution of ring member i at depth j.
-    std::vector<rct::key> coeffs(m * N, rct::zero());
+    rct::scrubbed_keyV coeffs(m * N, rct::zero());
     for (size_t i = 0; i < N; ++i)
     {
         // row 0: initialise to scalar 1
@@ -514,12 +519,12 @@ bool generate_BGE_proof(const rct::key&  context_hash,
             if (i_j == l_digits[j])
             {
                 // multiply existing entries and carry
-                rct::key carry = rct::zero();
+                rct::scrubbed_key carry = rct::zero();
                 for (size_t k = 0; k < m_bound; ++k)
                 {
-                    rct::key old_val = coeffs[k * N + i];
+                    rct::scrubbed_key old_val = coeffs[k * N + i];
                     // coeffs[k*N+i] = old_val * a[j][i_j] + carry
-                    rct::key prod;
+                    rct::scrubbed_key prod;
                     sc_muladd(prod.bytes,
                               old_val.bytes,
                               a_mat[j * n + i_j].bytes,
@@ -550,10 +555,11 @@ bool generate_BGE_proof(const rct::key&  context_hash,
     }
 
     // ── blinding scalars ─────────────────────────────────────────────────────
-    rct::key r_A = rct::skGen();
-    rct::key r_B = rct::skGen();
-    std::vector<rct::key> ro(m);
-    for (auto& rk : ro) rk = rct::skGen();
+    rct::scrubbed_key r_A, r_B;
+    rct::skGen(r_A);
+    rct::skGen(r_B);
+    rct::scrubbed_keyV ro(m);
+    for (auto& rk : ro) rct::skGen(rk);
 
     // ── A, B, Pk commitments ─────────────────────────────────────────────────
     // A = sum_{j,i}( a[j][i]*gen1[j,i] - a[j][i]^2 * gen2[j,i] ) + r_A*X
@@ -583,7 +589,7 @@ bool generate_BGE_proof(const rct::key&  context_hash,
             const rct::key& a_ji = a_mat[j * n + i];
 
             // A += a_ji * gen1 - a_ji^2 * gen2
-            rct::key a_ji_sq;
+            rct::scrubbed_key a_ji_sq;
             sc_muladd(a_ji_sq.bytes, a_ji.bytes, a_ji.bytes, rct::zero().bytes);
 
             rct::key term1 = scalarmult(gen1, a_ji);
@@ -664,10 +670,10 @@ bool generate_BGE_proof(const rct::key&  context_hash,
     memset(x_power.bytes, 0, 32);
     x_power.bytes[0] = 1; // x^0 = 1
 
-    rct::key z_acc = rct::zero();
+    rct::scrubbed_key z_acc = rct::zero();
     for (size_t k = 0; k < m; ++k)
     {
-        rct::key xk_ro;
+        rct::scrubbed_key xk_ro;
         sc_muladd(xk_ro.bytes, x_power.bytes, ro[k].bytes, rct::zero().bytes);
         sc_add(z_acc.bytes, z_acc.bytes, xk_ro.bytes);
         sc_muladd(x_power.bytes, x_power.bytes, x.bytes, rct::zero().bytes);
@@ -864,11 +870,11 @@ bool generate_vector_ug_aggregation_proof(const rct::key&  context_hash,
     for (size_t j = 0; j < n; ++j)
         tag_plus_wU[j] = point_add(tags[j], wU);
 
-    rct::keyV r0(n), r1(n);
+    rct::scrubbed_keyV r0(n), r1(n);
     for (size_t j = 0; j < n; ++j)
     {
-        r0[j] = rct::skGen();
-        r1[j] = rct::skGen();
+        rct::skGen(r0[j]);
+        rct::skGen(r1[j]);
     }
 
     // R[j] = r0[j]*(tags[j] + w*H) + r1[j]*G
@@ -890,18 +896,18 @@ bool generate_vector_ug_aggregation_proof(const rct::key&  context_hash,
     for (size_t j = 0; j < n; ++j)
     {
         // y0_j = r0_j - c*amount_j
-        rct::key c_amount;
+        rct::scrubbed_key c_amount;
         sc_mul(c_amount.bytes, c.bytes, amounts[j].bytes);
         sc_sub(out.y0s[j].bytes, r0[j].bytes, c_amount.bytes);
 
         // combined_mask_j = real_masks[j] + w*aux_masks[j]
-        rct::key w_auxmask;
+        rct::scrubbed_key w_auxmask;
         sc_mul(w_auxmask.bytes, w.bytes, aux_masks[j].bytes);
-        rct::key combined_mask;
+        rct::scrubbed_key combined_mask;
         sc_add(combined_mask.bytes, real_masks[j].bytes, w_auxmask.bytes);
 
         // y1_j = r1_j - c*combined_mask_j
-        rct::key c_combined;
+        rct::scrubbed_key c_combined;
         sc_mul(c_combined.bytes, c.bytes, combined_mask.bytes);
         sc_sub(out.y1s[j].bytes, r1[j].bytes, c_combined.bytes);
 

@@ -88,6 +88,27 @@ namespace rct {
     typedef std::vector<key> keyV; //vector of keys
     typedef std::vector<keyV> keyM; //matrix of keys (indexed by column first)
 
+    // A key holding secret material (nonce, mask, blinding scalar): wiped when
+    // it goes out of scope, on every exit path, so it does not linger in freed
+    // memory. Converts to and from `key`, so it can be passed wherever a
+    // `const key&` is expected. Fill it in place (e.g. skGen(k)) rather than
+    // from a returned temporary, which would leave an unwiped copy behind.
+    struct scrubbed_key : key {
+        scrubbed_key() = default;
+        scrubbed_key(const key& k) : key(k) {}
+        scrubbed_key(const scrubbed_key&) = default;
+        scrubbed_key& operator=(const scrubbed_key&) = default;
+        scrubbed_key& operator=(const key& k) { key::operator=(k); return *this; }
+        ~scrubbed_key() { memwipe(bytes, sizeof(bytes)); }
+    };
+
+    // A vector of secret keys, wiped on destruction. Size or reserve it once up
+    // front: growing it reallocates and leaves the old buffer unwiped.
+    struct scrubbed_keyV : keyV {
+        using keyV::keyV;
+        ~scrubbed_keyV() { if (!empty()) memwipe(data(), size() * sizeof(key)); }
+    };
+
     //containers For CT operations
     //if it's  representing a private ctkey then "dest" contains the secret key of the address
     // while "mask" contains a where C = aG + bH is CT pedersen commitment and b is the amount

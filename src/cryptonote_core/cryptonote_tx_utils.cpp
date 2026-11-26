@@ -803,14 +803,16 @@ namespace cryptonote
     struct zy_sig_pending_data
     {
       rct::keyV ring_P, ring_A, ring_T; // stealth addrs, amount commitments, blinded token ids
-      rct::key spend_secret;            // p
-      rct::key amount_mask_diff;        // f
-      rct::key token_mask_diff;         // t
+      // Secret fields are scrubbed_key so they are wiped when this entry is
+      // destroyed, on every exit path of construct_tx.
+      rct::scrubbed_key spend_secret;     // p
+      rct::scrubbed_key amount_mask_diff; // f
+      rct::scrubbed_key token_mask_diff;  // t
       rct::key pseudo_out_amount_commitment;
       rct::key pseudo_out_blinded_token_id;
-      rct::key pseudo_token_r;    // mask used to build pseudo_out_blinded_token_id (for surjection-proof ring matching)
-      rct::key pseudo_amount_mask; // mask used in pseudo_out_amount_commitment (for balance-proof Δmask)
-      rct::key real_r;            // real spent output's own token-id blinding scalar (for balance-proof X-term)
+      rct::scrubbed_key pseudo_token_r;    // mask used to build pseudo_out_blinded_token_id (for surjection-proof ring matching)
+      rct::scrubbed_key pseudo_amount_mask; // mask used in pseudo_out_amount_commitment (for balance-proof Δmask)
+      rct::scrubbed_key real_r;            // real spent output's own token-id blinding scalar (for balance-proof X-term)
       unsigned int real_index;
     };
     std::vector<std::optional<zy_sig_pending_data>> zy_pending(sources.size());
@@ -861,7 +863,7 @@ namespace cryptonote
         // "token_blind") computation) and cached in transfer_details::m_token_mask,
         // carried here via tx_source_entry::token_mask. Reuse it instead of
         // re-deriving, mirroring Zano's cache-at-scan-time design.
-        rct::key real_r = src_entr.token_mask;
+        rct::scrubbed_key real_r = src_entr.token_mask;
 
         const rct::key token_id_pt = rct::tid2rct(src_entr.token_id);
         // T_real = token_id + real_r*X -- the EXACT blinded token id already
@@ -877,12 +879,13 @@ namespace cryptonote
         // That makes the layer-2/X ring-opening secret just -pseudo_token_r,
         // since T_real - pseudo_T = -pseudo_token_r*X (real_r cancels).
         rct::key T_real = rct::blindTokenId(token_id_pt, real_r);
-        rct::key pseudo_amount_mask = rct::skGen();
-        rct::key pseudo_token_r     = rct::skGen();
+        rct::scrubbed_key pseudo_amount_mask, pseudo_token_r;
+        rct::skGen(pseudo_amount_mask);
+        rct::skGen(pseudo_token_r);
         rct::key pseudo_A = rct::commitToken(pseudo_amount_mask, T_real, src_entr.amount);
         rct::key pseudo_T = rct::blindTokenId(T_real, pseudo_token_r);
 
-        rct::key f, t;
+        rct::scrubbed_key f, t;
         sc_sub(f.bytes, src_entr.mask.bytes, pseudo_amount_mask.bytes);
         sc_sub(t.bytes, rct::zero().bytes, pseudo_token_r.bytes);
 
@@ -995,9 +998,9 @@ namespace cryptonote
     struct zy_out_pending_data
     {
       rct::key token_id_rct;       // plaintext token id point (known to sender only)
-      rct::key blind_r;            // s_j such that T = token_id_rct + blind_r*X
+      rct::scrubbed_key blind_r;   // s_j such that T = token_id_rct + blind_r*X
       rct::key T;                  // blinded_token_id of this output
-      rct::key amount_mask;        // mask used in this output's amount commitment (for balance proof)
+      rct::scrubbed_key amount_mask; // mask used in this output's amount commitment (for balance proof)
       rct::key amount_commitment;  // C = amount*T + amount_mask*G
     };
     std::vector<std::optional<zy_out_pending_data>> zy_out_pending(destinations.size());
@@ -1070,7 +1073,7 @@ namespace cryptonote
         MTRACE("Key derivation for output done");
 
         // Blinded token ID:  T = token_id + r*X
-        rct::key r = zyphora_derivation_to_scalar(derivation, output_index, "token_blind");
+        rct::scrubbed_key r = zyphora_derivation_to_scalar(derivation, output_index, "token_blind");
         rct::key rX = rct::scalarmultX(r);
         const rct::key& token_id_rct = rct::tid2rct(dst_entr.token_id);
         rct::key T;
@@ -1085,13 +1088,13 @@ namespace cryptonote
         // the recovered blinding scalar, so the CLSAG_GGX layer-1 (mask)
         // relation cancels cleanly. Mirrors Zano's
         // currency_format_utils.cpp:2456 (source_amount_commitment formula).
-        rct::key mask = zyphora_derivation_to_scalar(derivation, output_index, "amount_mask");
+        rct::scrubbed_key mask = zyphora_derivation_to_scalar(derivation, output_index, "amount_mask");
         rct::key amount_commitment = rct::commitToken(mask, T, dst_entr.amount);
         zout.amount_commitment = rct::rct2pk(amount_commitment);
         MTRACE("Amount commitment done");
 
         // Encrypted amount
-        rct::key enc_key = zyphora_derivation_to_scalar(derivation, output_index, "enc_amount");
+        rct::scrubbed_key enc_key = zyphora_derivation_to_scalar(derivation, output_index, "enc_amount");
         uint64_t enc_mask_64;
         memcpy(&enc_mask_64, enc_key.bytes, sizeof(uint64_t));
         zout.encrypted_amount = dst_entr.amount ^ enc_mask_64;
@@ -1160,8 +1163,8 @@ namespace cryptonote
     // outputs worth more (inflation). Ported/adapted from Zano
     // construct_tx_handle_ado + validate_token_operation_amount_commitment.
     bool     aop_required   = false;
-    rct::key aop_mask       = rct::zero();
-    rct::key aop_secret_x   = rct::zero();
+    rct::scrubbed_key aop_mask     = rct::zero();
+    rct::scrubbed_key aop_secret_x = rct::zero();
     rct::key aop_commitment = rct::zero(); // full TDO amount commitment C (used by the burn balance proof)
     crypto::token_id aop_token_id = crypto::null_tid; // mint token id, used as the surjection ring member
     if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token || tx.type == txtype::burn_token)
@@ -1205,15 +1208,15 @@ namespace cryptonote
       rct::key commitment_full = rct::identity();
       if (tx.type == txtype::burn_token)
       {
-        aop_mask = rct::skGen();
+        rct::skGen(aop_mask);
         const rct::key& token_pt = rct::tid2rct(token_id);
         commitment_full = rct::commitToken(aop_mask, token_pt, declared_amount);
         aop_commitment  = commitment_full;
       }
       else
       {
-        rct::key sum_masks     = rct::zero();
-        rct::key secret_x_mint = rct::zero();
+        rct::scrubbed_key sum_masks     = rct::zero();
+        rct::scrubbed_key secret_x_mint = rct::zero();
         {
           size_t out_idx = 0;
           for (const auto& d : destinations)
@@ -1222,7 +1225,7 @@ namespace cryptonote
             {
               const auto& op = *zy_out_pending[out_idx];
               sc_add(sum_masks.bytes, sum_masks.bytes, op.amount_mask.bytes);
-              rct::key r_amount;
+              rct::scrubbed_key r_amount;
               sc_mul(r_amount.bytes, op.blind_r.bytes, rct::d2h(d.amount).bytes);
               sc_add(secret_x_mint.bytes, secret_x_mint.bytes, r_amount.bytes);
               rct::addKeys(commitment_full, commitment_full, op.amount_commitment);
@@ -1628,7 +1631,7 @@ namespace cryptonote
                 // Find which legitimate token source matches this output's token
                 // id: first the spent zy inputs, then the token-emission member.
                 size_t real_index = SIZE_MAX;
-                rct::key r;
+                rct::scrubbed_key r;
                 for (size_t i = 0; i < sources.size(); ++i)
                 {
                   if (source_to_ring_index[i] == SIZE_MAX)
@@ -1640,7 +1643,7 @@ namespace cryptonote
                     // when the underlying token ids match (T_j == token_id + s_j*X,
                     // ring[real_index] == pseudo_T_i == token_id + (real_r_i+pseudo_r_i)*X,
                     // since pseudo_T_i is now built as an offset from T_real, not raw token_id).
-                    rct::key real_plus_pseudo_r;
+                    rct::scrubbed_key real_plus_pseudo_r;
                     sc_add(real_plus_pseudo_r.bytes, zy_pending[i]->real_r.bytes, zy_pending[i]->pseudo_token_r.bytes);
                     sc_sub(r.bytes, out_p.blind_r.bytes, real_plus_pseudo_r.bytes);
                     break;
@@ -1704,30 +1707,30 @@ namespace cryptonote
 
             if (has_zy_inputs)
             {
-              rct::key sum_in_C = rct::zero();
-              rct::key secret_x_in = rct::zero();
-              rct::key mask_delta = rct::zero();
+              rct::key sum_in_C = rct::identity();
+              rct::scrubbed_key secret_x_in = rct::zero();
+              rct::scrubbed_key mask_delta = rct::zero();
               for (size_t i = 0; i < zy_pending.size(); ++i)
               {
                 const auto& p = zy_pending[i];
                 if (!p)
                   continue;
                 rct::addKeys(sum_in_C, sum_in_C, p->pseudo_out_amount_commitment);
-                rct::key r_amount;
+                rct::scrubbed_key r_amount;
                 sc_mul(r_amount.bytes, p->real_r.bytes, rct::d2h(sources[i].amount).bytes);
                 sc_add(secret_x_in.bytes, secret_x_in.bytes, r_amount.bytes);
                 sc_add(mask_delta.bytes, mask_delta.bytes, p->pseudo_amount_mask.bytes);
               }
 
-              rct::key sum_out_C = rct::zero();
-              rct::key secret_x_out = rct::zero();
+              rct::key sum_out_C = rct::identity();
+              rct::scrubbed_key secret_x_out = rct::zero();
               for (size_t j = 0; j < zy_out_pending.size(); ++j)
               {
                 const auto& op = zy_out_pending[j];
                 if (!op)
                   continue;
                 rct::addKeys(sum_out_C, sum_out_C, op->amount_commitment);
-                rct::key r_amount;
+                rct::scrubbed_key r_amount;
                 sc_mul(r_amount.bytes, op->blind_r.bytes, rct::d2h(destinations[j].amount).bytes);
                 sc_add(secret_x_out.bytes, secret_x_out.bytes, r_amount.bytes);
                 sc_sub(mask_delta.bytes, mask_delta.bytes, op->amount_mask.bytes);
@@ -1736,7 +1739,7 @@ namespace cryptonote
               rct::key P;
               rct::subKeys(P, sum_in_C, sum_out_C);
 
-              rct::key secret_x;
+              rct::scrubbed_key secret_x;
               sc_sub(secret_x.bytes, secret_x_in.bytes, secret_x_out.bytes);
 
               if (tx_params.tx_type == txtype::burn_token)
@@ -1768,7 +1771,13 @@ namespace cryptonote
           // on its own. See token_proofs.h's vector_ug_aggregation_proof_s for
           // the full design (adapted from Zano's zy_outs_range_proof).
           {
-            rct::keyV amounts, real_masks, aux_masks, real_commitments, tags;
+            // Amounts and masks are secret: keep them in wiped vectors, reserved
+            // once so that push_back never reallocates and strands a copy.
+            rct::scrubbed_keyV amounts, real_masks, aux_masks;
+            rct::keyV real_commitments, tags;
+            amounts.reserve(zy_out_pending.size());
+            real_masks.reserve(zy_out_pending.size());
+            aux_masks.reserve(zy_out_pending.size());
             for (size_t j = 0; j < zy_out_pending.size(); ++j)
             {
               if (!zy_out_pending[j])
@@ -1776,7 +1785,7 @@ namespace cryptonote
               const auto& out_p = zy_out_pending[j].value();
               amounts.push_back(rct::d2h(destinations[j].amount));
               real_masks.push_back(out_p.amount_mask);
-              aux_masks.push_back(rct::skGen());
+              rct::skGen(aux_masks.emplace_back());
               real_commitments.push_back(out_p.amount_commitment);
               // tags[j] must be this output's own T (not the plaintext
               // token_id) -- it's the base real_commitments[j] was actually
