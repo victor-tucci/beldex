@@ -6152,13 +6152,16 @@ std::array<std::string, sizeof...(Prefixes)> eat_named_arguments(std::vector<std
   return { eat_named_argument(args, prefixes)... };
 }
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_info> const &dests, std::vector<tools::wallet2::pending_tx> &ptx_vector, bool flash, uint64_t lock_time_in_blocks, uint64_t unlock_block, bool called_by_mms)
+bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_info> const &dests, std::vector<tools::wallet2::pending_tx> &ptx_vector, bool flash, uint64_t lock_time_in_blocks, uint64_t unlock_block, bool called_by_mms, const std::string &required_notice)
 {
   if (ptx_vector.empty())
     return false;
 
-  // if more than one tx necessary, prompt user to confirm
-  if (m_wallet->always_confirm_transfers() || ptx_vector.size() > 1)
+  // if more than one tx necessary, prompt user to confirm. A non-empty
+  // required_notice describes an irreversible effect the generic summary below
+  // does not show (a token burn, a token ownership transfer): it is always
+  // shown and always confirmed, even with always-confirm-transfers disabled.
+  if (m_wallet->always_confirm_transfers() || ptx_vector.size() > 1 || !required_notice.empty())
   {
       uint64_t total_sent = 0;
       uint64_t total_fee = 0;
@@ -6185,6 +6188,8 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
       }
 
       std::stringstream prompt;
+      if (!required_notice.empty())
+        prompt << "\n" << required_notice << "\n";
       std::set<uint32_t> subaddr_indices;
       for (size_t n = 0; n < ptx_vector.size(); ++n)
       {
@@ -8456,7 +8461,16 @@ bool simple_wallet::burn_token(const std::vector<std::string>& args_)
     self_info.address       = m_wallet->get_subaddress({m_current_subaddress_account, 0});
     self_info.is_subaddress = m_current_subaddress_account != 0;
 
-    if (!confirm_and_send_tx({self_info}, ptx_vector, priority == tools::tx_priority_flash))
+    // A burn destroys tokens for good, so the token and amount are always
+    // shown and confirmed before anything is signed or relayed.
+    std::string burn_notice = tr("WARNING: this permanently destroys the tokens below and cannot be undone.");
+    for (const auto& burn : burn_requests)
+    {
+      burn_notice += "\n  Token ID:    " + tools::type_to_hex(burn.token_id);
+      burn_notice += "\n  Burn amount: " + burn.formatted_amount + (!burn.ticker.empty() ? " " + burn.ticker : "");
+    }
+
+    if (!confirm_and_send_tx({self_info}, ptx_vector, priority == tools::tx_priority_flash, 0, 0, false, burn_notice))
       return false;
 
     auto success = success_msg_writer(true);
@@ -8550,9 +8564,11 @@ bool simple_wallet::update_token(const std::vector<std::string>& args_)
   }
   adb.meta_info = file_adb.meta_info;
   // Allow transferring ownership if the owner in the JSON file is different
+  const crypto::public_key current_owner = adb.owner;
   if (file_adb.owner != crypto::null_pkey) {
     adb.owner = file_adb.owner;
   }
+  const bool owner_changed = adb.owner != current_owner;
   SCOPED_WALLET_UNLOCK();
 
   try
@@ -8585,14 +8601,28 @@ bool simple_wallet::update_token(const std::vector<std::string>& args_)
     self_info.address      = m_wallet->get_subaddress({m_current_subaddress_account, 0});
     self_info.is_subaddress = m_current_subaddress_account != 0;
 
-    if (!confirm_and_send_tx({self_info}, ptx_vector, priority == tools::tx_priority_flash))
+    // Handing the token to another key cannot be reversed by this wallet, so
+    // the new owner is always shown and confirmed before anything is signed.
+    std::string owner_notice;
+    if (owner_changed)
+    {
+      owner_notice = tr("WARNING: this transfers ownership of the token to a different key. This wallet will no longer control the token and cannot undo the transfer.");
+      owner_notice += "\n  Token ID:      " + tools::type_to_hex(token_id);
+      owner_notice += "\n  Current owner: " + tools::type_to_hex(current_owner);
+      owner_notice += "\n  New owner:     " + tools::type_to_hex(adb.owner);
+    }
+
+    if (!confirm_and_send_tx({self_info}, ptx_vector, priority == tools::tx_priority_flash, 0, 0, false, owner_notice))
       return false;
 
-    success_msg_writer(true)
-        << "Token metainfo successfully updated\n"
+    auto success = success_msg_writer(true);
+    success
+        << "Token update submitted\n"
         << "  Token ID:     " << tools::type_to_hex(token_id) << "\n"
         << "  Ticker:       " << adb.ticker << "\n"
         << "  Full name:    " << adb.full_name;
+    if (owner_changed)
+      success << "\n  New owner:    " << tools::type_to_hex(adb.owner);
   }
   catch (const std::exception& e)
   {

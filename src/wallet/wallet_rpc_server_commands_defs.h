@@ -518,16 +518,26 @@ namespace tools::wallet_rpc {
 
     struct recipient
     {
-      std::string address; // Destination public address.
-      uint64_t amount;     // Amount in atomic units.
+      std::string address;  // Destination public address.
+      uint64_t amount;      // Amount in atomic units of the asset named by `token_id`.
+      std::string token_id; // Privacy token id (hex) this amount is denominated in; empty for native BDX.
+
+      KV_MAP_SERIALIZABLE
+    };
+
+    struct token_amount
+    {
+      std::string token_id; // Privacy token id (hex).
+      uint64_t amount_in;   // Amount of this token spent by the inputs, in the token's atomic units.
+      uint64_t amount_out;  // Amount of this token sent to outputs (including change back to the sender), in the token's atomic units. Less than amount_in for a burn, more for a mint/registration.
 
       KV_MAP_SERIALIZABLE
     };
 
     struct transfer_description
     {
-      uint64_t amount_in;              // Amount in, in atomic units.
-      uint64_t amount_out;             // amount out, in atomic units.
+      uint64_t amount_in;              // Native BDX amount in, in atomic units (privacy token inputs are reported in token_amounts).
+      uint64_t amount_out;             // Native BDX amount out, in atomic units (privacy token outputs are reported in token_amounts).
       uint32_t ring_size;              // Ring size of transfer.
       uint64_t unlock_time;            // Number of blocks before the beldex can be spent (0 represents the default network lock time).
       std::list<recipient> recipients; // List of addresses and amounts.
@@ -537,6 +547,7 @@ namespace tools::wallet_rpc {
       uint64_t fee;                    // Fee of the transaction in atomic units.
       uint32_t dummy_outputs;          //
       std::string extra;               // Data stored in the tx extra represented in hex.
+      std::list<token_amount> token_amounts; // Per privacy token input/output totals; empty for a native-only transfer.
 
       KV_MAP_SERIALIZABLE
     };

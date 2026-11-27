@@ -1510,9 +1510,18 @@ namespace tools
           }
         }
 
+        // Privacy token amounts are denominated in their own units and must
+        // never be added to the native BDX totals (or to each other): they are
+        // tallied per token id instead. Keyed by token id hex, then address.
+        std::map<std::string, std::pair<uint64_t, uint64_t>> token_totals; // token id -> (in, out)
+        std::map<std::pair<std::string, std::string>, uint64_t> token_dests; // (token id, address) -> amount
+
         for (size_t s = 0; s < cd.sources.size(); ++s)
         {
-          desc.amount_in += cd.sources[s].amount;
+          if (cd.sources[s].is_zyphora())
+            token_totals[tools::type_to_hex(cd.sources[s].token_id)].first += cd.sources[s].amount;
+          else
+            desc.amount_in += cd.sources[s].amount;
           size_t ring_size = cd.sources[s].outputs.size();
           if (ring_size < desc.ring_size)
             desc.ring_size = ring_size;
@@ -1523,6 +1532,13 @@ namespace tools
           std::string address = cryptonote::get_account_address_as_str(m_wallet->nettype(), entry.is_subaddress, entry.addr);
           if (has_encrypted_payment_id && !entry.is_subaddress && address != entry.original)
             address = cryptonote::get_account_integrated_address_as_str(m_wallet->nettype(), entry.addr, payment_id8);
+          if (entry.is_zyphora())
+          {
+            const std::string token_id = tools::type_to_hex(entry.token_id);
+            token_totals[token_id].second += entry.amount;
+            token_dests[{token_id, address}] += entry.amount;
+            continue;
+          }
           auto i = dests.find(entry.addr);
           if (i == dests.end())
             dests.insert(std::make_pair(entry.addr, std::make_pair(address, entry.amount)));
@@ -1562,6 +1578,11 @@ namespace tools
             ++desc.dummy_outputs;
           ++i;
         }
+        for (const auto& [key, amount] : token_dests)
+          if (amount > 0)
+            desc.recipients.push_back({key.second, amount, key.first});
+        for (const auto& [token_id, totals] : token_totals)
+          desc.token_amounts.push_back({token_id, totals.first, totals.second});
 
         if (desc.change_amount > 0)
         {

@@ -29,6 +29,8 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <algorithm>
+#include <limits>
+#include <map>
 #include <unordered_set>
 #include <optional>
 #include <random>
@@ -1167,6 +1169,8 @@ namespace cryptonote
     rct::scrubbed_key aop_secret_x = rct::zero();
     rct::key aop_commitment = rct::zero(); // full TDO amount commitment C (used by the burn balance proof)
     crypto::token_id aop_token_id = crypto::null_tid; // mint token id, used as the surjection ring member
+    uint64_t burned_token_amount = 0;                    // burn_token: publicly declared amount destroyed...
+    crypto::token_id burned_token_id = crypto::null_tid; // ...and the token it is destroyed from
     if (tx.type == txtype::register_privacy_token || tx.type == txtype::mint_token || tx.type == txtype::burn_token)
     {
       tx_extra_token_descriptor_operation tdo{};
@@ -1212,6 +1216,8 @@ namespace cryptonote
         const rct::key& token_pt = rct::tid2rct(token_id);
         commitment_full = rct::commitToken(aop_mask, token_pt, declared_amount);
         aop_commitment  = commitment_full;
+        burned_token_amount = declared_amount;
+        burned_token_id     = token_id;
       }
       else
       {
@@ -1271,6 +1277,49 @@ namespace cryptonote
     {
       LOG_ERROR("Transaction inputs money ("<< summary_inputs_money << ") less than outputs money (" << summary_outs_money << ")");
       return false;
+    }
+
+    // check token money: every privacy token must conserve EXACTLY, per token
+    // id -- spent == sent (+ the declared amount for a burn). Unlike native BDX
+    // there is no fee slack: the zy_balance_proof built below proves the
+    // commitment residual lies in span(G, X), and any per-token difference
+    // leaves a token_id term in it. The prover does not notice (it signs
+    // whatever secrets it is handed), so without this check we would return a
+    // tx that every node rejects. register/mint are exempt: their outputs are
+    // newly emitted and bound by the TDO amount commitment instead.
+    if (tx.type != txtype::register_privacy_token && tx.type != txtype::mint_token)
+    {
+      std::map<crypto::token_id, std::pair<uint64_t, uint64_t>> token_money; // token id -> (inputs, outputs)
+      const auto add_token_money = [](uint64_t& sum, uint64_t amount) {
+        if (amount > std::numeric_limits<uint64_t>::max() - sum)
+          return false;
+        sum += amount;
+        return true;
+      };
+      bool token_money_ok = true;
+      for (const auto& s : sources)
+        if (s.is_zyphora())
+          token_money_ok &= add_token_money(token_money[s.token_id].first, s.amount);
+      for (const auto& d : destinations)
+        if (d.is_zyphora())
+          token_money_ok &= add_token_money(token_money[d.token_id].second, d.amount);
+      if (tx.type == txtype::burn_token)
+        token_money_ok &= add_token_money(token_money[burned_token_id].second, burned_token_amount);
+      if (!token_money_ok)
+      {
+        LOG_ERROR("Cannot construct tx: privacy token amounts overflow");
+        return false;
+      }
+      for (const auto& [tid, money] : token_money)
+      {
+        if (money.first != money.second)
+        {
+          LOG_ERROR("Cannot construct tx: privacy token " << tid << " inputs (" << money.first
+                    << ") do not equal outputs" << (tx.type == txtype::burn_token && tid == burned_token_id ? " plus burned amount" : "")
+                    << " (" << money.second << ")");
+          return false;
+        }
+      }
     }
 
     // check for watch only wallet

@@ -194,9 +194,13 @@ namespace cryptonote
 
     bool is_zyphora() const { return token_id != crypto::null_tid; }
 
+    // token_id is part of the identity: this comparison is how the change
+    // output is recognised (`*change_addr == dst_entr`), and a token output to
+    // the change address with the same raw amount as the BDX change must not
+    // be mistaken for it.
     bool operator==(const tx_destination_entry& other) const
     {
-      return amount == other.amount && addr == other.addr;
+      return amount == other.amount && addr == other.addr && token_id == other.token_id;
     }
 
     std::string address(network_type nettype, const crypto::hash &payment_id) const
